@@ -1,0 +1,501 @@
+// Tauri commands for built-in AI model management
+// Exposes model download, status, and management functionality to frontend
+
+use std::sync::Arc;
+
+use tauri::{AppHandle, Emitter, Manager, Runtime, State};
+use tokio::sync::Mutex;
+
+use super::model_manager::{DownloadProgress, ModelInfo, ModelManager};
+
+// ============================================================================
+// Global State
+// ============================================================================
+
+/// Global model manager instance
+pub struct ModelManagerState(pub Arc<Mutex<Option<Arc<ModelManager>>>>);
+
+/// Initialize the model manager
+pub async fn init_model_manager<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
+    let models_dir = app.path().app_data_dir()?.join("models").join("summary");
+
+    let manager = ModelManager::new_with_models_dir(Some(models_dir))?;
+    manager.init().await?;
+
+    let state: State<ModelManagerState> = app.state();
+    let mut manager_lock = state.0.lock().await;
+    *manager_lock = Some(Arc::new(manager));
+
+    log::info!("Built-in AI model manager initialized");
+    Ok(())
+}
+
+// ============================================================================
+// Tauri Commands
+// ============================================================================
+
+/// List all available built-in AI models with their status
+#[tauri::command]
+pub async fn builtin_ai_list_models<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+) -> Result<Vec<ModelInfo>, String> {
+    let manager = {
+        // Ensure manager is initialized
+        {
+            let manager_lock = state.0.lock().await;
+            if manager_lock.is_none() {
+                drop(manager_lock);
+                init_model_manager(&app)
+                    .await
+                    .map_err(|e| format!("Failed to initialize model manager: {}", e))?;
+            }
+        }
+
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    let models = manager.list_models().await;
+    Ok(models)
+}
+
+/// Get information about a specific model
+#[tauri::command]
+pub async fn builtin_ai_get_model_info<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+    model_name: String,
+) -> Result<Option<ModelInfo>, String> {
+    let manager = {
+        // Ensure manager is initialized
+        {
+            let manager_lock = state.0.lock().await;
+            if manager_lock.is_none() {
+                drop(manager_lock);
+                init_model_manager(&app)
+                    .await
+                    .map_err(|e| format!("Failed to initialize model manager: {}", e))?;
+            }
+        }
+
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    let info = manager.get_model_info(&model_name).await;
+    Ok(info)
+}
+
+/// Download a built-in AI model with progress updates
+#[tauri::command]
+pub async fn builtin_ai_download_model<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+    model_name: String,
+) -> Result<(), String> {
+    let manager = {
+        // Ensure manager is initialized
+        {
+            let manager_lock = state.0.lock().await;
+            if manager_lock.is_none() {
+                drop(manager_lock);
+                init_model_manager(&app)
+                    .await
+                    .map_err(|e| format!("Failed to initialize model manager: {}", e))?;
+            }
+        }
+
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone() // Clone the Arc, not the ModelManager
+    };
+    // IMPORTANT: Only emit "downloading" status here, never "completed"
+    // Completion event is emitted AFTER download task fully finishes (validation, etc.)
+    let app_clone = app.clone();
+    let model_name_clone = model_name.clone();
+    let progress_callback = Box::new(move |progress: DownloadProgress| {
+        let _ = app_clone.emit(
+            "builtin-ai-download-progress",
+            serde_json::json!({
+                "model": model_name_clone,
+                "progress": progress.percent,
+                "downloaded_mb": progress.downloaded_mb,
+                "total_mb": progress.total_mb,
+                "speed_mbps": progress.speed_mbps,
+                "status": "downloading"  // Always "downloading", never "completed" from progress callback
+            }),
+        );
+    });
+
+    match manager
+        .download_model_detailed(&model_name, Some(progress_callback))
+        .await
+    {
+        Ok(_) => {
+            // Download task completed successfully (validation passed, status set to Available)
+            let _ = app.emit(
+                "builtin-ai-download-progress",
+                serde_json::json!({
+                    "model": model_name,
+                    "progress": 100,
+                    "downloaded_mb": 0,  // Not used by completion handler
+                    "total_mb": 0,       // Not used by completion handler
+                    "speed_mbps": 0,     // Not used by completion handler
+                    "status": "completed"
+                }),
+            );
+            Ok(())
+        },
+        Err(e) => {
+            let error_msg = e.to_string();
+
+            // Check if this is a cancellation error (marked with "CANCELLED:" prefix)
+            // Don't emit error event for cancellations - cancel command already emits cancelled event
+            if !error_msg.starts_with("CANCELLED:") {
+                // Emit error via progress event for frontend to display (only for real errors)
+                let _ = app.emit(
+                    "builtin-ai-download-progress",
+                    serde_json::json!({
+                        "model": model_name,
+                        "progress": 0,
+                        "downloaded_mb": 0,
+                        "total_mb": 0,
+                        "speed_mbps": 0,
+                        "status": "error",
+                        "error": error_msg
+                    }),
+                );
+            }
+            Err(error_msg)
+        }
+    }
+}
+
+/// Cancel an ongoing model download
+#[tauri::command]
+pub async fn builtin_ai_cancel_download<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+    model_name: String,
+) -> Result<(), String> {
+    let manager = {
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    manager
+        .cancel_download(&model_name)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let _ = app.emit(
+        "builtin-ai-download-progress",
+        serde_json::json!({
+            "model": model_name,
+            "progress": 0,
+            "status": "cancelled"
+        }),
+    );
+
+    Ok(())
+}
+
+/// Delete a corrupted or available model file
+#[tauri::command]
+pub async fn builtin_ai_delete_model(
+    state: State<'_, ModelManagerState>,
+    model_name: String,
+) -> Result<(), String> {
+    let manager = {
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    manager
+        .delete_model(&model_name)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Check if a model is ready to use
+#[tauri::command]
+pub async fn builtin_ai_is_model_ready<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+    model_name: String,
+    refresh: Option<bool>,  // NEW: Optional refresh parameter
+) -> Result<bool, String> {
+    let manager = {
+        // Ensure manager is initialized
+        {
+            let manager_lock = state.0.lock().await;
+            if manager_lock.is_none() {
+                drop(manager_lock);
+                init_model_manager(&app)
+                    .await
+                    .map_err(|e| format!("Failed to initialize model manager: {}", e))?;
+            }
+        }
+
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    let refresh_scan = refresh.unwrap_or(false);
+    let ready = manager.is_model_ready(&model_name, refresh_scan).await;
+
+    log::info!(
+        "Model '{}' ready check (refresh={}): {}",
+        model_name,
+        refresh_scan,
+        ready
+    );
+
+    Ok(ready)
+}
+
+/// Check if any summary model is available (for onboarding)
+/// Returns the first available model name by priority, or None if no models exist
+#[tauri::command]
+pub async fn builtin_ai_get_available_summary_model<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, ModelManagerState>,
+) -> Result<Option<String>, String> {
+    let manager = {
+        // Ensure manager is initialized
+        {
+            let manager_lock = state.0.lock().await;
+            if manager_lock.is_none() {
+                drop(manager_lock);
+                init_model_manager(&app)
+                    .await
+                    .map_err(|e| format!("Failed to initialize model manager: {}", e))?;
+            }
+        }
+
+        let manager_lock = state.0.lock().await;
+        manager_lock
+            .as_ref()
+            .ok_or_else(|| "Model manager not initialized".to_string())?
+            .clone()
+    };
+
+    // Force fresh scan to ensure accurate state
+    manager
+        .scan_models()
+        .await
+        .map_err(|e| format!("Failed to scan models: {}", e))?;
+
+    // Get all available models
+    let all_models = manager.list_models().await;
+
+    // Find first available summary model
+    let available = all_models
+        .iter()
+        .filter(|m| matches!(m.status, crate::summary::summary_engine::model_manager::ModelStatus::Available))
+        .max_by_key(|m| {
+            match m.name.as_str() {
+                "qwen3.5:4b" => 4,
+                "qwen3.5:2b" => 3,
+                "gemma3:4b" => 2,
+                "gemma3:1b" => 1,
+                _ => 0,
+            }
+        })
+        .map(|m| m.name.clone());
+
+    log::info!("Available summary model check: {:?}", available);
+    Ok(available)
+}
+
+// ============================================================================
+// Startup Initialization & Utility Commands
+// ============================================================================
+
+pub async fn init_model_manager_at_startup<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), String> {
+    let models_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?
+        .join("models")
+        .join("summary");
+
+    let manager = ModelManager::new_with_models_dir(Some(models_dir))
+        .map_err(|e| format!("Failed to create ModelManager: {}", e))?;
+
+    manager
+        .init()
+        .await
+        .map_err(|e| format!("Failed to initialize ModelManager: {}", e))?;
+
+    let state: State<ModelManagerState> = app.state();
+    let mut manager_lock = state.0.lock().await;
+    *manager_lock = Some(Arc::new(manager));
+
+    log::info!("ModelManager initialized at startup");
+    Ok(())
+}
+
+
+/// Get the recommended summary model for this machine, used to seed the
+/// onboarding default instead of always falling back to gemma3.
+///
+/// Selection (see [`recommend_summary_model`] for the exact tiers):
+/// - macOS (Apple Silicon, unified memory): sized by total system RAM.
+/// - Discrete NVIDIA GPU (VRAM from `nvidia-smi`): sized by VRAM.
+/// - CPU-only / undetected GPU: conservative RAM-based pick (CPU inference is
+///   slow, so we never auto-recommend the 8B model there).
+#[tauri::command]
+pub async fn builtin_ai_get_recommended_model() -> Result<String, String> {
+    let system_ram_gb = get_system_ram_gb()?;
+    let is_macos = cfg!(target_os = "macos");
+
+    // VRAM only informs the non-macOS path (Apple Silicon shares system RAM,
+    // which the macOS branch already accounts for).
+    #[cfg(target_os = "macos")]
+    let gpu_vram_gb: Option<f64> = None;
+    #[cfg(not(target_os = "macos"))]
+    let gpu_vram_gb: Option<f64> = detect_gpu_vram_gb();
+
+    let recommended = recommend_summary_model(system_ram_gb, gpu_vram_gb, is_macos);
+
+    log::info!(
+        "Recommended summary model: {} (macOS={}, {}GB RAM, GPU VRAM={:?}GB)",
+        recommended,
+        is_macos,
+        system_ram_gb,
+        gpu_vram_gb
+    );
+    Ok(recommended.to_string())
+}
+
+/// Pure model-selection policy. Returns a model id from the built-in catalog
+/// (`qwen3.5:4b` / `qwen3.5:2b` / `gemma3:1b`). Kept side-effect-free so the
+/// tiers stay unit-testable.
+fn recommend_summary_model(
+    system_ram_gb: u64,
+    gpu_vram_gb: Option<f64>,
+    is_macos: bool,
+) -> &'static str {
+    if is_macos {
+        // Apple Silicon unified memory: the GPU draws from system RAM, so RAM is
+        // the right budget. qwen3.5:4b is ~2.6GB + KV cache; 24GB leaves headroom.
+        if system_ram_gb >= 24 {
+            "qwen3.5:4b"
+        } else if system_ram_gb >= 16 {
+            "qwen3.5:2b"
+        } else {
+            "gemma3:1b"
+        }
+    } else if let Some(vram) = gpu_vram_gb {
+        // Discrete GPU: size by VRAM so the model fully offloads. qwen3.5:4b at
+        // 32k context needs ~6GB (weights + KV), so gate it at 10GB; qwen3.5:2b at 6GB.
+        if vram >= 10.0 {
+            "qwen3.5:4b"
+        } else if vram >= 6.0 {
+            "qwen3.5:2b"
+        } else {
+            "gemma3:1b"
+        }
+    } else {
+        // CPU-only (or an undetected AMD/Intel GPU): inference is slow, so cap at
+        // the 2B model and only when there's ample RAM.
+        if system_ram_gb >= 16 {
+            "qwen3.5:2b"
+        } else {
+            "gemma3:1b"
+        }
+    }
+}
+
+/// Detect discrete NVIDIA GPU VRAM (total, in GB) via `nvidia-smi`. Works
+/// whenever the driver is installed, independent of the app's build features.
+/// Returns the largest card's VRAM for multi-GPU systems, or `None` when
+/// `nvidia-smi` is absent/fails (AMD and Intel GPUs are not probed).
+#[cfg(not(target_os = "macos"))]
+fn detect_gpu_vram_gb() -> Option<f64> {
+    let output = std::process::Command::new("nvidia-smi")
+        .args([
+            "--query-gpu=memory.total",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8(output.stdout).ok()?;
+    let max_mb = stdout
+        .lines()
+        .filter_map(|line| line.trim().parse::<f64>().ok())
+        .fold(None, |acc: Option<f64>, mb| {
+            Some(acc.map_or(mb, |a| a.max(mb)))
+        })?;
+
+    Some(max_mb / 1024.0)
+}
+
+/// Get total system RAM in gigabytes
+fn get_system_ram_gb() -> Result<u64, String> {
+    use sysinfo::System;
+
+    let mut sys = System::new_all();
+    sys.refresh_memory();
+
+    let total_memory_bytes = sys.total_memory();
+    let total_memory_gb = total_memory_bytes / (1024 * 1024 * 1024);
+
+    Ok(total_memory_gb)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recommend_summary_model;
+
+    #[test]
+    fn macos_uses_unified_ram_tiers() {
+        assert_eq!(recommend_summary_model(32, None, true), "qwen3.5:4b");
+        assert_eq!(recommend_summary_model(24, None, true), "qwen3.5:4b");
+        assert_eq!(recommend_summary_model(16, None, true), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(18, None, true), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(8, None, true), "gemma3:1b");
+    }
+
+    #[test]
+    fn discrete_gpu_sized_by_vram() {
+        assert_eq!(recommend_summary_model(64, Some(24.0), false), "qwen3.5:4b");
+        assert_eq!(recommend_summary_model(64, Some(10.0), false), "qwen3.5:4b");
+        assert_eq!(recommend_summary_model(16, Some(8.0), false), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(16, Some(6.0), false), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(16, Some(4.0), false), "gemma3:1b");
+    }
+
+    #[test]
+    fn cpu_only_never_recommends_largest() {
+        assert_eq!(recommend_summary_model(64, None, false), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(16, None, false), "qwen3.5:2b");
+        assert_eq!(recommend_summary_model(8, None, false), "gemma3:1b");
+    }
+}
