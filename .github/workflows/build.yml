@@ -416,7 +416,11 @@ jobs:
       - name: Install app dependencies
         run: |
           cd app
+          # The SvelteKit frontend is a separate pnpm project with its own
+          # lockfile, so it must be installed too or `vite` is missing when
+          # tauri-action runs beforeBuildCommand (`pnpm -C src-svelte build`).
           pnpm install
+          pnpm -C src-svelte install
 
       - name: rustup install target
         if: ${{ inputs.target != '' && !contains(inputs.target, 'unknown-linux-gnu') && !contains(inputs.target, 'pc-windows-msvc') }}
