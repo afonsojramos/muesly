@@ -11,7 +11,7 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 | `build-windows.yml` | Windows standalone build | Windows | Optional | 30 days |
 | `build-linux.yml` | Linux standalone build | Linux | Optional | 30 days |
 | `build-test.yml` | Pre-release builds, signed | All | ON | 30 days |
-| `build.yml` | Reusable workflow (called by `build-test.yml` and `release.yml`) | - | - | - |
+| `build.yml` | Reusable build / sign / verify workflow (called by every `build-*` and `release` workflow) | - | - | - |
 | `release.yml` | Production release (draft GitHub Release) | macOS + Windows + Linux | Required | Permanent |
 | `pr-main-check.yml` | Version/config validation, no builds | - | - | - |
 | `rust-check.yml` | Auto: test / clippy / fmt on PR + push to `main` | - | - | - |
