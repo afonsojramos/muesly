@@ -1,0 +1,18 @@
+node_modules
+
+# SvelteKit / Vite / build output
+/build
+/.svelte-kit
+/.wrangler
+/dist
+
+# OS / editor
+.DS_Store
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Generated at build time from the repo-root PRIVACY_POLICY.md (single source of truth)
+/src/lib/content/privacy-policy.md

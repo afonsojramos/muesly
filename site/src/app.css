@@ -1,0 +1,94 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/lora';
+
+/* Brand tokens lifted from the desktop app (app/src-svelte/src/app.css) so the
+   marketing site matches the product exactly. Granola-style warm paper palette. */
+@theme {
+	--color-background: oklch(0.975 0.006 90); /* near-paper cream #f7f5f0 */
+	--color-foreground: oklch(0.235 0.01 80); /* warm near-black */
+	--color-card: oklch(0.985 0.005 90); /* slightly lighter paper */
+	--color-card-foreground: oklch(0.235 0.01 80);
+	--color-muted: oklch(0.935 0.008 90);
+	--color-muted-foreground: oklch(0.5 0.012 80); /* warm gray, nudged darker for AA body contrast */
+	--color-primary: oklch(0.305 0.012 80); /* warm charcoal */
+	--color-primary-foreground: oklch(0.975 0.006 90);
+	--color-secondary: oklch(0.935 0.008 90); /* warm hover wash */
+	--color-secondary-foreground: oklch(0.305 0.012 80);
+	--color-accent: oklch(0.65 0.18 35); /* muesly orange #E85112 (from logo) */
+	--color-accent-foreground: oklch(0.985 0 0);
+	--color-success: oklch(0.6 0.12 150);
+	--color-success-foreground: oklch(0.985 0 0);
+	--color-warning: oklch(0.66 0.13 70);
+	--color-warning-foreground: oklch(0.985 0 0);
+	--color-destructive: oklch(0.577 0.245 27.325);
+	--color-destructive-foreground: oklch(0.985 0 0);
+	--color-border: oklch(0.905 0.009 90); /* warm light border */
+	--color-input: oklch(0.905 0.009 90);
+	--color-ring: oklch(0.65 0.18 35);
+	--radius: 0.625rem;
+	--font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-display: 'Lora Variable', ui-serif, 'New York', Georgia, serif;
+}
+
+@layer base {
+	/* Warm dark variant carried for a future toggle (v1 ships light-first). */
+	:root.dark {
+		--color-background: oklch(0.225 0.008 80);
+		--color-foreground: oklch(0.94 0.006 90);
+		--color-card: oklch(0.255 0.009 80);
+		--color-card-foreground: oklch(0.94 0.006 90);
+		--color-muted: oklch(0.3 0.01 80);
+		--color-muted-foreground: oklch(0.7 0.01 85);
+		--color-primary: oklch(0.94 0.006 90);
+		--color-primary-foreground: oklch(0.255 0.009 80);
+		--color-secondary: oklch(0.3 0.01 80);
+		--color-secondary-foreground: oklch(0.94 0.006 90);
+		--color-accent: oklch(0.65 0.18 35);
+		--color-accent-foreground: oklch(0.985 0 0);
+		--color-border: oklch(0.315 0.01 80);
+		--color-input: oklch(0.315 0.01 80);
+		--color-ring: oklch(0.65 0.18 35);
+	}
+
+	* {
+		border-color: var(--color-border);
+	}
+
+	html {
+		scroll-behavior: smooth;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		html {
+			scroll-behavior: auto;
+		}
+	}
+
+	body {
+		background-color: var(--color-background);
+		color: var(--color-foreground);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+
+	/* Themed keyboard-focus indicator (matches the app). */
+	:focus-visible {
+		outline: 2px solid var(--color-ring);
+		outline-offset: 2px;
+	}
+}
+
+/* Screen-reader-only helper. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
