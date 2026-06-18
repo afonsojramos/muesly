@@ -1,10 +1,24 @@
 <script lang="ts">
-	// Placeholder landing route — replaced with the full composition in U5.
+	import Seo from '$lib/components/Seo.svelte';
+	import WaveDivider from '$lib/components/WaveDivider.svelte';
+	import Community from '$lib/components/sections/Community.svelte';
+	import DownloadCta from '$lib/components/sections/DownloadCta.svelte';
+	import FeatureGrid from '$lib/components/sections/FeatureGrid.svelte';
+	import Hero from '$lib/components/sections/Hero.svelte';
+	import HowItWorks from '$lib/components/sections/HowItWorks.svelte';
+	import OpenSourceTrust from '$lib/components/sections/OpenSourceTrust.svelte';
+	import PrivacyBlock from '$lib/components/sections/PrivacyBlock.svelte';
+	import ProductShowcase from '$lib/components/sections/ProductShowcase.svelte';
 </script>
 
-<main class="grid min-h-dvh place-items-center p-8 text-center">
-	<div>
-		<h1 class="font-display text-4xl">muesly</h1>
-		<p class="mt-2 text-muted-foreground">Marketing site scaffold.</p>
-	</div>
-</main>
+<Seo />
+
+<Hero />
+<OpenSourceTrust />
+<WaveDivider class="my-2" />
+<HowItWorks />
+<ProductShowcase />
+<PrivacyBlock />
+<FeatureGrid />
+<Community />
+<DownloadCta />
