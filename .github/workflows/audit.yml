@@ -1,0 +1,25 @@
+# cargo audit does NOT scan git dependencies (ffmpeg-sidecar, cidre, silero).
+# Those rev pins should be reviewed manually on a periodic basis to pick up
+# any upstream fixes that are not yet tracked by RUSTSEC advisories.
+
+name: "Security Audit"
+
+on:
+  pull_request:
+    paths:
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+      - ".github/workflows/audit.yml"
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1" # Mondays: catch advisories filed after a PR merged
+
+jobs:
+  cargo-audit:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
