@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="text-scale" content="scale" />
+		<link rel="icon" href="%sveltekit.assets%/muesly.svg" />
+		<title>muesly</title>
+		<script>
+			// Apply the saved theme before first paint to avoid a flash of the wrong
+			// theme. Kept in sync at runtime by $lib/stores/theme.svelte.ts.
+			(function () {
+				try {
+					var mode = localStorage.getItem('muesly-theme') || 'system';
+					var dark =
+						mode === 'dark' ||
+						(mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+					if (dark) document.documentElement.classList.add('dark');
+				} catch (e) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

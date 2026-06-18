@@ -1,0 +1,145 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/lora';
+
+@theme {
+	/* Granola-style warm paper palette */
+	--color-background: oklch(0.975 0.006 90); /* near-paper cream #f7f5f0 */
+	--color-foreground: oklch(0.235 0.01 80); /* warm near-black */
+	--color-card: oklch(0.985 0.005 90); /* slightly lighter paper */
+	--color-card-foreground: oklch(0.235 0.01 80);
+	--color-popover: oklch(0.985 0.005 90);
+	--color-popover-foreground: oklch(0.235 0.01 80);
+	--color-primary: oklch(0.305 0.012 80); /* warm charcoal */
+	--color-primary-foreground: oklch(0.975 0.006 90);
+	--color-secondary: oklch(0.935 0.008 90); /* warm hover wash */
+	--color-secondary-foreground: oklch(0.305 0.012 80);
+	--color-muted: oklch(0.935 0.008 90);
+	--color-muted-foreground: oklch(0.55 0.012 80); /* warm gray (AI text) */
+	--color-accent: oklch(0.65 0.18 35); /* muesly orange #E85112 (from logo) */
+	--color-accent-foreground: oklch(0.985 0 0);
+	--color-destructive: oklch(0.577 0.245 27.325);
+	--color-destructive-foreground: oklch(0.985 0 0);
+	--color-success: oklch(0.6 0.12 150); /* warm desaturated green */
+	--color-success-foreground: oklch(0.985 0 0);
+	--color-warning: oklch(0.66 0.13 70); /* warm amber */
+	--color-warning-foreground: oklch(0.985 0 0);
+	--color-border: oklch(0.905 0.009 90); /* warm light border */
+	--color-input: oklch(0.905 0.009 90);
+	--color-ring: oklch(0.65 0.18 35);
+	--color-sidebar: oklch(0.952 0.008 90); /* sidebar a notch darker than canvas */
+	--radius: 0.625rem;
+	--font-sans:
+		'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-display: 'Lora Variable', ui-serif, 'New York', Georgia, serif;
+}
+
+@layer base {
+	:root.dark {
+		/* Warm dark — keeps the paper metaphor, never pure black */
+		--color-background: oklch(0.225 0.008 80);
+		--color-foreground: oklch(0.94 0.006 90);
+		--color-card: oklch(0.255 0.009 80);
+		--color-card-foreground: oklch(0.94 0.006 90);
+		--color-popover: oklch(0.255 0.009 80);
+		--color-popover-foreground: oklch(0.94 0.006 90);
+		--color-primary: oklch(0.94 0.006 90);
+		--color-primary-foreground: oklch(0.255 0.009 80);
+		--color-secondary: oklch(0.30 0.01 80);
+		--color-secondary-foreground: oklch(0.94 0.006 90);
+		--color-muted: oklch(0.30 0.01 80);
+		--color-muted-foreground: oklch(0.68 0.01 85);
+		--color-accent: oklch(0.65 0.18 35);
+		--color-accent-foreground: oklch(0.985 0 0);
+		--color-border: oklch(0.315 0.01 80);
+		--color-input: oklch(0.315 0.01 80);
+		--color-ring: oklch(0.65 0.18 35);
+		--color-sidebar: oklch(0.20 0.008 80);
+	}
+
+	* {
+		border-color: var(--color-border);
+	}
+
+	/* Themed keyboard-focus indicator instead of the UA blue ring. Drawn
+	   inset (negative offset) so it survives overflow-clipping scrollports.
+	   Components that set their own focus-visible ring also set outline-none,
+	   so this only applies where nothing else is defined. */
+	:focus-visible {
+		outline: 2px solid var(--color-ring);
+		outline-offset: -2px;
+	}
+
+	/* Desktop app: the document itself never scrolls. Every route is a
+	   full-viewport layout that owns its internal scrolling, so lock both the
+	   document element (the real scroll root) and the body to the viewport to
+	   prevent a second, window-level scrollbar. */
+	html,
+	body {
+		height: 100%;
+		overflow: hidden;
+		/* overscroll-behavior stops the macOS webview elastic rubber-band (the
+		   window dragging sideways with nothing to scroll); overflow:hidden only
+		   removes the scrollbar, not the bounce gesture. */
+		overscroll-behavior: none;
+	}
+
+	body {
+		background-color: var(--color-background);
+		color: var(--color-foreground);
+		font-family: var(--font-sans);
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+}
+
+/* Visually-hidden helper (Ark UI doesn't ship one). */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Tooltip enter/exit: the rest of the app animates calmly at 150-300ms, so
+   tooltips (the densest motion surface) shouldn't hard-cut. Keyed off Ark UI's
+   data-state; scales from the anchor via Ark's --transform-origin. */
+@keyframes tooltip-in {
+	from {
+		opacity: 0;
+		transform: scale(0.96) translateY(2px);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+@keyframes tooltip-out {
+	from {
+		opacity: 1;
+		transform: none;
+	}
+	to {
+		opacity: 0;
+		transform: scale(0.96) translateY(2px);
+	}
+}
+[data-scope='tooltip'][data-part='content'] {
+	transform-origin: var(--transform-origin);
+}
+[data-scope='tooltip'][data-part='content'][data-state='open'] {
+	animation: tooltip-in 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-scope='tooltip'][data-part='content'][data-state='closed'] {
+	animation: tooltip-out 100ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+	[data-scope='tooltip'][data-part='content'] {
+		animation: none !important;
+	}
+}
