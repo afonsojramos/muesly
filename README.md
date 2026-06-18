@@ -57,7 +57,7 @@ See [docs/architecture.md](docs/architecture.md) for details, [docs/building.md]
 
 ## Contributing
 
-Contributions are welcome, open an issue or a pull request, and see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome, open an issue or a pull request.
 
 Import & enhance was contributed by [Jeremi Joslin](https://github.com/jeremi) and improved by [Vishnu P S](https://github.com/p-s-vishnu) and [Mohammed Safvan](https://github.com/mohammedsafvan).
 
