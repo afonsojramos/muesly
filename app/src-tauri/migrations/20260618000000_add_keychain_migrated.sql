@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN keychainMigrated INTEGER NOT NULL DEFAULT 0;
