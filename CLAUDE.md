@@ -10,6 +10,8 @@
 
 Detailed docs: [docs/architecture.md](docs/architecture.md), [docs/building.md](docs/building.md), [docs/gpu-acceleration.md](docs/gpu-acceleration.md).
 
+The marketing website (muesly.ai) is a separate static Astro project in `site/`, with its own lockfile and deploy. See [site/README.md](site/README.md). Run it with `pnpm -C site install && pnpm -C site dev`; build/check/test with `pnpm -C site build` / `check` / `test`.
+
 ## Commands
 
 Run from `app/` (frontend deps install separately in `app/src-svelte/`, each has its own lockfile):
