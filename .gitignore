@@ -1,0 +1,49 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# Dependencies
+node_modules/
+
+# Rust / Cargo
+target/
+
+# Tauri (generated & bundled sidecar binaries)
+app/src-tauri/gen/
+app/src-tauri/binaries/
+
+# SvelteKit / Vite (generated)
+app/src-svelte/.svelte-kit/
+app/src-svelte/build/
+/dist
+*.tsbuildinfo
+
+# Models & local databases
+**/models
+meeting_minutes.db
+
+# Media (recordings & demo assets)
+*.wav
+*.mp4
+docs/demo.mov
+docs/demo.gif
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+.cursor/
+*.sw?
+
+# Scratch / experiments
+/experiments
