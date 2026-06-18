@@ -1,0 +1,23 @@
+---
+import { Icon } from 'astro-icon/components';
+import Button from '../ui/Button.astro';
+---
+
+<section class="border-y border-border bg-secondary/40">
+	<div class="mx-auto max-w-3xl px-6 py-16 text-center md:py-24" data-reveal>
+		<h2 class="font-display text-3xl font-semibold tracking-tight md:text-4xl">
+			Keep your meetings to yourself
+		</h2>
+		<p class="mt-3 text-muted-foreground">
+			Free, open source, and private by design. Download muesly and run your next meeting on your own
+			machine.
+		</p>
+		<div class="mt-8 flex flex-wrap justify-center gap-3">
+			<Button href="/download" variant="accent" size="lg" data-os-cta>
+				<span data-os-cta-label>See all downloads</span>
+				<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+			</Button>
+			<Button href="/download" variant="outline" size="lg">All platforms</Button>
+		</div>
+	</div>
+</section>

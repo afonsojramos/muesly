@@ -1,0 +1,14 @@
+---
+import MueslyMark from './MueslyMark.astro';
+import Button from './ui/Button.astro';
+---
+
+<header data-nav class="sticky top-0 z-50 border-b border-transparent">
+	<nav aria-label="Primary" class="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+		<a href="/" class="flex items-center gap-2" aria-label="muesly home">
+			<MueslyMark class="h-7 w-7" />
+			<span class="font-display text-lg font-semibold tracking-tight">muesly</span>
+		</a>
+		<Button href="/download" variant="accent">Download</Button>
+	</nav>
+</header>

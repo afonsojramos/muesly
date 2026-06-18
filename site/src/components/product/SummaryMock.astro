@@ -1,0 +1,81 @@
+---
+import { Icon } from 'astro-icon/components';
+import { meeting, summary } from '$lib/components/product/mock-data';
+
+const templates = ['Standard', 'Action items', 'Decisions', 'Clean transcript'];
+---
+
+<div
+	role="img"
+	aria-label="A muesly meeting summary showing the overview, key decisions, and action items"
+	class="overflow-hidden rounded-2xl border border-border bg-card shadow-lg"
+>
+	<div class="flex items-center gap-2 border-b border-border px-5 py-3">
+		<Icon name="lucide:sparkles" class="h-4 w-4 text-accent" aria-hidden="true" />
+		<span class="text-sm font-medium">Summary</span>
+		<span class="ml-auto text-xs text-muted-foreground">{meeting.meta}</span>
+	</div>
+
+	<div class="p-5">
+		<div class="flex flex-wrap gap-1.5">
+			{
+				templates.map((template, i) => (
+					<span
+						class={
+							i === 0
+								? 'rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent'
+								: 'rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground'
+						}
+					>
+						{template}
+					</span>
+				))
+			}
+		</div>
+
+		<h3 class="mt-4 font-display text-xl font-semibold">{meeting.title}</h3>
+		<p class="mt-1.5 text-sm text-muted-foreground">{summary.overview}</p>
+
+		<div class="mt-4">
+			<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+				Key decisions
+			</div>
+			<ul class="mt-2 space-y-1.5">
+				{
+					summary.decisions.map((decision) => (
+						<li class="flex items-start gap-2 text-sm">
+							<Icon
+								name="lucide:badge-check"
+								class="mt-0.5 h-4 w-4 shrink-0 text-accent"
+								aria-hidden="true"
+							/>
+							<span>{decision}</span>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+
+		<div class="mt-4">
+			<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+				Action items
+			</div>
+			<ul class="mt-2 space-y-1.5">
+				{
+					summary.actions.map((action) => (
+						<li class="flex items-start gap-2 text-sm">
+							<Icon
+								name="lucide:circle-check"
+								class="mt-0.5 h-4 w-4 shrink-0 text-success"
+								aria-hidden="true"
+							/>
+							<span>
+								<span class="font-medium text-foreground">{action.who}:</span> {action.task}
+							</span>
+						</li>
+					))
+				}
+			</ul>
+		</div>
+	</div>
+</div>

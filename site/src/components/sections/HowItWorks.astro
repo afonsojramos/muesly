@@ -1,0 +1,48 @@
+---
+import { Icon } from 'astro-icon/components';
+import Section from '../ui/Section.astro';
+
+const steps = [
+	{
+		icon: 'lucide:mic',
+		title: 'Record',
+		body: 'Capture microphone and system audio together, mixed locally. Nothing is uploaded.'
+	},
+	{
+		icon: 'lucide:file-text',
+		title: 'Transcribe',
+		body: 'Whisper and Parakeet models run on-device, GPU-accelerated, in real time.'
+	},
+	{
+		icon: 'lucide:sparkles',
+		title: 'Summarize',
+		body: 'Get decisions and action items from a local LLM, or a cloud provider you choose.'
+	}
+];
+---
+
+<Section id="how-it-works" class="py-16 md:py-24">
+	<div class="mx-auto max-w-2xl text-center" data-reveal>
+		<h2 class="font-display text-3xl font-semibold tracking-tight md:text-4xl">
+			Three steps, all on your machine
+		</h2>
+		<p class="mt-3 text-muted-foreground">From a live meeting to a shareable summary, locally.</p>
+	</div>
+
+	<ol class="mt-12 grid gap-5 md:grid-cols-3" data-reveal>
+		{
+			steps.map((step, i) => (
+				<li class="rounded-2xl border border-border bg-card p-6 shadow-sm">
+					<div class="flex items-center gap-3">
+						<span class="flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10 text-accent">
+							<Icon name={step.icon} class="h-5 w-5" aria-hidden="true" />
+						</span>
+						<span class="text-sm font-medium text-muted-foreground tabular-nums">Step {i + 1}</span>
+					</div>
+					<h3 class="mt-4 text-lg font-semibold">{step.title}</h3>
+					<p class="mt-1.5 text-sm text-muted-foreground">{step.body}</p>
+				</li>
+			))
+		}
+	</ol>
+</Section>

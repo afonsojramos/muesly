@@ -1,18 +1,26 @@
-node_modules
+# build output
+dist/
+.output/
 
-# SvelteKit / Vite / build output
-/build
-/.svelte-kit
-/.wrangler
-/dist
+# generated types
+.astro/
 
-# OS / editor
-.DS_Store
+# dependencies
+node_modules/
 
-# Env
+# cloudflare
+.wrangler/
+
+# logs
+npm-debug.log*
+pnpm-debug.log*
+
+# environment
 .env
-.env.*
-!.env.example
+.env.production
+
+# macOS
+.DS_Store
 
 # Generated at build time from the repo-root PRIVACY_POLICY.md (single source of truth)
 /src/lib/content/privacy-policy.md

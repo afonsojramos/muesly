@@ -1,0 +1,70 @@
+---
+import '@fontsource-variable/inter';
+import '@fontsource-variable/lora';
+import '../styles/global.css';
+import Footer from '../components/Footer.astro';
+import Nav from '../components/Nav.astro';
+import { SITE_URL } from '$lib/config';
+
+interface Props {
+	title?: string;
+	description?: string;
+	image?: string;
+}
+
+const {
+	title = 'muesly — private, on-device meeting notes',
+	description = 'muesly records, transcribes, and summarizes your meetings on your device. Open source, no account required, on-device by default.',
+	image = `${SITE_URL}/og.png`
+} = Astro.props;
+
+const canonical = new URL(Astro.url.pathname, SITE_URL).href;
+
+const jsonLd = JSON.stringify({
+	'@context': 'https://schema.org',
+	'@type': 'SoftwareApplication',
+	name: 'muesly',
+	applicationCategory: 'BusinessApplication',
+	operatingSystem: 'macOS, Windows, Linux',
+	description:
+		'Private, on-device AI meeting assistant. Records, transcribes, and summarizes meetings locally.',
+	url: SITE_URL,
+	offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+});
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<link rel="icon" href="/favicon.svg" />
+		<title>{title}</title>
+		<meta name="description" content={description} />
+		<link rel="canonical" href={canonical} />
+		<meta property="og:site_name" content="muesly" />
+		<meta property="og:type" content="website" />
+		<meta property="og:title" content={title} />
+		<meta property="og:description" content={description} />
+		<meta property="og:url" content={canonical} />
+		<meta property="og:image" content={image} />
+		<meta name="twitter:card" content="summary_large_image" />
+		<meta name="twitter:title" content={title} />
+		<meta name="twitter:description" content={description} />
+		<meta name="twitter:image" content={image} />
+		<meta name="generator" content={Astro.generator} />
+		<script type="application/ld+json" set:html={jsonLd} is:inline />
+	</head>
+	<body>
+		<div class="flex min-h-dvh flex-col">
+			<Nav />
+			<main class="flex-1">
+				<slot />
+			</main>
+			<Footer />
+		</div>
+		<script>
+			import '../scripts/client.ts';
+		</script>
+	</body>
+</html>

@@ -1,0 +1,40 @@
+---
+import { Icon } from 'astro-icon/components';
+import { GITHUB_URL } from '$lib/config';
+import BeforeAfterNotes from '../product/BeforeAfterNotes.astro';
+import Button from '../ui/Button.astro';
+import Section from '../ui/Section.astro';
+---
+
+<Section class="pt-16 pb-12 text-center md:pt-24 md:pb-16">
+	<h1
+		class="mx-auto max-w-3xl font-display text-4xl leading-[1.08] font-semibold tracking-tight text-balance md:text-6xl"
+	>
+		Private meeting notes, done before your next call
+	</h1>
+	<p class="mx-auto mt-5 max-w-xl text-lg text-muted-foreground text-pretty">
+		muesly records, transcribes, and summarizes your meetings on your device. On-device by default,
+		no account required.
+	</p>
+
+	<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+		<Button href="/download" variant="accent" size="lg" data-os-cta>
+			<span data-os-cta-label>See all downloads</span>
+			<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+		</Button>
+		<Button
+			href={GITHUB_URL}
+			variant="outline"
+			size="lg"
+			target="_blank"
+			rel="noopener noreferrer"
+		>
+			View on GitHub
+			<Icon name="lucide:external-link" class="h-4 w-4" aria-hidden="true" />
+		</Button>
+	</div>
+
+	<div class="mx-auto mt-14 max-w-4xl text-left">
+		<BeforeAfterNotes />
+	</div>
+</Section>

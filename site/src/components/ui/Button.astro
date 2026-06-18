@@ -1,0 +1,26 @@
+---
+import { buttonVariants, type ButtonSize, type ButtonVariant } from '$lib/ui/button-variants';
+
+interface Props {
+	variant?: ButtonVariant;
+	size?: ButtonSize;
+	class?: string;
+	href?: string;
+	[key: string]: unknown;
+}
+
+const { variant = 'default', size = 'default', class: className, href, ...rest } = Astro.props;
+const cls = buttonVariants({ variant, size, class: className });
+---
+
+{
+	href ? (
+		<a href={href} class={cls} {...rest}>
+			<slot />
+		</a>
+	) : (
+		<button class={cls} {...rest}>
+			<slot />
+		</button>
+	)
+}
