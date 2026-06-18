@@ -1,0 +1,60 @@
+# muesly Privacy Policy
+
+*Last updated: 2026-06-18*
+
+## Our Privacy Commitment
+
+muesly is built on a simple principle: everything you say stays yours. It captures, transcribes, and summarizes your speech entirely on your own device. This policy explains exactly how your data is handled in this open-source app.
+
+## Local-First Processing
+
+- **Transcription**: runs entirely on your device using local Whisper or Parakeet models
+- **Recordings**: your audio is never transmitted to external servers
+- **Transcripts and notes**: stored locally in a SQLite database on your device
+- **Summaries**: generated locally by default, or through a cloud LLM provider you explicitly configure
+
+You own all of your recordings, transcripts, and summaries. You can view, export, or delete them at any time, and there is no vendor lock-in.
+
+## Usage Analytics
+
+Official builds include anonymized usage analytics (via PostHog) to help us find bugs and improve performance. You can disable analytics at any time in the app settings, and builds compiled without a PostHog key have analytics disabled entirely.
+
+**What we collect:**
+
+- Feature usage and session patterns
+- Performance metrics (transcription success rates, processing times, error frequencies)
+- Application version and platform information
+- Anonymized error logs and crash reports
+
+**What we never collect:**
+
+- Your recordings, audio, transcripts, or notes
+- Recording titles, file names, or participant information
+- Personal or identifiable data
+- LLM conversations or AI-generated content
+
+**Implementation:**
+
+- All data is linked to a randomly generated ID only, with no personal identification
+- Data is retained for a maximum of 12 months, then automatically deleted
+- Data is encrypted in transit
+- Access is limited to core maintainers
+- The full analytics implementation is open source and available for review
+
+## Cloud LLM Providers (Optional)
+
+Summaries are generated locally by default. If you configure a cloud provider (Anthropic Claude, OpenAI, Groq, xAI Grok, OpenRouter, or a custom OpenAI-compatible endpoint), the transcript being summarized is sent to that provider and is subject to its own privacy policy. The built-in local model and Ollama run on infrastructure you control (on your device, or a server you point Ollama at) and send nothing to muesly or its maintainers.
+
+## Data Security
+
+- Your data never leaves your device unless you configure a cloud LLM provider
+- Local data is protected by your operating system's file permissions and disk encryption (when enabled)
+- Full source code is available for security review, with no hidden data collection or tracking
+
+## Changes to This Policy
+
+Material changes are announced through updates to this document in the GitHub repository, release notes, and in-app notifications for significant privacy changes.
+
+## Contact
+
+For privacy-related questions or concerns, [create an issue](https://github.com/afonsojramos/muesly/issues).
