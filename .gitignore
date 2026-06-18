@@ -15,6 +15,7 @@ app/src-svelte/.svelte-kit/
 app/src-svelte/build/
 /dist
 *.tsbuildinfo
+vite.config.*.timestamp-*
 
 # Models & local databases
 **/models
@@ -38,11 +39,13 @@ logs/
 
 # OS files
 .DS_Store
+Thumbs.db
 
-# Editors
+# Editors & tooling
 .vscode/
 .idea/
 .cursor/
+.gstack/
 *.sw?
 
 # Scratch / experiments
