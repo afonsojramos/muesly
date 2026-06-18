@@ -1,0 +1,19 @@
+<script lang="ts">
+	import { cn } from '$lib/utils/cn';
+
+	let { class: className }: { class?: string } = $props();
+</script>
+
+<div
+	aria-hidden="true"
+	class={cn('pointer-events-none w-full overflow-hidden text-border', className)}
+>
+	<svg class="h-10 w-full" viewBox="0 0 1440 40" preserveAspectRatio="none" fill="none">
+		<path
+			d="M0 20 C 240 40, 480 0, 720 20 S 1200 40, 1440 20"
+			stroke="currentColor"
+			stroke-opacity="0.6"
+			stroke-width="1.5"
+		/>
+	</svg>
+</div>
