@@ -60,9 +60,10 @@ fn watch_loop<R: Runtime>(app: AppHandle<R>) {
 
     let mut last_bundle_id: Option<String> = None;
     while RUNNING.load(Ordering::SeqCst) {
-        // Read the frontmost app inside an autorelease pool so the temporary
-        // Objective-C objects are released each tick.
-        let frontmost = cidre::objc::ar_pool(frontmost_bundle_id);
+        // NSWorkspace is AppKit and must be touched on the main thread; reading
+        // it from this background thread trips macOS's main-thread checker and
+        // aborts the app. Marshal the read to the main thread and wait for it.
+        let frontmost = read_frontmost_on_main(&app);
         if let Some(bundle_id) = frontmost {
             let changed = last_bundle_id.as_deref() != Some(bundle_id.as_str());
             if changed {
@@ -80,6 +81,26 @@ fn watch_loop<R: Runtime>(app: AppHandle<R>) {
         }
         std::thread::sleep(std::time::Duration::from_millis(1000));
     }
+}
+
+/// Read the frontmost app's bundle id on the main thread. AppKit/NSWorkspace is
+/// not safe to access from a background thread, so the read is dispatched to the
+/// main thread and the result is marshaled back over a channel.
+#[cfg(target_os = "macos")]
+fn read_frontmost_on_main<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Option<String>>(1);
+    if app
+        .run_on_main_thread(move || {
+            // Autorelease pool so the temporary Objective-C objects are freed.
+            let _ = tx.send(cidre::objc::ar_pool(frontmost_bundle_id));
+        })
+        .is_err()
+    {
+        return None;
+    }
+    rx.recv_timeout(std::time::Duration::from_secs(2))
+        .ok()
+        .flatten()
 }
 
 /// Bundle identifier of the current frontmost application, if any.
