@@ -19,7 +19,7 @@ jobs:
       version: ${{ steps.get-version.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Fetch all tags
 
@@ -68,7 +68,7 @@ jobs:
 
       - name: Create Draft Release
         id: create-release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const { data } = await github.rest.repos.createRelease({
@@ -128,18 +128,18 @@ jobs:
       WHISPER_NO_AVX2: "ON"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
 
@@ -173,7 +173,7 @@ jobs:
           cp target/release/llama-helper app/src-tauri/binaries/llama-helper-x86_64-unknown-linux-gnu
 
       - name: Cache FFmpeg binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: app/src-tauri/binaries/ffmpeg-*
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('app/src-tauri/build.rs', 'app/src-tauri/build/ffmpeg.rs') }}
