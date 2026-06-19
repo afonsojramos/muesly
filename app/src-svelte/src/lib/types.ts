@@ -18,6 +18,8 @@ export interface Transcript {
   duration?: number;          // Segment duration in seconds (e.g., 3.3)
   /** Audio source: 'mic' (the user) or 'system' (other participants). */
   speaker?: string;
+  /** Diarized speaker cluster index (0-based) once speakers are identified. */
+  speaker_id?: number | null;
 }
 
 export interface TranscriptUpdate {
@@ -111,4 +113,6 @@ export interface TranscriptSegmentData {
   confidence?: number;
   /** Audio source: 'mic' (the user) or 'system' (other participants). */
   speaker?: string;
+  /** Diarized speaker cluster index (0-based) once speakers are identified. */
+  speaker_id?: number | null;
 }

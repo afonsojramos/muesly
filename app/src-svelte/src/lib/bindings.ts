@@ -679,6 +679,7 @@ export type MeetingTranscript_Deserialize = {
 	duration: number | null,
 	/**  Audio source: "mic" (the user) or "system" (other participants) */
 	speaker: string | null,
+	speaker_id: number | null,
 };
 
 export type MeetingTranscript_Serialize = {
@@ -690,6 +691,7 @@ export type MeetingTranscript_Serialize = {
 	duration?: number | null,
 	/**  Audio source: "mic" (the user) or "system" (other participants) */
 	speaker?: string | null,
+	speaker_id?: number | null,
 };
 
 export type Meeting_Deserialize = {

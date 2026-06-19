@@ -84,7 +84,8 @@
 			endTime: t.audio_end_time,
 			text: t.text,
 			confidence: t.confidence,
-			speaker: t.speaker
+			speaker: t.speaker,
+			speaker_id: t.speaker_id
 		}));
 	});
 

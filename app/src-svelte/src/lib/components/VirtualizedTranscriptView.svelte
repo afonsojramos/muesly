@@ -182,6 +182,9 @@
 								{/snippet}
 							</Tooltip>
 								<div class={`min-w-0 flex-1 ${isMe ? 'text-right' : ''}`}>
+								{#if isMe && segment.speaker_id != null}
+									<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground">Speaker {segment.speaker_id + 1}</span>
+								{/if}
 								<!-- Granola-style attribution: your mic on the right (accent
 								     tint), other participants on the left (gray). -->
 								<div

@@ -3,6 +3,7 @@
 
 	import { Analytics } from '$lib/analytics';
 	import Button from '$lib/ui/button.svelte';
+	import DiarizationControl from './DiarizationControl.svelte';
 	import RetranscribeDialog from './RetranscribeDialog.svelte';
 
 	interface Props {
@@ -80,6 +81,10 @@
 				<RefreshCw class="@[28rem]:mr-2" />
 				<span class="hidden @[22rem]:inline">Enhance</span>
 			</Button>
+		{/if}
+
+		{#if meetingId && meetingFolderPath}
+			<DiarizationControl {meetingId} {meetingFolderPath} onComplete={handleRetranscribeComplete} />
 		{/if}
 	</div>
 

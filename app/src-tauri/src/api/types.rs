@@ -112,6 +112,8 @@ pub struct MeetingTranscript {
     /// Audio source: "mic" (the user) or "system" (other participants)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker_id: Option<i64>,
 }
 
 /// Meeting metadata without transcripts (for pagination)

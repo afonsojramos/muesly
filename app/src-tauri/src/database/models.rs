@@ -47,6 +47,8 @@ pub struct Transcript {
     pub duration: Option<f64>,
     /// Audio source: "mic" (the user) or "system" (other participants)
     pub speaker: Option<String>,
+    /// Diarized speaker cluster index (set after diarization), else None.
+    pub speaker_id: Option<i64>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
