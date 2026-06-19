@@ -8,6 +8,13 @@ export const commands = {
 	stopRecording: (args: RecordingArgs) => typedError<null, string>(__TAURI_INVOKE("stop_recording", { args })),
 	isRecording: () => __TAURI_INVOKE<boolean>("is_recording"),
 	getTranscriptionStatus: () => __TAURI_INVOKE<TranscriptionStatus>("get_transcription_status"),
+	/**  Whether auto-detection of meeting apps is enabled. */
+	getAutoDetectMeetings: () => typedError<boolean, string>(__TAURI_INVOKE("get_auto_detect_meetings")),
+	/**
+	 *  Enable or disable meeting auto-detection, starting or stopping the foreground
+	 *  watcher accordingly.
+	 */
+	setAutoDetectMeetings: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_auto_detect_meetings", { enabled })),
 	/**  Whether both diarization models are present on disk. */
 	diarizationModelsReady: () => typedError<boolean, string>(__TAURI_INVOKE("diarization_models_ready")),
 	/**

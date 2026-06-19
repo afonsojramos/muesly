@@ -30,6 +30,7 @@ pub mod console_utils;
 pub mod database;
 pub mod diarization;
 pub mod json;
+pub mod meeting_detect;
 pub mod notifications;
 pub mod onboarding;
 pub mod parakeet_engine;
@@ -742,6 +743,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         stop_recording::<tauri::Wry>,
         is_recording,
         get_transcription_status,
+        meeting_detect::commands::get_auto_detect_meetings,
+        meeting_detect::commands::set_auto_detect_meetings::<tauri::Wry>,
         diarization::commands::diarization_models_ready::<tauri::Wry>,
         diarization::commands::diarize_meeting::<tauri::Wry>,
         diarization::commands::download_diarization_models::<tauri::Wry>,
@@ -1031,6 +1034,22 @@ pub fn run() {
             tauri::async_runtime::spawn(async {
                 if let Err(e) = parakeet_engine::commands::parakeet_init().await {
                     log::error!("Failed to initialize Parakeet engine on startup: {}", e);
+                }
+            });
+
+            // Start the meeting-app auto-detection watcher if the user enabled it.
+            let app_for_detect = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(state) = app_for_detect.try_state::<state::AppState>() {
+                    match database::repositories::setting::SettingsRepository::get_auto_detect_meetings(
+                        state.db_manager.pool(),
+                    )
+                    .await
+                    {
+                        Ok(true) => meeting_detect::watcher::start(app_for_detect.clone()),
+                        Ok(false) => {}
+                        Err(e) => log::error!("Failed to read auto-detect setting: {}", e),
+                    }
                 }
             });
 

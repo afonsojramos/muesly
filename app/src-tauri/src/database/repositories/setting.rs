@@ -38,6 +38,29 @@ pub enum MigrationOutcome {
 // NOTE: Handle data exclusion in the higher layer as this is database abstraction layer(using SELECT *)
 
 impl SettingsRepository {
+    /// Whether meeting auto-detection is enabled (single-row settings, id='1').
+    pub async fn get_auto_detect_meetings(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> =
+            sqlx::query_scalar("SELECT auto_detect_meetings FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    /// Enable or disable meeting auto-detection (single-row settings, id='1').
+    pub async fn set_auto_detect_meetings(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET auto_detect_meetings = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_model_config(
         pool: &SqlitePool,
     ) -> std::result::Result<Option<Setting>, sqlx::Error> {
