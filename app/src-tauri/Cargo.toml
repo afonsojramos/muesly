@@ -142,6 +142,9 @@ rubato = "0.15.0"
 ringbuf = "0.4.8"
 # Acoustic echo cancellation (pure-Rust WebRTC AEC3 port) for the transcription path.
 aec3 = "0.3.0"
+# Dictation text injection: clipboard write (arboard) + synthesized paste (enigo).
+arboard = "3"
+enigo = "0.6"
 # Type-safe Tauri command bindings. Pin all three with `=` (RC line).
 specta = { version = "=2.0.0-rc.25", features = ["derive", "chrono", "serde_json"] }
 specta-typescript = "0.0.12"

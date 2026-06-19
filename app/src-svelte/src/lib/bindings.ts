@@ -144,6 +144,11 @@ export const commands = {
 	/**  Stop the dictation burst, transcribe it, and return (and emit) the text. */
 	stopDictation: () => typedError<string, string>(__TAURI_INVOKE("stop_dictation")),
 	/**
+	 *  Whether the OS will accept synthesized text injection (Accessibility on macOS).
+	 *  The frontend uses this to prompt the user to grant permission.
+	 */
+	dictationAccessibilityTrusted: () => typedError<boolean, string>(__TAURI_INVOKE("dictation_accessibility_trusted")),
+	/**
 	 *  Recover audio from checkpoint files
 	 *  This is called by the transcript recovery system to merge audio chunks after a crash
 	 */

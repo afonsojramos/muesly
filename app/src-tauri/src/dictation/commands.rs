@@ -63,8 +63,34 @@ pub async fn stop_dictation<R: Runtime>(app: AppHandle<R>) -> Result<String, Str
     };
 
     let text = transcribe_burst(samples_16k).await?;
+
+    // Best-effort insertion into the focused app (clipboard + synthesized paste,
+    // on a blocking thread). The text is also emitted so the UI can surface it or
+    // a permission prompt when injection isn't possible.
+    if !text.is_empty() {
+        let app_for_inject = app.clone();
+        let text_for_inject = text.clone();
+        match tokio::task::spawn_blocking(move || {
+            crate::dictation::inject::inject_text(&app_for_inject, &text_for_inject)
+        })
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => log::warn!("Dictation injection failed: {e}"),
+            Err(e) => log::warn!("Dictation injection task error: {e}"),
+        }
+    }
+
     let _ = app.emit("dictation-text", serde_json::json!({ "text": text }));
     Ok(text)
+}
+
+/// Whether the OS will accept synthesized text injection (Accessibility on macOS).
+/// The frontend uses this to prompt the user to grant permission.
+#[tauri::command]
+#[specta::specta]
+pub async fn dictation_accessibility_trusted() -> Result<bool, String> {
+    Ok(crate::dictation::inject::accessibility_trusted())
 }
 
 /// Transcribe a 16 kHz mono burst with whichever engine is loaded. Dictation

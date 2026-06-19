@@ -843,6 +843,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         audio::recording_commands::get_dictation_enabled,
         dictation::commands::start_dictation,
         dictation::commands::stop_dictation::<tauri::Wry>,
+        dictation::commands::dictation_accessibility_trusted,
         audio::incremental_saver::recover_audio_from_checkpoints,
         audio::incremental_saver::cleanup_checkpoints,
         audio::incremental_saver::has_audio_checkpoints,
