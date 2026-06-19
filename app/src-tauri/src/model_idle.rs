@@ -24,6 +24,11 @@ pub fn spawn_idle_unload_watcher() {
             if crate::audio::recording_commands::is_recording().await {
                 continue;
             }
+            // Keep the model warm while dictation is enabled, so a push-to-talk
+            // burst starts without a multi-second cold reload.
+            if crate::audio::recording_commands::dictation_enabled() {
+                continue;
+            }
 
             // Whisper.
             let whisper = {

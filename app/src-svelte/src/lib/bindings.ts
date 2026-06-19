@@ -130,6 +130,13 @@ export const commands = {
 	 */
 	getActiveAudioOutput: () => typedError<AudioOutputInfo, string>(__TAURI_INVOKE("get_active_audio_output")),
 	/**
+	 *  Enable or disable the dictation feature. While enabled the transcription
+	 *  model is kept warm so a push-to-talk burst doesn't pay a cold reload.
+	 */
+	setDictationEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_enabled", { enabled })),
+	/**  Whether the dictation feature is currently enabled. */
+	getDictationEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_dictation_enabled")),
+	/**
 	 *  Recover audio from checkpoint files
 	 *  This is called by the transcript recovery system to merge audio chunks after a crash
 	 */

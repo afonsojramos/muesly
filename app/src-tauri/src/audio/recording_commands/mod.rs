@@ -13,19 +13,16 @@ use std::sync::{
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::task::JoinHandle;
 
+use super::recording_state::RecordingState;
 use super::{
+    default_input_device,  // Get default microphone
+    default_output_device, // Get default system audio
     parse_audio_device,
-    default_input_device,   // Get default microphone
-    default_output_device,  // Get default system audio
     RecordingManager,
 };
-use super::recording_state::RecordingState;
 
 // Import transcription modules
-use super::transcription::{
-    self,
-    reset_speech_detected_flag,
-};
+use super::transcription::{self, reset_speech_detected_flag};
 
 // Re-export TranscriptUpdate for backward compatibility
 pub use super::transcription::TranscriptUpdate;
@@ -33,10 +30,10 @@ pub use super::transcription::TranscriptUpdate;
 // Read-only status queries and device-monitoring commands live in submodules;
 // they access the shared state below via `super::`. Re-exported so the command
 // surface stays at `recording_commands::*`.
-mod query;
 mod devices;
-pub use query::*;
+mod query;
 pub use devices::*;
+pub use query::*;
 
 // ============================================================================
 // GLOBAL STATE
@@ -69,6 +66,32 @@ pub(crate) fn set_dictation_active(active: bool) {
 /// is active. Pure mutual-exclusion gate, separated out for testing.
 pub(crate) fn can_start(this_active: bool, other_active: bool) -> bool {
     !this_active && !other_active
+}
+
+/// Whether the dictation feature is enabled. While enabled, the transcription
+/// model is kept warm (meeting `stop_recording` skips the unload and the idle
+/// watcher leaves it loaded) so a dictation burst starts without a cold reload.
+static DICTATION_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the dictation feature is enabled (keep the model warm).
+pub(crate) fn dictation_enabled() -> bool {
+    DICTATION_ENABLED.load(Ordering::SeqCst)
+}
+
+/// Enable or disable the dictation feature. While enabled the transcription
+/// model is kept warm so a push-to-talk burst doesn't pay a cold reload.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_dictation_enabled(enabled: bool) -> Result<(), String> {
+    DICTATION_ENABLED.store(enabled, Ordering::SeqCst);
+    Ok(())
+}
+
+/// Whether the dictation feature is currently enabled.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_dictation_enabled() -> Result<bool, String> {
+    Ok(DICTATION_ENABLED.load(Ordering::SeqCst))
 }
 
 // Global recording manager and transcription task to keep them alive during recording.
@@ -157,7 +180,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         return Err("Recording already in progress".to_string());
     }
     // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
-    if !can_start(current_recording_state, DICTATION_ACTIVE.load(Ordering::SeqCst)) {
+    if !can_start(
+        current_recording_state,
+        DICTATION_ACTIVE.load(Ordering::SeqCst),
+    ) {
         return Err("Cannot start recording while dictation is active".to_string());
     }
 
@@ -190,10 +216,17 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
             Ok(prefs) => {
                 info!("📋 Loaded recording preferences: auto_save={}, preferred_mic={:?}, preferred_system={:?}",
                       prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device);
-                (prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device)
+                (
+                    prefs.auto_save,
+                    prefs.preferred_mic_device,
+                    prefs.preferred_system_device,
+                )
             }
             Err(e) => {
-                warn!("Failed to load recording preferences, using defaults: {}", e);
+                warn!(
+                    "Failed to load recording preferences, using defaults: {}",
+                    e
+                );
                 (true, None, None)
             }
         };
@@ -210,7 +243,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     Some(Arc::new(device))
                 }
                 Err(e) => {
-                    warn!("⚠️ Preferred microphone '{}' not available: {}", pref_name, e);
+                    warn!(
+                        "⚠️ Preferred microphone '{}' not available: {}",
+                        pref_name, e
+                    );
                     warn!("   Falling back to system default microphone...");
                     match default_input_device() {
                         Ok(device) => {
@@ -218,7 +254,9 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                             Some(Arc::new(device))
                         }
                         Err(default_err) => {
-                            error!("❌ No microphone available (preferred and default both failed)");
+                            error!(
+                                "❌ No microphone available (preferred and default both failed)"
+                            );
                             return Err(format!(
                                 "No microphone device available. Preferred device '{}' not found, and default microphone unavailable: {}",
                                 pref_name, default_err
@@ -248,14 +286,20 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // ============================================================================
     let system_device = match preferred_system_name {
         Some(pref_name) => {
-            info!("🔊 Attempting to use preferred system audio: '{}'", pref_name);
+            info!(
+                "🔊 Attempting to use preferred system audio: '{}'",
+                pref_name
+            );
             match parse_audio_device(&pref_name) {
                 Ok(device) => {
                     info!("✅ Using preferred system audio: '{}'", device.name);
                     Some(Arc::new(device))
                 }
                 Err(e) => {
-                    warn!("⚠️ Preferred system audio '{}' not available: {}", pref_name, e);
+                    warn!(
+                        "⚠️ Preferred system audio '{}' not available: {}",
+                        pref_name, e
+                    );
                     warn!("   Falling back to system default...");
                     match default_output_device() {
                         Ok(device) => {
@@ -291,10 +335,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let effective_meeting_name = meeting_name.clone().unwrap_or_else(|| {
         // Example: Meeting 2025-10-03_08-25-23
         let now = chrono::Local::now();
-        format!(
-            "Meeting {}",
-            now.format("%Y-%m-%d_%H-%M-%S")
-        )
+        format!("Meeting {}", now.format("%Y-%m-%d_%H-%M-%S"))
     });
     manager.set_meeting_name(Some(effective_meeting_name));
 
@@ -374,11 +415,15 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     }
 
     // Emit success event
-    app.emit("recording-started", serde_json::json!({
-        "message": "Recording started successfully with parallel processing",
-        "devices": ["Default Microphone", "Default System Audio"],
-        "workers": 3
-    })).map_err(|e| e.to_string())?;
+    app.emit(
+        "recording-started",
+        serde_json::json!({
+            "message": "Recording started successfully with parallel processing",
+            "devices": ["Default Microphone", "Default System Audio"],
+            "workers": 3
+        }),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Update tray menu to reflect recording state
     crate::tray::update_tray_menu(&app);
@@ -416,7 +461,10 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         return Err("Recording already in progress".to_string());
     }
     // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
-    if !can_start(current_recording_state, DICTATION_ACTIVE.load(Ordering::SeqCst)) {
+    if !can_start(
+        current_recording_state,
+        DICTATION_ACTIVE.load(Ordering::SeqCst),
+    ) {
         return Err("Cannot start recording while dictation is active".to_string());
     }
 
@@ -463,11 +511,17 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Load recording preferences to check auto_save setting
     let auto_save = match super::recording_preferences::load_recording_preferences(&app).await {
         Ok(prefs) => {
-            info!("📋 Loaded recording preferences: auto_save={}", prefs.auto_save);
+            info!(
+                "📋 Loaded recording preferences: auto_save={}",
+                prefs.auto_save
+            );
             prefs.auto_save
         }
         Err(e) => {
-            warn!("Failed to load recording preferences, defaulting to auto_save=true: {}", e);
+            warn!(
+                "Failed to load recording preferences, defaulting to auto_save=true: {}",
+                e
+            );
             true // Default to saving if preferences can't be loaded
         }
     };
@@ -475,10 +529,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Always ensure a meeting name is set so incremental saver initializes
     let effective_meeting_name = meeting_name.clone().unwrap_or_else(|| {
         let now = chrono::Local::now();
-        format!(
-            "Meeting {}",
-            now.format("%Y-%m-%d_%H-%M-%S")
-        )
+        format!("Meeting {}", now.format("%Y-%m-%d_%H-%M-%S"))
     });
     manager.set_meeting_name(Some(effective_meeting_name));
 
@@ -557,14 +608,18 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     }
 
     // Emit success event
-    app.emit("recording-started", serde_json::json!({
-        "message": "Recording started with custom devices and parallel processing",
-        "devices": [
-            mic_device_name.unwrap_or_else(|| "Default Microphone".to_string()),
-            system_device_name.unwrap_or_else(|| "Default System Audio".to_string())
-        ],
-        "workers": 3
-    })).map_err(|e| e.to_string())?;
+    app.emit(
+        "recording-started",
+        serde_json::json!({
+            "message": "Recording started with custom devices and parallel processing",
+            "devices": [
+                mic_device_name.unwrap_or_else(|| "Default Microphone".to_string()),
+                system_device_name.unwrap_or_else(|| "Default System Audio".to_string())
+            ],
+            "workers": 3
+        }),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Update tray menu to reflect recording state
     crate::tray::update_tray_menu(&app);
@@ -684,8 +739,10 @@ pub async fn stop_recording<R: Runtime>(
         // Wait up to 10 minutes for transcription completion to prevent indefinite hangs
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(600), // 10 minutes max
-            task_handle
-        ).await {
+            task_handle,
+        )
+        .await
+        {
             Ok(Ok(())) => {
                 info!("✅ ALL transcription chunks processed successfully - no data lost");
             }
@@ -720,11 +777,7 @@ pub async fn stop_recording<R: Runtime>(
     // Determine which provider was used and unload the appropriate model (with timeout)
     let config = match tokio::time::timeout(
         tokio::time::Duration::from_secs(30), // 30 seconds max for DB operation
-        crate::api::api_get_transcript_config(
-            app.clone(),
-            app.clone().state(),
-            None,
-        )
+        crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None),
     )
     .await
     {
@@ -740,56 +793,63 @@ pub async fn stop_recording<R: Runtime>(
         }
     };
 
-    match config.as_deref() {
-        Some("parakeet") => {
-            info!("🦜 Unloading Parakeet model...");
-            let engine_clone = {
-                let engine_guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
-                    .lock()
-                    .unwrap();
-                engine_guard.as_ref().cloned()
-            };
+    if dictation_enabled() {
+        info!("🔥 Dictation enabled: keeping the transcription model warm (skipping unload)");
+    } else {
+        match config.as_deref() {
+            Some("parakeet") => {
+                info!("🦜 Unloading Parakeet model...");
+                let engine_clone = {
+                    let engine_guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
+                        .lock()
+                        .unwrap();
+                    engine_guard.as_ref().cloned()
+                };
 
-            if let Some(engine) = engine_clone {
-                let current_model = engine
-                    .get_current_model()
-                    .await
-                    .unwrap_or_else(|| "unknown".to_string());
-                info!("Current Parakeet model before unload: '{}'", current_model);
+                if let Some(engine) = engine_clone {
+                    let current_model = engine
+                        .get_current_model()
+                        .await
+                        .unwrap_or_else(|| "unknown".to_string());
+                    info!("Current Parakeet model before unload: '{}'", current_model);
 
-                if engine.unload_model().await {
-                    info!("✅ Parakeet model '{}' unloaded successfully", current_model);
+                    if engine.unload_model().await {
+                        info!(
+                            "✅ Parakeet model '{}' unloaded successfully",
+                            current_model
+                        );
+                    } else {
+                        warn!("⚠️ Failed to unload Parakeet model '{}'", current_model);
+                    }
                 } else {
-                    warn!("⚠️ Failed to unload Parakeet model '{}'", current_model);
+                    warn!("⚠️ No Parakeet engine found to unload model");
                 }
-            } else {
-                warn!("⚠️ No Parakeet engine found to unload model");
             }
-        }
-        _ => {
-            // Default to Whisper
-            info!("🎤 Unloading Whisper model...");
-            let engine_clone = {
-                let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
-                    .lock()
-                    .unwrap();
-                engine_guard.as_ref().cloned()
-            };
+            _ => {
+                // Default to Whisper
+                info!("🎤 Unloading Whisper model...");
+                let engine_clone = {
+                    let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
+                        .lock()
+                        .unwrap();
+                    engine_guard.as_ref().cloned()
+                };
 
-            if let Some(engine) = engine_clone {
-                let current_model = engine
-                    .get_current_model()
-                    .await
-                    .unwrap_or_else(|| "unknown".to_string());
-                info!("Current Whisper model before unload: '{}'", current_model);
+                if let Some(engine) = engine_clone {
+                    let current_model = engine
+                        .get_current_model()
+                        .await
+                        .unwrap_or_else(|| "unknown".to_string());
+                    info!("Current Whisper model before unload: '{}'", current_model);
 
-                if engine.unload_model().await {
-                    info!("✅ Whisper model '{}' unloaded successfully", current_model);
+                    if engine.unload_model().await {
+                        info!("✅ Whisper model '{}' unloaded successfully", current_model);
+                    } else {
+                        warn!("⚠️ Failed to unload Whisper model '{}'", current_model);
+                    }
                 } else {
-                    warn!("⚠️ Failed to unload Whisper model '{}'", current_model);
+                    warn!("⚠️ No Whisper engine found to unload model");
                 }
-            } else {
-                warn!("⚠️ No Whisper engine found to unload model");
             }
         }
     }
@@ -815,39 +875,40 @@ pub async fn stop_recording<R: Runtime>(
     };
 
     // Now perform async analytics tracking without holding manager reference
-    if let Some((total_duration, active_duration, pause_duration, transcript_segments_count, had_fatal_error, mic_device_name, sys_device_name, chunks_processed)) = analytics_data {
+    if let Some((
+        total_duration,
+        active_duration,
+        pause_duration,
+        transcript_segments_count,
+        had_fatal_error,
+        mic_device_name,
+        sys_device_name,
+        chunks_processed,
+    )) = analytics_data
+    {
         info!("📊 Collecting analytics for meeting end");
 
-
         // Get transcription model info (already loaded above for model unload)
-        let transcription_config = match crate::api::api_get_transcript_config(
-            app.clone(),
-            app.clone().state(),
-            None,
-        )
-        .await
-        {
-            Ok(Some(config)) => Some((config.provider, config.model)),
-            _ => None,
-        };
+        let transcription_config =
+            match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
+                .await
+            {
+                Ok(Some(config)) => Some((config.provider, config.model)),
+                _ => None,
+            };
 
-        let (transcription_provider, transcription_model) = transcription_config
-            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+        let (transcription_provider, transcription_model) =
+            transcription_config.unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
 
         // Get summary model info from API
-        let summary_config = match crate::api::api_get_model_config(
-            app.clone(),
-            app.clone().state(),
-            None,
-        )
-        .await
-        {
-            Ok(Some(config)) => Some((config.provider, config.model)),
-            _ => None,
-        };
+        let summary_config =
+            match crate::api::api_get_model_config(app.clone(), app.clone().state(), None).await {
+                Ok(Some(config)) => Some((config.provider, config.model)),
+                _ => None,
+            };
 
-        let (summary_provider, summary_model) = summary_config
-            .unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
+        let (summary_provider, summary_model) =
+            summary_config.unwrap_or_else(|| ("unknown".to_string(), "unknown".to_string()));
 
         // Classify device types (privacy-safe)
         let microphone_device_type = mic_device_name
@@ -904,8 +965,10 @@ pub async fn stop_recording<R: Runtime>(
 
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(300), // 5 minutes max for file I/O
-            manager.save_recording_only(&app)
-        ).await {
+            manager.save_recording_only(&app),
+        )
+        .await
+        {
             Ok(Ok(_)) => {
                 info!("✅ Recording data saved successfully during cleanup");
             }
@@ -936,10 +999,7 @@ pub async fn stop_recording<R: Runtime>(
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.
     // This ensures the user sees all transcripts streaming in before the database save happens.
     let (folder_path_str, meeting_name_str) = match (&meeting_folder, &meeting_name) {
-        (Some(path), Some(name)) => (
-            Some(path.to_string_lossy().to_string()),
-            Some(name.clone()),
-        ),
+        (Some(path), Some(name)) => (Some(path.to_string_lossy().to_string()), Some(name.clone())),
         _ => (None, None),
     };
 
@@ -1074,7 +1134,10 @@ mod tests {
         assert_eq!(classify_device_type("AirPods Pro"), "Bluetooth");
         assert_eq!(classify_device_type("Beats Studio"), "Bluetooth");
         assert_eq!(classify_device_type("BT speaker"), "Bluetooth");
-        assert_eq!(classify_device_type("Sony WH-1000XM5 Wireless"), "Bluetooth");
+        assert_eq!(
+            classify_device_type("Sony WH-1000XM5 Wireless"),
+            "Bluetooth"
+        );
     }
 
     #[test]

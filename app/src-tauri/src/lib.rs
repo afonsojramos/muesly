@@ -815,6 +815,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         audio::recording_commands::get_reconnection_status,
         audio::recording_commands::attempt_device_reconnect,
         audio::recording_commands::get_active_audio_output,
+        audio::recording_commands::set_dictation_enabled,
+        audio::recording_commands::get_dictation_enabled,
         audio::incremental_saver::recover_audio_from_checkpoints,
         audio::incremental_saver::cleanup_checkpoints,
         audio::incremental_saver::has_audio_checkpoints,
