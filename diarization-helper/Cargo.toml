@@ -1,0 +1,15 @@
+[package]
+name = "diarization-helper"
+version = "0.1.0"
+edition = "2021"
+
+# Speaker diarization sidecar. Runs in its own process because `sherpa-onnx`
+# statically links its own ONNX Runtime, which would collide with the main app's
+# `ort` link (Parakeet). Communicates with the app over stdin/stdout JSON, the
+# same isolation the `llama-helper` sidecar uses.
+
+[dependencies]
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sherpa-onnx = "1.13.3"
