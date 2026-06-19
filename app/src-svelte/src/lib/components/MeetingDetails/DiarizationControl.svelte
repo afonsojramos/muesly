@@ -9,12 +9,11 @@
 
 	interface Props {
 		meetingId: string;
-		meetingFolderPath: string;
 		/** Called after speakers are identified, so the transcript can reload. */
 		onComplete?: () => void | Promise<void>;
 	}
 
-	let { meetingId, meetingFolderPath, onComplete }: Props = $props();
+	let { meetingId, onComplete }: Props = $props();
 
 	// null while we haven't checked yet, then whether both models are on disk.
 	let ready = $state<boolean | null>(null);
@@ -61,7 +60,7 @@
 		if (diarizing) return;
 		diarizing = true;
 		try {
-			const res = await commands.diarizeMeeting(meetingId, meetingFolderPath);
+			const res = await commands.diarizeMeeting(meetingId);
 			if (res.status === 'error') throw new Error(res.error);
 			toast.info(`Identified speakers on ${res.data} segment${res.data === 1 ? '' : 's'}`, {
 				duration: 3000

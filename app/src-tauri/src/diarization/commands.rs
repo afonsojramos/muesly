@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::audio::audio_processing::{audio_to_mono, resample};
 use crate::audio::decoder::decode_audio_file;
+use crate::database::repositories::meeting::MeetingsRepository;
 use crate::database::repositories::transcript::TranscriptsRepository;
 use crate::diarization::{client, model, reconcile};
 use crate::state::AppState;
@@ -78,7 +79,6 @@ pub async fn diarize_meeting<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
-    meeting_folder_path: String,
 ) -> Result<u32, String> {
     let app_data_dir = app
         .path()
@@ -90,7 +90,18 @@ pub async fn diarize_meeting<R: Runtime>(
     let segmentation_model = model::segmentation_model_path(&app_data_dir);
     let embedding_model = model::embedding_model_path(&app_data_dir);
 
-    let audio_path = find_audio_file(&PathBuf::from(&meeting_folder_path))?;
+    // Resolve the recording folder from the database by meeting_id; never trust a
+    // renderer-supplied path, so this command cannot be pointed at arbitrary files.
+    let pool = state.db_manager.pool();
+    let meeting = MeetingsRepository::get_meeting_metadata(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("load meeting: {e}"))?
+        .ok_or_else(|| format!("meeting {meeting_id} not found"))?;
+    let folder_path = meeting
+        .folder_path
+        .ok_or_else(|| "meeting has no recording folder".to_string())?;
+
+    let audio_path = find_audio_file(&PathBuf::from(&folder_path))?;
     let decoded = decode_audio_file(&audio_path).map_err(|e| format!("decode audio: {e}"))?;
     let mono = audio_to_mono(&decoded.samples, decoded.channels);
     let samples_16k = if decoded.sample_rate == DIARIZATION_SAMPLE_RATE {
@@ -109,7 +120,6 @@ pub async fn diarize_meeting<R: Runtime>(
     .map_err(|e| format!("diarization task join error: {e}"))?
     .map_err(|e| format!("diarization failed: {e}"))?;
 
-    let pool = state.db_manager.pool();
     let segments = TranscriptsRepository::segments_for_diarization(pool, &meeting_id)
         .await
         .map_err(|e| format!("load transcript segments: {e}"))?;

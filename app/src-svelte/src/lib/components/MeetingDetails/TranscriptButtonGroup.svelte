@@ -84,7 +84,7 @@
 		{/if}
 
 		{#if meetingId && meetingFolderPath}
-			<DiarizationControl {meetingId} {meetingFolderPath} onComplete={handleRetranscribeComplete} />
+			<DiarizationControl {meetingId} onComplete={handleRetranscribeComplete} />
 		{/if}
 	</div>
 

@@ -5,10 +5,10 @@
 //!   - a pyannote segmentation model (`sherpa-onnx-pyannote-segmentation-3`, ~7MB)
 //!   - a speaker-embedding model (`wespeaker_en_voxceleb_CAM++`, ~28MB)
 //!
-//! Both are published by the sherpa-onnx project. Their pinned SHA-256 hashes
-//! must be filled from the actual release artifacts before shipping the
-//! downloader (see [`verify_sha256`]); until a hash is pinned, verification of
-//! that file is skipped.
+//! Both are published by the sherpa-onnx project and verified against their
+//! pinned SHA-256 hashes on download (the segmentation archive is verified
+//! before it is extracted). An unpinned hash fails closed (see
+//! [`verify_sha256`]).
 
 use std::path::{Path, PathBuf};
 
@@ -19,14 +19,13 @@ pub const SEGMENTATION_MODEL_FILE: &str = "sherpa-onnx-pyannote-segmentation-3.o
 /// WeSpeaker CAM++ (English/VoxCeleb) speaker-embedding model file name on disk.
 pub const EMBEDDING_MODEL_FILE: &str = "wespeaker_en_voxceleb_CAM++.onnx";
 
-// TODO: pin SHA-256 from the release artifacts. The download verifies each file
-// against these; an empty hash skips verification (see `verify_sha256`). Do not
-// invent values — compute them from the real downloaded artifacts.
-/// Pinned SHA-256 of the segmentation model. Empty until verified against the
-/// real release artifact (see module docs).
-pub const SEGMENTATION_MODEL_SHA256: &str = "";
-/// Pinned SHA-256 of the embedding model. Empty until verified.
-pub const EMBEDDING_MODEL_SHA256: &str = "";
+/// Pinned SHA-256 of the embedding model `.onnx` release artifact.
+pub const EMBEDDING_MODEL_SHA256: &str =
+    "c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef";
+/// Pinned SHA-256 of the segmentation model `.tar.bz2` release artifact,
+/// verified before the archive is extracted.
+pub const SEGMENTATION_ARCHIVE_SHA256: &str =
+    "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488";
 
 /// Direct download URL for the embedding model (`.onnx`).
 const EMBEDDING_MODEL_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM++.onnx";
@@ -63,13 +62,10 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Verify `bytes` match `expected_hex` (case-insensitive lowercase-hex SHA-256).
-/// An empty `expected_hex` means the hash is not yet pinned, so verification is
-/// skipped (returns `true`); a non-empty hash is strictly checked.
+/// An empty `expected_hex` fails closed: a model is never accepted without a
+/// pinned hash.
 pub fn verify_sha256(bytes: &[u8], expected_hex: &str) -> bool {
-    if expected_hex.is_empty() {
-        return true;
-    }
-    sha256_hex(bytes).eq_ignore_ascii_case(expected_hex)
+    !expected_hex.is_empty() && sha256_hex(bytes).eq_ignore_ascii_case(expected_hex)
 }
 
 /// Stream-download `url` to `dest`, invoking `on_progress(downloaded, total)` as
@@ -156,19 +152,19 @@ pub async fn download_models(
         return Err(anyhow!("embedding model failed SHA-256 verification"));
     }
 
-    // Segmentation model: download the tar.bz2 and extract its inner model.onnx.
+    // Segmentation model: download the tar.bz2, verify the archive BEFORE
+    // extracting it (never extract unverified data), then pull out model.onnx.
     let archive = tempfile::NamedTempFile::new().context("create archive temp file")?;
     download_file(SEGMENTATION_ARCHIVE_URL, archive.path(), |d, t| {
         on_progress("segmentation", d, t)
     })
     .await?;
+    let archive_bytes = std::fs::read(archive.path()).context("read segmentation archive")?;
+    if !verify_sha256(&archive_bytes, SEGMENTATION_ARCHIVE_SHA256) {
+        return Err(anyhow!("segmentation archive failed SHA-256 verification"));
+    }
     let segmentation = segmentation_model_path(app_data_dir);
     extract_segmentation_model(archive.path(), &segmentation)?;
-    let segmentation_bytes = std::fs::read(&segmentation).context("read segmentation model")?;
-    if !verify_sha256(&segmentation_bytes, SEGMENTATION_MODEL_SHA256) {
-        std::fs::remove_file(&segmentation).ok();
-        return Err(anyhow!("segmentation model failed SHA-256 verification"));
-    }
 
     Ok(())
 }
@@ -200,8 +196,8 @@ mod tests {
     }
 
     #[test]
-    fn verify_skips_when_hash_unpinned() {
-        // Empty expected hash means "not yet pinned" -> skip (true).
-        assert!(verify_sha256(b"anything", ""));
+    fn verify_rejects_unpinned_hash() {
+        // An empty expected hash must fail closed, never accept unverified bytes.
+        assert!(!verify_sha256(b"anything", ""));
     }
 }

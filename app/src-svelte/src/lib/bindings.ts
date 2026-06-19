@@ -15,7 +15,7 @@ export const commands = {
 	 *  turns onto the transcript segments, and persist `speaker_id`. Returns the
 	 *  number of segments that received a speaker label.
 	 */
-	diarizeMeeting: (meetingId: string, meetingFolderPath: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId, meetingFolderPath })),
+	diarizeMeeting: (meetingId: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId })),
 	/**
 	 *  Download the diarization models on demand, emitting
 	 *  `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
