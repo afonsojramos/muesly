@@ -1,4 +1,4 @@
-use crate::parakeet_engine::{ModelInfo, ModelStatus, ParakeetEngine, DownloadProgress};
+use crate::parakeet_engine::{ParakeetModelInfo, ModelStatus, ParakeetEngine, DownloadProgress};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::Arc;
@@ -38,6 +38,7 @@ fn get_models_directory() -> Option<PathBuf> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_init() -> Result<(), String> {
     let mut guard = PARAKEET_ENGINE.lock().unwrap();
     if guard.is_some() {
@@ -52,7 +53,8 @@ pub async fn parakeet_init() -> Result<(), String> {
 }
 
 #[command]
-pub async fn parakeet_get_available_models() -> Result<Vec<ModelInfo>, String> {
+#[specta::specta]
+pub async fn parakeet_get_available_models() -> Result<Vec<ParakeetModelInfo>, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
         guard.as_ref().cloned()
@@ -69,6 +71,7 @@ pub async fn parakeet_get_available_models() -> Result<Vec<ModelInfo>, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_load_model<R: Runtime>(
     app_handle: AppHandle<R>,
     model_name: String
@@ -123,6 +126,7 @@ pub async fn parakeet_load_model<R: Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_get_current_model() -> Result<Option<String>, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -137,6 +141,7 @@ pub async fn parakeet_get_current_model() -> Result<Option<String>, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_is_model_loaded() -> Result<bool, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -151,6 +156,7 @@ pub async fn parakeet_is_model_loaded() -> Result<bool, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_has_available_models() -> Result<bool, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -176,6 +182,7 @@ pub async fn parakeet_has_available_models() -> Result<bool, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_validate_model_ready() -> Result<String, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -344,6 +351,7 @@ pub async fn parakeet_validate_model_ready_with_config<R: tauri::Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_transcribe_audio(audio_data: Vec<f32>) -> Result<String, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -361,6 +369,7 @@ pub async fn parakeet_transcribe_audio(audio_data: Vec<f32>) -> Result<String, S
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_get_models_directory() -> Result<String, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -376,6 +385,7 @@ pub async fn parakeet_get_models_directory() -> Result<String, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_download_model<R: Runtime>(
     app_handle: AppHandle<R>,
     model_name: String,
@@ -464,6 +474,7 @@ pub async fn parakeet_download_model<R: Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_cancel_download<R: Runtime>(
     app_handle: AppHandle<R>,
     model_name: String,
@@ -497,6 +508,7 @@ pub async fn parakeet_cancel_download<R: Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_retry_download<R: Runtime>(
     app_handle: AppHandle<R>,
     model_name: String,
@@ -539,6 +551,7 @@ pub async fn parakeet_retry_download<R: Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn parakeet_delete_corrupted_model(model_name: String) -> Result<String, String> {
     let engine = {
         let guard = PARAKEET_ENGINE.lock().unwrap();
@@ -557,6 +570,7 @@ pub async fn parakeet_delete_corrupted_model(model_name: String) -> Result<Strin
 
 /// Open the Parakeet models folder in the system file explorer
 #[command]
+#[specta::specta]
 pub async fn open_parakeet_models_folder() -> Result<(), String> {
     let models_dir = get_models_directory()
         .ok_or_else(|| "Parakeet models directory not initialized".to_string())?

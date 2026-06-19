@@ -8,7 +8,7 @@ use crate::audio::{DeviceEvent, DeviceMonitorType};
 use super::RECORDING_MANAGER;
 
 /// Response structure for device events
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 #[serde(tag = "type")]
 pub enum DeviceEventResponse {
     DeviceDisconnected {
@@ -43,14 +43,14 @@ impl From<DeviceEvent> for DeviceEventResponse {
 }
 
 /// Reconnection status information
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 pub struct ReconnectionStatus {
     pub is_reconnecting: bool,
     pub disconnected_device: Option<DisconnectedDeviceInfo>,
 }
 
 /// Information about a disconnected device
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Clone, specta::Type)]
 pub struct DisconnectedDeviceInfo {
     pub name: String,
     pub device_type: String,
@@ -59,6 +59,7 @@ pub struct DisconnectedDeviceInfo {
 /// Poll for audio device events (disconnect/reconnect)
 /// Should be called periodically (every 1-2 seconds) by frontend during recording
 #[tauri::command]
+#[specta::specta]
 pub async fn poll_audio_device_events() -> Result<Option<DeviceEventResponse>, String> {
     let mut manager_guard = RECORDING_MANAGER.lock().await;
 
@@ -78,6 +79,7 @@ pub async fn poll_audio_device_events() -> Result<Option<DeviceEventResponse>, S
 /// Get current reconnection status
 /// Returns whether the system is attempting to reconnect and which device
 #[tauri::command]
+#[specta::specta]
 pub async fn get_reconnection_status() -> Result<ReconnectionStatus, String> {
     let manager_guard = RECORDING_MANAGER.lock().await;
 
@@ -106,6 +108,7 @@ pub async fn get_reconnection_status() -> Result<ReconnectionStatus, String> {
 /// Get information about the active audio output device
 /// Used to warn users about Bluetooth playback issues
 #[tauri::command]
+#[specta::specta]
 pub async fn get_active_audio_output() -> Result<crate::audio::playback_monitor::AudioOutputInfo, String> {
     crate::audio::playback_monitor::get_active_audio_output()
         .await
@@ -115,6 +118,7 @@ pub async fn get_active_audio_output() -> Result<crate::audio::playback_monitor:
 /// Manually trigger device reconnection attempt
 /// Useful for UI "Retry" button
 #[tauri::command]
+#[specta::specta]
 pub async fn attempt_device_reconnect(
     device_name: String,
     device_type: String,

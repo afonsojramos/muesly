@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::command;
 
 /// Anthropic (Claude) model information returned to frontend
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct AnthropicModel {
     pub id: String,
     pub display_name: Option<String>,
@@ -75,6 +75,7 @@ impl ModelProvider for AnthropicProvider {
 
 /// Fetch Anthropic models from the API (falls back to a hardcoded list on error).
 #[command]
+#[specta::specta]
 pub async fn get_anthropic_models(api_key: Option<String>) -> Result<Vec<AnthropicModel>, String> {
     fetch_models::<AnthropicProvider>(api_key).await
 }

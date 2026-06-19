@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, Runtime};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SummaryResponse {
     pub status: String,
     #[serde(rename = "meetingName")]
@@ -22,11 +22,12 @@ pub struct SummaryResponse {
     pub meeting_id: String,
     pub start: Option<String>,
     pub end: Option<String>,
+    #[specta(type = Option<crate::json::Json>)]
     pub data: Option<serde_json::Value>,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ProcessTranscriptResponse {
     pub message: String,
     pub process_id: String,
@@ -36,25 +37,26 @@ pub struct ProcessTranscriptResponse {
 ///
 /// Expected format: { "markdown": "...", "summary_json": [...BlockNote blocks...] }
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_meeting_summary<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
-    summary: serde_json::Value,
+    summary: crate::json::Json,
     _auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_meeting_summary (native) called for meeting_id: {}",
         meeting_id
     );
     let pool = state.db_manager.pool();
 
-    match SummaryProcessesRepository::update_meeting_summary(pool, &meeting_id, &summary).await {
+    match SummaryProcessesRepository::update_meeting_summary(pool, &meeting_id, &summary.0).await {
         Ok(true) => {
             log_info!("Summary saved successfully for meeting_id: {}", meeting_id);
             Ok(serde_json::json!({
                 "message": "Meeting summary saved successfully"
-            }))
+            }).into())
         }
         Ok(false) => {
             log_warn!(
@@ -74,6 +76,7 @@ pub async fn api_save_meeting_summary<R: Runtime>(
 ///
 /// Returns summary status (pending/processing/completed/failed) and parsed result data
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_summary<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -169,22 +172,43 @@ pub async fn api_get_summary<R: Runtime>(
 /// Processes transcript and generates summary (Native SQLx implementation)
 ///
 /// Spawns a background task and returns immediately with process_id
+/// Parameters for processing a transcript into a summary. Bundled into one
+/// argument because Specta commands accept at most 10 parameters.
+#[derive(Debug, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessTranscriptParams {
+    pub text: String,
+    pub model: String,
+    pub model_name: String,
+    pub meeting_id: Option<String>,
+    pub chunk_size: Option<i32>,
+    pub overlap: Option<i32>,
+    pub custom_prompt: Option<String>,
+    pub template_id: Option<String>,
+    pub summary_language: Option<String>,
+    pub auth_token: Option<String>,
+}
+
 #[tauri::command]
+#[specta::specta]
 pub async fn api_process_transcript<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
-    text: String,
-    model: String,
-    model_name: String,
-    meeting_id: Option<String>,
-    _chunk_size: Option<i32>,
-    _overlap: Option<i32>,
-    custom_prompt: Option<String>,
-    template_id: Option<String>,
-    summary_language: Option<String>,
-    _auth_token: Option<String>,
+    params: ProcessTranscriptParams,
 ) -> Result<ProcessTranscriptResponse, String> {
     use uuid::Uuid;
+    let ProcessTranscriptParams {
+        text,
+        model,
+        model_name,
+        meeting_id,
+        chunk_size: _chunk_size,
+        overlap: _overlap,
+        custom_prompt,
+        template_id,
+        summary_language,
+        auth_token: _auth_token,
+    } = params;
 
     let m_id = meeting_id.unwrap_or_else(|| format!("meeting-{}", Uuid::new_v4()));
     log_info!(
@@ -261,6 +285,7 @@ pub async fn api_process_transcript<R: Runtime>(
 /// configured model. Lightweight and independent of full summary generation, so
 /// a meeting gets a real title automatically once it ends.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_generate_meeting_title<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -298,6 +323,7 @@ async fn resolve_meeting_folder(
 /// Returns None when no override is set or the meeting has no folder yet (the
 /// frontend then falls back to its own default preference).
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting_summary_language<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -311,6 +337,7 @@ pub async fn api_get_meeting_summary_language<R: Runtime>(
 
 /// Saves or clears the per-meeting summary output language override.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_meeting_summary_language<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -335,6 +362,7 @@ pub async fn api_save_meeting_summary_language<R: Runtime>(
 
 /// Gets the cached auto-detected transcript summary language from metadata.json.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting_detected_summary_language<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -350,6 +378,7 @@ pub async fn api_get_meeting_detected_summary_language<R: Runtime>(
 
 /// Detects the dominant supported summary language from transcript segments.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_detect_transcript_summary_language(
     transcript_texts: Vec<String>,
 ) -> Result<SummaryLanguageDetection, String> {
@@ -361,11 +390,12 @@ pub async fn api_detect_transcript_summary_language(
 /// This command triggers the cancellation token for the specified meeting,
 /// stopping the summary generation gracefully.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_cancel_summary<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!("api_cancel_summary called for meeting_id: {}", meeting_id);
 
     // Trigger cancellation via the service
@@ -383,12 +413,12 @@ pub async fn api_cancel_summary<R: Runtime>(
         Ok(serde_json::json!({
             "message": "Summary generation cancelled successfully",
             "meeting_id": meeting_id,
-        }))
+        }).into())
     } else {
         log_warn!("No active summary generation found for meeting_id: {}", meeting_id);
         Ok(serde_json::json!({
             "message": "No active summary generation to cancel",
             "meeting_id": meeting_id,
-        }))
+        }).into())
     }
 }

@@ -17,13 +17,14 @@ use super::acceleration::{whisper_context_acceleration_for, WhisperCompiledBacke
 // `whisper_engine::ModelStatus` path.
 pub use crate::transcription_models::ModelStatus;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct WhisperModelInfo {
     pub name: String,
     pub path: PathBuf,
     pub size_mb: u32,
     pub accuracy: String,
     pub speed: String,
+    #[specta(type = crate::json::Json)]
     pub status: ModelStatus,
     pub description: String,
 }
@@ -35,7 +36,7 @@ pub struct WhisperEngine {
     // releasing the lock so load/unload aren't blocked for the whole transcription.
     current_context: Arc<RwLock<Option<Arc<WhisperContext>>>>,
     current_model: Arc<RwLock<Option<String>>>,
-    available_models: Arc<RwLock<HashMap<String, ModelInfo>>>,
+    available_models: Arc<RwLock<HashMap<String, WhisperModelInfo>>>,
     // State tracking for smart logging
     last_transcription_was_short: Arc<RwLock<bool>>,
     short_audio_warning_logged: Arc<RwLock<bool>>,
@@ -164,7 +165,7 @@ impl WhisperEngine {
         Ok(engine)
     }
     
-    pub async fn discover_models(&self) -> Result<Vec<ModelInfo>> {
+    pub async fn discover_models(&self) -> Result<Vec<WhisperModelInfo>> {
         let models_dir = &self.models_dir;
         let mut models = Vec::new();
         // Use centralized model catalog from config.rs
@@ -231,7 +232,7 @@ impl WhisperEngine {
                 ModelStatus::Missing
             };
             
-            let model_info = ModelInfo {
+            let model_info = WhisperModelInfo {
                 name: name.to_string(),
                 path: model_path,
                 size_mb: size_mb as u32,

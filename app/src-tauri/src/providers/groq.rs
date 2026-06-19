@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::command;
 
 /// Groq model information returned to frontend
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct GroqModel {
     pub id: String,
     pub owned_by: Option<String>,
@@ -71,6 +71,7 @@ impl ModelProvider for GroqProvider {
 
 /// Fetch Groq models from the API (falls back to a hardcoded list on error).
 #[command]
+#[specta::specta]
 pub async fn get_groq_models(api_key: Option<String>) -> Result<Vec<GroqModel>, String> {
     fetch_models::<GroqProvider>(api_key).await
 }

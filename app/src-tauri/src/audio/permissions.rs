@@ -161,12 +161,14 @@ pub fn ensure_screen_recording_permission() -> bool {
 
 /// Tauri command to check Screen Recording permission
 #[tauri::command]
+#[specta::specta]
 pub async fn check_screen_recording_permission_command() -> bool {
     check_screen_recording_permission()
 }
 
 /// Tauri command to request Screen Recording permission
 #[tauri::command]
+#[specta::specta]
 pub async fn request_screen_recording_permission_command() -> Result<(), String> {
     request_screen_recording_permission()
         .map_err(|e| e.to_string())
@@ -249,6 +251,7 @@ pub fn trigger_system_audio_permission() -> Result<bool> {
 /// Tauri command to trigger system audio permission request
 /// Returns true if permission was granted (stream created), false if denied
 #[tauri::command]
+#[specta::specta]
 pub async fn trigger_system_audio_permission_command() -> Result<bool, String> {
     // Run in blocking task to avoid blocking the async runtime
     tokio::task::spawn_blocking(|| {
@@ -262,6 +265,7 @@ pub async fn trigger_system_audio_permission_command() -> Result<bool, String> {
 /// Tauri command: query the System Audio Recording permission status without
 /// triggering any prompt. Returns "granted" | "denied" | "undetermined" | "unknown".
 #[tauri::command]
+#[specta::specta]
 pub async fn check_system_audio_permission_command() -> String {
     let status = tokio::task::spawn_blocking(system_audio_permission_status)
         .await

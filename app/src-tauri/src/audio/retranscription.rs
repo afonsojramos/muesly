@@ -52,7 +52,7 @@ impl Drop for RetranscriptionGuard {
 const VAD_REDEMPTION_TIME_MS: u32 = 2000;
 
 /// Progress update emitted during retranscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionProgress {
     pub meeting_id: String,
     pub stage: String, // "decoding", "transcribing", "saving"
@@ -61,7 +61,7 @@ pub struct RetranscriptionProgress {
 }
 
 /// Result of retranscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionResult {
     pub meeting_id: String,
     pub segments_count: usize,
@@ -70,7 +70,7 @@ pub struct RetranscriptionResult {
 }
 
 /// Error during retranscription
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionError {
     pub meeting_id: String,
     pub error: String,
@@ -676,7 +676,7 @@ fn write_retranscription_metadata(
 // Tauri commands
 
 /// Response when retranscription is started
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionStarted {
     pub meeting_id: String,
     pub message: String,
@@ -684,6 +684,7 @@ pub struct RetranscriptionStarted {
 
 // Start retranscription (Beta gated using configContext.betaFeatures)
 #[tauri::command]
+#[specta::specta]
 pub async fn start_retranscription_command<R: Runtime>(
     app: AppHandle<R>,
     meeting_id: String,
@@ -727,6 +728,7 @@ pub async fn start_retranscription_command<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_retranscription_command() -> Result<(), String> {
     if !is_retranscription_in_progress() {
         return Err("No retranscription in progress".to_string());
@@ -736,6 +738,7 @@ pub async fn cancel_retranscription_command() -> Result<(), String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn is_retranscription_in_progress_command() -> bool {
     is_retranscription_in_progress()
 }

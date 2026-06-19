@@ -11,6 +11,7 @@ type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
 
 /// Start system audio capture (for capturing system output audio)
 #[command]
+#[specta::specta]
 pub async fn start_system_audio_capture_command() -> Result<String, String> {
     match start_system_audio_capture().await {
         Ok(_stream) => {
@@ -23,6 +24,7 @@ pub async fn start_system_audio_capture_command() -> Result<String, String> {
 
 /// List available system audio devices
 #[command]
+#[specta::specta]
 pub async fn list_system_audio_devices_command() -> Result<Vec<String>, String> {
     list_system_audio_devices()
         .map_err(|e| format!("Failed to list system audio devices: {}", e))
@@ -30,12 +32,14 @@ pub async fn list_system_audio_devices_command() -> Result<Vec<String>, String> 
 
 /// Check if the app has permission to access system audio
 #[command]
+#[specta::specta]
 pub async fn check_system_audio_permissions_command() -> bool {
     check_system_audio_permissions()
 }
 
 /// Start monitoring system audio usage by other applications
 #[command]
+#[specta::specta]
 pub async fn start_system_audio_monitoring(
     app_handle: AppHandle,
     detector_state: State<'_, SystemAudioDetectorState>
@@ -71,6 +75,7 @@ pub async fn start_system_audio_monitoring(
 
 /// Stop monitoring system audio usage
 #[command]
+#[specta::specta]
 pub async fn stop_system_audio_monitoring(
     detector_state: State<'_, SystemAudioDetectorState>
 ) -> Result<(), String> {
@@ -87,6 +92,7 @@ pub async fn stop_system_audio_monitoring(
 
 /// Get the current status of system audio monitoring
 #[command]
+#[specta::specta]
 pub async fn get_system_audio_monitoring_status(
     detector_state: State<'_, SystemAudioDetectorState>
 ) -> Result<bool, String> {

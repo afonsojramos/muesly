@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, RwLock};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub struct VocabularyEntry {
     /// The text the engine tends to produce (matched case-insensitively).
     pub from: String,

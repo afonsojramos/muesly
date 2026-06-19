@@ -6,7 +6,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::manager::DatabaseManager;
 use crate::state::AppState;
 
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 pub struct DatabaseCheckResult {
     pub exists: bool,
     pub size: u64,
@@ -14,6 +14,7 @@ pub struct DatabaseCheckResult {
 
 /// Check if this is the first launch (no database exists yet)
 #[tauri::command]
+#[specta::specta]
 pub async fn check_first_launch(app: AppHandle) -> Result<bool, String> {
     DatabaseManager::is_first_launch(&app)
         .await
@@ -22,6 +23,7 @@ pub async fn check_first_launch(app: AppHandle) -> Result<bool, String> {
 
 /// Open a dialog to select a folder or file for legacy database import
 #[tauri::command]
+#[specta::specta]
 pub async fn select_legacy_database_path(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
@@ -45,6 +47,7 @@ pub async fn select_legacy_database_path(app: AppHandle) -> Result<Option<String
 
 /// Detect legacy database from a selected path (root repo, backend folder, or db file)
 #[tauri::command]
+#[specta::specta]
 pub async fn detect_legacy_database(selected_path: String) -> Result<Option<String>, String> {
     let path = PathBuf::from(&selected_path);
 
@@ -84,6 +87,7 @@ pub async fn detect_legacy_database(selected_path: String) -> Result<Option<Stri
 
 /// Check for legacy database in the default app data directory
 #[tauri::command]
+#[specta::specta]
 pub async fn check_default_legacy_database(app: AppHandle) -> Result<Option<String>, String> {
     let app_data_dir = app
         .path()
@@ -106,6 +110,7 @@ pub async fn check_default_legacy_database(app: AppHandle) -> Result<Option<Stri
 /// Check if the Homebrew database exists and return its size
 /// This is specifically for detecting old Python backend installations
 #[tauri::command]
+#[specta::specta]
 pub async fn check_homebrew_database(path: String) -> Result<Option<DatabaseCheckResult>, String> {
     let db_path = PathBuf::from(&path);
     
@@ -143,6 +148,7 @@ pub async fn check_homebrew_database(path: String) -> Result<Option<DatabaseChec
 
 /// Import legacy database and initialize the database manager
 #[tauri::command]
+#[specta::specta]
 pub async fn import_and_initialize_database(
     app: AppHandle,
     legacy_db_path: String,
@@ -180,6 +186,7 @@ pub async fn import_and_initialize_database(
 
 /// Initialize a fresh database (for users who don't want to import)
 #[tauri::command]
+#[specta::specta]
 pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
     info!("Initializing fresh database");
 
@@ -238,6 +245,7 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
 
 /// Get the database directory path
 #[tauri::command]
+#[specta::specta]
 pub async fn get_database_directory(app: AppHandle) -> Result<String, String> {
     let app_data_dir = app
         .path()
@@ -249,6 +257,7 @@ pub async fn get_database_directory(app: AppHandle) -> Result<String, String> {
 
 /// Open the database folder in the system file explorer
 #[tauri::command]
+#[specta::specta]
 pub async fn open_database_folder(app: AppHandle) -> Result<(), String> {
     let app_data_dir = app
         .path()

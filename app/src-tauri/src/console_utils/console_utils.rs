@@ -21,6 +21,7 @@ const SW_HIDE: i32 = 0;
 const SW_SHOW: i32 = 5;
 
 #[tauri::command]
+#[specta::specta]
 pub fn show_console() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -66,6 +67,7 @@ pub fn show_console() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn hide_console() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -107,6 +109,7 @@ pub fn hide_console() -> Result<String, String> {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub fn toggle_console() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     unsafe {

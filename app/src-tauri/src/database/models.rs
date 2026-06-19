@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct MeetingModel {
     pub id: String,
     pub title: String,
@@ -13,7 +13,7 @@ pub struct MeetingModel {
     pub folder_id: Option<String>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct FolderModel {
     pub id: String,
     pub name: String,
@@ -21,7 +21,7 @@ pub struct FolderModel {
     pub updated_at: DateTimeUtc,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, specta::Type)]
 #[sqlx(transparent)]
 pub struct DateTimeUtc(pub DateTime<Utc>);
 
@@ -32,7 +32,7 @@ impl From<NaiveDateTime> for DateTimeUtc {
 }
 
 // Renamed from TranscriptSegment to Transcript to match the table name
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct Transcript {
     pub id: String,
     pub meeting_id: String,
@@ -49,7 +49,7 @@ pub struct Transcript {
     pub speaker: Option<String>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct SummaryProcess {
     pub meeting_id: String,
     pub status: String,
@@ -66,7 +66,7 @@ pub struct SummaryProcess {
     pub result_backup_timestamp: Option<chrono::DateTime<chrono::Utc>>, // When backup was created
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct MeetingNotes {
     pub meeting_id: String,
     /// User-typed notes as markdown (canonical persisted shape).
@@ -79,7 +79,7 @@ pub struct MeetingNotes {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptChunk {
     pub meeting_id: String,
     pub meeting_name: Option<String>,
@@ -91,7 +91,7 @@ pub struct TranscriptChunk {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct Setting {
     pub id: String,
     pub provider: String,
@@ -140,7 +140,7 @@ impl Setting {
     }
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptSetting {
     pub id: String,
     pub provider: String,

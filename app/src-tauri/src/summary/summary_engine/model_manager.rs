@@ -21,7 +21,7 @@ use super::models::{get_available_models, get_model_by_name};
 // ============================================================================
 
 /// Detailed download progress info (MB-based with speed)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DownloadProgress {
     /// Bytes downloaded so far
     pub downloaded_bytes: u64,
@@ -56,7 +56,7 @@ impl DownloadProgress {
 }
 
 /// Model status in the system
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ModelStatus {
     /// Model is not yet downloaded
@@ -76,8 +76,8 @@ pub enum ModelStatus {
 }
 
 /// Model information for UI display
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct SummaryModelInfo {
     /// Model name (e.g., "gemma3:1b")
     pub name: String,
 
@@ -85,6 +85,7 @@ pub struct ModelInfo {
     pub display_name: String,
 
     /// Current status
+    #[specta(type = crate::json::Json)]
     pub status: ModelStatus,
 
     /// File path (if available)
@@ -112,7 +113,7 @@ pub struct ModelManager {
     models_dir: PathBuf,
 
     /// Currently available models with their status
-    available_models: Arc<RwLock<HashMap<String, ModelInfo>>>,
+    available_models: Arc<RwLock<HashMap<String, SummaryModelInfo>>>,
 
     /// Active downloads (model names)
     active_downloads: Arc<RwLock<HashSet<String>>>,
@@ -269,7 +270,7 @@ impl ModelManager {
                 ModelStatus::NotDownloaded
             };
 
-            let model_info = ModelInfo {
+            let model_info = SummaryModelInfo {
                 name: model_def.name.clone(),
                 display_name: model_def.display_name.clone(),
                 status,
@@ -298,7 +299,7 @@ impl ModelManager {
     }
 
     /// Get list of all models with their status
-    pub async fn list_models(&self) -> Vec<ModelInfo> {
+    pub async fn list_models(&self) -> Vec<SummaryModelInfo> {
         self.available_models
             .read()
             .await
@@ -308,7 +309,7 @@ impl ModelManager {
     }
 
     /// Get info for a specific model
-    pub async fn get_model_info(&self, model_name: &str) -> Option<ModelInfo> {
+    pub async fn get_model_info(&self, model_name: &str) -> Option<SummaryModelInfo> {
         self.available_models
             .read()
             .await

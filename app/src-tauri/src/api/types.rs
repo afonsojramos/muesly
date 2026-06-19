@@ -1,13 +1,13 @@
 // API request/response data types (DTOs) shared by the api command handlers.
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ApiResponse<T> {
     pub success: bool,
     pub data: Option<T>,
     pub error: Option<String>,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct Meeting {
     pub id: String,
     pub title: String,
@@ -17,19 +17,19 @@ pub struct Meeting {
     pub folder_id: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct Folder {
     pub id: String,
     pub name: String,
     pub created_at: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SearchRequest {
     pub query: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptSearchResult {
     pub id: String,
     pub title: String,
@@ -38,7 +38,7 @@ pub struct TranscriptSearchResult {
     pub timestamp: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct ModelConfig {
     pub provider: String,
     pub model: String,
@@ -50,7 +50,7 @@ pub struct ModelConfig {
     pub ollama_endpoint: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SaveModelConfigRequest {
     pub provider: String,
     pub model: String,
@@ -62,12 +62,12 @@ pub struct SaveModelConfigRequest {
     pub ollama_endpoint: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct GetApiKeyRequest {
     pub provider: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptConfig {
     pub provider: String,
     pub model: String,
@@ -75,7 +75,7 @@ pub struct TranscriptConfig {
     pub api_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SaveTranscriptConfigRequest {
     pub provider: String,
     pub model: String,
@@ -83,12 +83,12 @@ pub struct SaveTranscriptConfigRequest {
     pub api_key: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct DeleteMeetingRequest {
     pub meeting_id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct MeetingDetails {
     pub id: String,
     pub title: String,
@@ -97,7 +97,7 @@ pub struct MeetingDetails {
     pub transcripts: Vec<MeetingTranscript>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct MeetingTranscript {
     pub id: String,
     pub text: String,
@@ -115,7 +115,7 @@ pub struct MeetingTranscript {
 }
 
 /// Meeting metadata without transcripts (for pagination)
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct MeetingMetadata {
     pub id: String,
     pub title: String,
@@ -126,26 +126,27 @@ pub struct MeetingMetadata {
 }
 
 /// Paginated transcripts response with total count
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct PaginatedTranscriptsResponse {
     pub transcripts: Vec<MeetingTranscript>,
     pub total_count: i64,
     pub has_more: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SaveMeetingTitleRequest {
     pub meeting_id: String,
     pub title: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SaveMeetingSummaryRequest {
     pub meeting_id: String,
+    #[specta(type = crate::json::Json)]
     pub summary: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct NotesResponse {
     pub meeting_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,13 +155,13 @@ pub struct NotesResponse {
     pub summary_context: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct SaveTranscriptRequest {
     pub meeting_title: String,
     pub transcripts: Vec<TranscriptSegment>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptSegment {
     pub id: String,
     pub text: String,

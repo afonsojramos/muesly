@@ -61,7 +61,7 @@ const VAD_REDEMPTION_TIME_MS: u32 = 2000;
 const MAX_FILE_SIZE_BYTES: u64 = 20 * 1024 * 1024 * 1024; // 20GB
 
 /// Information about a selected audio file
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct AudioFileInfo {
     pub path: String,
     pub filename: String,
@@ -71,7 +71,7 @@ pub struct AudioFileInfo {
 }
 
 /// Progress update emitted during import
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ImportProgress {
     pub stage: String, // "copying", "decoding", "vad", "transcribing", "saving"
     pub progress_percentage: u32,
@@ -79,7 +79,7 @@ pub struct ImportProgress {
 }
 
 /// Result of import
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ImportResult {
     pub meeting_id: String,
     pub title: String,
@@ -88,20 +88,20 @@ pub struct ImportResult {
 }
 
 /// Error during import
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ImportError {
     pub error: String,
 }
 
 /// Warning emitted during import (non-fatal)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ImportWarning {
     pub warning: String,
     pub details: Option<String>,
 }
 
 /// Response when import is started
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ImportStarted {
     pub message: String,
 }
@@ -847,6 +847,7 @@ fn write_import_metadata(
 
 /// Select an audio file and validate it
 #[tauri::command]
+#[specta::specta]
 pub async fn select_and_validate_audio_command<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Option<AudioFileInfo>, String> {
@@ -886,6 +887,7 @@ pub async fn select_and_validate_audio_command<R: Runtime>(
 
 /// Validate an audio file from a given path (for drag-drop)
 #[tauri::command]
+#[specta::specta]
 pub async fn validate_audio_file_command(path: String) -> Result<AudioFileInfo, String> {
     info!("Validating audio file: {}", path);
     validate_audio_file(Path::new(&path)).map_err(|e| e.to_string())
@@ -893,6 +895,7 @@ pub async fn validate_audio_file_command(path: String) -> Result<AudioFileInfo, 
 
 /// Start importing an audio file (Beta gated using configContext.betaFeatures)
 #[tauri::command]
+#[specta::specta]
 pub async fn start_import_audio_command<R: Runtime>(
     app: AppHandle<R>,
     source_path: String,
@@ -922,6 +925,7 @@ pub async fn start_import_audio_command<R: Runtime>(
 
 /// Cancel ongoing import
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_import_command() -> Result<(), String> {
     if !is_import_in_progress() {
         return Err("No import in progress".to_string());
@@ -932,6 +936,7 @@ pub async fn cancel_import_command() -> Result<(), String> {
 
 /// Check if import is in progress
 #[tauri::command]
+#[specta::specta]
 pub async fn is_import_in_progress_command() -> bool {
     is_import_in_progress()
 }

@@ -4,7 +4,7 @@ use tauri::Runtime;
 use tracing::{info, warn};
 
 /// Template metadata for UI display
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TemplateInfo {
     /// Template identifier (e.g., "daily_standup", "standard_meeting")
     pub id: String,
@@ -17,7 +17,7 @@ pub struct TemplateInfo {
 }
 
 /// Detailed template structure for preview/debugging
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct TemplateDetails {
     /// Template identifier
     pub id: String,
@@ -40,6 +40,7 @@ pub struct TemplateDetails {
 /// # Returns
 /// Vector of TemplateInfo with id, name, and description for each template
 #[tauri::command]
+#[specta::specta]
 pub async fn api_list_templates<R: Runtime>(
     _app: tauri::AppHandle<R>,
 ) -> Result<Vec<TemplateInfo>, String> {
@@ -69,6 +70,7 @@ pub async fn api_list_templates<R: Runtime>(
 /// # Returns
 /// TemplateDetails with full template structure
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_template_details<R: Runtime>(
     _app: tauri::AppHandle<R>,
     template_id: String,
@@ -105,6 +107,7 @@ pub async fn api_get_template_details<R: Runtime>(
 /// # Returns
 /// Ok(template_name) if valid, Err(error_message) if invalid
 #[tauri::command]
+#[specta::specta]
 pub async fn api_validate_template<R: Runtime>(
     _app: tauri::AppHandle<R>,
     template_json: String,

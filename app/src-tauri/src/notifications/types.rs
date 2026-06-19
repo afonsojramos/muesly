@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Notification {
     pub id: Option<String>,
     pub title: String,
@@ -13,7 +13,7 @@ pub struct Notification {
     pub actions: Vec<NotificationAction>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum NotificationType {
     RecordingStarted,
     RecordingStopped,
@@ -25,7 +25,7 @@ pub enum NotificationType {
     Test, // For testing notifications
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum NotificationPriority {
     Low,
     Normal,
@@ -33,21 +33,21 @@ pub enum NotificationPriority {
     Critical,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum NotificationTimeout {
     Never,
     Seconds(u64),
     Default,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NotificationAction {
     pub id: String,
     pub title: String,
     pub action_type: NotificationActionType,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum NotificationActionType {
     Button,
     Reply,

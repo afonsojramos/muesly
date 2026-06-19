@@ -10,7 +10,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Lifecycle status of a transcription model on disk.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum ModelStatus {
     /// Present and validated; ready to load.
     Available,

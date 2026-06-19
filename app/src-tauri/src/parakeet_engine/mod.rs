@@ -21,6 +21,6 @@ pub mod engine;
 pub mod model;
 pub mod commands;
 
-pub use engine::{ParakeetEngine, ParakeetEngineError, QuantizationType, ModelInfo, ModelStatus, DownloadProgress};
+pub use engine::{ParakeetEngine, ParakeetEngineError, QuantizationType, ParakeetModelInfo, ModelStatus, DownloadProgress};
 pub use model::{ParakeetModel, ParakeetError, TimestampedResult};
 pub use commands::*;

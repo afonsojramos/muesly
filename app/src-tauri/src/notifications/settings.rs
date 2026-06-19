@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use tauri::{AppHandle, Runtime};
 use dirs;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NotificationSettings {
     /// Enable recording lifecycle notifications (start/stop/pause/resume)
     pub recording_notifications: bool,
@@ -35,7 +35,7 @@ pub struct NotificationSettings {
     pub notification_preferences: NotificationPreferences,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NotificationPreferences {
     /// Show recording started notifications
     pub show_recording_started: bool,

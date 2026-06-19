@@ -12,7 +12,7 @@ use super::audio_processing::create_meeting_folder;
 use super::incremental_saver::IncrementalAudioSaver;
 
 /// Structured transcript segment for JSON export
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptSegment {
     pub id: String,
     pub text: String,
@@ -28,7 +28,7 @@ pub struct TranscriptSegment {
 }
 
 /// Meeting metadata structure
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MeetingMetadata {
     pub version: String,
     pub meeting_id: Option<String>,
@@ -43,7 +43,7 @@ pub struct MeetingMetadata {
     pub status: String,  // "recording", "completed", "error"
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DeviceInfo {
     pub microphone: Option<String>,
     pub system_audio: Option<String>,

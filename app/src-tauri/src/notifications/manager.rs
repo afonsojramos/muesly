@@ -330,7 +330,7 @@ impl<R: Runtime> NotificationManager<R> {
 }
 
 /// Notification system statistics
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct NotificationStats {
     pub consent_given: bool,
     pub system_permission_granted: bool,

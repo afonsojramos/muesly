@@ -38,7 +38,7 @@ impl std::fmt::Display for OllamaError {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct OllamaModel {
     pub name: String,
     pub id: String,
@@ -46,12 +46,12 @@ pub struct OllamaModel {
     pub modified: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 struct OllamaApiResponse {
     models: Vec<OllamaApiModel>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 struct OllamaApiModel {
     name: String,
     model: String,
@@ -88,6 +88,7 @@ fn validate_endpoint_url(url: &str) -> Result<(), OllamaError> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaModel>, String> {
     // Validate endpoint format if provided
     if let Some(ref ep) = endpoint {
@@ -243,7 +244,7 @@ fn format_size(size: i64) -> String {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
 pub struct DownloadProgress {
     pub status: String,
     pub completed: u64,
@@ -251,6 +252,7 @@ pub struct DownloadProgress {
 }
 
 #[command]
+#[specta::specta]
 pub async fn pull_ollama_model<R: Runtime>(
     app_handle: AppHandle<R>,
     model_name: String,
@@ -431,6 +433,7 @@ pub async fn pull_ollama_model<R: Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn delete_ollama_model(
     model_name: String,
     endpoint: Option<String>,
@@ -484,6 +487,7 @@ pub async fn delete_ollama_model(
 /// # Returns
 /// Context size in tokens, or error message
 #[command]
+#[specta::specta]
 pub async fn get_ollama_model_context(
     model_name: String,
     endpoint: Option<String>,

@@ -7,6 +7,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { commands } from '$lib/bindings';
 import type { TranscriptUpdate, Transcript } from '$lib/types';
 
 export interface TranscriptionStatus {
@@ -43,7 +44,9 @@ export class TranscriptService {
    * @returns Promise with transcription status
    */
   async getTranscriptionStatus(): Promise<TranscriptionStatus> {
-    return invoke<TranscriptionStatus>('get_transcription_status');
+    // Migrated to the type-safe Specta bindings; the generated return type is
+    // structurally identical to the local TranscriptionStatus interface.
+    return commands.getTranscriptionStatus();
   }
 
   // Event Listeners

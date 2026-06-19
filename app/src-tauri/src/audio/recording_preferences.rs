@@ -11,7 +11,7 @@ use log::error;
 #[cfg(target_os = "macos")]
 use crate::audio::capture::AudioCaptureBackend;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct RecordingPreferences {
     pub save_folder: PathBuf,
     pub auto_save: bool,
@@ -179,6 +179,7 @@ pub async fn save_recording_preferences<R: Runtime>(
 
 /// Tauri commands for recording preferences
 #[tauri::command]
+#[specta::specta]
 pub async fn get_recording_preferences<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<RecordingPreferences, String> {
@@ -188,6 +189,7 @@ pub async fn get_recording_preferences<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn set_recording_preferences<R: Runtime>(
     app: AppHandle<R>,
     preferences: RecordingPreferences,
@@ -198,12 +200,14 @@ pub async fn set_recording_preferences<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_default_recordings_folder_path() -> Result<String, String> {
     let path = get_default_recordings_folder();
     Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_recordings_folder<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     let preferences = load_recording_preferences(&app)
         .await
@@ -244,6 +248,7 @@ pub async fn open_recordings_folder<R: Runtime>(app: AppHandle<R>) -> Result<(),
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn select_recording_folder<R: Runtime>(
     _app: AppHandle<R>,
 ) -> Result<Option<String>, String> {
@@ -258,6 +263,7 @@ pub async fn select_recording_folder<R: Runtime>(
 
 /// Get available audio capture backends for the current platform
 #[tauri::command]
+#[specta::specta]
 pub async fn get_available_audio_backends() -> Result<Vec<String>, String> {
     #[cfg(target_os = "macos")]
     {
@@ -274,6 +280,7 @@ pub async fn get_available_audio_backends() -> Result<Vec<String>, String> {
 
 /// Get current audio capture backend
 #[tauri::command]
+#[specta::specta]
 pub async fn get_current_audio_backend() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
@@ -289,6 +296,7 @@ pub async fn get_current_audio_backend() -> Result<String, String> {
 
 /// Set audio capture backend
 #[tauri::command]
+#[specta::specta]
 pub async fn set_audio_backend(backend: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -345,7 +353,7 @@ pub async fn set_audio_backend(backend: String) -> Result<(), String> {
 }
 
 /// Get backend information (name and description)
-#[derive(Serialize)]
+#[derive(Serialize, specta::Type)]
 pub struct BackendInfo {
     pub id: String,
     pub name: String,
@@ -353,6 +361,7 @@ pub struct BackendInfo {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_audio_backend_info() -> Result<Vec<BackendInfo>, String> {
     #[cfg(target_os = "macos")]
     {

@@ -8,7 +8,7 @@ use crate::state::AppState;
 use crate::database::repositories::setting::SettingsRepository;
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct OnboardingStatus {
     pub version: String,
     pub completed: bool,
@@ -17,7 +17,7 @@ pub struct OnboardingStatus {
     pub last_updated: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct ModelStatus {
     pub parakeet: String,  // "downloaded" | "not_downloaded" | "downloading"
     pub summary: String,   // Generic field for summary model (gemma3:1b or gemma3:4b)
@@ -126,6 +126,7 @@ pub async fn reset_onboarding_status<R: Runtime>(
 
 /// Tauri commands for onboarding status
 #[tauri::command]
+#[specta::specta]
 pub async fn get_onboarding_status<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Option<OnboardingStatus>, String> {
@@ -146,6 +147,7 @@ pub async fn get_onboarding_status<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn save_onboarding_status_cmd<R: Runtime>(
     app: AppHandle<R>,
     status: OnboardingStatus,
@@ -156,6 +158,7 @@ pub async fn save_onboarding_status_cmd<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn reset_onboarding_status_cmd<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<(), String> {
@@ -165,6 +168,7 @@ pub async fn reset_onboarding_status_cmd<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn complete_onboarding<R: Runtime>(
     app: AppHandle<R>,
     state: tauri::State<'_, AppState>,

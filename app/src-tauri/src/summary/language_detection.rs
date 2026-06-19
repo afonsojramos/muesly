@@ -8,7 +8,7 @@ use super::processor::language_name_from_code;
 const MIN_MEANINGFUL_CHARS: usize = 20;
 const MIN_RELIABLE_CONFIDENCE: f64 = 0.25;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum SummaryLanguageDetectionReason {
     Detected,
@@ -18,7 +18,7 @@ pub enum SummaryLanguageDetectionReason {
     Empty,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, specta::Type)]
 pub struct SummaryLanguageDetection {
     pub language: Option<String>,
     pub reason: SummaryLanguageDetectionReason,

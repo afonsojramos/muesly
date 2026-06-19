@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 /// Quantization type for Parakeet models
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub enum QuantizationType {
     FP32,   // Full precision
     Int8,   // 8-bit integer quantization (faster)
@@ -29,7 +29,7 @@ impl Default for QuantizationType {
 pub use crate::transcription_models::ModelStatus;
 
 /// Detailed download progress info (MB-based with speed)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct DownloadProgress {
     /// Bytes downloaded so far
     pub downloaded_bytes: u64,
@@ -64,13 +64,14 @@ impl DownloadProgress {
 }
 
 /// Information about a Parakeet model
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct ParakeetModelInfo {
     pub name: String,
     pub path: PathBuf,
     pub size_mb: u32,
     pub quantization: QuantizationType,
     pub speed: String,     // Performance description
+    #[specta(type = crate::json::Json)]
     pub status: ModelStatus,
     pub description: String,
 }
@@ -114,7 +115,7 @@ pub struct ParakeetEngine {
     // keeps inference off the async runtime and stops it from blocking load/unload.
     current_model: Arc<RwLock<Option<Arc<std::sync::Mutex<ParakeetModel>>>>>,
     current_model_name: Arc<RwLock<Option<String>>>,
-    pub(crate) available_models: Arc<RwLock<HashMap<String, ModelInfo>>>,
+    pub(crate) available_models: Arc<RwLock<HashMap<String, ParakeetModelInfo>>>,
     cancel_download_flag: Arc<RwLock<Option<String>>>, // Model name being cancelled
     // Active downloads tracking to prevent concurrent downloads
     pub(crate) active_downloads: Arc<RwLock<HashSet<String>>>, // Set of models currently being downloaded
@@ -166,7 +167,7 @@ impl ParakeetEngine {
     }
 
     /// Discover available Parakeet models
-    pub async fn discover_models(&self) -> Result<Vec<ModelInfo>> {
+    pub async fn discover_models(&self) -> Result<Vec<ParakeetModelInfo>> {
         let models_dir = &self.models_dir;
         let mut models = Vec::new();
 
@@ -237,7 +238,7 @@ impl ParakeetEngine {
                 ModelStatus::Missing
             };
 
-            let model_info = ModelInfo {
+            let model_info = ParakeetModelInfo {
                 name: name.to_string(),
                 path: model_path,
                 size_mb: size_mb as u32,

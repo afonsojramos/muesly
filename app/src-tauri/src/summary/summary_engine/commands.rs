@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio::sync::Mutex;
 
-use super::model_manager::{DownloadProgress, ModelInfo, ModelManager};
+use super::model_manager::{DownloadProgress, SummaryModelInfo, ModelManager};
 
 // ============================================================================
 // Global State
@@ -36,10 +36,11 @@ pub async fn init_model_manager<R: Runtime>(app: &AppHandle<R>) -> anyhow::Resul
 
 /// List all available built-in AI models with their status
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_list_models<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
-) -> Result<Vec<ModelInfo>, String> {
+) -> Result<Vec<SummaryModelInfo>, String> {
     let manager = {
         // Ensure manager is initialized
         {
@@ -65,11 +66,12 @@ pub async fn builtin_ai_list_models<R: Runtime>(
 
 /// Get information about a specific model
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_get_model_info<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
     model_name: String,
-) -> Result<Option<ModelInfo>, String> {
+) -> Result<Option<SummaryModelInfo>, String> {
     let manager = {
         // Ensure manager is initialized
         {
@@ -95,6 +97,7 @@ pub async fn builtin_ai_get_model_info<R: Runtime>(
 
 /// Download a built-in AI model with progress updates
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_download_model<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
@@ -182,6 +185,7 @@ pub async fn builtin_ai_download_model<R: Runtime>(
 
 /// Cancel an ongoing model download
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_cancel_download<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
@@ -214,6 +218,7 @@ pub async fn builtin_ai_cancel_download<R: Runtime>(
 
 /// Delete a corrupted or available model file
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_delete_model(
     state: State<'_, ModelManagerState>,
     model_name: String,
@@ -234,6 +239,7 @@ pub async fn builtin_ai_delete_model(
 
 /// Check if a model is ready to use
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_is_model_ready<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
@@ -275,6 +281,7 @@ pub async fn builtin_ai_is_model_ready<R: Runtime>(
 /// Check if any summary model is available (for onboarding)
 /// Returns the first available model name by priority, or None if no models exist
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_get_available_summary_model<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
@@ -366,6 +373,7 @@ pub async fn init_model_manager_at_startup<R: Runtime>(
 /// - CPU-only / undetected GPU: conservative RAM-based pick (CPU inference is
 ///   slow, so we never auto-recommend the 8B model there).
 #[tauri::command]
+#[specta::specta]
 pub async fn builtin_ai_get_recommended_model() -> Result<String, String> {
     let system_ram_gb = get_system_ram_gb()?;
     let is_macos = cfg!(target_os = "macos");

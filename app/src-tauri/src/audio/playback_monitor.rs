@@ -5,7 +5,7 @@ use anyhow::Result;
 #[cfg(target_os = "macos")]
 use log::debug;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct AudioOutputInfo {
     pub device_name: String,
     pub is_bluetooth: bool,

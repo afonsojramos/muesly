@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::command;
 
 /// xAI model information returned to frontend
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct XaiModel {
     pub id: String,
     pub owned_by: Option<String>,
@@ -67,6 +67,7 @@ impl ModelProvider for XaiProvider {
 
 /// Fetch xAI models from the API (falls back to a hardcoded list on error).
 #[command]
+#[specta::specta]
 pub async fn get_xai_models(api_key: Option<String>) -> Result<Vec<XaiModel>, String> {
     fetch_models::<XaiProvider>(api_key).await
 }

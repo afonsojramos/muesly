@@ -29,6 +29,7 @@ pub async fn initialize_notification_manager<R: Runtime>(
 
 /// Get notification settings
 #[tauri::command]
+#[specta::specta]
 pub async fn get_notification_settings(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<NotificationSettings, String> {
@@ -44,6 +45,7 @@ pub async fn get_notification_settings(
 
 /// Set notification settings
 #[tauri::command]
+#[specta::specta]
 pub async fn set_notification_settings(
     settings: NotificationSettings,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -61,6 +63,7 @@ pub async fn set_notification_settings(
 
 /// Request notification permission from the system
 #[tauri::command]
+#[specta::specta]
 pub async fn request_notification_permission(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<bool, String> {
@@ -77,6 +80,7 @@ pub async fn request_notification_permission(
 
 /// Show a custom notification
 #[tauri::command]
+#[specta::specta]
 pub async fn show_notification(
     notification: Notification,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -94,6 +98,7 @@ pub async fn show_notification(
 
 /// Show a test notification
 #[tauri::command]
+#[specta::specta]
 pub async fn show_test_notification(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<(), String> {
@@ -110,6 +115,7 @@ pub async fn show_test_notification(
 
 /// Check if Do Not Disturb is active
 #[tauri::command]
+#[specta::specta]
 pub async fn is_dnd_active(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<bool, String> {
@@ -123,6 +129,7 @@ pub async fn is_dnd_active(
 
 /// Get system Do Not Disturb status
 #[tauri::command]
+#[specta::specta]
 pub async fn get_system_dnd_status(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<bool, String> {
@@ -136,6 +143,7 @@ pub async fn get_system_dnd_status(
 
 /// Set manual Do Not Disturb mode
 #[tauri::command]
+#[specta::specta]
 pub async fn set_manual_dnd(
     enabled: bool,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -153,6 +161,7 @@ pub async fn set_manual_dnd(
 
 /// Set user consent for notifications
 #[tauri::command]
+#[specta::specta]
 pub async fn set_notification_consent(
     consent: bool,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -170,6 +179,7 @@ pub async fn set_notification_consent(
 
 /// Clear all notifications
 #[tauri::command]
+#[specta::specta]
 pub async fn clear_notifications(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<(), String> {
@@ -186,6 +196,7 @@ pub async fn clear_notifications(
 
 /// Check if notification system is ready
 #[tauri::command]
+#[specta::specta]
 pub async fn is_notification_system_ready(
     manager_state: State<'_, NotificationManagerState<Wry>>
 ) -> Result<bool, String> {
@@ -199,6 +210,7 @@ pub async fn is_notification_system_ready(
 
 /// Initialize notification manager manually (for testing and ensuring it's ready)
 #[tauri::command]
+#[specta::specta]
 pub async fn initialize_notification_manager_manual(
     app: AppHandle<Wry>,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -228,6 +240,7 @@ pub async fn initialize_notification_manager_manual(
 
 /// Test notification with automatic consent for development/testing
 #[tauri::command]
+#[specta::specta]
 pub async fn test_notification_with_auto_consent(
     app: AppHandle<Wry>,
     manager_state: State<'_, NotificationManagerState<Wry>>
@@ -266,14 +279,15 @@ pub async fn test_notification_with_auto_consent(
 
 /// Get notification system statistics
 #[tauri::command]
+#[specta::specta]
 pub async fn get_notification_stats(
     manager_state: State<'_, NotificationManagerState<Wry>>
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let manager_lock = manager_state.read().await;
     if let Some(manager) = manager_lock.as_ref() {
         let stats = manager.get_stats().await;
         serde_json::to_value(stats)
-            .map_err(|e| format!("Failed to serialize stats: {}", e))
+            .map_err(|e| format!("Failed to serialize stats: {}", e)).map(crate::json::Json)
     } else {
         Err("Notification manager not initialized".to_string())
     }

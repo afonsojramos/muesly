@@ -46,13 +46,13 @@ pub struct DeviceControl {
     pub is_paused: bool,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Debug, Deserialize)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Debug, Deserialize, specta::Type)]
 pub enum DeviceType {
     Input,
     Output,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Serialize, Debug)]
+#[derive(Clone, Eq, PartialEq, Hash, Serialize, Debug, specta::Type)]
 pub struct AudioDevice {
     pub name: String,
     pub device_type: DeviceType,

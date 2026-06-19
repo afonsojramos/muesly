@@ -16,6 +16,7 @@ use crate::{
 use super::types::*;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meetings<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -64,6 +65,7 @@ pub async fn api_get_meetings<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_search_transcripts<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -94,12 +96,13 @@ pub async fn api_search_transcripts<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_delete_meeting<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_delete_meeting called for meeting_id(native): {}, auth_token: {}",
         meeting_id,
@@ -116,7 +119,7 @@ pub async fn api_delete_meeting<R: Runtime>(
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Meeting moved to trash"
-            }))
+            }).into())
         }
         Ok(false) => {
             log_warn!("Meeting not found or already in trash: {}", meeting_id);
@@ -134,6 +137,7 @@ pub async fn api_delete_meeting<R: Runtime>(
 
 /// List meetings currently in the trash (soft-deleted, restorable).
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_trashed_meetings<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -160,17 +164,18 @@ pub async fn api_get_trashed_meetings<R: Runtime>(
 
 /// Restore a meeting from the trash back to the active list.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_restore_meeting<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     _auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let pool = state.db_manager.pool();
     match MeetingsRepository::restore_meeting(pool, &meeting_id).await {
         Ok(true) => {
             log_info!("Restored meeting {} from trash", meeting_id);
-            Ok(serde_json::json!({ "status": "success", "message": "Meeting restored" }))
+            Ok(serde_json::json!({ "status": "success", "message": "Meeting restored" }).into())
         }
         Ok(false) => Err(format!("Meeting not found in trash: {}", meeting_id)),
         Err(e) => {
@@ -182,17 +187,18 @@ pub async fn api_restore_meeting<R: Runtime>(
 
 /// Permanently delete a meeting and all its data (used from the Trash view).
 #[tauri::command]
+#[specta::specta]
 pub async fn api_permanently_delete_meeting<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     _auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let pool = state.db_manager.pool();
     match MeetingsRepository::delete_meeting(pool, &meeting_id).await {
         Ok(true) => {
             log_info!("Permanently deleted meeting {}", meeting_id);
-            Ok(serde_json::json!({ "status": "success", "message": "Meeting permanently deleted" }))
+            Ok(serde_json::json!({ "status": "success", "message": "Meeting permanently deleted" }).into())
         }
         Ok(false) => Err(format!("Meeting not found: {}", meeting_id)),
         Err(e) => {
@@ -203,6 +209,7 @@ pub async fn api_permanently_delete_meeting<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting<R: Runtime>(
     _app: AppHandle<R>,
     meeting_id: String,
@@ -235,6 +242,7 @@ pub async fn api_get_meeting<R: Runtime>(
 
 /// Get meeting metadata without transcripts (for pagination)
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting_metadata<R: Runtime>(
     _app: AppHandle<R>,
     meeting_id: String,
@@ -268,6 +276,7 @@ pub async fn api_get_meeting_metadata<R: Runtime>(
 
 /// Get paginated transcripts for a meeting
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting_transcripts<R: Runtime>(
     _app: AppHandle<R>,
     meeting_id: String,
@@ -323,13 +332,14 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_meeting_title<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     title: String,
     auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_meeting_title called for meeting_id: {}, auth_token: {}",
         meeting_id,
@@ -339,7 +349,7 @@ pub async fn api_save_meeting_title<R: Runtime>(
     match MeetingsRepository::update_meeting_title(pool, &meeting_id, &title).await {
         Ok(true) => {
             log_info!("Successfully saved meeting title");
-            Ok(serde_json::json!({"message": "Meeting title saved successfully"}))
+            Ok(serde_json::json!({"message": "Meeting title saved successfully"}).into())
         }
         Ok(false) => {
             log_error!("No meeting found with id {}", meeting_id);
@@ -357,6 +367,7 @@ pub async fn api_save_meeting_title<R: Runtime>(
 /// `None` if the user cancelled. The frontend builds the markdown (title +
 /// summary) so this stays a thin save helper.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_export_meeting_markdown<R: Runtime>(
     app: AppHandle<R>,
     default_file_name: String,
@@ -390,13 +401,14 @@ pub async fn api_export_meeting_markdown<R: Runtime>(
 
 /// Persist the user's in-meeting notes (markdown) for a meeting.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_meeting_notes<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     notes_markdown: String,
     auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_meeting_notes called for meeting_id: {}, auth_token: {}",
         meeting_id,
@@ -404,7 +416,7 @@ pub async fn api_save_meeting_notes<R: Runtime>(
     );
     let pool = state.db_manager.pool();
     match MeetingNotesRepository::upsert_notes(pool, &meeting_id, &notes_markdown).await {
-        Ok(true) => Ok(serde_json::json!({"message": "Meeting notes saved successfully"})),
+        Ok(true) => Ok(serde_json::json!({"message": "Meeting notes saved successfully"}).into()),
         Ok(false) => {
             log_error!("No meeting found with id {}", meeting_id);
             Err(format!("No meeting found with id {}", meeting_id))
@@ -420,6 +432,7 @@ pub async fn api_save_meeting_notes<R: Runtime>(
 /// context. Both live on the same `meeting_notes` row, so a single read returns
 /// them together; each field is empty when nothing has been saved yet.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_meeting_notes<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -454,13 +467,14 @@ pub async fn api_get_meeting_notes<R: Runtime>(
 /// Persist the per-meeting context the user types to steer AI summary
 /// generation. Stored alongside notes on the `meeting_notes` row.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_meeting_summary_context<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     summary_context: String,
     auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_meeting_summary_context called for meeting_id: {}, auth_token: {}",
         meeting_id,
@@ -468,7 +482,7 @@ pub async fn api_save_meeting_summary_context<R: Runtime>(
     );
     let pool = state.db_manager.pool();
     match MeetingNotesRepository::upsert_summary_context(pool, &meeting_id, &summary_context).await {
-        Ok(true) => Ok(serde_json::json!({"message": "Meeting summary context saved successfully"})),
+        Ok(true) => Ok(serde_json::json!({"message": "Meeting summary context saved successfully"}).into()),
         Ok(false) => {
             log_error!("No meeting found with id {}", meeting_id);
             Err(format!("No meeting found with id {}", meeting_id))
@@ -481,14 +495,16 @@ pub async fn api_save_meeting_summary_context<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_transcript<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_title: String,
-    transcripts: Vec<serde_json::Value>,
+    transcripts: Vec<crate::json::Json>,
     folder_path: Option<String>,
     auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
+    let transcripts: Vec<serde_json::Value> = transcripts.into_iter().map(|j| j.0).collect();
     log_info!(
         "api_save_transcript called for meeting: {}, transcripts: {}, folder_path: {:?}, auth_token: {}",
         meeting_title,
@@ -544,7 +560,7 @@ pub async fn api_save_transcript<R: Runtime>(
                 "status": "success",
                 "message": "Transcript saved successfully",
                 "meeting_id": meeting_id
-            }))
+            }).into())
         }
         Err(e) => {
             log_error!(
@@ -559,6 +575,7 @@ pub async fn api_save_transcript<R: Runtime>(
 
 /// Opens the meeting's recording folder in the system file explorer
 #[tauri::command]
+#[specta::specta]
 pub async fn open_meeting_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -629,6 +646,7 @@ pub async fn open_meeting_folder<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn open_external_url(url: String) -> Result<(), String> {
     use std::process::Command;
 

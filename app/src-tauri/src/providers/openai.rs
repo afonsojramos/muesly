@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri::command;
 
 /// OpenAI model information returned to frontend
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct OpenAIModel {
     pub id: String,
 }
@@ -100,6 +100,7 @@ impl ModelProvider for OpenAiProvider {
 
 /// Fetch OpenAI models from the API (falls back to a hardcoded list on error).
 #[command]
+#[specta::specta]
 pub async fn get_openai_models(api_key: Option<String>) -> Result<Vec<OpenAIModel>, String> {
     fetch_models::<OpenAiProvider>(api_key).await
 }

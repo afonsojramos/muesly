@@ -2,7 +2,7 @@ use crate::providers::common::{http_client, ModelCache, REQUEST_TIMEOUT};
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, specta::Type)]
 pub struct OpenRouterModel {
     pub id: String,
     pub name: String,
@@ -48,6 +48,7 @@ static MODELS_CACHE: ModelCache<OpenRouterModel> = ModelCache::new();
 /// would panic ("runtime within a runtime") or stall the executor when called
 /// from Tauri's async command dispatch.
 #[command]
+#[specta::specta]
 pub async fn get_openrouter_models() -> Result<Vec<OpenRouterModel>, String> {
     if let Some(models) = MODELS_CACHE.get() {
         log::info!("Returning cached OpenRouter models ({} models)", models.len());

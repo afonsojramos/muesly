@@ -17,5 +17,5 @@ pub use commands::{
     builtin_ai_get_available_summary_model, builtin_ai_get_model_info, builtin_ai_get_recommended_model, builtin_ai_is_model_ready,
     builtin_ai_list_models, init_model_manager, ModelManagerState,
 };
-pub use model_manager::{ModelInfo, ModelStatus};
+pub use model_manager::{SummaryModelInfo, ModelStatus};
 pub use models::{get_available_models, get_default_model, get_model_by_name, ModelDef};

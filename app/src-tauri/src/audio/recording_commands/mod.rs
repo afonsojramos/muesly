@@ -828,18 +828,20 @@ pub async fn stop_recording<R: Runtime>(
 
         // Track meeting ended event with privacy-safe data
         match crate::analytics::commands::track_meeting_ended(
-            transcription_provider.clone(),
-            transcription_model.clone(),
-            summary_provider.clone(),
-            summary_model.clone(),
-            total_duration,
-            active_duration,
-            pause_duration,
-            microphone_device_type.to_string(),
-            system_audio_device_type.to_string(),
-            chunks_processed,
-            transcript_segments_count,
-            had_fatal_error,
+            crate::analytics::commands::MeetingEndedMetrics {
+                transcription_provider: transcription_provider.clone(),
+                transcription_model: transcription_model.clone(),
+                summary_provider: summary_provider.clone(),
+                summary_model: summary_model.clone(),
+                total_duration_seconds: total_duration,
+                active_duration_seconds: active_duration,
+                pause_duration_seconds: pause_duration,
+                microphone_device_type: microphone_device_type.to_string(),
+                system_audio_device_type: system_audio_device_type.to_string(),
+                chunks_processed,
+                transcript_segments_count,
+                had_fatal_error,
+            },
         )
         .await
         {
@@ -944,6 +946,7 @@ pub async fn stop_recording<R: Runtime>(
 
 /// Pause the current recording
 #[tauri::command]
+#[specta::specta]
 pub async fn pause_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     info!("Pausing recording");
 
@@ -978,6 +981,7 @@ pub async fn pause_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String
 
 /// Resume the current recording
 #[tauri::command]
+#[specta::specta]
 pub async fn resume_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
     info!("Resuming recording");
 

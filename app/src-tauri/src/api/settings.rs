@@ -25,6 +25,7 @@ fn clear_provider_model_cache(provider: &str) {
     }
 }
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_model_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -75,6 +76,7 @@ pub async fn api_get_model_config<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_model_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -84,7 +86,7 @@ pub async fn api_save_model_config<R: Runtime>(
     api_key: Option<String>,
     ollama_endpoint: Option<String>,
     _auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "💾 api_save_model_config called (native): provider='{}', model='{}', whisperModel='{}', ollamaEndpoint={:?}",
         &provider,
@@ -131,11 +133,12 @@ pub async fn api_save_model_config<R: Runtime>(
 
     log_info!("✅ Successfully saved model configuration to database");
     Ok(
-        serde_json::json!({ "status": "success", "message": "Model configuration saved successfully" }),
+        serde_json::json!({ "status": "success", "message": "Model configuration saved successfully" }).into(),
     )
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_api_key<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -164,6 +167,7 @@ pub async fn api_get_api_key<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_transcript_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -216,6 +220,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_transcript_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -223,7 +228,7 @@ pub async fn api_save_transcript_config<R: Runtime>(
     model: String,
     api_key: Option<String>,
     _auth_token: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_transcript_config called (native) for provider '{}'",
         &provider
@@ -250,11 +255,12 @@ pub async fn api_save_transcript_config<R: Runtime>(
 
     log_info!("Successfully saved transcript configuration.");
     Ok(
-        serde_json::json!({ "status": "success", "message": "Transcript configuration saved successfully" }),
+        serde_json::json!({ "status": "success", "message": "Transcript configuration saved successfully" }).into(),
     )
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_transcript_api_key<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -291,6 +297,7 @@ pub async fn api_get_transcript_api_key<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_delete_api_key<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -324,6 +331,7 @@ pub async fn api_delete_api_key<R: Runtime>(
 /// Saves the custom OpenAI configuration
 /// This configuration is stored as JSON and includes endpoint, apiKey, model, and optional parameters
 #[tauri::command]
+#[specta::specta]
 pub async fn api_save_custom_openai_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -333,7 +341,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
     max_tokens: Option<i32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_custom_openai_config called: endpoint='{}', model='{}'",
         &endpoint,
@@ -390,7 +398,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Custom OpenAI configuration saved successfully"
-            }))
+            }).into())
         }
         Err(e) => {
             log_error!("❌ Failed to save custom OpenAI config: {}", e);
@@ -401,6 +409,7 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
 
 /// Gets the custom OpenAI configuration
 #[tauri::command]
+#[specta::specta]
 pub async fn api_get_custom_openai_config<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -432,12 +441,13 @@ pub async fn api_get_custom_openai_config<R: Runtime>(
 /// Tests the connection to a custom OpenAI-compatible endpoint
 /// Makes a minimal request to verify the endpoint is reachable and responds correctly
 #[tauri::command]
+#[specta::specta]
 pub async fn api_test_custom_openai_connection<R: Runtime>(
     _app: AppHandle<R>,
     endpoint: String,
     api_key: Option<String>,
     model: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     log_info!(
         "api_test_custom_openai_connection called: endpoint='{}', model='{}'",
         &endpoint,
@@ -509,7 +519,7 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
                                                 "status": "success",
                                                 "message": "Connection successful and response validated",
                                                 "http_status": status.as_u16()
-                                            }));
+                                            }).into());
                                         }
                                     }
                                 }

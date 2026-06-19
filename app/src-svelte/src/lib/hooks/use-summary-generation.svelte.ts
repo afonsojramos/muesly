@@ -149,15 +149,17 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 			});
 
 			const result = (await invoke('api_process_transcript', {
-				text: transcriptText,
-				model: modelConfig.provider,
-				modelName: modelConfig.model,
-				meetingId: meeting.id,
-				chunkSize: 40000,
-				overlap: 1000,
-				customPrompt: customPrompt,
-				templateId: selectedTemplate,
-				summaryLanguage: getSummaryLanguage?.() ?? null
+				params: {
+					text: transcriptText,
+					model: modelConfig.provider,
+					modelName: modelConfig.model,
+					meetingId: meeting.id,
+					chunkSize: 40000,
+					overlap: 1000,
+					customPrompt: customPrompt,
+					templateId: selectedTemplate,
+					summaryLanguage: getSummaryLanguage?.() ?? null
+				}
 			})) as { process_id: string };
 
 			const processId = result.process_id;

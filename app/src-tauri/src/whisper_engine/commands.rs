@@ -1,4 +1,4 @@
-use crate::whisper_engine::{ModelInfo, WhisperEngine};
+use crate::whisper_engine::{WhisperModelInfo, WhisperEngine};
 use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use tauri::{command, Emitter, Manager, AppHandle, Runtime};
@@ -38,6 +38,7 @@ fn get_models_directory() -> Option<PathBuf> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_init() -> Result<(), String> {
     let mut guard = WHISPER_ENGINE.lock().unwrap();
     if guard.is_some() {
@@ -52,7 +53,8 @@ pub async fn whisper_init() -> Result<(), String> {
 }
 
 #[command]
-pub async fn whisper_get_available_models() -> Result<Vec<ModelInfo>, String> {
+#[specta::specta]
+pub async fn whisper_get_available_models() -> Result<Vec<WhisperModelInfo>, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
         guard.as_ref().cloned()
@@ -72,7 +74,7 @@ pub async fn whisper_get_available_models() -> Result<Vec<ModelInfo>, String> {
 
 /// Discover Whisper models by scanning the models directory directly
 /// Used when the Whisper engine isn't initialized (e.g., when using Parakeet for live transcription)
-fn discover_models_standalone() -> Result<Vec<ModelInfo>, String> {
+fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {
     use crate::whisper_engine::ModelStatus;
 
     let models_dir = get_models_directory()
@@ -106,7 +108,7 @@ fn discover_models_standalone() -> Result<Vec<ModelInfo>, String> {
             ModelStatus::Missing
         };
 
-        models.push(ModelInfo {
+        models.push(WhisperModelInfo {
             name: name.to_string(),
             path: model_path,
             size_mb,
@@ -124,6 +126,7 @@ fn discover_models_standalone() -> Result<Vec<ModelInfo>, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_load_model(
     app_handle: tauri::AppHandle,
     model_name: String
@@ -178,6 +181,7 @@ pub async fn whisper_load_model(
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_get_current_model() -> Result<Option<String>, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -192,6 +196,7 @@ pub async fn whisper_get_current_model() -> Result<Option<String>, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_is_model_loaded() -> Result<bool, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -206,6 +211,7 @@ pub async fn whisper_is_model_loaded() -> Result<bool, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_has_available_models() -> Result<bool, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -231,6 +237,7 @@ pub async fn whisper_has_available_models() -> Result<bool, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_validate_model_ready() -> Result<String, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -385,6 +392,7 @@ pub async fn whisper_validate_model_ready_with_config<R: tauri::Runtime>(
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_transcribe_audio(audio_data: Vec<f32>) -> Result<String, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -404,6 +412,7 @@ pub async fn whisper_transcribe_audio(audio_data: Vec<f32>) -> Result<String, St
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_get_models_directory() -> Result<String, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -419,6 +428,7 @@ pub async fn whisper_get_models_directory() -> Result<String, String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_download_model(
     app_handle: tauri::AppHandle,
     model_name: String,
@@ -485,6 +495,7 @@ pub async fn whisper_download_model(
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_cancel_download(model_name: String) -> Result<(), String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -502,6 +513,7 @@ pub async fn whisper_cancel_download(model_name: String) -> Result<(), String> {
 }
 
 #[command]
+#[specta::specta]
 pub async fn whisper_delete_corrupted_model(model_name: String) -> Result<String, String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -520,6 +532,7 @@ pub async fn whisper_delete_corrupted_model(model_name: String) -> Result<String
 
 /// Open the models folder in the system file explorer
 #[command]
+#[specta::specta]
 pub async fn open_models_folder() -> Result<(), String> {
     let models_dir = get_models_directory()
         .ok_or_else(|| "Models directory not initialized".to_string())?;

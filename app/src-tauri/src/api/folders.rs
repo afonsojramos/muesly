@@ -7,6 +7,7 @@ use crate::{database::repositories::folders::FoldersRepository, state::AppState}
 use super::types::Folder;
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_list_folders<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -29,6 +30,7 @@ pub async fn api_list_folders<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_create_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -56,19 +58,20 @@ pub async fn api_create_folder<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_rename_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     folder_id: String,
     name: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("Folder name cannot be empty".to_string());
     }
     let pool = state.db_manager.pool();
     match FoldersRepository::rename_folder(pool, &folder_id, trimmed).await {
-        Ok(true) => Ok(serde_json::json!({ "status": "success" })),
+        Ok(true) => Ok(serde_json::json!({ "status": "success" }).into()),
         Ok(false) => Err(format!("Folder not found: {}", folder_id)),
         Err(e) => {
             log_error!("Error renaming folder {}: {}", folder_id, e);
@@ -78,16 +81,17 @@ pub async fn api_rename_folder<R: Runtime>(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn api_delete_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     folder_id: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let pool = state.db_manager.pool();
     match FoldersRepository::delete_folder(pool, &folder_id).await {
         Ok(true) => {
             log_info!("Deleted folder {} (meetings detached)", folder_id);
-            Ok(serde_json::json!({ "status": "success" }))
+            Ok(serde_json::json!({ "status": "success" }).into())
         }
         Ok(false) => Err(format!("Folder not found: {}", folder_id)),
         Err(e) => {
@@ -99,15 +103,16 @@ pub async fn api_delete_folder<R: Runtime>(
 
 /// Move a meeting into a folder, or out of all folders when `folder_id` is None.
 #[tauri::command]
+#[specta::specta]
 pub async fn api_move_meeting_to_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     folder_id: Option<String>,
-) -> Result<serde_json::Value, String> {
+) -> Result<crate::json::Json, String> {
     let pool = state.db_manager.pool();
     match FoldersRepository::set_meeting_folder(pool, &meeting_id, folder_id.as_deref()).await {
-        Ok(true) => Ok(serde_json::json!({ "status": "success" })),
+        Ok(true) => Ok(serde_json::json!({ "status": "success" }).into()),
         Ok(false) => Err(format!("Meeting not found: {}", meeting_id)),
         Err(e) => {
             log_error!("Error moving meeting {}: {}", meeting_id, e);
