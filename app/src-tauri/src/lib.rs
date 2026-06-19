@@ -744,6 +744,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         get_transcription_status,
         diarization::commands::diarization_models_ready::<tauri::Wry>,
         diarization::commands::diarize_meeting::<tauri::Wry>,
+        diarization::commands::download_diarization_models::<tauri::Wry>,
         read_audio_file::<tauri::Wry>,
         save_transcript::<tauri::Wry>,
         analytics::commands::init_analytics,

@@ -16,6 +16,12 @@ export const commands = {
 	 *  number of segments that received a speaker label.
 	 */
 	diarizeMeeting: (meetingId: string, meetingFolderPath: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId, meetingFolderPath })),
+	/**
+	 *  Download the diarization models on demand, emitting
+	 *  `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
+	 *  the Parakeet model-download flow).
+	 */
+	downloadDiarizationModels: () => typedError<null, string>(__TAURI_INVOKE("download_diarization_models")),
 	readAudioFile: (filePath: string) => typedError<number[], string>(__TAURI_INVOKE("read_audio_file", { filePath })),
 	saveTranscript: (filePath: string, content: string) => typedError<null, string>(__TAURI_INVOKE("save_transcript", { filePath, content })),
 	initAnalytics: () => typedError<null, string>(__TAURI_INVOKE("init_analytics")),

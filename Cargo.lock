@@ -656,6 +656,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bzip2-rs"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "beeb59e7e4c811ab37cc73680c798c7a5da77fc9989c62b09138e31ee740f735"
+dependencies = [
+ "crc32fast",
+ "tinyvec",
+]
+
+[[package]]
 name = "bzip2-sys"
 version = "0.1.13+1.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3619,6 +3629,7 @@ dependencies = [
  "async-trait",
  "bytemuck",
  "bytes",
+ "bzip2-rs",
  "chrono",
  "cidre",
  "clap 4.6.1",
@@ -3664,6 +3675,7 @@ dependencies = [
  "strsim 0.10.0",
  "symphonia",
  "sysinfo",
+ "tar",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

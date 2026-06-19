@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::audio::audio_processing::{audio_to_mono, resample};
 use crate::audio::decoder::decode_audio_file;
@@ -124,4 +124,49 @@ pub async fn diarize_meeting<R: Runtime>(
         }
     }
     Ok(labeled)
+}
+
+/// Download the diarization models on demand, emitting
+/// `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
+/// the Parakeet model-download flow).
+#[tauri::command]
+#[specta::specta]
+pub async fn download_diarization_models<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("failed to resolve app data dir: {e}"))?;
+
+    let emitter = app.clone();
+    let result = model::download_models(&app_data_dir, move |phase, downloaded, total| {
+        let percent = if total > 0 {
+            (downloaded as f64 / total as f64 * 100.0).round() as u32
+        } else {
+            0
+        };
+        let _ = emitter.emit(
+            "diarization-model-download-progress",
+            serde_json::json!({
+                "phase": phase,
+                "downloaded_bytes": downloaded,
+                "total_bytes": total,
+                "progress": percent,
+            }),
+        );
+    })
+    .await;
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit("diarization-model-download-complete", serde_json::json!({}));
+            Ok(())
+        }
+        Err(e) => {
+            let _ = app.emit(
+                "diarization-model-download-error",
+                serde_json::json!({ "error": e.to_string() }),
+            );
+            Err(format!("failed to download diarization models: {e}"))
+        }
+    }
 }
