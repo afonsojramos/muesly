@@ -8,6 +8,14 @@ export const commands = {
 	stopRecording: (args: RecordingArgs) => typedError<null, string>(__TAURI_INVOKE("stop_recording", { args })),
 	isRecording: () => __TAURI_INVOKE<boolean>("is_recording"),
 	getTranscriptionStatus: () => __TAURI_INVOKE<TranscriptionStatus>("get_transcription_status"),
+	/**  Whether both diarization models are present on disk. */
+	diarizationModelsReady: () => typedError<boolean, string>(__TAURI_INVOKE("diarization_models_ready")),
+	/**
+	 *  Diarize a saved meeting: decode its audio, run the sidecar, reconcile speaker
+	 *  turns onto the transcript segments, and persist `speaker_id`. Returns the
+	 *  number of segments that received a speaker label.
+	 */
+	diarizeMeeting: (meetingId: string, meetingFolderPath: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId, meetingFolderPath })),
 	readAudioFile: (filePath: string) => typedError<number[], string>(__TAURI_INVOKE("read_audio_file", { filePath })),
 	saveTranscript: (filePath: string, content: string) => typedError<null, string>(__TAURI_INVOKE("save_transcript", { filePath, content })),
 	initAnalytics: () => typedError<null, string>(__TAURI_INVOKE("init_analytics")),
