@@ -171,6 +171,8 @@ jobs:
           cargo build --release -p llama-helper
           mkdir -p app/src-tauri/binaries
           cp target/release/llama-helper app/src-tauri/binaries/llama-helper-x86_64-unknown-linux-gnu
+          cargo build --release -p diarization-helper
+          cp target/release/diarization-helper app/src-tauri/binaries/diarization-helper-x86_64-unknown-linux-gnu
 
       - name: Cache FFmpeg binary
         uses: actions/cache@v5

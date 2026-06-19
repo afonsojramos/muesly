@@ -101,6 +101,7 @@
         ],
         "externalBin": [
             "binaries/llama-helper",
+            "binaries/diarization-helper",
             "binaries/ffmpeg"
         ],
         "macOS": {

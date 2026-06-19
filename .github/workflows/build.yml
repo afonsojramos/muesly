@@ -514,6 +514,8 @@ jobs:
           # Copy binary to binaries directory
           New-Item -ItemType Directory -Force -Path "app/src-tauri/binaries" | Out-Null
           Copy-Item "target/release/llama-helper.exe" -Destination "app/src-tauri/binaries/llama-helper-x86_64-pc-windows-msvc.exe"
+          cargo build --release -p diarization-helper
+          Copy-Item "target/release/diarization-helper.exe" -Destination "app/src-tauri/binaries/diarization-helper-x86_64-pc-windows-msvc.exe"
 
           Write-Host "Copied llama-helper to app/src-tauri/binaries/"
           Get-ChildItem "app/src-tauri/binaries/"
@@ -545,6 +547,8 @@ jobs:
           # Copy binary to binaries directory
           mkdir -p app/src-tauri/binaries
           cp target/release/llama-helper app/src-tauri/binaries/llama-helper-${TARGET}
+          cargo build --release -p diarization-helper
+          cp target/release/diarization-helper app/src-tauri/binaries/diarization-helper-${TARGET}
 
           echo "Copied llama-helper to app/src-tauri/binaries/llama-helper-${TARGET}"
           ls -la app/src-tauri/binaries/
