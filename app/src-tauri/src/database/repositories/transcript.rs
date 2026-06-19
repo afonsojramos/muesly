@@ -7,6 +7,41 @@ use uuid::Uuid;
 pub struct TranscriptsRepository;
 
 impl TranscriptsRepository {
+    /// Load each transcript segment's id and audio time span for a meeting,
+    /// ordered by start time. Segments without timing are skipped (they cannot
+    /// be reconciled against speaker turns).
+    pub async fn segments_for_diarization(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Vec<(String, f64, f64)>, SqlxError> {
+        let rows: Vec<(String, Option<f64>, Option<f64>)> = sqlx::query_as(
+            "SELECT id, audio_start_time, audio_end_time FROM transcripts \
+             WHERE meeting_id = ? ORDER BY audio_start_time",
+        )
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(id, start, end)| Some((id, start?, end?)))
+            .collect())
+    }
+
+    /// Assign (or clear, with `None`) the diarized speaker cluster for a
+    /// transcript segment.
+    pub async fn set_segment_speaker_id(
+        pool: &SqlitePool,
+        transcript_id: &str,
+        speaker_id: Option<i64>,
+    ) -> Result<(), SqlxError> {
+        sqlx::query("UPDATE transcripts SET speaker_id = ? WHERE id = ?")
+            .bind(speaker_id)
+            .bind(transcript_id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Saves a new meeting and its associated transcript segments.
     /// This function uses a transaction to ensure that either both the meeting
     /// and all its transcripts are saved, or none of them are.
