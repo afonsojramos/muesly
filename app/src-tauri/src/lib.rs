@@ -28,6 +28,7 @@ pub mod keychain;
 pub mod config;
 pub mod console_utils;
 pub mod database;
+pub mod diarization;
 pub mod json;
 pub mod notifications;
 pub mod onboarding;
