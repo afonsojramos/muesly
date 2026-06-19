@@ -821,7 +821,7 @@ impl AudioPipeline {
     pub async fn run(mut self) -> Result<()> {
         info!("VAD-driven audio pipeline started - segments sent in real-time based on speech detection");
 
-        // Acoustic echo cancellation for the transcription path only (plan U2).
+        // Acoustic echo cancellation for the transcription path only.
         // Built once per recording so it adapts over time. If it fails to build,
         // AEC is skipped (None) and transcription falls back to the raw mic window.
         let echo_handle = match crate::audio::echo_cancel::EchoCancellerHandle::spawn(48_000) {

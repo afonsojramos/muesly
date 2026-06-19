@@ -4,7 +4,7 @@ pub mod decoder;
 pub mod encode;
 pub mod ffmpeg;
 pub mod vad;
-pub mod echo_cancel; // Acoustic echo cancellation on the transcription path (plan U2)
+pub mod echo_cancel; // Acoustic echo cancellation on the transcription path
 
 // Modularized device management
 pub mod devices;

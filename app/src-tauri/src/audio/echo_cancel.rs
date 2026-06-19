@@ -1,11 +1,11 @@
-//! Acoustic echo cancellation (plan U2), transcription path only.
+//! Acoustic echo cancellation, transcription path only.
 //!
 //! Wraps the pure-Rust `aec3` LinearPipeline (a WebRTC AEC3 port). The recorded
 //! WAV is never touched: AEC runs on the microphone window that feeds the VAD /
 //! transcription engine, using the time-aligned system-audio window as the
 //! far-end reference. It is a deliberate no-op when the reference is silent or
-//! near-silent (headphones, or the low-volume post-volume system tap noted in
-//! `TODOs.md:117`), so it can never corrupt the mic when there is nothing to
+//! near-silent (headphones, or a system tap that captures post-volume audio that
+//! is near-silent at low output volume), so it can never corrupt the mic when there is nothing to
 //! cancel. On any internal error it passes the mic through unchanged.
 
 use aec3::nodes::audio::AudioFormat;
@@ -14,7 +14,7 @@ use anyhow::Result;
 
 /// Hardware path delay seed between played audio and its echo in the mic. The
 /// ring buffer already time-aligns the two windows, so we start at 0 and leave
-/// fine delay tuning to a later pass (plan U2, deferred to implementation).
+/// fine delay tuning to a later pass.
 const INITIAL_DELAY_MS: i32 = 0;
 
 /// Below this RMS the far-end reference carries no usable echo to cancel; pass
