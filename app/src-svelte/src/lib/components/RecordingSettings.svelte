@@ -31,6 +31,9 @@
 	let saving = $state(false);
 	let showRecordingNotification = $state(true);
 	let autoDetectMeetings = $state(false);
+	let dictationEnabled = $state(false);
+	// macOS Accessibility permission, needed to paste dictated text into other apps.
+	let accessibilityTrusted = $state(true);
 
 	onMount(() => {
 		void (async () => {
@@ -63,7 +66,32 @@
 			const res = await commands.getAutoDetectMeetings();
 			if (res.status === 'ok') autoDetectMeetings = res.data;
 		})();
+
+		void (async () => {
+			const enabled = await commands.getDictationEnabled();
+			if (enabled.status === 'ok') dictationEnabled = enabled.data;
+			const trusted = await commands.dictationAccessibilityTrusted();
+			if (trusted.status === 'ok') accessibilityTrusted = trusted.data;
+		})();
 	});
+
+	async function handleDictationToggle(enabled: boolean): Promise<void> {
+		dictationEnabled = enabled;
+		// Enabling keeps the engine warm and registers the push-to-talk hotkey.
+		const warm = await commands.setDictationEnabled(enabled);
+		const hotkey = await commands.setDictationShortcutEnabled(enabled);
+		if (warm.status === 'error' || hotkey.status === 'error') {
+			dictationEnabled = !enabled;
+			toast.error('Failed to update dictation', {
+				description: warm.status === 'error' ? warm.error : (hotkey as { error?: string }).error
+			});
+			return;
+		}
+		if (enabled) {
+			const trusted = await commands.dictationAccessibilityTrusted();
+			if (trusted.status === 'ok') accessibilityTrusted = trusted.data;
+		}
+	}
 
 	async function handleAutoDetectToggle(enabled: boolean): Promise<void> {
 		autoDetectMeetings = enabled;
