@@ -137,6 +137,13 @@ export const commands = {
 	/**  Whether the dictation feature is currently enabled. */
 	getDictationEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_dictation_enabled")),
 	/**
+	 *  Start a push-to-talk dictation burst (mic-only). Rejected while a meeting is
+	 *  recording or a dictation burst is already active.
+	 */
+	startDictation: () => typedError<null, string>(__TAURI_INVOKE("start_dictation")),
+	/**  Stop the dictation burst, transcribe it, and return (and emit) the text. */
+	stopDictation: () => typedError<string, string>(__TAURI_INVOKE("stop_dictation")),
+	/**
 	 *  Recover audio from checkpoint files
 	 *  This is called by the transcript recovery system to merge audio chunks after a crash
 	 */
