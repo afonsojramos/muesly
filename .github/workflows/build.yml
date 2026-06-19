@@ -51,7 +51,7 @@ jobs:
     runs-on: ${{ inputs.platform }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
@@ -78,13 +78,13 @@ jobs:
           fi
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 10
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
@@ -94,7 +94,7 @@ jobs:
           echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
 
       - name: Setup pnpm cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ env.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -283,7 +283,7 @@ jobs:
 
       - name: Setup DigiCert KeyLocker
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
-        uses: digicert/ssm-code-signing@v1.1.1
+        uses: digicert/ssm-code-signing@v1.2.1
 
       - name: Sync Certificate to Windows Certificate Store
         if: contains(inputs.platform, 'windows') && inputs.sign-binaries
@@ -550,28 +550,30 @@ jobs:
           ls -la app/src-tauri/binaries/
 
       - name: Cache FFmpeg binary
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: app/src-tauri/binaries/ffmpeg-*
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('app/src-tauri/build.rs', 'app/src-tauri/build/ffmpeg.rs') }}    
 
-      - name: Build with Tauri
-        id: tauri-build
+      # Two build steps: the signed one passes the Apple signing/notarization
+      # vars; the unsigned one passes none of them. They must not be set to empty
+      # strings on unsigned builds, the tauri bundler treats a present-but-empty
+      # APPLE_CERTIFICATE as "import this cert" and fails (`security import`).
+      - name: Build with Tauri (signed)
+        if: inputs.sign-binaries
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APPLE_ID: ${{ inputs.sign-binaries && secrets.APPLE_ID || '' }}
-          APPLE_ID_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_ID_PASSWORD || '' }}
-          APPLE_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ inputs.sign-binaries && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_CERTIFICATE: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ inputs.sign-binaries && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ inputs.sign-binaries && env.CERT_ID || '' }}
-          # Tauri updater signing (ALWAYS enabled for .sig files)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+          # Tauri updater signing (.sig files for auto-update)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Disable AVX on Linux so binaries run on older / virtualized CPUs
-          # (kept in sync with the release build-linux job)
           WHISPER_NO_AVX: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
           WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
         with:
@@ -579,6 +581,21 @@ jobs:
           tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
+          args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }}
+
+      - name: Build with Tauri (unsigned)
+        if: ${{ !inputs.sign-binaries }}
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Updater signing still runs (createUpdaterArtifacts is on); OS code
+          # signing does not. No APPLE_* vars: macOS falls back to ad-hoc signing.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WHISPER_NO_AVX: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
+          WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
+        with:
+          projectPath: app
           args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }}
 
       - name: Verify code signing (macOS)
@@ -621,7 +638,7 @@ jobs:
 
       - name: Upload artifacts (macOS)
         if: inputs.upload-artifacts && contains(inputs.platform, 'macos')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.target }}
           path: |
@@ -695,7 +712,7 @@ jobs:
 
       - name: Upload artifacts (Linux)
         if: inputs.upload-artifacts && contains(inputs.platform, 'ubuntu')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.platform }}-${{ inputs.target }}
           path: |
@@ -706,7 +723,7 @@ jobs:
 
       - name: Upload artifacts (Windows)
         if: inputs.upload-artifacts && contains(inputs.platform, 'windows')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.asset-prefix }}-${{ inputs.target }}
           path: |
