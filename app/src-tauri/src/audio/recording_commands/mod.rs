@@ -45,6 +45,32 @@ pub use devices::*;
 // Simple recording state tracking
 static IS_RECORDING: AtomicBool = AtomicBool::new(false);
 
+/// A dictation push-to-talk burst is in progress. Mirrors `IS_RECORDING` so the
+/// two mic-using modes never run at once: each refuses to start while the other
+/// is active (see [`can_start`]).
+static DICTATION_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Whether a meeting recording is currently active.
+pub(crate) fn is_recording_active() -> bool {
+    IS_RECORDING.load(Ordering::SeqCst)
+}
+
+/// Whether a dictation burst is currently active.
+pub(crate) fn is_dictation_active() -> bool {
+    DICTATION_ACTIVE.load(Ordering::SeqCst)
+}
+
+/// Mark a dictation burst active or finished (owned by the dictation path).
+pub(crate) fn set_dictation_active(active: bool) {
+    DICTATION_ACTIVE.store(active, Ordering::SeqCst);
+}
+
+/// Whether a mic-using mode may start: only when neither it nor the other mode
+/// is active. Pure mutual-exclusion gate, separated out for testing.
+pub(crate) fn can_start(this_active: bool, other_active: bool) -> bool {
+    !this_active && !other_active
+}
+
 // Global recording manager and transcription task to keep them alive during recording.
 // This uses a tokio (async) mutex because some commands hold the manager across an
 // `.await` (e.g. device reconnection); a std mutex held across `.await` risks blocking
@@ -129,6 +155,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     info!("🔍 IS_RECORDING state check: {}", current_recording_state);
     if current_recording_state {
         return Err("Recording already in progress".to_string());
+    }
+    // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
+    if !can_start(current_recording_state, DICTATION_ACTIVE.load(Ordering::SeqCst)) {
+        return Err("Cannot start recording while dictation is active".to_string());
     }
 
     // Validate that transcription models are available before starting recording
@@ -384,6 +414,10 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     info!("🔍 IS_RECORDING state check: {}", current_recording_state);
     if current_recording_state {
         return Err("Recording already in progress".to_string());
+    }
+    // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
+    if !can_start(current_recording_state, DICTATION_ACTIVE.load(Ordering::SeqCst)) {
+        return Err("Cannot start recording while dictation is active".to_string());
     }
 
     // Validate that transcription models are available before starting recording
@@ -1057,5 +1091,14 @@ mod tests {
         let name2 = "MacBook Pro Microphone";
         let result2 = classify_device_type(name2);
         assert_ne!(result2, name2, "must not return the device name");
+    }
+
+    #[test]
+    fn can_start_only_when_both_idle() {
+        // A mode may start only when neither it nor the other mode is active.
+        assert!(can_start(false, false));
+        assert!(!can_start(true, false)); // this mode already active
+        assert!(!can_start(false, true)); // the other mode active
+        assert!(!can_start(true, true));
     }
 }
