@@ -734,6 +734,29 @@ async fn set_recording_shortcut_enabled<R: Runtime>(
     Ok(())
 }
 
+/// The global push-to-talk dictation shortcut: hold to dictate, release to transcribe.
+const DICTATION_SHORTCUT: &str = "CmdOrCtrl+Shift+D";
+
+#[tauri::command]
+#[specta::specta]
+async fn set_dictation_shortcut_enabled<R: Runtime>(
+    app: AppHandle<R>,
+    enabled: bool,
+) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    let gs = app.global_shortcut();
+    if enabled {
+        let _ = gs.unregister(DICTATION_SHORTCUT);
+        gs.register(DICTATION_SHORTCUT)
+            .map_err(|e| format!("Failed to register dictation shortcut: {}", e))?;
+        log_info!("Global dictation shortcut registered: {}", DICTATION_SHORTCUT);
+    } else {
+        let _ = gs.unregister(DICTATION_SHORTCUT);
+        log_info!("Global dictation shortcut disabled");
+    }
+    Ok(())
+}
+
 /// Single source of truth for the Tauri command set: drives both the runtime
 /// invoke handler and the generated TypeScript bindings. Generic `R: Runtime`
 /// commands are monomorphized to `tauri::Wry` here.
@@ -900,6 +923,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         set_custom_vocabulary::<tauri::Wry>,
         get_custom_vocabulary::<tauri::Wry>,
         set_recording_shortcut_enabled::<tauri::Wry>,
+        set_dictation_shortcut_enabled::<tauri::Wry>,
         notifications::commands::get_notification_settings,
         notifications::commands::set_notification_settings,
         notifications::commands::request_notification_permission,
@@ -975,9 +999,37 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    // Only one shortcut is ever registered; fire on key-down.
-                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    let is_dictation = DICTATION_SHORTCUT
+                        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                        .map(|s| &s == shortcut)
+                        .unwrap_or(false);
+                    if is_dictation {
+                        // Push-to-talk: hold to dictate, release to transcribe + emit.
+                        let app = app.clone();
+                        match event.state() {
+                            ShortcutState::Pressed => {
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) =
+                                        crate::dictation::commands::start_dictation().await
+                                    {
+                                        log_warn!("Dictation start failed: {}", e);
+                                    }
+                                });
+                            }
+                            ShortcutState::Released => {
+                                tauri::async_runtime::spawn(async move {
+                                    if let Err(e) =
+                                        crate::dictation::commands::stop_dictation(app).await
+                                    {
+                                        log_warn!("Dictation stop failed: {}", e);
+                                    }
+                                });
+                            }
+                        }
+                    } else if event.state() == ShortcutState::Pressed {
+                        // The recording shortcut toggles on key-down.
                         crate::tray::toggle_recording_handler(app);
                     }
                 })

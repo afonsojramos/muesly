@@ -419,6 +419,7 @@ export const commands = {
 	setCustomVocabulary: (entries: VocabularyEntry[]) => typedError<null, string>(__TAURI_INVOKE("set_custom_vocabulary", { entries })),
 	getCustomVocabulary: () => typedError<VocabularyEntry[], string>(__TAURI_INVOKE("get_custom_vocabulary")),
 	setRecordingShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_recording_shortcut_enabled", { enabled })),
+	setDictationShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_shortcut_enabled", { enabled })),
 	/**  Get notification settings */
 	getNotificationSettings: () => typedError<NotificationSettings, string>(__TAURI_INVOKE("get_notification_settings")),
 	/**  Set notification settings */
