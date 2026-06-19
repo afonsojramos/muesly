@@ -18,6 +18,7 @@
 	import { toast } from '$lib/toast';
 	import DeviceSelection, { type SelectedDevices } from './DeviceSelection.svelte';
 	import { config } from '$lib/stores/config.svelte';
+	import { commands } from '$lib/bindings';
 
 	let preferences = $state<RecordingPreferences>({
 		save_folder: '',
@@ -29,6 +30,7 @@
 	let loading = $state(true);
 	let saving = $state(false);
 	let showRecordingNotification = $state(true);
+	let autoDetectMeetings = $state(false);
 
 	onMount(() => {
 		void (async () => {
@@ -56,7 +58,21 @@
 				console.error('Failed to load notification preference:', error);
 			}
 		})();
+
+		void (async () => {
+			const res = await commands.getAutoDetectMeetings();
+			if (res.status === 'ok') autoDetectMeetings = res.data;
+		})();
 	});
+
+	async function handleAutoDetectToggle(enabled: boolean): Promise<void> {
+		autoDetectMeetings = enabled;
+		const res = await commands.setAutoDetectMeetings(enabled);
+		if (res.status === 'error') {
+			autoDetectMeetings = !enabled;
+			toast.error('Failed to update meeting auto-detection', { description: res.error });
+		}
+	}
 
 	async function savePreferences(prefs: RecordingPreferences): Promise<void> {
 		saving = true;
@@ -203,6 +219,17 @@
 				checked={config.globalShortcutEnabled}
 				onCheckedChange={(enabled) => config.toggleGlobalShortcut(enabled)}
 			/>
+		</div>
+
+		<div class="flex items-center justify-between rounded-lg border border-border p-4">
+			<div class="flex-1">
+				<div class="font-medium">Automatically detect meetings</div>
+				<div class="text-sm text-muted-foreground">
+					When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start recording.
+					macOS only.
+				</div>
+			</div>
+			<Switch checked={autoDetectMeetings} onCheckedChange={handleAutoDetectToggle} />
 		</div>
 
 		<div class="space-y-4">

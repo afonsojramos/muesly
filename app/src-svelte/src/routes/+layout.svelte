@@ -10,6 +10,7 @@
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
 	import { analyticsConsent } from '$lib/stores/analytics-consent.svelte';
 	import { toast } from '$lib/toast';
+	import { recordingService } from '$lib/services/recording';
 	import { isAudioExtension, getAudioFormatsDisplayList } from '$lib/constants/audio-formats';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
@@ -149,6 +150,47 @@
 				else unlisten = fn;
 			} catch (error) {
 				console.error('[Layout] Failed to set up update tray listener:', error);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
+	});
+
+	// Meeting auto-detection: when a known meeting app comes to the foreground (and
+	// the user enabled auto-detect), offer to start recording.
+	$effect(() => {
+		let unlisten: UnlistenFn | undefined;
+		let cancelled = false;
+
+		(async () => {
+			try {
+				const fn = await listen<{ app_name: string; bundle_id: string }>(
+					'meeting-app-detected',
+					(event) => {
+						const appName = event.payload?.app_name ?? 'A meeting app';
+						toast.info(`${appName} is open`, {
+							description: 'Start recording this meeting?',
+							duration: 10000,
+							action: {
+								label: 'Start recording',
+								onClick: () => {
+									void recordingService.startRecording().catch((error) => {
+										toast.error('Failed to start recording', {
+											description: error instanceof Error ? error.message : 'Unknown error'
+										});
+									});
+								}
+							}
+						});
+					}
+				);
+				if (cancelled) fn();
+				else unlisten = fn;
+			} catch (error) {
+				console.error('[Layout] Failed to set up meeting-detect listener:', error);
 			}
 		})();
 
