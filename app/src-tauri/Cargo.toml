@@ -135,8 +135,12 @@ rand = "0.8.5"
 rayon = "1.10"
 rubato = "0.15.0"
 ringbuf = "0.4.8"
-# Acoustic echo cancellation (pure-Rust WebRTC AEC3 port) for the transcription path (U2).
+# Acoustic echo cancellation (pure-Rust WebRTC AEC3 port) for the transcription path.
 aec3 = "0.3.0"
+# Type-safe Tauri command bindings. Pin all three with `=` (RC line).
+specta = { version = "=2.0.0-rc.25", features = ["derive", "chrono", "serde_json"] }
+specta-typescript = "0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tempfile = "3.3.0"
 
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", rev = "a1216c3d0256112702b4c1967101a55488088965" }

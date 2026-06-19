@@ -1,3 +1,6 @@
+# Pinned to a dated nightly because `specta`/`tauri-specta` (type-safe Tauri
+# command bindings) require the nightly-only `debug_closure_helpers` feature.
+# Bump the date deliberately; floating `nightly` makes builds non-reproducible.
 [toolchain]
-channel = "stable"
+channel = "nightly-2026-06-17"
 components = ["rustfmt", "clippy"]
