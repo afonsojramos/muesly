@@ -148,6 +148,20 @@ export const commands = {
 	 *  The frontend uses this to prompt the user to grant permission.
 	 */
 	dictationAccessibilityTrusted: () => typedError<boolean, string>(__TAURI_INVOKE("dictation_accessibility_trusted")),
+	/**  Whether local-AI cleanup of dictated text is enabled. */
+	getDictationCleanupEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_dictation_cleanup_enabled")),
+	/**  Enable or disable local-AI cleanup of dictated text. */
+	setDictationCleanupEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_cleanup_enabled", { enabled })),
+	/**  List all dictation cleanup presets, oldest first. */
+	listDictationCleanupPresets: () => typedError<DictationCleanupPreset[], string>(__TAURI_INVOKE("list_dictation_cleanup_presets")),
+	/**  Create a new (inactive) cleanup preset and return it. */
+	createDictationCleanupPreset: (name: string, prompt: string) => typedError<DictationCleanupPreset, string>(__TAURI_INVOKE("create_dictation_cleanup_preset", { name, prompt })),
+	/**  Update a cleanup preset's name and prompt. */
+	updateDictationCleanupPreset: (id: string, name: string, prompt: string) => typedError<null, string>(__TAURI_INVOKE("update_dictation_cleanup_preset", { id, name, prompt })),
+	/**  Delete a cleanup preset. */
+	deleteDictationCleanupPreset: (id: string) => typedError<null, string>(__TAURI_INVOKE("delete_dictation_cleanup_preset", { id })),
+	/**  Make a cleanup preset the active one (clears the others). */
+	setActiveDictationCleanupPreset: (id: string) => typedError<null, string>(__TAURI_INVOKE("set_active_dictation_cleanup_preset", { id })),
 	/**
 	 *  Recover audio from checkpoint files
 	 *  This is called by the transcript recovery system to merge audio chunks after a crash
@@ -611,6 +625,18 @@ export type DatabaseCheckResult = {
 export type DeviceEventResponse = { type: "DeviceDisconnected"; device_name: string; device_type: string } | { type: "DeviceReconnected"; device_name: string; device_type: string } | { type: "DeviceListChanged" };
 
 export type DeviceType = "Input" | "Output";
+
+/**
+ *  A reusable dictation cleanup instruction. At most one preset is active at a
+ *  time; the active preset's `prompt` drives the cleanup pass before injection.
+ */
+export type DictationCleanupPreset = {
+	id: string,
+	name: string,
+	prompt: string,
+	is_active: boolean,
+	created_at: string,
+};
 
 /**  Information about a disconnected device */
 export type DisconnectedDeviceInfo = {

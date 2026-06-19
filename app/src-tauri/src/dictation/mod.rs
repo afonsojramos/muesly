@@ -6,3 +6,4 @@
 pub mod capture;
 pub mod commands;
 pub mod inject;
+pub mod cleanup;

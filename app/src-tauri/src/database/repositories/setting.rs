@@ -61,6 +61,30 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Whether local-AI cleanup of dictated text is enabled (single-row settings, id='1').
+    pub async fn get_dictation_cleanup_enabled(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT dictation_cleanup_enabled FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    /// Enable or disable local-AI cleanup of dictated text (single-row settings, id='1').
+    pub async fn set_dictation_cleanup_enabled(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET dictation_cleanup_enabled = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_model_config(
         pool: &SqlitePool,
     ) -> std::result::Result<Option<Setting>, sqlx::Error> {
