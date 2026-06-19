@@ -17,6 +17,7 @@
 	import Switch from '$lib/ui/switch.svelte';
 	import { toast } from '$lib/toast';
 	import DeviceSelection, { type SelectedDevices } from './DeviceSelection.svelte';
+	import DictationCleanupSettings from './DictationCleanupSettings.svelte';
 	import { config } from '$lib/stores/config.svelte';
 	import { commands } from '$lib/bindings';
 
@@ -259,6 +260,27 @@
 			</div>
 			<Switch checked={autoDetectMeetings} onCheckedChange={handleAutoDetectToggle} />
 		</div>
+
+		<div class="flex items-center justify-between rounded-lg border border-border p-4">
+			<div class="flex-1">
+				<div class="font-medium">Push-to-talk dictation</div>
+				<div class="text-sm text-muted-foreground">
+					Hold the dictation hotkey to dictate; on release the transcribed text is inserted into the
+					focused app. Keeps the model warm. macOS needs Accessibility permission.
+				</div>
+				{#if dictationEnabled && !accessibilityTrusted}
+					<div class="mt-2 text-sm text-destructive">
+						Accessibility permission is required to insert text. Grant it in System Settings →
+						Privacy &amp; Security → Accessibility.
+					</div>
+				{/if}
+			</div>
+			<Switch checked={dictationEnabled} onCheckedChange={handleDictationToggle} />
+		</div>
+
+		{#if dictationEnabled}
+			<DictationCleanupSettings />
+		{/if}
 
 		<div class="space-y-4">
 			<div class="border-t border-border pt-6">
