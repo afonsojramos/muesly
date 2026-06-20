@@ -170,7 +170,10 @@ jobs:
       - name: Install app dependencies
         run: |
           cd app
+          # src-svelte is a separate pnpm project; install it too or `vite` is
+          # missing when tauri-action runs `pnpm -C src-svelte build`.
           pnpm install
+          pnpm -C src-svelte install
 
       - name: Build llama-helper sidecar
         run: |
