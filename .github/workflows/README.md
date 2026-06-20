@@ -12,7 +12,7 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 | `build-linux.yml` | Linux standalone build | Linux | Optional | 30 days |
 | `build-test.yml` | Pre-release builds, signed | All | ON | 30 days |
 | `build.yml` | Reusable build / sign / verify workflow (called by every `build-*` and `release` workflow) | - | - | - |
-| `release.yml` | Production release (draft GitHub Release) | macOS + Windows + Linux | Required | Permanent |
+| `release.yml` | Production release (draft GitHub Release) | macOS + Windows + Linux | macOS only | Permanent |
 | `pr-main-check.yml` | Version/config validation, no builds | - | - | - |
 | `rust-check.yml` | Auto: test / clippy / fmt on PR + push to `main` | - | - | - |
 | `audit.yml` | Auto: `cargo audit` on PR + push + weekly cron | - | - | - |
@@ -37,20 +37,20 @@ Artifacts are named `muesly-{workflow}-{platform}-{target}-{version}`, e.g. `mue
 When signing is enabled:
 
 - **macOS**: Apple Developer ID certificate + notarization; verified with `codesign` and `spctl`
-- **Windows**: DigiCert KeyLocker (cloud HSM); signs MSI and NSIS installers
-- **Updater (all platforms)**: Tauri Ed25519 signatures for auto-update manifests
+- **Windows**: DigiCert KeyLocker (cloud HSM); signs MSI and NSIS installers. **Not enabled in `release.yml`** (no DigiCert account): Windows ships unsigned, so it shows a SmartScreen "unknown publisher" prompt on first install. To enable, add the `SM_*` secrets below and set `sign: true` on the Windows matrix entry in `release.yml`.
+- **Updater (all platforms)**: Tauri Ed25519 signatures for auto-update manifests. Always produced regardless of OS code signing, so auto-update works on Windows even while unsigned.
 
 Required secrets:
 
 - macOS: `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `KEYCHAIN_PASSWORD`
-- Windows: `SM_HOST`, `SM_API_KEY`, `SM_CLIENT_CERT_FILE_B64`, `SM_CLIENT_CERT_PASSWORD`, `SM_CODE_SIGNING_CERT_SHA1_HASH`
+- Windows (optional, for Authenticode): `SM_HOST`, `SM_API_KEY`, `SM_CLIENT_CERT_FILE_B64`, `SM_CLIENT_CERT_PASSWORD`, `SM_CODE_SIGNING_CERT_SHA1_HASH`
 - Updater: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 
 ## Releases (`release.yml`)
 
 - Version comes from `tauri.conf.json` and must be plain `X.Y.Z` (no pre-release suffixes; Windows MSI rejects them)
 - If the version tag already exists, the workflow auto-increments: `0.1.1` → `0.1.1.1` → ... up to `.100`
-- Creates a **draft** GitHub Release with signed installers and a `latest.json` updater manifest
+- Creates a **draft** GitHub Release with installers (macOS signed + notarized, Windows unsigned) and a `latest.json` updater manifest
 - **Linux** ships a `.deb` and an AppImage as downloads, and the AppImage auto-updates: its bundled `libwayland-client.so` is stripped for Wayland compatibility, then the AppImage is re-signed (so the updater signature matches) and a `linux-x86_64` entry is added to `latest.json`
 
 ## CI Hardware Acceleration

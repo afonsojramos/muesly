@@ -83,8 +83,12 @@ jobs:
             console.log(`Created draft release with ID: ${data.id}`)
             return data.id
 
-  # STEP 2: Build all platforms and upload directly to release
-  # Note: Linux builds are excluded from release (only macOS and Windows)
+  # STEP 2: Build macOS + Windows and upload directly to the release.
+  # macOS is fully signed + notarized. Windows is built unsigned (no DigiCert
+  # account): it still gets the Tauri updater signature so auto-update works,
+  # it just shows a SmartScreen "unknown publisher" prompt on first install.
+  # Set `sign: true` on the Windows entry once DigiCert SM_* secrets exist.
+  # Linux is handled separately by the build-linux job below.
   build-all-platforms:
     needs: create-release
     permissions:
@@ -96,16 +100,18 @@ jobs:
           - platform: "macos-latest" # for Apple Silicon only (M1 and above)
             args: "--target aarch64-apple-darwin"
             target: "aarch64-apple-darwin"
+            sign: true
           - platform: "windows-latest"
             args: ""
             target: "x86_64-pc-windows-msvc"
+            sign: false
 
     uses: ./.github/workflows/build.yml
     with:
       platform: ${{ matrix.platform }}
       target: ${{ matrix.target }}
       build-args: ${{ matrix.args }}
-      sign-binaries: true
+      sign-binaries: ${{ matrix.sign }}
       asset-prefix: "muesly"
       upload-artifacts: false  # tauri-action uploads directly to release
       release-id: ${{ needs.create-release.outputs.release-id }}
