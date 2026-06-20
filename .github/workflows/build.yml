@@ -600,6 +600,12 @@ jobs:
           WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
         with:
           projectPath: app
+          # Same release wiring as the signed step, so unsigned platforms
+          # (e.g. Windows under option B) still upload to the release and get a
+          # latest.json entry. Without releaseId, tauri-action builds but never uploads.
+          tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
+          releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
+          releaseId: ${{ inputs.release-id }}
           args: ${{ inputs.build-args }} ${{ steps.build-features.outputs.features }}
 
       - name: Verify code signing (macOS)
