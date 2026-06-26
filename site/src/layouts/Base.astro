@@ -20,6 +20,10 @@ const {
 
 const canonical = new URL(Astro.url.pathname, SITE_URL).href;
 
+// Optional Cloudflare Web Analytics (cookieless, privacy-respecting). Only
+// renders when PUBLIC_CF_BEACON_TOKEN is set at build time.
+const cfBeaconToken = import.meta.env.PUBLIC_CF_BEACON_TOKEN;
+
 const jsonLd = JSON.stringify({
 	'@context': 'https://schema.org',
 	'@type': 'SoftwareApplication',
@@ -66,5 +70,15 @@ const jsonLd = JSON.stringify({
 		<script>
 			import '../scripts/client.ts';
 		</script>
+		{
+			cfBeaconToken && (
+				<script
+					is:inline
+					defer
+					src="https://static.cloudflareinsights.com/beacon.min.js"
+					data-cf-beacon={`{"token": "${cfBeaconToken}"}`}
+				/>
+			)
+		}
 	</body>
 </html>
