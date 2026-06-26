@@ -1,0 +1,45 @@
+---
+import { Icon } from 'astro-icon/components';
+import { comparisons } from '$lib/comparisons';
+import Section from '../../components/ui/Section.astro';
+import Base from '../../layouts/Base.astro';
+---
+
+<Base
+	title="muesly vs the alternatives"
+	description="How muesly compares to cloud meeting assistants like Otter, Granola, and Fireflies: private, local, open source, and free."
+>
+	<Section class="py-16 md:py-24">
+		<div class="mx-auto max-w-2xl text-center">
+			<h1 class="font-display text-4xl font-semibold tracking-tight md:text-5xl">
+				muesly vs the alternatives
+			</h1>
+			<p class="mt-4 text-lg text-muted-foreground">
+				Most meeting assistants send a bot to your call and process your conversations in the cloud.
+				Here is how muesly compares, honestly.
+			</p>
+		</div>
+
+		<div class="mx-auto mt-12 grid max-w-3xl gap-5 sm:grid-cols-2 lg:grid-cols-3">
+			{
+				comparisons.map((comparison) => (
+					<a
+						href={`/compare/${comparison.slug}`}
+						class="group rounded-2xl border border-border bg-card p-6 shadow-sm transition-colors hover:border-accent/50"
+					>
+						<h2 class="font-semibold">muesly vs {comparison.name}</h2>
+						<p class="mt-1.5 text-sm text-muted-foreground">{comparison.description}</p>
+						<span class="mt-4 inline-flex items-center gap-1 text-sm font-medium text-accent">
+							Compare
+							<Icon
+								name="lucide:arrow-right"
+								class="h-4 w-4 transition-transform group-hover:translate-x-0.5"
+								aria-hidden="true"
+							/>
+						</span>
+					</a>
+				))
+			}
+		</div>
+	</Section>
+</Base>
