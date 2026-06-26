@@ -1,0 +1,70 @@
+---
+import Section from '../ui/Section.astro';
+
+// Answers double as objection-handling and FAQPage structured data (below).
+// Keep every answer accurate against PRIVACY_POLICY.md (analytics is opt-out,
+// cloud LLM is opt-in).
+const faqs = [
+	{
+		q: 'Is muesly really free?',
+		a: 'Yes. muesly is free and open source under the MIT license. There is no paid tier and no account.'
+	},
+	{
+		q: 'Where does my data go?',
+		a: 'Recordings, transcripts, and summaries are processed and stored on your device. Nothing is uploaded unless you explicitly configure a cloud LLM provider for summaries.'
+	},
+	{
+		q: 'Can I verify the privacy claims?',
+		a: 'Yes. The full source is on GitHub under the MIT license, so you or your security team can read the code and watch the network yourself.'
+	},
+	{
+		q: 'Does it work with Zoom, Teams, and Google Meet?',
+		a: 'Yes. muesly captures system audio alongside your microphone, so it works with any call. No bot joins the meeting.'
+	},
+	{
+		q: 'Is there a meeting bot?',
+		a: 'No. muesly records locally from your own audio. Nothing joins your call and no participant sees a recorder.'
+	},
+	{
+		q: 'Do I need an account?',
+		a: 'No account, no sign-up, no email. Download and run.'
+	},
+	{
+		q: 'What analytics does muesly collect?',
+		a: 'Official builds include anonymized, opt-out usage analytics to help fix bugs and improve performance. It never includes meeting content. You can disable it in settings, and builds compiled without an analytics key have it off entirely.'
+	},
+	{
+		q: 'Which platforms are supported?',
+		a: 'macOS and Windows have downloadable builds. Linux is supported by building from source.'
+	}
+];
+
+const faqSchema = JSON.stringify({
+	'@context': 'https://schema.org',
+	'@type': 'FAQPage',
+	mainEntity: faqs.map((f) => ({
+		'@type': 'Question',
+		name: f.q,
+		acceptedAnswer: { '@type': 'Answer', text: f.a }
+	}))
+});
+---
+
+<Section id="faq" class="py-16 md:py-24">
+	<div class="mx-auto max-w-2xl text-center" data-reveal>
+		<h2 class="font-display text-3xl font-semibold tracking-tight md:text-4xl">Questions, answered</h2>
+	</div>
+
+	<dl class="mx-auto mt-10 max-w-2xl divide-y divide-border" data-reveal>
+		{
+			faqs.map((faq) => (
+				<div class="py-5">
+					<dt class="font-medium text-foreground">{faq.q}</dt>
+					<dd class="mt-2 text-sm text-muted-foreground">{faq.a}</dd>
+				</div>
+			))
+		}
+	</dl>
+</Section>
+
+<script type="application/ld+json" set:html={faqSchema} is:inline />

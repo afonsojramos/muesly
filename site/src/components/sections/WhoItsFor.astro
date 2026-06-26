@@ -1,0 +1,60 @@
+---
+import { Icon } from 'astro-icon/components';
+import Section from '../ui/Section.astro';
+
+// Wide on audience, but enumerated so each visitor self-identifies. Language is
+// about intent ("honor confidentiality"), not certified compliance claims.
+const audiences = [
+	{
+		icon: 'lucide:heart-pulse',
+		title: 'Therapists & clinicians',
+		body: 'Session notes that honor confidentiality, never handed to a vendor cloud.'
+	},
+	{
+		icon: 'lucide:scale',
+		title: 'Lawyers',
+		body: 'Privileged conversations that stay privileged, processed on your machine.'
+	},
+	{
+		icon: 'lucide:rocket',
+		title: 'Founders & PMs',
+		body: 'Back-to-back calls captured and summarized, with no bot joining the meeting.'
+	},
+	{
+		icon: 'lucide:newspaper',
+		title: 'Journalists',
+		body: 'Protect your sources. Recordings and transcripts stay on your device.'
+	},
+	{
+		icon: 'lucide:briefcase',
+		title: 'Consultants',
+		body: "Client calls that never touch someone else's servers."
+	},
+	{
+		icon: 'lucide:lock',
+		title: 'Anyone, really',
+		body: "If you'd rather your conversations not live in the cloud, muesly is for you."
+	}
+];
+---
+
+<Section class="py-16 md:py-24">
+	<div class="mx-auto max-w-2xl text-center" data-reveal>
+		<h2 class="font-display text-3xl font-semibold tracking-tight md:text-4xl">Who muesly is for</h2>
+		<p class="mt-3 text-muted-foreground">Anyone with a conversation that shouldn't leave the room.</p>
+	</div>
+
+	<div class="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-reveal>
+		{
+			audiences.map((audience) => (
+				<div class="rounded-2xl border border-border bg-card p-6 shadow-sm">
+					<span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10 text-accent">
+						<Icon name={audience.icon} class="h-5 w-5" aria-hidden="true" />
+					</span>
+					<h3 class="mt-4 font-semibold">{audience.title}</h3>
+					<p class="mt-1.5 text-sm text-muted-foreground">{audience.body}</p>
+				</div>
+			))
+		}
+	</div>
+</Section>
