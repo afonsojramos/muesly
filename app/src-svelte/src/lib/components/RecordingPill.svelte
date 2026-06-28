@@ -41,10 +41,10 @@
 		};
 	}
 
-	// Decorative level bars. Three short horizontal bars stacked vertically; their
-	// widths animate from the same Math.random() loop the in-app pill uses. Under
-	// reduced motion they stay at a steady mid level.
-	let barWidths = $state<string[]>(['60%', '85%', '60%']);
+	// Decorative level bars: three vertical bars in a row (a level-meter look) whose
+	// heights animate from the same Math.random() loop the in-app pill used. Under
+	// reduced motion they stay at a steady mid height.
+	let barHeights = $state<string[]>(['10px', '18px', '10px']);
 
 	// Re-entrancy guards so a double tap (or a global-shortcut + click race) can't
 	// fire two stop/pause calls; the shared store methods are also idempotent.
@@ -126,10 +126,10 @@
 		const interval = setInterval(() => {
 			if (reducedMotion || !recordingState.isRecording || document.visibilityState !== 'visible')
 				return;
-			barWidths = [
-				`${Math.random() * 45 + 45}%`,
-				`${Math.random() * 45 + 45}%`,
-				`${Math.random() * 45 + 45}%`
+			barHeights = [
+				`${Math.random() * 14 + 6}px`,
+				`${Math.random() * 14 + 6}px`,
+				`${Math.random() * 14 + 6}px`
 			];
 		}, 300);
 
@@ -186,11 +186,11 @@
 				<Square size={18} />
 			</button>
 
-			<div class="relative flex w-full flex-col items-center gap-1" aria-hidden="true">
-				{#each barWidths as width, index (index)}
+			<div class="relative flex h-6 items-center justify-center gap-1" aria-hidden="true">
+				{#each barHeights as height, index (index)}
 					<div
-						class={`h-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-muted-foreground/60' : 'bg-accent'}`}
-						style={`width: ${isPaused || reducedMotion ? '60%' : width}; opacity: ${isPaused ? 0.6 : 1};`}
+						class={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-muted-foreground/60' : 'bg-accent'}`}
+						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
 				{/each}
 			</div>
