@@ -1026,12 +1026,6 @@ pub fn run() {
                         }
                         return;
                     }
-                    if matches(pill_window::STOP_SHORTCUT) {
-                        if event.state() == ShortcutState::Pressed {
-                            crate::tray::stop_recording_handler(app);
-                        }
-                        return;
-                    }
                     if is_dictation {
                         // Push-to-talk: hold to dictate, release to transcribe + emit.
                         let app = app.clone();

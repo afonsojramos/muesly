@@ -21,9 +21,12 @@ const PILL_LABEL: &str = "pill";
 /// `focus: false` and is therefore not keyboard-reachable, so this chord is
 /// registered while the pill is shown and unregistered when it hides. The
 /// matching dispatch lives in the global-shortcut handler in `lib.rs`.
+///
+/// Only pause/resume is exposed as a global chord: it is non-destructive. Stop is
+/// deliberately left to the on-pill button and the (keyboard-reachable) tray, so
+/// a recording can never be ended by a stray global hotkey, and so we avoid
+/// OS-reserved chords like `Ctrl+Shift+Esc` (Windows Task Manager).
 pub const TOGGLE_PAUSE_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
-/// Global backstop to stop the recording while the (non-focusable) pill is shown.
-pub const STOP_SHORTCUT: &str = "CmdOrCtrl+Shift+Escape";
 
 /// The pill window's logical size, mirrored from the `tauri.conf.json` `pill`
 /// window declaration (`width: 80`, `height: 220`). Used to compute its
@@ -88,26 +91,21 @@ pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// Register the pause/stop global-shortcut backstops while the pill is visible.
-/// Registered only during recording (not at idle) so they cannot collide with
+/// Register the pause global-shortcut backstop while the pill is visible.
+/// Registered only during recording (not at idle) so it cannot collide with
 /// other apps' shortcuts when nothing is being recorded. Re-registering an
 /// already-registered chord errors, so unregister first to keep it idempotent.
 fn register_shortcuts<R: Runtime>(app: &AppHandle<R>) {
     let global_shortcut = app.global_shortcut();
-    for chord in [TOGGLE_PAUSE_SHORTCUT, STOP_SHORTCUT] {
-        let _ = global_shortcut.unregister(chord);
-        if let Err(e) = global_shortcut.register(chord) {
-            log::warn!("pill shortcut register failed for {chord}: {e}");
-        }
+    let _ = global_shortcut.unregister(TOGGLE_PAUSE_SHORTCUT);
+    if let Err(e) = global_shortcut.register(TOGGLE_PAUSE_SHORTCUT) {
+        log::warn!("pill shortcut register failed for {TOGGLE_PAUSE_SHORTCUT}: {e}");
     }
 }
 
-/// Unregister the pause/stop global-shortcut backstops when the pill hides.
+/// Unregister the pause global-shortcut backstop when the pill hides.
 fn unregister_shortcuts<R: Runtime>(app: &AppHandle<R>) {
-    let global_shortcut = app.global_shortcut();
-    for chord in [TOGGLE_PAUSE_SHORTCUT, STOP_SHORTCUT] {
-        let _ = global_shortcut.unregister(chord);
-    }
+    let _ = app.global_shortcut().unregister(TOGGLE_PAUSE_SHORTCUT);
 }
 
 /// Position the pill at the bottom-center of the work area of the monitor under
@@ -182,11 +180,13 @@ fn cursor_monitor<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<tauri:
 ///
 /// Tauri's `set_always_on_top`/`set_visible_on_all_workspaces` do not float
 /// above fullscreen apps; this sets the raw `NSWindow` level and collection
-/// behavior via AppKit. AppKit must be touched on the main thread, so the work
-/// is dispatched there via `run_on_main_thread` and we block on a one-shot
-/// channel (mirroring `dictation::inject`). If the `NSWindow` handle cannot be
-/// obtained, we degrade to `set_visible_on_all_workspaces(true)` and log,
-/// never crashing.
+/// behavior via AppKit. AppKit must be touched on the main thread, so the two
+/// property sets are dispatched there via `run_on_main_thread`, fire-and-forget:
+/// nothing downstream depends on them landing before `show` returns, and `show`
+/// is itself called from the main thread during `setup` (relaunch-while-recording),
+/// where blocking on a channel would deadlock. If the `NSWindow` handle cannot be
+/// obtained, we degrade to `set_visible_on_all_workspaces(true)` and log, never
+/// crashing.
 // The `objc` 0.2.7 `msg_send!`/`sel_impl!` macros emit an internal
 // `#[cfg(feature = "cargo-clippy")]` that this crate does not declare; suppress
 // the resulting `unexpected_cfgs` lint from that third-party macro expansion.
@@ -218,9 +218,10 @@ fn raise_above_fullscreen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     };
 
     // `*mut c_void` is not `Send`; move the raw address (usize) across the
-    // thread boundary and rebuild the pointer on the main thread.
+    // thread boundary and rebuild the pointer on the main thread. The pill window
+    // is statically declared and never destroyed (its CloseRequested only hides
+    // it), so the pointer stays valid for the dispatched closure.
     let ns_window_addr = ns_window as usize;
-    let (tx, rx) = std::sync::mpsc::sync_channel::<()>(0);
 
     let dispatch = window.run_on_main_thread(move || {
         // The `msg_send!` keyword-argument form expands to call `sel!`, so its
@@ -235,24 +236,11 @@ fn raise_above_fullscreen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
             let _: () =
                 msg_send![ns_window, setCollectionBehavior: NS_WINDOW_COLLECTION_BEHAVIOR];
         }
-        let _ = tx.send(());
     });
 
-    match dispatch {
-        Ok(()) => {
-            // Bound the wait so a stalled main thread never blocks the recording
-            // lifecycle indefinitely.
-            if rx
-                .recv_timeout(std::time::Duration::from_millis(500))
-                .is_err()
-            {
-                log::warn!("pill raise-above-fullscreen did not complete in time");
-            }
-        }
-        Err(e) => {
-            log::warn!("pill raise-above-fullscreen dispatch failed: {e}");
-            let _ = window.set_visible_on_all_workspaces(true);
-        }
+    if let Err(e) = dispatch {
+        log::warn!("pill raise-above-fullscreen dispatch failed: {e}");
+        let _ = window.set_visible_on_all_workspaces(true);
     }
 }
 
