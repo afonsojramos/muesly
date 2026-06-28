@@ -12,6 +12,7 @@
     "app": {
         "windows": [
             {
+                "label": "main",
                 "title": "muesly",
                 "width": 1100,
                 "height": 700,
@@ -21,7 +22,23 @@
                 "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
-      }
+      },
+            {
+                "label": "pill",
+                "url": "/pill",
+                "width": 80,
+                "height": 220,
+                "resizable": false,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "shadow": false,
+                "focus": false,
+                "visible": false,
+                "backgroundThrottling": "disabled",
+                "title": "muesly recording"
+            }
         ],
         "macOSPrivateApi": true,
         "security": {
@@ -75,6 +92,19 @@
                                 }
                             ]
                         }
+                    ]
+                },
+                {
+                    "identifier": "pill",
+                    "description": "Floating recording pill window",
+                    "windows": [
+                        "pill"
+                    ],
+                    "permissions": [
+                        "core:event:default",
+                        "core:window:default",
+                        "core:window:allow-start-dragging",
+                        "core:path:default"
                     ]
                 }
             ]
