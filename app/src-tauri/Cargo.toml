@@ -129,6 +129,11 @@ regex = "1.11.0"
 ndarray = "0.16"
 sha2 = "0.10"
 hex = "0.4"
+# Google Calendar OAuth: PKCE challenge encoding + opening the consent URL in
+# the system browser. (PKCE/state randomness reuses uuid v4; loopback + token
+# exchange use the existing reqwest.)
+base64 = "0.22"
+open = "5"
 # Diarization model archive extraction (pyannote segmentation ships as tar.bz2).
 tar = "0.4"
 bzip2-rs = "0.1"
