@@ -5,7 +5,12 @@
 	import Switch from '$lib/ui/switch.svelte';
 	import Alert from '$lib/ui/alert.svelte';
 	import { toast } from '$lib/toast';
-	import { commands, type CalendarAuthStatus, type CalendarInfo } from '$lib/bindings';
+	import {
+		commands,
+		type CalendarAccount,
+		type CalendarAuthStatus,
+		type CalendarInfo
+	} from '$lib/bindings';
 
 	let loading = $state(true);
 	let authStatus = $state<CalendarAuthStatus>('notdetermined');
@@ -15,8 +20,47 @@
 	let sendNames = $state(false);
 	let sendNotes = $state(false);
 	let requesting = $state(false);
+	let accounts = $state<CalendarAccount[]>([]);
+	let googleConfigured = $state(false);
+	let addingAccount = $state(false);
 
 	const granted = $derived(authStatus === 'granted');
+	const googleAccounts = $derived(accounts.filter((a) => a.source === 'google'));
+
+	async function loadAccounts(): Promise<void> {
+		const list = await commands.calendarListAccounts();
+		if (list.status === 'ok') accounts = list.data;
+		googleConfigured = await commands.calendarGoogleConfigured();
+	}
+
+	async function addGoogleAccount(): Promise<void> {
+		addingAccount = true;
+		try {
+			const res = await commands.calendarAddGoogleAccount();
+			if (res.status === 'ok') {
+				toast.success(`Connected ${res.data.email ?? 'Google account'}.`);
+				await loadAccounts();
+			} else {
+				toast.error('Could not connect Google account', { description: res.error });
+			}
+		} finally {
+			addingAccount = false;
+		}
+	}
+
+	async function removeAccount(id: string): Promise<void> {
+		const res = await commands.calendarRemoveAccount(id);
+		if (res.status === 'ok') await loadAccounts();
+		else toast.error('Could not remove account', { description: res.error });
+	}
+
+	async function toggleAccount(id: string, next: boolean): Promise<void> {
+		const res = await commands.calendarSetAccountEnabled(id, next);
+		if (res.status === 'error') {
+			toast.error('Could not update source', { description: res.error });
+		}
+		await loadAccounts();
+	}
 
 	async function loadCalendars(): Promise<void> {
 		const list = await commands.calendarListCalendars();
@@ -35,6 +79,7 @@
 				if (names.status === 'ok') sendNames = names.data;
 				const notes = await commands.calendarGetSendNotesToCloud();
 				if (notes.status === 'ok') sendNotes = notes.data;
+				await loadAccounts();
 				if (granted) await loadCalendars();
 			} finally {
 				loading = false;
@@ -134,9 +179,10 @@
 		<div>
 			<h3 class="mb-4 text-lg font-semibold">Calendar</h3>
 			<p class="mb-6 text-sm text-muted-foreground">
-				muesly reads your Mac's calendars locally to title recordings and add meeting context to
-				summaries. Reading happens entirely on your device, with no account and nothing sent to
-				Google or Apple. This covers any account you've added to the macOS Calendar app.
+				muesly attaches the meeting happening at record time to your recordings and summaries. Use
+				your Mac's local calendars (read entirely on-device, no account) and/or connect Google
+				accounts (read-only). Everything is off by default; what reaches a cloud summary provider is
+				controlled separately below.
 			</p>
 		</div>
 
@@ -149,6 +195,77 @@
 			</div>
 			<Switch checked={enabled} disabled={requesting} onCheckedChange={handleEnableToggle} />
 		</div>
+
+		{#if enabled}
+			<div class="rounded-lg border border-border p-4">
+				<div class="mb-1 font-medium">Calendar sources</div>
+				<div class="mb-3 text-sm text-muted-foreground">
+					Enable one or more sources. Events from all enabled sources are matched to your
+					recordings.
+				</div>
+				<div class="space-y-2">
+					<!-- Local macOS source -->
+					<div class="flex items-center justify-between">
+						<div class="text-sm">
+							On this Mac
+							{#if !granted}
+								<span class="ml-2 text-xs text-amber-600">(calendar access needed)</span>
+							{/if}
+						</div>
+						{#each accounts.filter((a) => a.source === 'eventkit') as local (local.id)}
+							<Switch
+								checked={local.enabled}
+								onCheckedChange={(v) => toggleAccount(local.id, v)}
+							/>
+						{/each}
+					</div>
+
+					<!-- Connected Google accounts -->
+					{#each googleAccounts as acct (acct.id)}
+						<div class="flex items-center justify-between">
+							<div class="text-sm">
+								{acct.email ?? 'Google account'}
+								{#if acct.status === 'reauth_required'}
+									<span class="ml-2 text-xs text-amber-600">(reconnect needed - remove &amp; re-add)</span>
+								{/if}
+							</div>
+							<div class="flex items-center gap-3">
+								<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
+								<button
+									onclick={() => removeAccount(acct.id)}
+									class="text-xs text-muted-foreground transition-colors hover:text-destructive"
+									aria-label="Remove account"
+								>
+									Remove
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+
+				<div class="mt-4">
+					{#if googleConfigured}
+						<button
+							onclick={addGoogleAccount}
+							disabled={addingAccount}
+							class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary disabled:opacity-50"
+						>
+							<Calendar class="size-4" />
+							{addingAccount ? 'Waiting for Google…' : 'Add Google account'}
+						</button>
+						<p class="mt-2 text-xs text-muted-foreground">
+							Read-only. Opens your browser; nothing is routed through a muesly server. While in
+							review, you may need to reconnect about weekly.
+						</p>
+					{:else}
+						<p class="text-xs text-muted-foreground">
+							Google accounts are unavailable: no OAuth client id is configured (set
+							<code>MUESLY_GOOGLE_CLIENT_ID</code> / <code>MUESLY_GOOGLE_CLIENT_SECRET</code>).
+						</p>
+					{/if}
+				</div>
+			</div>
+		{/if}
 
 		{#if enabled && !granted}
 			<Alert variant="warning">
