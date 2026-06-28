@@ -6,6 +6,7 @@
 
 pub mod commands;
 pub mod context;
+pub mod dedup;
 pub mod eventkit;
 pub mod matching;
 pub mod permissions;
@@ -23,6 +24,14 @@ pub enum CalendarAuthStatus {
     Denied,
     WriteOnly,
     Granted,
+}
+
+/// Which kind of source produced a candidate. Used by dedup precedence
+/// (Google wins over the EventKit mirror) and snapshot attribution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SourceKind {
+    EventKit,
+    Google,
 }
 
 /// A calendar the user can include or exclude from matching.

@@ -12,7 +12,7 @@
 //! snapshot) and avoids any managed-state coupling.
 
 use crate::calendar::matching::CalendarEventCandidate;
-use crate::calendar::{CalendarAuthStatus, CalendarInfo};
+use crate::calendar::{CalendarAuthStatus, CalendarInfo, SourceKind};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 use tauri::{AppHandle, Runtime};
@@ -208,6 +208,9 @@ mod imp {
         let notes = unsafe { event.notes() }.map(|n| n.to_string());
         let conference_url = resolve_conference_url(event, location.as_deref(), notes.as_deref());
         let identifier = unsafe { event.eventIdentifier() }.map(|s| s.to_string());
+        // Cross-system UID for dedup against a Google-OAuth copy of the same
+        // event (EventKit syncs Google over CalDAV, preserving the iCalUID).
+        let ical_uid = unsafe { event.calendarItemExternalIdentifier() }.map(|s| s.to_string());
 
         Some(CalendarEventCandidate {
             identifier,
@@ -220,6 +223,9 @@ mod imp {
             i_am_organizer,
             attendee_count,
             calendar_excluded,
+            ical_uid,
+            source: SourceKind::EventKit,
+            account_id: "eventkit-local".to_string(),
             organizer_name,
             attendees,
             location,

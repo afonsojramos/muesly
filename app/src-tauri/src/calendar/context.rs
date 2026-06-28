@@ -212,6 +212,8 @@ mod tests {
             notes: Some("Discuss roadmap".into()),
             calendar_name: Some("Work".into()),
             source: "eventkit".into(),
+            account_id: Some("eventkit-local".into()),
+            ical_uid: Some("UID-1".into()),
             match_confidence: "high".into(),
             created_at: Utc::now(),
         }

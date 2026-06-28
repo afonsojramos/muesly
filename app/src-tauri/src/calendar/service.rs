@@ -4,14 +4,16 @@
 //! work must never block a recording or a summary.
 
 use crate::calendar::matching::{self, CalendarEventCandidate, MatchConfidence, ParticipantStatus};
-use crate::calendar::{context, eventkit, CalendarAuthStatus};
-use crate::database::models::CalendarEvent;
+use crate::calendar::{context, dedup, eventkit, CalendarAuthStatus, SourceKind};
+use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
+use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
 use crate::database::repositories::setting::SettingsRepository;
 use crate::summary::llm_client::LLMProvider;
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
 use std::collections::HashSet;
+use std::time::Duration;
 
 #[derive(serde::Serialize)]
 struct AttendeePayload {
@@ -29,15 +31,54 @@ fn participant_status_str(s: ParticipantStatus) -> &'static str {
     }
 }
 
-/// The user's excluded-calendar id set (best-effort).
-async fn excluded_ids(pool: &SqlitePool) -> HashSet<String> {
-    SettingsRepository::get_calendar_excluded_ids(pool)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|json| serde_json::from_str::<Vec<String>>(&json).ok())
+/// Parse an account's excluded-calendar id set (best-effort).
+fn excluded_set(account: &CalendarAccount) -> HashSet<String> {
+    account
+        .excluded_calendar_ids
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<Vec<String>>(json).ok())
         .map(|v| v.into_iter().collect())
         .unwrap_or_default()
+}
+
+/// Fetch candidates from every enabled source, then de-duplicate across sources
+/// (the dedup runs before the matcher, see `dedup`). Each source is isolated:
+/// a failure yields an empty `Vec` for that source and never affects others or
+/// blocks a recording. (Chunk A: EventKit only; Google accounts are added in
+/// the OAuth chunk, where the loop also parallelizes via per-source timeouts.)
+async fn fetch_all_candidates(
+    pool: &SqlitePool,
+    now: DateTime<Utc>,
+) -> Vec<CalendarEventCandidate> {
+    let accounts = CalendarAccountsRepository::list(pool)
+        .await
+        .unwrap_or_default();
+    let mut all = Vec::new();
+    for account in accounts.iter().filter(|a| a.enabled) {
+        // Google accounts are added in the OAuth chunk (with per-source timeouts
+        // and parallel fan-out); for now only the local EventKit source fetches.
+        if account.source == "eventkit" {
+            all.append(&mut fetch_eventkit(account, now).await);
+        }
+    }
+    dedup::dedupe(all)
+}
+
+/// EventKit fetch for one account, off the async reactor and time-bounded.
+/// Returns empty on missing permission, timeout, or a worker panic.
+async fn fetch_eventkit(
+    account: &CalendarAccount,
+    now: DateTime<Utc>,
+) -> Vec<CalendarEventCandidate> {
+    if eventkit::authorization_status() != CalendarAuthStatus::Granted {
+        return Vec::new();
+    }
+    let excluded = excluded_set(account);
+    let fut = tokio::task::spawn_blocking(move || eventkit::fetch_candidates(now, &excluded));
+    match tokio::time::timeout(Duration::from_secs(3), fut).await {
+        Ok(Ok(v)) => v,
+        _ => Vec::new(),
+    }
 }
 
 /// Outcome of resolving the event at an instant: the matched candidate plus how
@@ -70,15 +111,7 @@ pub async fn resolve_event_for_instant(
     {
         return None;
     }
-    if eventkit::authorization_status() != CalendarAuthStatus::Granted {
-        return None;
-    }
-    let excluded = excluded_ids(pool).await;
-    // EventKit fetch is synchronous and blocking; keep it off the async reactor.
-    let candidates =
-        tokio::task::spawn_blocking(move || eventkit::fetch_candidates(now, &excluded))
-            .await
-            .unwrap_or_default();
+    let candidates = fetch_all_candidates(pool, now).await;
     let m = matching::match_event(&candidates, now)?;
     Some(ResolvedEvent {
         candidate: candidates[m.index].clone(),
@@ -106,6 +139,11 @@ pub fn build_snapshot(
         .notes
         .as_deref()
         .map(|n| context::cap_notes(&context::scrub_secrets(n), context::MAX_NOTES_CHARS));
+    let source = match c.source {
+        SourceKind::EventKit => "eventkit",
+        SourceKind::Google => "google",
+    }
+    .to_string();
 
     CalendarEvent {
         meeting_id: meeting_id.to_string(),
@@ -120,7 +158,9 @@ pub fn build_snapshot(
         conference_url: c.conference_url.clone(),
         notes,
         calendar_name: c.calendar_name.clone(),
-        source: "eventkit".to_string(),
+        source,
+        account_id: Some(c.account_id.clone()),
+        ical_uid: c.ical_uid.clone(),
         match_confidence: confidence.as_str().to_string(),
         created_at: Utc::now(),
     }
@@ -134,12 +174,7 @@ pub async fn attach_event_for_meeting(
     meeting_id: &str,
     instant: DateTime<Utc>,
 ) -> Result<bool, String> {
-    let excluded = excluded_ids(pool).await;
-    // EventKit fetch is synchronous and blocking; keep it off the async reactor.
-    let candidates =
-        tokio::task::spawn_blocking(move || eventkit::fetch_candidates(instant, &excluded))
-            .await
-            .unwrap_or_default();
+    let candidates = fetch_all_candidates(pool, instant).await;
     let m = match matching::match_event(&candidates, instant) {
         Some(m) => m,
         None => return Ok(false),

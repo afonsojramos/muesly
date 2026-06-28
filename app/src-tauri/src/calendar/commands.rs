@@ -4,6 +4,7 @@
 use crate::calendar::{eventkit, permissions, service, CalendarAuthStatus, CalendarInfo};
 use crate::database::models::CalendarEvent;
 use crate::database::repositories::calendar::CalendarEventsRepository;
+use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
 use crate::database::repositories::setting::SettingsRepository;
 use crate::state::AppState;
 use chrono::{DateTime, Utc};
@@ -66,10 +67,12 @@ pub async fn calendar_set_context_enabled(
 pub async fn calendar_get_excluded_ids(
     state: tauri::State<'_, AppState>,
 ) -> Result<Vec<String>, String> {
-    let json = SettingsRepository::get_calendar_excluded_ids(state.db_manager.pool())
+    // Excluded ids are now per-account; the local source is "eventkit-local".
+    let account = CalendarAccountsRepository::get(state.db_manager.pool(), "eventkit-local")
         .await
         .map_err(|e| e.to_string())?;
-    Ok(json
+    Ok(account
+        .and_then(|a| a.excluded_calendar_ids)
         .and_then(|j| serde_json::from_str::<Vec<String>>(&j).ok())
         .unwrap_or_default())
 }
@@ -80,10 +83,18 @@ pub async fn calendar_set_excluded_ids(
     state: tauri::State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<(), String> {
+    let pool = state.db_manager.pool();
     let json = serde_json::to_string(&ids).map_err(|e| e.to_string())?;
-    SettingsRepository::set_calendar_excluded_ids(state.db_manager.pool(), &json)
+    if let Some(mut account) = CalendarAccountsRepository::get(pool, "eventkit-local")
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+    {
+        account.excluded_calendar_ids = Some(json);
+        CalendarAccountsRepository::upsert(pool, &account)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]

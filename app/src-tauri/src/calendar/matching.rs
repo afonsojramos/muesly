@@ -60,6 +60,13 @@ pub struct CalendarEventCandidate {
     pub attendee_count: usize,
     /// Whether the owning calendar is on the user's exclusion list.
     pub calendar_excluded: bool,
+    // ---- dedup / attribution (carried through, NOT used for scoring) ----
+    /// Cross-system UID (EventKit external id / Google iCalUID).
+    pub ical_uid: Option<String>,
+    /// Which source produced this candidate.
+    pub source: crate::calendar::SourceKind,
+    /// The owning account id ("eventkit-local" or a Google sub).
+    pub account_id: String,
     // ---- snapshot payload (carried through, not used for scoring) ----
     pub organizer_name: Option<String>,
     pub attendees: Vec<Attendee>,
@@ -218,6 +225,9 @@ mod tests {
             i_am_organizer: false,
             attendee_count: 3,
             calendar_excluded: false,
+            ical_uid: Some(format!("uid-{title}")),
+            source: crate::calendar::SourceKind::EventKit,
+            account_id: "eventkit-local".to_string(),
             organizer_name: Some("Ana".to_string()),
             attendees: vec![Attendee {
                 name: Some("Ana".to_string()),
