@@ -482,6 +482,17 @@ impl SummaryService {
             }
         }
 
+        // Calendar meeting context, redacted for this provider's egress. Any
+        // failure collapses to None - it must never block summarization.
+        let meeting_context_block = crate::calendar::service::meeting_context_block(
+            &pool,
+            &meeting_id,
+            &provider,
+            ollama_endpoint.as_deref(),
+            custom_openai_endpoint.as_deref(),
+        )
+        .await;
+
         // Generate summary
         let client = crate::providers::common::http_client();
         let result = generate_meeting_summary(
@@ -503,6 +514,7 @@ impl SummaryService {
             summary_language.as_deref(),
             detected_summary_language.as_deref(),
             None,
+            meeting_context_block.as_deref(),
         )
         .await;
 
