@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { emit } from '@tauri-apps/api/event';
 	import { cubicOut } from 'svelte/easing';
 	import type { TransitionConfig } from 'svelte/transition';
 	import { Pause, Play, Square } from '@lucide/svelte';
@@ -55,7 +56,15 @@
 		if (isStopping) return;
 		isStopping = true;
 		try {
-			await recordingState.stop();
+			const stopped = await recordingState.stop();
+			// The pill is a separate webview and cannot call the main window's
+			// post-stop pipeline (transcript flush, SQLite save, navigation) directly.
+			// Broadcasting recording-stop-complete drives it via the main window's
+			// listener, mirroring how the tray stop signals completion. Without this
+			// a recording stopped from the pill would never be saved.
+			if (stopped) {
+				await emit('recording-stop-complete', true);
+			}
 		} finally {
 			isStopping = false;
 		}
@@ -110,9 +119,13 @@
 		};
 		document.addEventListener('visibilitychange', onVisibility);
 
-		// Decorative level animation; skipped entirely under reduced motion.
+		// Decorative level animation. The pill webview is pre-warmed and never
+		// unmounts (it is hidden, not destroyed, between recordings) and has
+		// backgroundThrottling disabled, so gate the loop on an actually-visible
+		// active recording instead of letting it churn reactive state forever.
 		const interval = setInterval(() => {
-			if (reducedMotion) return;
+			if (reducedMotion || !recordingState.isRecording || document.visibilityState !== 'visible')
+				return;
 			barWidths = [
 				`${Math.random() * 45 + 45}%`,
 				`${Math.random() * 45 + 45}%`,
