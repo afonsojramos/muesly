@@ -218,7 +218,7 @@ mod imp {
             event_status,
             my_participation,
             i_am_organizer,
-            attendee_count: attendee_count as usize,
+            attendee_count,
             calendar_excluded,
             organizer_name,
             attendees,
@@ -239,9 +239,8 @@ mod imp {
             // matcher's back-to-back tie-break has the neighbouring events.
             let start = now - Duration::hours(2);
             let end = now + Duration::hours(2);
-            let start_date =
-                unsafe { NSDate::dateWithTimeIntervalSince1970(start.timestamp() as f64) };
-            let end_date = unsafe { NSDate::dateWithTimeIntervalSince1970(end.timestamp() as f64) };
+            let start_date = NSDate::dateWithTimeIntervalSince1970(start.timestamp() as f64);
+            let end_date = NSDate::dateWithTimeIntervalSince1970(end.timestamp() as f64);
             let predicate = unsafe {
                 store.predicateForEventsWithStartDate_endDate_calendars(
                     &start_date,
