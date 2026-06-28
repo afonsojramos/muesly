@@ -63,7 +63,7 @@ pub struct SummaryProcess {
     pub end_time: Option<chrono::DateTime<chrono::Utc>>,
     pub chunk_count: i64,
     pub processing_time: f64,
-    pub metadata: Option<String>, // JSON
+    pub metadata: Option<String>,      // JSON
     pub result_backup: Option<String>, // Backup of result before regeneration
     pub result_backup_timestamp: Option<chrono::DateTime<chrono::Utc>>, // When backup was created
 }
@@ -102,11 +102,34 @@ pub struct CalendarEvent {
     /// Event notes/agenda, secret-scrubbed and length-capped before storage.
     pub notes: Option<String>,
     pub calendar_name: Option<String>,
-    /// Origin of the snapshot: "eventkit" (or "google" in a future fallback).
+    /// Origin of the snapshot: "eventkit" or "google".
     pub source: String,
+    /// Which calendar account won dedup (e.g. "eventkit-local" or a Google sub).
+    pub account_id: Option<String>,
+    /// Cross-system event UID (EventKit external id / Google iCalUID).
+    pub ical_uid: Option<String>,
     /// How the event was matched: "high", "low", or "manual".
     pub match_confidence: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// A calendar source the user has connected. The local EventKit source is one
+/// synthetic row ("eventkit-local"); each connected Google account is one row
+/// keyed by its Google `sub`. Refresh tokens live in the keychain, not here.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
+pub struct CalendarAccount {
+    /// Google `sub`, or the sentinel "eventkit-local".
+    pub id: String,
+    /// "eventkit" or "google".
+    pub source: String,
+    /// Display label (the account email for Google; NULL for the local source).
+    pub email: Option<String>,
+    pub enabled: bool,
+    /// JSON array of excluded calendar ids, scoped to this account.
+    pub excluded_calendar_ids: Option<String>,
+    /// "reauth_required" when the token is dead; NULL means healthy.
+    pub status: Option<String>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
@@ -164,9 +187,9 @@ pub struct Setting {
 impl Setting {
     /// Parse the custom OpenAI config from JSON string
     pub fn get_custom_openai_config(&self) -> Option<crate::summary::CustomOpenAIConfig> {
-        self.custom_openai_config.as_ref().and_then(|json| {
-            serde_json::from_str(json).ok()
-        })
+        self.custom_openai_config
+            .as_ref()
+            .and_then(|json| serde_json::from_str(json).ok())
     }
 }
 

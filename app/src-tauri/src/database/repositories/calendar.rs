@@ -43,9 +43,9 @@ impl CalendarEventsRepository {
                 meeting_id, event_identifier, occurrence_start, title,
                 start_time, end_time, organizer_name, attendees_json,
                 location, conference_url, notes, calendar_name,
-                source, match_confidence, created_at
+                source, account_id, ical_uid, match_confidence, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(meeting_id) DO UPDATE SET
                 event_identifier = excluded.event_identifier,
                 occurrence_start = excluded.occurrence_start,
@@ -59,6 +59,8 @@ impl CalendarEventsRepository {
                 notes = excluded.notes,
                 calendar_name = excluded.calendar_name,
                 source = excluded.source,
+                account_id = excluded.account_id,
+                ical_uid = excluded.ical_uid,
                 match_confidence = excluded.match_confidence
             "#,
         )
@@ -75,6 +77,8 @@ impl CalendarEventsRepository {
         .bind(&event.notes)
         .bind(&event.calendar_name)
         .bind(&event.source)
+        .bind(&event.account_id)
+        .bind(&event.ical_uid)
         .bind(&event.match_confidence)
         .bind(event.created_at)
         .execute(&mut *transaction)
@@ -156,6 +160,8 @@ mod tests {
             notes: Some("Agenda: roadmap".to_string()),
             calendar_name: Some("Work".to_string()),
             source: "eventkit".to_string(),
+            account_id: Some("eventkit-local".to_string()),
+            ical_uid: Some("UID-1".to_string()),
             match_confidence: "high".to_string(),
             created_at: Utc::now(),
         }
