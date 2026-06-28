@@ -710,8 +710,9 @@ async fn get_custom_vocabulary<R: Runtime>(
     }
 }
 
-/// The single global recording shortcut. Uncommon by default to avoid clashes.
-const RECORDING_SHORTCUT: &str = "CmdOrCtrl+Shift+R";
+/// The single global recording shortcut. Uses Alt/Option (not Shift) to avoid
+/// the browser hard-reload clash on Cmd/Ctrl+Shift+R.
+const RECORDING_SHORTCUT: &str = "CmdOrCtrl+Alt+R";
 
 #[tauri::command]
 #[specta::specta]

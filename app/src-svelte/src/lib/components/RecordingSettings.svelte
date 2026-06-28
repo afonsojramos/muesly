@@ -241,7 +241,7 @@
 			<div class="flex-1">
 				<div class="font-medium">Global recording shortcut</div>
 				<div class="text-sm text-muted-foreground">
-					Start or stop a recording with Cmd/Ctrl+Shift+R from any app.
+					Start or stop a recording with Cmd+Option+R (Ctrl+Alt+R on Windows/Linux) from any app.
 				</div>
 			</div>
 			<Switch
