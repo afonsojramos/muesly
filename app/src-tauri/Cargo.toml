@@ -134,6 +134,7 @@ hex = "0.4"
 # exchange use the existing reqwest.)
 base64 = "0.22"
 open = "5"
+dotenvy = "0.15"
 # Diarization model archive extraction (pyannote segmentation ships as tar.bz2).
 tar = "0.4"
 bzip2-rs = "0.1"

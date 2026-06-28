@@ -998,11 +998,23 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         calendar::commands::calendar_attach_event,
         calendar::commands::calendar_detach_event,
         calendar::commands::calendar_purge_all_snapshots,
+        calendar::commands::calendar_google_configured,
+        calendar::commands::calendar_list_accounts,
+        calendar::commands::calendar_add_google_account,
+        calendar::commands::calendar_remove_account,
+        calendar::commands::calendar_set_account_enabled,
+        calendar::commands::calendar_list_account_calendars,
+        calendar::commands::calendar_set_account_excluded_ids,
     ])
 }
 
 pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
+
+    // Load a local `.env` (walks up from the binary's dir, finding `app/.env` in
+    // dev) so credentials like MUESLY_GOOGLE_CLIENT_ID/SECRET reach std::env.
+    // No-op when absent; production builds embed config differently.
+    let _ = dotenvy::dotenv();
 
     let mut builder = tauri::Builder::default();
 

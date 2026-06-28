@@ -4,7 +4,7 @@
 //! work must never block a recording or a summary.
 
 use crate::calendar::matching::{self, CalendarEventCandidate, MatchConfidence, ParticipantStatus};
-use crate::calendar::{context, dedup, eventkit, CalendarAuthStatus, SourceKind};
+use crate::calendar::{context, dedup, eventkit, google, CalendarAuthStatus, SourceKind};
 use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
@@ -55,10 +55,13 @@ async fn fetch_all_candidates(
         .unwrap_or_default();
     let mut all = Vec::new();
     for account in accounts.iter().filter(|a| a.enabled) {
-        // Google accounts are added in the OAuth chunk (with per-source timeouts
-        // and parallel fan-out); for now only the local EventKit source fetches.
-        if account.source == "eventkit" {
-            all.append(&mut fetch_eventkit(account, now).await);
+        // Each source is time-bounded and isolated; a failure yields an empty Vec
+        // for that source and never affects others. (Sequential for now; parallel
+        // join across accounts is a follow-up.)
+        match account.source.as_str() {
+            "eventkit" => all.append(&mut fetch_eventkit(account, now).await),
+            "google" => all.append(&mut fetch_google(pool, account, now).await),
+            _ => {}
         }
     }
     dedup::dedupe(all)
@@ -77,6 +80,32 @@ async fn fetch_eventkit(
     let fut = tokio::task::spawn_blocking(move || eventkit::fetch_candidates(now, &excluded));
     match tokio::time::timeout(Duration::from_secs(3), fut).await {
         Ok(Ok(v)) => v,
+        _ => Vec::new(),
+    }
+}
+
+/// Google fetch for one account, time-bounded. On `invalid_grant` (dead refresh
+/// token) the account is flagged `reauth_required` and an empty Vec returned;
+/// any other failure (timeout, network) leaves status untouched and degrades to
+/// empty so a transient blip never marks a healthy account as broken.
+async fn fetch_google(
+    pool: &SqlitePool,
+    account: &CalendarAccount,
+    now: DateTime<Utc>,
+) -> Vec<CalendarEventCandidate> {
+    match tokio::time::timeout(
+        Duration::from_secs(3),
+        google::fetch_candidates(account, now),
+    )
+    .await
+    {
+        Ok(Ok(v)) => v,
+        Ok(Err(google::GoogleError::InvalidGrant)) => {
+            let mut flagged = account.clone();
+            flagged.status = Some("reauth_required".to_string());
+            let _ = CalendarAccountsRepository::upsert(pool, &flagged).await;
+            Vec::new()
+        }
         _ => Vec::new(),
     }
 }

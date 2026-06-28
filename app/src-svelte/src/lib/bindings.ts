@@ -582,8 +582,12 @@ export const commands = {
 	/**  Event notes/agenda, secret-scrubbed and length-capped before storage. */
 	notes: string | null,
 	calendar_name: string | null,
-	/**  Origin of the snapshot: "eventkit" (or "google" in a future fallback). */
+	/**  Origin of the snapshot: "eventkit" or "google". */
 	source: string,
+	/**  Which calendar account won dedup (e.g. "eventkit-local" or a Google sub). */
+	account_id: string | null,
+	/**  Cross-system event UID (EventKit external id / Google iCalUID). */
+	ical_uid: string | null,
 	/**  How the event was matched: "high", "low", or "manual". */
 	match_confidence: string,
 	created_at: string,
@@ -598,6 +602,24 @@ export const commands = {
 	calendarDetachEvent: (meetingId: string) => typedError<null, string>(__TAURI_INVOKE("calendar_detach_event", { meetingId })),
 	/**  Delete every stored calendar snapshot (offered when disabling the feature). */
 	calendarPurgeAllSnapshots: () => typedError<number, string>(__TAURI_INVOKE("calendar_purge_all_snapshots")),
+	/**  Whether a Google OAuth client id is configured (drives the "Add account" UI). */
+	calendarGoogleConfigured: () => __TAURI_INVOKE<boolean>("calendar_google_configured"),
+	/**  All connected calendar sources (the local source + any Google accounts). */
+	calendarListAccounts: () => typedError<CalendarAccount[], string>(__TAURI_INVOKE("calendar_list_accounts")),
+	/**  Run the Google OAuth flow (system browser + loopback) and persist the account. */
+	calendarAddGoogleAccount: () => typedError<CalendarAccount, string>(__TAURI_INVOKE("calendar_add_google_account")),
+	/**
+	 *  Remove a Google account: revoke + clear its keychain token, then delete the
+	 *  row. Snapshots captured from it are kept (historical). The local source can't
+	 *  be removed (toggle it off instead).
+	 */
+	calendarRemoveAccount: (accountId: string) => typedError<null, string>(__TAURI_INVOKE("calendar_remove_account", { accountId })),
+	/**  Enable or disable a single source. */
+	calendarSetAccountEnabled: (accountId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_enabled", { accountId, enabled })),
+	/**  List one account's calendars (for the per-account selection UI). */
+	calendarListAccountCalendars: (accountId: string) => typedError<CalendarInfo[], string>(__TAURI_INVOKE("calendar_list_account_calendars", { accountId })),
+	/**  Set the excluded calendar ids for one account. */
+	calendarSetAccountExcludedIds: (accountId: string, ids: string[]) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_excluded_ids", { accountId, ids })),
 };
 
 /* Types */
@@ -645,6 +667,26 @@ export type BackendInfo = {
 };
 
 /**
+ *  A calendar source the user has connected. The local EventKit source is one
+ *  synthetic row ("eventkit-local"); each connected Google account is one row
+ *  keyed by its Google `sub`. Refresh tokens live in the keychain, not here.
+ */
+export type CalendarAccount = {
+	/**  Google `sub`, or the sentinel "eventkit-local". */
+	id: string,
+	/**  "eventkit" or "google". */
+	source: string,
+	/**  Display label (the account email for Google; NULL for the local source). */
+	email: string | null,
+	enabled: boolean,
+	/**  JSON array of excluded calendar ids, scoped to this account. */
+	excluded_calendar_ids: string | null,
+	/**  "reauth_required" when the token is dead; NULL means healthy. */
+	status: string | null,
+	created_at: string,
+};
+
+/**
  *  Read access state for the local calendar, mirroring `EKAuthorizationStatus`.
  *  `WriteOnly` is treated as insufficient (same as `Denied`) - we only read.
  */
@@ -672,8 +714,12 @@ export type CalendarEvent = {
 	/**  Event notes/agenda, secret-scrubbed and length-capped before storage. */
 	notes: string | null,
 	calendar_name: string | null,
-	/**  Origin of the snapshot: "eventkit" (or "google" in a future fallback). */
+	/**  Origin of the snapshot: "eventkit" or "google". */
 	source: string,
+	/**  Which calendar account won dedup (e.g. "eventkit-local" or a Google sub). */
+	account_id: string | null,
+	/**  Cross-system event UID (EventKit external id / Google iCalUID). */
+	ical_uid: string | null,
 	/**  How the event was matched: "high", "low", or "manual". */
 	match_confidence: string,
 	created_at: string,

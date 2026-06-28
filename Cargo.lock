@@ -3762,6 +3762,7 @@ dependencies = [
  "dashmap",
  "dasp",
  "dirs 5.0.1",
+ "dotenvy",
  "ebur128",
  "enigo",
  "env_logger",

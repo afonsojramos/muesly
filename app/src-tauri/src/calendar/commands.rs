@@ -1,8 +1,8 @@
 //! Tauri commands for the calendar feature. All boundary errors are `String`.
 //! Any user action is exposed here (agent-reachable), not UI-only.
 
-use crate::calendar::{eventkit, permissions, service, CalendarAuthStatus, CalendarInfo};
-use crate::database::models::CalendarEvent;
+use crate::calendar::{eventkit, google, permissions, service, CalendarAuthStatus, CalendarInfo};
+use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
 use crate::database::repositories::setting::SettingsRepository;
@@ -192,4 +192,142 @@ pub async fn calendar_purge_all_snapshots(
     CalendarEventsRepository::purge_all(state.db_manager.pool())
         .await
         .map_err(|e| e.to_string())
+}
+
+// ===== Multi-source accounts (local + Google) =====
+
+/// Whether a Google OAuth client id is configured (drives the "Add account" UI).
+#[tauri::command]
+#[specta::specta]
+pub fn calendar_google_configured() -> bool {
+    google::is_configured()
+}
+
+/// All connected calendar sources (the local source + any Google accounts).
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_list_accounts(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<CalendarAccount>, String> {
+    CalendarAccountsRepository::list(state.db_manager.pool())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Run the Google OAuth flow (system browser + loopback) and persist the account.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_add_google_account(
+    state: tauri::State<'_, AppState>,
+) -> Result<CalendarAccount, String> {
+    let pool = state.db_manager.pool();
+    let (sub, email) = google::connect_account().await.map_err(|e| e.to_string())?;
+    let account = CalendarAccount {
+        id: sub,
+        source: "google".to_string(),
+        email,
+        enabled: true,
+        excluded_calendar_ids: Some("[]".to_string()),
+        status: None,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    CalendarAccountsRepository::upsert(pool, &account)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(account)
+}
+
+/// Remove a Google account: revoke + clear its keychain token, then delete the
+/// row. Snapshots captured from it are kept (historical). The local source can't
+/// be removed (toggle it off instead).
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_remove_account(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    if account_id == "eventkit-local" {
+        return Ok(());
+    }
+    if let Some(account) = CalendarAccountsRepository::get(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        if account.source == "google" {
+            google::disconnect_account(&account_id)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    CalendarAccountsRepository::delete(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Enable or disable a single source.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_set_account_enabled(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    if let Some(mut account) = CalendarAccountsRepository::get(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        account.enabled = enabled;
+        CalendarAccountsRepository::upsert(pool, &account)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// List one account's calendars (for the per-account selection UI).
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_list_account_calendars(
+    account_id: String,
+) -> Result<Vec<CalendarInfo>, String> {
+    if account_id == "eventkit-local" {
+        return tokio::task::spawn_blocking(|| eventkit::list_calendars(&HashSet::new()))
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let cals = google::list_calendars(&account_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(cals
+        .into_iter()
+        .map(|c| CalendarInfo {
+            id: c.id,
+            title: c.summary.unwrap_or_default(),
+            excluded_by_default: false,
+        })
+        .collect())
+}
+
+/// Set the excluded calendar ids for one account.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_set_account_excluded_ids(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+    ids: Vec<String>,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    let json = serde_json::to_string(&ids).map_err(|e| e.to_string())?;
+    if let Some(mut account) = CalendarAccountsRepository::get(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        account.excluded_calendar_ids = Some(json);
+        CalendarAccountsRepository::upsert(pool, &account)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
