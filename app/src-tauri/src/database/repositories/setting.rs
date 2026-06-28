@@ -61,6 +61,105 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Whether calendar meeting-context is enabled (single-row settings, id='1').
+    pub async fn get_calendar_context_enabled(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT calendar_context_enabled FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    /// Enable or disable calendar meeting-context (single-row settings, id='1').
+    pub async fn set_calendar_context_enabled(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET calendar_context_enabled = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// JSON array of EventKit calendar identifiers the user excluded from
+    /// matching, or None when never set (the default exclusions apply).
+    pub async fn get_calendar_excluded_ids(
+        pool: &SqlitePool,
+    ) -> std::result::Result<Option<String>, sqlx::Error> {
+        let value: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT calendar_excluded_ids FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.flatten())
+    }
+
+    /// Persist the JSON array of excluded calendar identifiers.
+    pub async fn set_calendar_excluded_ids(
+        pool: &SqlitePool,
+        json: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET calendar_excluded_ids = ? WHERE id = '1'")
+            .bind(json)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Whether attendee/organizer NAMES may be sent to remote summary providers.
+    pub async fn get_calendar_send_attendee_names_to_cloud(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT calendar_send_attendee_names_to_cloud FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    /// Set whether attendee/organizer NAMES may be sent to remote providers.
+    pub async fn set_calendar_send_attendee_names_to_cloud(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE settings SET calendar_send_attendee_names_to_cloud = ? WHERE id = '1'",
+        )
+        .bind(enabled as i64)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Whether event NOTES/agenda may be sent to remote summary providers.
+    pub async fn get_calendar_send_notes_to_cloud(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT calendar_send_notes_to_cloud FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    /// Set whether event NOTES/agenda may be sent to remote providers.
+    pub async fn set_calendar_send_notes_to_cloud(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET calendar_send_notes_to_cloud = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Whether local-AI cleanup of dictated text is enabled (single-row settings, id='1').
     pub async fn get_dictation_cleanup_enabled(
         pool: &SqlitePool,

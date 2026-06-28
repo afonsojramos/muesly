@@ -81,6 +81,34 @@ pub struct MeetingNotes {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
+/// Snapshot of the calendar event a recording was matched to, taken at record
+/// time. 1:1 with a meeting. Emails are never stored (see migration / plan).
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
+pub struct CalendarEvent {
+    pub meeting_id: String,
+    /// EventKit series identifier (shared across recurring occurrences).
+    pub event_identifier: Option<String>,
+    /// Occurrence start (RFC3339) that disambiguates a recurring instance.
+    pub occurrence_start: Option<String>,
+    pub title: Option<String>,
+    pub start_time: Option<String>,
+    pub end_time: Option<String>,
+    /// Organizer display name only - never an email address.
+    pub organizer_name: Option<String>,
+    /// JSON array of `{name, status}` - names only, never emails.
+    pub attendees_json: Option<String>,
+    pub location: Option<String>,
+    pub conference_url: Option<String>,
+    /// Event notes/agenda, secret-scrubbed and length-capped before storage.
+    pub notes: Option<String>,
+    pub calendar_name: Option<String>,
+    /// Origin of the snapshot: "eventkit" (or "google" in a future fallback).
+    pub source: String,
+    /// How the event was matched: "high", "low", or "manual".
+    pub match_confidence: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct TranscriptChunk {
     pub meeting_id: String,

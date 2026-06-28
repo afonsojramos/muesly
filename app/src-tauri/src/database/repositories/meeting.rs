@@ -343,7 +343,13 @@ async fn delete_meeting_with_transaction(
         .execute(&mut *transaction)
         .await?;
 
-    // 5. Finally, delete the meeting (hard delete — used by permanent trash removal)
+    // 5. Delete from calendar_events (snapshot may hold third-party PII)
+    sqlx::query("DELETE FROM calendar_events WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+
+    // 6. Finally, delete the meeting (hard delete — used by permanent trash removal)
     let result = sqlx::query("DELETE FROM meetings WHERE id = ?")
         .bind(meeting_id)
         .execute(&mut *transaction)
