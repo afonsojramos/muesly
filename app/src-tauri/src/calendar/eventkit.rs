@@ -58,8 +58,7 @@ mod imp {
 
     pub fn authorization_status() -> CalendarAuthStatus {
         // Static, synchronous, thread-agnostic.
-        let status =
-            unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
+        let status = unsafe { EKEventStore::authorizationStatusForEntityType(EKEntityType::Event) };
         map_auth(status)
     }
 
@@ -73,11 +72,10 @@ mod imp {
                 // Keep the store alive until the (async) completion fires by moving
                 // a retained clone into the completion block.
                 let store_keepalive = store.clone();
-                let completion =
-                    RcBlock::new(move |granted: Bool, _err: *mut NSError| {
-                        let _keep = &store_keepalive;
-                        let _ = tx.send(granted.as_bool());
-                    });
+                let completion = RcBlock::new(move |granted: Bool, _err: *mut NSError| {
+                    let _keep = &store_keepalive;
+                    let _ = tx.send(granted.as_bool());
+                });
                 unsafe {
                     store.requestFullAccessToEventsWithCompletion(RcBlock::as_ptr(&completion));
                 }
@@ -243,8 +241,7 @@ mod imp {
             let end = now + Duration::hours(2);
             let start_date =
                 unsafe { NSDate::dateWithTimeIntervalSince1970(start.timestamp() as f64) };
-            let end_date =
-                unsafe { NSDate::dateWithTimeIntervalSince1970(end.timestamp() as f64) };
+            let end_date = unsafe { NSDate::dateWithTimeIntervalSince1970(end.timestamp() as f64) };
             let predicate = unsafe {
                 store.predicateForEventsWithStartDate_endDate_calendars(
                     &start_date,

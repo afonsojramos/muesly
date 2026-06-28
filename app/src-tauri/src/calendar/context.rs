@@ -17,13 +17,7 @@ pub const MAX_NOTES_CHARS: usize = 1500;
 /// Case-insensitive markers that flag a notes line as carrying a secret
 /// (conferencing passcode, dial-in PIN, etc.) - such lines are dropped.
 const SECRET_MARKERS: [&str; 7] = [
-    "passcode",
-    "password",
-    "pwd=",
-    "pin:",
-    "dial-in",
-    "dial in",
-    "one tap",
+    "passcode", "password", "pwd=", "pin:", "dial-in", "dial in", "one tap",
 ];
 
 #[derive(serde::Serialize, serde::Deserialize)]

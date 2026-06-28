@@ -173,9 +173,12 @@ pub fn match_event(candidates: &[CalendarEventCandidate], now: DateTime<Utc>) ->
         return None;
     }
 
-    let best = *eligible
-        .iter()
-        .max_by(|&&a, &&b| cmp_keys(score_key(&candidates[a], now), score_key(&candidates[b], now)))?;
+    let best = *eligible.iter().max_by(|&&a, &&b| {
+        cmp_keys(
+            score_key(&candidates[a], now),
+            score_key(&candidates[b], now),
+        )
+    })?;
 
     let c = &candidates[best];
     let accepted =
