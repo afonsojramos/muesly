@@ -91,6 +91,102 @@ impl LLMProvider {
             _ => Err(format!("Unsupported LLM provider: {}", s)),
         }
     }
+
+    /// Classify where a summary request's data egresses for this provider.
+    ///
+    /// Privacy-critical: this is the single source of truth for the calendar
+    /// meeting-context PII gate. Default-deny — any provider not provably local
+    /// is treated as `Remote`. `Ollama`/`CustomOpenAI` are `Local` only when
+    /// their resolved endpoint host is loopback; a remote-host Ollama or vLLM is
+    /// `Remote`.
+    pub fn data_egress(
+        &self,
+        ollama_endpoint: Option<&str>,
+        custom_openai_endpoint: Option<&str>,
+    ) -> Egress {
+        match self {
+            Self::BuiltInAI => Egress::Local,
+            Self::OpenAI | Self::Claude | Self::Groq | Self::Grok | Self::OpenRouter => {
+                Egress::Remote
+            }
+            // Ollama defaults to localhost when no endpoint is configured.
+            Self::Ollama => endpoint_egress(ollama_endpoint, true),
+            // CustomOpenAI has no default host, so an absent endpoint is remote.
+            Self::CustomOpenAI => endpoint_egress(custom_openai_endpoint, false),
+        }
+    }
+}
+
+/// Where a provider's request data actually goes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Egress {
+    /// Stays on this device (loopback endpoint or in-process model).
+    Local,
+    /// Leaves the device to a remote host.
+    Remote,
+}
+
+/// Classify an endpoint string by host. `default_when_absent_local` decides the
+/// result when the endpoint is missing/empty (Ollama assumes localhost; others
+/// fall to `Remote` under default-deny).
+fn endpoint_egress(endpoint: Option<&str>, default_when_absent_local: bool) -> Egress {
+    let absent = || {
+        if default_when_absent_local {
+            Egress::Local
+        } else {
+            Egress::Remote
+        }
+    };
+    match endpoint.map(str::trim) {
+        None => absent(),
+        Some("") => absent(),
+        Some(ep) => match host_of(ep) {
+            Some(host) if is_loopback_host(&host) => Egress::Local,
+            _ => Egress::Remote,
+        },
+    }
+}
+
+/// Extract the lowercased host portion of a URL or `host:port` authority.
+fn host_of(endpoint: &str) -> Option<String> {
+    // Strip scheme (http://, https://, etc.).
+    let without_scheme = endpoint
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(endpoint);
+    // Authority ends at the first path/query/fragment separator.
+    let authority = without_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(without_scheme);
+    // Drop any userinfo (user:pass@host).
+    let authority = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
+    if authority.is_empty() {
+        return None;
+    }
+    // IPv6 literal in brackets: [::1] or [::1]:port.
+    if let Some(rest) = authority.strip_prefix('[') {
+        let host = rest.split(']').next().unwrap_or(rest);
+        return (!host.is_empty()).then(|| host.to_lowercase());
+    }
+    // host or host:port.
+    let host = authority.split(':').next().unwrap_or(authority);
+    (!host.is_empty()).then(|| host.to_lowercase())
+}
+
+/// Whether a host refers to the local machine (loopback). Covers `localhost`,
+/// the IPv4 `127.0.0.0/8` block, and IPv6 `::1`.
+fn is_loopback_host(host: &str) -> bool {
+    host == "localhost"
+        || host == "::1"
+        || host == "0:0:0:0:0:0:0:1"
+        || host
+            .parse::<std::net::Ipv4Addr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false)
 }
 
 /// Generates a summary using the specified LLM provider
@@ -554,5 +650,84 @@ mod tests {
         assert_eq!(h.get("x-api-key").unwrap(), "sk-test");
         assert_eq!(h.get("anthropic-version").unwrap(), "2023-06-01");
         assert!(h.get(header::AUTHORIZATION).is_none());
+    }
+
+    // ===== Egress classifier (calendar PII gate source of truth) =====
+
+    #[test]
+    fn cloud_providers_are_remote() {
+        for p in [
+            LLMProvider::OpenAI,
+            LLMProvider::Claude,
+            LLMProvider::Groq,
+            LLMProvider::Grok,
+            LLMProvider::OpenRouter,
+        ] {
+            assert_eq!(p.data_egress(None, None), Egress::Remote, "{:?}", p);
+        }
+    }
+
+    #[test]
+    fn builtin_ai_is_local() {
+        assert_eq!(LLMProvider::BuiltInAI.data_egress(None, None), Egress::Local);
+    }
+
+    #[test]
+    fn ollama_defaults_to_local_but_remote_host_is_remote() {
+        // Absent endpoint → Ollama assumes localhost.
+        assert_eq!(LLMProvider::Ollama.data_egress(None, None), Egress::Local);
+        for ep in [
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+            "127.0.0.1:11434",
+            "http://[::1]:11434",
+        ] {
+            assert_eq!(
+                LLMProvider::Ollama.data_egress(Some(ep), None),
+                Egress::Local,
+                "{ep}"
+            );
+        }
+        for ep in [
+            "http://192.168.1.5:11434",
+            "https://ollama.example.com",
+            "http://10.0.0.2:11434",
+            "http://0.0.0.0:11434",
+        ] {
+            assert_eq!(
+                LLMProvider::Ollama.data_egress(Some(ep), None),
+                Egress::Remote,
+                "{ep}"
+            );
+        }
+    }
+
+    #[test]
+    fn custom_openai_absent_endpoint_is_remote_by_default_deny() {
+        assert_eq!(
+            LLMProvider::CustomOpenAI.data_egress(None, None),
+            Egress::Remote
+        );
+        assert_eq!(
+            LLMProvider::CustomOpenAI.data_egress(None, Some("")),
+            Egress::Remote
+        );
+        assert_eq!(
+            LLMProvider::CustomOpenAI.data_egress(None, Some("http://localhost:8000/v1")),
+            Egress::Local
+        );
+        assert_eq!(
+            LLMProvider::CustomOpenAI.data_egress(None, Some("https://api.openai.com/v1")),
+            Egress::Remote
+        );
+    }
+
+    #[test]
+    fn host_of_handles_schemes_ports_userinfo_and_ipv6() {
+        assert_eq!(host_of("http://localhost:11434").as_deref(), Some("localhost"));
+        assert_eq!(host_of("https://API.OpenAI.com/v1").as_deref(), Some("api.openai.com"));
+        assert_eq!(host_of("user:pass@127.0.0.1:8000").as_deref(), Some("127.0.0.1"));
+        assert_eq!(host_of("http://[::1]:11434/v1").as_deref(), Some("::1"));
+        assert_eq!(host_of("127.0.0.1").as_deref(), Some("127.0.0.1"));
     }
 }
