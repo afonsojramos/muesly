@@ -692,6 +692,13 @@ pub async fn stop_recording<R: Runtime>(
         }
         Err(e) => {
             error!("❌ Failed to stop audio streams: {}", e);
+            // Clear recording state and tear down the floating pill before
+            // bailing: this early return otherwise skips the IS_RECORDING reset
+            // and pill_window::hide below, orphaning an always-on-top pill (and
+            // its global pause shortcut) over every app with no recording
+            // running.
+            IS_RECORDING.store(false, Ordering::SeqCst);
+            crate::pill_window::hide(&app);
             return Err(format!("Failed to stop audio streams: {}", e));
         }
     }
