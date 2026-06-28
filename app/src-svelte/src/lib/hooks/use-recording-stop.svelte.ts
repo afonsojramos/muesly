@@ -14,6 +14,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { onMount } from 'svelte';
 
 import { Analytics } from '$lib/analytics';
+import { commands } from '$lib/bindings';
 import { storageService } from '$lib/services/storage';
 import { transcriptService } from '$lib/services/transcript';
 import { toast } from '$lib/toast';
@@ -152,6 +153,18 @@ export function useRecordingStop(
 									notesError instanceof Error ? notesError.message : 'Unknown error'
 							});
 						}
+					}
+
+					// Attach the calendar event happening at record time so the summary
+					// can use it. Only when the user enabled calendar context; failure
+					// is non-fatal and must never abort the meeting save.
+					try {
+						const enabled = await commands.calendarGetContextEnabled();
+						if (enabled.status === 'ok' && enabled.data) {
+							await commands.calendarAttachEvent(meetingId);
+						}
+					} catch (calendarError) {
+						console.error('Failed to attach calendar event:', calendarError);
 					}
 
 					await transcripts.markMeetingAsSaved();

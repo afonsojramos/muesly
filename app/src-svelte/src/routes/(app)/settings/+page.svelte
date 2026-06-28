@@ -11,21 +11,27 @@
 	import About from '$lib/components/About.svelte';
 	// Beta section disabled: Import Audio & Retranscribe graduated to a standard feature.
 	// import BetaSettings from '$lib/components/BetaSettings.svelte';
+	import CalendarSettings from '$lib/components/CalendarSettings.svelte';
 	import PreferenceSettings from '$lib/components/PreferenceSettings.svelte';
 	import RecordingSettings from '$lib/components/RecordingSettings.svelte';
 	import SummaryModelSettings from '$lib/components/SummaryModelSettings.svelte';
 	import TranscriptSettings from '$lib/components/TranscriptSettings.svelte';
 	import TrashSettings from '$lib/components/TrashSettings.svelte';
+	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 
-	const tabs: TabItem[] = [
+	const platform = usePlatform();
+
+	// Calendar context relies on macOS EventKit, so the tab is macOS-only.
+	const tabs: TabItem[] = $derived([
 		{ value: 'general', label: 'General' },
 		{ value: 'recording', label: 'Recordings' },
+		...(platform.isMac ? [{ value: 'calendar', label: 'Calendar' }] : []),
 		{ value: 'transcription', label: 'Transcription' },
 		{ value: 'summary', label: 'Summary' },
 		{ value: 'trash', label: 'Trash' },
 		// { value: 'beta', label: 'Beta' },
 		{ value: 'about', label: 'About' }
-	];
+	]);
 
 	function goBack(): void {
 		history.back();
@@ -85,6 +91,8 @@
 						<PreferenceSettings />
 					{:else if value === 'recording'}
 						<RecordingSettings />
+					{:else if value === 'calendar'}
+						<CalendarSettings />
 					{:else if value === 'transcription'}
 						<TranscriptSettings
 							transcriptModelConfig={config.transcriptModelConfig}
