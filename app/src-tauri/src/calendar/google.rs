@@ -226,8 +226,7 @@ const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 const REVOKE_ENDPOINT: &str = "https://oauth2.googleapis.com/revoke";
-const CALENDAR_LIST_ENDPOINT: &str =
-    "https://www.googleapis.com/calendar/v3/users/me/calendarList";
+const CALENDAR_LIST_ENDPOINT: &str = "https://www.googleapis.com/calendar/v3/users/me/calendarList";
 const CALENDARS_BASE: &str = "https://www.googleapis.com/calendar/v3/calendars";
 
 /// Errors surfaced to the command boundary. Variants carry NO secret/PII values.
@@ -319,8 +318,8 @@ async fn accept_code(listener: TcpListener, expected_state: &str) -> Result<Stri
     );
     let _ = stream.write_all(resp.as_bytes()).await;
 
-    let parsed = url::Url::parse(&format!("http://127.0.0.1{path}"))
-        .map_err(|_| GoogleError::Cancelled)?;
+    let parsed =
+        url::Url::parse(&format!("http://127.0.0.1{path}")).map_err(|_| GoogleError::Cancelled)?;
     let mut code = None;
     let mut state = None;
     for (k, v) in parsed.query_pairs() {
@@ -373,7 +372,10 @@ async fn exchange_code(
         .map_err(|_| GoogleError::Request)
 }
 
-async fn refresh_call(cfg: &OAuthConfig, refresh_token: &str) -> Result<TokenResponse, GoogleError> {
+async fn refresh_call(
+    cfg: &OAuthConfig,
+    refresh_token: &str,
+) -> Result<TokenResponse, GoogleError> {
     let client = crate::providers::common::http_client();
     let params = [
         ("grant_type", "refresh_token"),
@@ -416,7 +418,9 @@ async fn fetch_userinfo(access_token: &str) -> Result<UserInfo, GoogleError> {
     if !resp.status().is_success() {
         return Err(GoogleError::Request);
     }
-    resp.json::<UserInfo>().await.map_err(|_| GoogleError::Request)
+    resp.json::<UserInfo>()
+        .await
+        .map_err(|_| GoogleError::Request)
 }
 
 fn token_key(sub: &str) -> String {
@@ -749,11 +753,17 @@ mod tests {
         let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
         // Scope-creep guard: exactly the minimal scope, nothing broader.
         assert_eq!(q.get("scope").map(String::as_str), Some(SCOPE));
-        assert_eq!(q.get("code_challenge_method").map(String::as_str), Some("S256"));
+        assert_eq!(
+            q.get("code_challenge_method").map(String::as_str),
+            Some("S256")
+        );
         assert_eq!(q.get("access_type").map(String::as_str), Some("offline"));
         assert_eq!(q.get("prompt").map(String::as_str), Some("consent"));
         assert_eq!(q.get("state").map(String::as_str), Some("st4te"));
-        assert_eq!(q.get("code_challenge").map(String::as_str), Some(challenge.as_str()));
+        assert_eq!(
+            q.get("code_challenge").map(String::as_str),
+            Some(challenge.as_str())
+        );
         // The verifier round-trips to the S256 challenge.
         let recomputed = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(Sha256::digest(verifier.as_bytes()));
