@@ -47,6 +47,18 @@ Summaries are generated locally by default. If you configure a cloud provider (A
 
 If you enable calendar context, the matched meeting's title, time, and location are included in the summary. For cloud providers, attendee and organizer names and the meeting's agenda/notes are withheld by default and only sent if you explicitly opt in (per-type toggles in Settings → Calendar), the conference link is never sent, and attendee email addresses are never stored or sent. Local providers receive the full meeting context.
 
+## Google Calendar Connection (Optional)
+
+Calendar context works with your Mac's local calendars by default. You may also optionally connect one or more Google accounts (Settings → Calendar → Add Google account). This is off until you connect an account.
+
+- **Scope (read-only, minimal):** muesly requests only `calendar.events.readonly` (plus `openid`/`email` to identify the account). It cannot create, edit, or delete anything, and it never touches your email, Drive, or contacts.
+- **Where it goes:** events are fetched directly between your device and Google. muesly has no server; nothing is routed through or stored by muesly's maintainers.
+- **What is stored, and where:** events are stored only on your device. The connected account's email is stored locally as a label. The OAuth refresh token is stored in your operating system keychain, never in the app database. Attendee email addresses are never stored.
+- **No human review, no training, no sale:** calendar data is used only to provide the in-app meeting-context feature.
+- **Revoke anytime:** "Remove" in Settings → Calendar deletes the token from your keychain and revokes it with Google; you can also revoke access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
+muesly's use of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
+
 ## Data Security
 
 - Your data never leaves your device unless you configure a cloud LLM provider
