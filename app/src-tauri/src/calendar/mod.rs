@@ -4,4 +4,32 @@
 //! with the meeting happening at record time. macOS-only; other platforms compile
 //! the native pieces to no-ops. Nothing leaves the device on this path.
 
+pub mod commands;
+pub mod context;
+pub mod eventkit;
 pub mod matching;
+pub mod permissions;
+pub mod service;
+
+use serde::{Deserialize, Serialize};
+
+/// Read access state for the local calendar, mirroring `EKAuthorizationStatus`.
+/// `WriteOnly` is treated as insufficient (same as `Denied`) - we only read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "lowercase")]
+pub enum CalendarAuthStatus {
+    NotDetermined,
+    Restricted,
+    Denied,
+    WriteOnly,
+    Granted,
+}
+
+/// A calendar the user can include or exclude from matching.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct CalendarInfo {
+    pub id: String,
+    pub title: String,
+    /// True for noise calendars (subscriptions, birthdays) excluded by default.
+    pub excluded_by_default: bool,
+}
