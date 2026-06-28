@@ -328,6 +328,10 @@ async fn run_import<R: Runtime>(
         title, source_path, language, model, provider
     );
 
+    // Start each import with a fresh auto-detected language lock so a lock from a
+    // previous session (recording/import) never leaks into an `auto` import.
+    crate::whisper_engine::reset_session_detected_language();
+
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");
 

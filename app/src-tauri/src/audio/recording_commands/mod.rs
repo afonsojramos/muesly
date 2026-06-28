@@ -397,6 +397,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // covering both start paths so the pill can never desync from the state.
     crate::pill_window::show(&app);
     reset_speech_detected_flag(); // Reset for new recording session
+    crate::whisper_engine::reset_session_detected_language(); // Clear stale auto-detected language lock
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
     spawn_silent_mic_check(app.clone(), recording_state_for_check, mic_name_for_check);
@@ -596,6 +597,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // covering both start paths so the pill can never desync from the state.
     crate::pill_window::show(&app);
     reset_speech_detected_flag(); // Reset for new recording session
+    crate::whisper_engine::reset_session_detected_language(); // Clear stale auto-detected language lock
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
     spawn_silent_mic_check(app.clone(), recording_state_for_check, mic_name_for_check);

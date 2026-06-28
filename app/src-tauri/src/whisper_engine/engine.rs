@@ -556,15 +556,46 @@ impl WhisperEngine {
             params.set_initial_prompt(prompt);
         }
 
-        // If language is "auto" or None, use automatic language detection (pass None).
-        // "auto-translate" enables translation to English. Otherwise use the code.
-        let (language_code, should_translate) = match language.as_deref() {
-            Some("auto") | None => (None, false),
-            Some("auto-translate") => (None, true),
-            Some(lang) => (Some(lang), false),
+        // Language selection. "auto"/"auto-translate"/None mean automatic
+        // detection; everything else is an explicit ISO code (unchanged behaviour).
+        // "auto-translate" additionally translates to English.
+        //
+        // For the auto modes we "detect once and lock": once the session has
+        // locked a language (decided from the first few seconds of real speech),
+        // every later segment reuses it instead of re-detecting and flapping.
+        let is_auto = matches!(language.as_deref(), Some("auto") | Some("auto-translate") | None);
+        let should_translate = matches!(language.as_deref(), Some("auto-translate"));
+
+        // When `true`, this call ran detection (set_language(None)) and we must
+        // feed the detected id back into the lock after inference.
+        let mut ran_detection = false;
+        // Holds a locked language code string for the lifetime of `params`.
+        let locked_code: Option<&'static str> = if is_auto {
+            super::lang_lock::locked_language_id().and_then(whisper_rs::get_lang_str)
+        } else {
+            None
         };
-        params.set_language(language_code);
-        params.set_translate(should_translate);
+
+        if is_auto {
+            match locked_code {
+                // Lock already decided: pin the language, but keep translation
+                // semantics so a locked "auto-translate" session still translates.
+                Some(code) => {
+                    params.set_language(Some(code));
+                    params.set_translate(should_translate);
+                }
+                // Not locked yet: detect this segment, then vote after inference.
+                None => {
+                    params.set_language(None);
+                    params.set_translate(should_translate);
+                    ran_detection = true;
+                }
+            }
+        } else {
+            // Explicit code path, byte-for-byte unchanged: set code, no translate.
+            params.set_language(language.as_deref());
+            params.set_translate(false);
+        }
 
         // Disable timestamp tokens to prevent whisper.cpp chunking heuristics that
         // incorrectly discard complete, valid transcriptions.
@@ -590,6 +621,34 @@ impl WhisperEngine {
 
         let mut state = ctx.create_state()?;
         state.full(params, audio_data)?;
+
+        // If this call auto-detected the language, feed the result into the
+        // session lock. `full_lang_id_from_state` is only meaningful after a
+        // `full(..)` that ran with `set_language(None)`.
+        if ran_detection {
+            match state.full_lang_id_from_state() {
+                Ok(detected_id) => {
+                    if let Some(locked_id) =
+                        super::lang_lock::record_detection(detected_id, audio_data.len())
+                    {
+                        // Infrequent (happens once per session) and useful.
+                        log::info!(
+                            "Locked auto-detected transcription language: {} (id {})",
+                            whisper_rs::get_lang_str(locked_id).unwrap_or("unknown"),
+                            locked_id
+                        );
+                    } else {
+                        perf_debug!(
+                            "Auto-detected language id {} ({} samples), lock undecided",
+                            detected_id,
+                            audio_data.len()
+                        );
+                    }
+                }
+                Err(e) => perf_debug!("Failed to read auto-detected language id: {}", e),
+            }
+        }
+
         let num_segments = state.full_n_segments()?;
 
         let mut result = String::new();

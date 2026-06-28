@@ -188,6 +188,10 @@ async fn run_retranscription<R: Runtime>(
         meeting_id, language, model, provider
     );
 
+    // Start each retranscription with a fresh auto-detected language lock so a
+    // lock from a previous session never leaks into an `auto` retranscription.
+    crate::whisper_engine::reset_session_detected_language();
+
     // Emit progress: decoding
     emit_progress(&app, &meeting_id, "decoding", 5, "Decoding audio file...");
 
