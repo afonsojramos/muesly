@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { appDataDir } from '@tauri-apps/api/path';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
 	import { AlertCircle, Mic, Pause, Play, Square, X } from '@lucide/svelte';
@@ -95,28 +94,14 @@
 	async function stopRecordingAction(): Promise<void> {
 		try {
 			isProcessing = true;
-			const dataDir = await appDataDir();
-			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			const savePath = `${dataDir}/recording-${timestamp}.wav`;
-			await invoke('stop_recording', {
-				args: { save_path: savePath }
-			});
+			const stopped = await recordingState.stop();
 			isProcessing = false;
-			void Analytics.trackTranscriptionSuccess();
-			onRecordingStop(true);
-		} catch (error) {
-			console.error('Failed to stop recording:', error);
-			const message =
-				error instanceof Error
-					? error.message
-					: typeof error === 'string'
-						? error
-						: String(error);
-			if (message.includes('No recording in progress')) {
-				return;
+			if (stopped) {
+				void Analytics.trackTranscriptionSuccess();
+				onRecordingStop(true);
+			} else {
+				onRecordingStop(false);
 			}
-			isProcessing = false;
-			onRecordingStop(false);
 		} finally {
 			isStopping = false;
 		}
@@ -133,9 +118,7 @@
 		if (!isRecording || isPaused || isPausing) return;
 		isPausing = true;
 		try {
-			await invoke('pause_recording');
-		} catch (error) {
-			console.error('Failed to pause recording:', error);
+			await recordingState.pause();
 		} finally {
 			isPausing = false;
 		}
@@ -145,9 +128,7 @@
 		if (!isRecording || !isPaused || isResuming) return;
 		isResuming = true;
 		try {
-			await invoke('resume_recording');
-		} catch (error) {
-			console.error('Failed to resume recording:', error);
+			await recordingState.resume();
 		} finally {
 			isResuming = false;
 		}

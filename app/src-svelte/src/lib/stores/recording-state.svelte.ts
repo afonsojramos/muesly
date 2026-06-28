@@ -8,6 +8,8 @@
  */
 
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
+import { appDataDir } from '@tauri-apps/api/path';
 import { recordingService } from '$lib/services/recording';
 
 export enum RecordingStatus {
@@ -69,6 +71,72 @@ class RecordingStateStore {
 		this.#startPolling();
 	};
 
+	/**
+	 * Drive the state machine out of the active state. Used by the `recording-error`
+	 * path so a failed recording cannot leave the surfaces stuck "recording".
+	 */
+	markStopped = (): void => {
+		this.isRecording = false;
+		this.isPaused = false;
+		this.isActive = false;
+		this.recordingDuration = null;
+		this.activeDuration = null;
+		this.#stopPolling();
+		this.status = RecordingStatus.IDLE;
+		this.statusMessage = undefined;
+	};
+
+	/**
+	 * Stop the active recording. Shared by the in-app pill and the floating pill so
+	 * the two surfaces cannot drift. Saves to `appDataDir()` + an ISO-timestamp path,
+	 * and idempotently swallows the "No recording in progress" race (a second stop
+	 * from another surface or the tray returns Ok(()) on the Rust side, so the guard
+	 * string is brittle but matches the backend contract).
+	 *
+	 * @returns `true` if the stop call succeeded and a session was stopped,
+	 *          `false` if it failed for any reason other than idempotency.
+	 */
+	async stop(): Promise<boolean> {
+		try {
+			const dataDir = await appDataDir();
+			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+			const savePath = `${dataDir}/recording-${timestamp}.wav`;
+			await invoke('stop_recording', { args: { save_path: savePath } });
+			return true;
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: typeof error === 'string'
+						? error
+						: String(error);
+			if (message.includes('No recording in progress')) {
+				// Already stopped by another surface — treat as a no-op success.
+				return true;
+			}
+			console.error('[RecordingStateStore] Failed to stop recording:', error);
+			return false;
+		}
+	}
+
+	/** Pause the active recording (idempotent at the call site). */
+	async pause(): Promise<void> {
+		try {
+			await invoke('pause_recording');
+		} catch (error) {
+			console.error('[RecordingStateStore] Failed to pause recording:', error);
+		}
+	}
+
+	/** Resume the paused recording (idempotent at the call site). */
+	async resume(): Promise<void> {
+		try {
+			await invoke('resume_recording');
+		} catch (error) {
+			console.error('[RecordingStateStore] Failed to resume recording:', error);
+		}
+	}
+
 	/** Wire up listeners and do the initial backend sync. Returns a cleanup function. */
 	async start(): Promise<() => void> {
 		if (this.#started) {
@@ -110,6 +178,16 @@ class RecordingStateStore {
 		}
 
 		return () => this.#cleanup();
+	}
+
+	/**
+	 * Public self-heal: re-fetch the authoritative recording state from the backend.
+	 * The floating pill webview is a separate JS context that can miss the
+	 * `recording-started` broadcast (events are not replayed) or be background-
+	 * throttled while hidden, so it calls this on mount and on `visibilitychange`.
+	 */
+	async syncWithBackend(): Promise<void> {
+		await this.#syncWithBackend();
 	}
 
 	async #syncWithBackend(): Promise<void> {

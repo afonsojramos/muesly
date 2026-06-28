@@ -75,8 +75,12 @@
 		recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS || recordingState.isProcessing
 	);
 
+	// D4: the in-app pill is the idle/start surface only. Once a recording is active,
+	// the floating pill window owns the active controls, so suppress the in-app pill
+	// while recording (it reappears for the next idle/start state).
 	const showRecordingControls = $derived(
-		(permissions.hasMicrophone || recordingState.isRecording) &&
+		permissions.hasMicrophone &&
+			!recordingState.isRecording &&
 			recordingState.status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
 			recordingState.status !== RecordingStatus.SAVING
 	);
