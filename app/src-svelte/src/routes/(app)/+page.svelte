@@ -248,7 +248,6 @@
 				<TranscriptPanel
 					{isProcessingStop}
 					isStopping={recordingState.isStopping}
-					{showModal}
 					compact
 				/>
 			</aside>
