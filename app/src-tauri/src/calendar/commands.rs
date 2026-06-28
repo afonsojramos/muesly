@@ -34,8 +34,10 @@ pub fn calendar_open_settings() -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn calendar_list_calendars() -> Result<Vec<CalendarInfo>, String> {
-    // EventKit list is quick and self-contained; runs off-main on the worker.
-    Ok(eventkit::list_calendars(&HashSet::new()))
+    // EventKit read is synchronous and blocking; keep it off the async reactor.
+    tokio::task::spawn_blocking(|| eventkit::list_calendars(&HashSet::new()))
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

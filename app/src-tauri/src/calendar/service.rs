@@ -74,7 +74,11 @@ pub async fn resolve_event_for_instant(
         return None;
     }
     let excluded = excluded_ids(pool).await;
-    let candidates = eventkit::fetch_candidates(now, &excluded);
+    // EventKit fetch is synchronous and blocking; keep it off the async reactor.
+    let candidates =
+        tokio::task::spawn_blocking(move || eventkit::fetch_candidates(now, &excluded))
+            .await
+            .unwrap_or_default();
     let m = matching::match_event(&candidates, now)?;
     Some(ResolvedEvent {
         candidate: candidates[m.index].clone(),
@@ -131,7 +135,11 @@ pub async fn attach_event_for_meeting(
     instant: DateTime<Utc>,
 ) -> Result<bool, String> {
     let excluded = excluded_ids(pool).await;
-    let candidates = eventkit::fetch_candidates(instant, &excluded);
+    // EventKit fetch is synchronous and blocking; keep it off the async reactor.
+    let candidates =
+        tokio::task::spawn_blocking(move || eventkit::fetch_candidates(instant, &excluded))
+            .await
+            .unwrap_or_default();
     let m = match matching::match_event(&candidates, instant) {
         Some(m) => m,
         None => return Ok(false),

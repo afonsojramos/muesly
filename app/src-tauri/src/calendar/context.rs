@@ -56,12 +56,20 @@ pub fn scrub_secrets(text: &str) -> String {
 }
 
 fn strip_pwd_query(line: &str) -> String {
-    // Remove "?pwd=..."/"&pwd=..." up to the next whitespace.
+    // Remove "?pwd=..."/"&pwd=..." up to the next whitespace. The markers are
+    // ASCII, so search the ORIGINAL bytes case-insensitively: lowercasing the
+    // whole line first would yield byte offsets that drift for non-ASCII text
+    // (e.g. 'İ'), leaking the secret and risking a non-char-boundary panic.
     let mut out = line.to_string();
     for sep in ["?pwd=", "&pwd=", "?pin=", "&pin="] {
-        if let Some(idx) = out.to_lowercase().find(sep) {
-            let tail = &out[idx..];
-            let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        if let Some(idx) = out
+            .as_bytes()
+            .windows(sep.len())
+            .position(|w| w.eq_ignore_ascii_case(sep.as_bytes()))
+        {
+            let end = out[idx..]
+                .find(char::is_whitespace)
+                .unwrap_or(out.len() - idx);
             out.replace_range(idx..idx + end, "");
         }
     }
@@ -279,6 +287,17 @@ mod tests {
         assert!(scrubbed.contains("Agenda item one"));
         assert!(!scrubbed.contains("pwd=abc"));
         assert!(scrubbed.contains("Join the call"));
+    }
+
+    #[test]
+    fn strip_pwd_query_handles_non_ascii_prefix_without_panic_or_leak() {
+        // A non-ASCII char before the marker whose lowercase has a different byte
+        // length must not break byte offsets (would leak the secret or panic).
+        let line = "İ meeting https://zoom.us/j/1?pwd=secret end";
+        let out = strip_pwd_query(line);
+        assert!(!out.contains("pwd=secret"));
+        assert!(!out.contains("secret"));
+        assert!(out.contains("İ meeting"));
     }
 
     #[test]
