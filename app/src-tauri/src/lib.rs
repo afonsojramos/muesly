@@ -24,6 +24,7 @@ pub(crate) use perf_debug;
 pub mod analytics;
 pub mod api;
 pub mod audio;
+pub mod calendar;
 pub mod keychain;
 pub mod config;
 pub mod console_utils;
