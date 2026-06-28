@@ -14,9 +14,7 @@
 	import { transcripts as transcriptStore } from '$lib/stores/transcript.svelte';
 
 	import { usePermissionCheck } from '$lib/hooks/use-permission-check.svelte';
-	import { useRecordingStateSync } from '$lib/hooks/use-recording-state-sync.svelte';
 	import { useRecordingStart } from '$lib/hooks/use-recording-start.svelte';
-	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
 	import { useTranscriptRecovery } from '$lib/hooks/use-transcript-recovery.svelte';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import type { ModalType } from '$lib/hooks/use-modal-state.svelte';
@@ -24,14 +22,12 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import PermissionWarning from '$lib/components/PermissionWarning.svelte';
 	import TranscriptPanel from '$lib/components/home/TranscriptPanel.svelte';
-	import RecordingControls from '$lib/components/RecordingControls.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
 	import TranscriptRecovery from '$lib/components/TranscriptRecovery/TranscriptRecovery.svelte';
 	import Tooltip from '$lib/ui/tooltip.svelte';
 
 	const isBrowser = typeof window !== 'undefined';
 
-	let barHeights = $state<string[]>(['58%', '76%', '58%']);
 	let showRecoveryDialog = $state(false);
 
 	// Transcript side panel: open by default only on wide windows, matching the
@@ -46,7 +42,6 @@
 	const initialNotes = notes.markdown;
 
 	const permissions = usePermissionCheck();
-	const recordingSync = useRecordingStateSync();
 	const platform = usePlatform();
 
 	// Settings-type modals (language/model) live on the dedicated /settings route
@@ -63,26 +58,16 @@
 	// the legacy `setIsRecording` callback is a no-op here.
 	const noopSetIsRecording = (_value: boolean): void => {};
 
-	const recordingStart = useRecordingStart(noopSetIsRecording, (name, msg) =>
-		showModal(name, msg)
-	);
-
-	const recordingStop = useRecordingStop(noopSetIsRecording, recordingSync.setIsRecordingDisabled);
+	// The in-app recording pill was removed from the home screen; recording is now
+	// controlled from the floating pill window and the tray. This hook stays mounted
+	// for its side effect only: its onMount auto-starts a recording when the tray
+	// sets the `autoStartRecording` flag and navigates here.
+	useRecordingStart(noopSetIsRecording, (name, msg) => showModal(name, msg));
 
 	const recovery = useTranscriptRecovery();
 
 	const isProcessingStop = $derived(
 		recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS || recordingState.isProcessing
-	);
-
-	// D4: the in-app pill is the idle/start surface only. Once a recording is active,
-	// the floating pill window owns the active controls, so suppress the in-app pill
-	// while recording (it reappears for the next idle/start state).
-	const showRecordingControls = $derived(
-		permissions.hasMicrophone &&
-			!recordingState.isRecording &&
-			recordingState.status !== RecordingStatus.PROCESSING_TRANSCRIPTS &&
-			recordingState.status !== RecordingStatus.SAVING
 	);
 
 	async function handleRecovery(meetingId: string): Promise<void> {
@@ -142,19 +127,6 @@
 				sessionStorage.setItem('recovery_dialog_shown', 'true');
 			}
 		}
-	});
-
-	// Animate the recording bars while recording.
-	$effect(() => {
-		if (!recordingState.isRecording) return;
-		const interval = setInterval(() => {
-			barHeights = [
-				`${Math.random() * 20 + 10}px`,
-				`${Math.random() * 20 + 10}px`,
-				`${Math.random() * 20 + 10}px`
-			];
-		}, 300);
-		return () => clearInterval(interval);
 	});
 
 	onMount(() => {
@@ -280,32 +252,6 @@
 					compact
 				/>
 			</aside>
-		{/if}
-
-		{#if showRecordingControls}
-			<div class="fixed bottom-12 left-0 right-0 z-10">
-				<div
-					class={`flex justify-center ${sidebar.isResizing ? '' : 'transition-[margin] duration-300'}`}
-					style={`margin-left: ${sidebar.effectiveWidth}px`}
-				>
-					<div class="flex w-2/3 max-w-[750px] justify-center">
-						<div class="flex items-center">
-							<RecordingControls
-								isRecording={recordingState.isRecording}
-								onRecordingStop={(callApi = true) => void recordingStop.handleRecordingStop(callApi)}
-								onRecordingStart={recordingStart.handleRecordingStart}
-								onStopInitiated={() => recordingStop.setIsStopping(true)}
-								onTranscriptionError={(message) => showModal('errorAlert', message)}
-								isRecordingDisabled={recordingSync.isRecordingDisabled}
-								isParentProcessing={isProcessingStop}
-								barHeights={barHeights}
-								selectedDevices={config.selectedDevices}
-								meetingName={transcriptStore.meetingTitle}
-							/>
-						</div>
-					</div>
-				</div>
-			</div>
 		{/if}
 
 		<StatusOverlays
