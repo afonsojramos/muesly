@@ -42,8 +42,10 @@ fn attendee_names(event: &CalendarEvent) -> Option<String> {
     }
 }
 
-/// Drop lines that look like they carry a conferencing secret. Also strips any
-/// `?pwd=`/`&pwd=` query fragment from surviving lines.
+/// Drop lines that look like they carry a conferencing secret, strip any
+/// `?pwd=`/`&pwd=` query fragment, and redact email addresses. Google event
+/// descriptions (and auto-generated Meet blurbs) frequently embed organizer/
+/// attendee emails, which must never reach a cloud LLM.
 pub fn scrub_secrets(text: &str) -> String {
     text.lines()
         .filter(|line| {
@@ -51,8 +53,40 @@ pub fn scrub_secrets(text: &str) -> String {
             !SECRET_MARKERS.iter().any(|m| lower.contains(m))
         })
         .map(strip_pwd_query)
+        .map(|line| redact_emails(&line))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Replace email-shaped whitespace tokens with `[email]`. Conservative: a token
+/// counts as an email if it has a non-empty local part, an `@`, and a dotted
+/// domain. URLs (no `@`) and plain words are left untouched.
+fn redact_emails(line: &str) -> String {
+    line.split(' ')
+        .map(|tok| {
+            if looks_like_email(tok) {
+                "[email]"
+            } else {
+                tok
+            }
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn looks_like_email(tok: &str) -> bool {
+    let t = tok
+        .trim_matches(|c: char| !c.is_alphanumeric() && !matches!(c, '@' | '.' | '-' | '_' | '+'));
+    match t.split_once('@') {
+        Some((local, domain)) => {
+            !local.is_empty()
+                && domain.contains('.')
+                && !domain.starts_with('.')
+                && !domain.ends_with('.')
+        }
+        None => false,
+    }
 }
 
 fn strip_pwd_query(line: &str) -> String {
@@ -289,6 +323,27 @@ mod tests {
         assert!(scrubbed.contains("Agenda item one"));
         assert!(!scrubbed.contains("pwd=abc"));
         assert!(scrubbed.contains("Join the call"));
+    }
+
+    #[test]
+    fn scrub_redacts_email_addresses() {
+        let raw = "Agenda discussion. Contact organizer@work.com, also bruno@x.io for details.";
+        let scrubbed = scrub_secrets(raw);
+        assert!(
+            !scrubbed.contains('@'),
+            "emails must be redacted: {scrubbed}"
+        );
+        assert!(!scrubbed.contains("work.com"));
+        assert!(scrubbed.contains("[email]"));
+        assert!(scrubbed.contains("Agenda discussion"));
+    }
+
+    #[test]
+    fn scrub_leaves_non_email_at_and_urls_alone() {
+        // A URL without an '@' is untouched; the word stays readable.
+        let raw = "Join https://meet.google.com/abc for the sync";
+        let scrubbed = scrub_secrets(raw);
+        assert!(scrubbed.contains("https://meet.google.com/abc"));
     }
 
     #[test]

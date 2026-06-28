@@ -8,6 +8,7 @@ pub mod commands;
 pub mod context;
 pub mod dedup;
 pub mod eventkit;
+pub mod google;
 pub mod matching;
 pub mod permissions;
 pub mod service;
