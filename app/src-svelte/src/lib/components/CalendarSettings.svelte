@@ -22,7 +22,10 @@
 	let requesting = $state(false);
 	let accounts = $state<CalendarAccount[]>([]);
 	let googleConfigured = $state(false);
-	let addingAccount = $state(false);
+	// Monotonic id so only the most recent "Add account" click is applied; an
+	// earlier attempt the user abandoned (closed the tab) resolves later and is
+	// ignored rather than overwriting the result of the click they completed.
+	let addAttempt = 0;
 
 	const granted = $derived(authStatus === 'granted');
 	const googleAccounts = $derived(accounts.filter((a) => a.source === 'google'));
@@ -34,17 +37,16 @@
 	}
 
 	async function addGoogleAccount(): Promise<void> {
-		addingAccount = true;
-		try {
-			const res = await commands.calendarAddGoogleAccount();
-			if (res.status === 'ok') {
-				toast.success(`Connected ${res.data.email ?? 'Google account'}.`);
-				await loadAccounts();
-			} else {
-				toast.error('Could not connect Google account', { description: res.error });
-			}
-		} finally {
-			addingAccount = false;
+		const attempt = ++addAttempt;
+		const res = await commands.calendarAddGoogleAccount();
+		// A newer click superseded this one (e.g. the user re-clicked after
+		// closing the first tab); ignore this stale result entirely.
+		if (attempt !== addAttempt) return;
+		if (res.status === 'ok') {
+			toast.success(`Connected ${res.data.email ?? 'Google account'}.`);
+			await loadAccounts();
+		} else {
+			toast.error('Could not connect Google account', { description: res.error });
 		}
 	}
 
@@ -247,11 +249,10 @@
 					{#if googleConfigured}
 						<button
 							onclick={addGoogleAccount}
-							disabled={addingAccount}
-							class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary disabled:opacity-50"
+							class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary"
 						>
 							<Calendar class="size-4" />
-							{addingAccount ? 'Waiting for Google…' : 'Add Google account'}
+							Add Google account
 						</button>
 						<p class="mt-2 text-xs text-muted-foreground">
 							Read-only. Opens your browser; nothing is routed through a muesly server. While in
