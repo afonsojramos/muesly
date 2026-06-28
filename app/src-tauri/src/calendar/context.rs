@@ -78,6 +78,33 @@ pub fn cap_notes(text: &str, max: usize) -> String {
     format!("{truncated}…")
 }
 
+/// Conferencing hosts whose links carry personal meeting IDs / passcodes and so
+/// must be withheld from remote prompts even when they appear in `location`.
+const CONF_HOSTS: [&str; 5] = [
+    "zoom.us",
+    "meet.google.com",
+    "teams.microsoft.com",
+    "webex.com",
+    "whereby.com",
+];
+
+fn looks_like_conference(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    CONF_HOSTS.iter().any(|h| lower.contains(h))
+}
+
+/// Make a `location` value safe for remote egress: drop it entirely if it
+/// carries a conference link (same treatment as the conference URL), else strip
+/// any secret markers / pwd query. Returns None when nothing safe remains.
+fn safe_location_for_remote(loc: &str) -> Option<String> {
+    if looks_like_conference(loc) {
+        return None;
+    }
+    let cleaned = strip_pwd_query(&scrub_secrets(loc));
+    let cleaned = cleaned.trim();
+    (!cleaned.is_empty()).then(|| cleaned.to_string())
+}
+
 /// Build the `<meeting_context>` block, or `None` when there's nothing to add.
 pub fn render_meeting_context(
     event: &CalendarEvent,
@@ -100,7 +127,16 @@ pub fn render_meeting_context(
     }
     if let Some(loc) = event.location.as_deref() {
         if !loc.is_empty() {
-            lines.push(format!("Location: {loc}"));
+            // For remote egress, a location that is/holds a conference link is
+            // withheld (like the conference URL) and any secrets are scrubbed.
+            let rendered = if remote {
+                safe_location_for_remote(loc)
+            } else {
+                Some(loc.to_string())
+            };
+            if let Some(loc) = rendered {
+                lines.push(format!("Location: {loc}"));
+            }
         }
     }
 
@@ -211,6 +247,28 @@ mod tests {
         let block = render_meeting_context(&event(), Egress::Remote, false, true).unwrap();
         assert!(block.contains("Agenda/Notes: Discuss roadmap"));
         assert!(!block.contains("Ana"));
+    }
+
+    #[test]
+    fn remote_strips_conference_link_and_secrets_in_location() {
+        // A join link with a passcode in the Location field must not reach a
+        // remote provider, even with both toggles off.
+        let mut e = event();
+        e.location = Some("https://zoom.us/j/812345?pwd=secret".into());
+        let block = render_meeting_context(&e, Egress::Remote, true, true).unwrap();
+        assert!(!block.contains("zoom.us"));
+        assert!(!block.contains("812345"));
+        assert!(!block.contains("pwd=secret"));
+
+        // A plain physical location is still fine and a passcode line is dropped.
+        let mut e2 = event();
+        e2.location = Some("Room 4, Passcode 9988".into());
+        let block2 = render_meeting_context(&e2, Egress::Remote, false, false).unwrap();
+        assert!(!block2.to_lowercase().contains("passcode"));
+
+        // Local egress keeps the full location.
+        let block3 = render_meeting_context(&e, Egress::Local, false, false).unwrap();
+        assert!(block3.contains("zoom.us"));
     }
 
     #[test]
