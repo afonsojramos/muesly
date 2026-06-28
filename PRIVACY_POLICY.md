@@ -45,6 +45,8 @@ Official builds include anonymized usage analytics (via PostHog) to help us find
 
 Summaries are generated locally by default. If you configure a cloud provider (Anthropic Claude, OpenAI, Groq, xAI Grok, OpenRouter, or a custom OpenAI-compatible endpoint), the transcript being summarized is sent to that provider and is subject to its own privacy policy. The built-in local model and Ollama run on infrastructure you control (on your device, or a server you point Ollama at) and send nothing to muesly or its maintainers.
 
+If you enable calendar context, the matched meeting's title, time, and location are included in the summary. For cloud providers, attendee and organizer names and the meeting's agenda/notes are withheld by default and only sent if you explicitly opt in (per-type toggles in Settings → Calendar), the conference link is never sent, and attendee email addresses are never stored or sent. Local providers receive the full meeting context.
+
 ## Data Security
 
 - Your data never leaves your device unless you configure a cloud LLM provider
