@@ -343,6 +343,9 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let app_for_error = app.clone();
     manager.set_error_callback(move |error| {
         let _ = app_for_error.emit("recording-error", error.user_message());
+        // A recording error hides the pill so it is never orphaned over other
+        // apps; the error path does not always flip IS_RECORDING/emit stopped.
+        crate::pill_window::hide(&app_for_error);
     });
 
     // Capture the mic name + shared recording state before the manager is moved
@@ -366,6 +369,9 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Set recording flag and reset speech detection flag
     info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
     IS_RECORDING.store(true, Ordering::SeqCst);
+    // Reveal the floating recording pill in lockstep with the recording flag,
+    // covering both start paths so the pill can never desync from the state.
+    crate::pill_window::show(&app);
     reset_speech_detected_flag(); // Reset for new recording session
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
@@ -537,6 +543,9 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let app_for_error = app.clone();
     manager.set_error_callback(move |error| {
         let _ = app_for_error.emit("recording-error", error.user_message());
+        // A recording error hides the pill so it is never orphaned over other
+        // apps; the error path does not always flip IS_RECORDING/emit stopped.
+        crate::pill_window::hide(&app_for_error);
     });
 
     // Capture mic name + shared state before the manager moves into the global.
@@ -559,6 +568,9 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Set recording flag and reset speech detection flag
     info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
     IS_RECORDING.store(true, Ordering::SeqCst);
+    // Reveal the floating recording pill in lockstep with the recording flag,
+    // covering both start paths so the pill can never desync from the state.
+    crate::pill_window::show(&app);
     reset_speech_detected_flag(); // Reset for new recording session
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
@@ -994,6 +1006,9 @@ pub async fn stop_recording<R: Runtime>(
     // Set recording flag to false
     info!("🔍 Setting IS_RECORDING to false");
     IS_RECORDING.store(false, Ordering::SeqCst);
+    // Hide the floating pill before emitting `recording-stopped` so the webview
+    // does not flash a teardown frame as it unmounts.
+    crate::pill_window::hide(&app);
 
     // Step 4.5: Prepare metadata for frontend (NO database save)
     // NOTE: We do NOT save to database here. The frontend will save after all transcripts are displayed.

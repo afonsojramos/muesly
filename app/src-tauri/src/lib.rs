@@ -35,6 +35,7 @@ pub mod meeting_detect;
 pub mod notifications;
 pub mod onboarding;
 pub mod parakeet_engine;
+pub mod pill_window;
 pub mod providers;
 pub mod state;
 pub mod summary;
@@ -1010,10 +1011,27 @@ pub fn run() {
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
                     use tauri_plugin_global_shortcut::ShortcutState;
-                    let is_dictation = DICTATION_SHORTCUT
-                        .parse::<tauri_plugin_global_shortcut::Shortcut>()
-                        .map(|s| &s == shortcut)
-                        .unwrap_or(false);
+                    let matches = |chord: &str| {
+                        chord
+                            .parse::<tauri_plugin_global_shortcut::Shortcut>()
+                            .map(|s| &s == shortcut)
+                            .unwrap_or(false)
+                    };
+                    let is_dictation = matches(DICTATION_SHORTCUT);
+                    // Pill backstops act on key-down only; the handlers themselves
+                    // no-op when no recording is active.
+                    if matches(pill_window::TOGGLE_PAUSE_SHORTCUT) {
+                        if event.state() == ShortcutState::Pressed {
+                            crate::tray::toggle_pause_handler(app);
+                        }
+                        return;
+                    }
+                    if matches(pill_window::STOP_SHORTCUT) {
+                        if event.state() == ShortcutState::Pressed {
+                            crate::tray::stop_recording_handler(app);
+                        }
+                        return;
+                    }
                     if is_dictation {
                         // Push-to-talk: hold to dictate, release to transcribe + emit.
                         let app = app.clone();
@@ -1055,6 +1073,13 @@ pub fn run() {
             // Initialize system tray
             if let Err(e) = tray::create_tray(_app.handle()) {
                 log::error!("Failed to create system tray: {}", e);
+            }
+
+            // If the app was relaunched while a recording is already active,
+            // reveal the floating pill now that the windows exist. Best-effort:
+            // `show` no-ops if the pill window is missing.
+            if audio::recording_commands::is_recording_active() {
+                pill_window::show(&_app.handle());
             }
 
             // Initialize notification system with proper defaults
@@ -1218,13 +1243,24 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main" {
-                    api.prevent_close();
-                    if let Err(e) = window.hide() {
-                        log::error!("Failed to hide main window on close request: {}", e);
-                    } else {
-                        log::info!("Main window hidden to tray on close request");
+                match window.label() {
+                    "main" => {
+                        api.prevent_close();
+                        if let Err(e) = window.hide() {
+                            log::error!("Failed to hide main window on close request: {}", e);
+                        } else {
+                            log::info!("Main window hidden to tray on close request");
+                        }
                     }
+                    // Never destroy the pre-warmed pill: a stray Cmd+W must hide
+                    // it, otherwise `pill_window::show` would no-op forever.
+                    "pill" => {
+                        api.prevent_close();
+                        if let Err(e) = window.hide() {
+                            log::error!("Failed to hide pill window on close request: {}", e);
+                        }
+                    }
+                    _ => {}
                 }
             }
         })

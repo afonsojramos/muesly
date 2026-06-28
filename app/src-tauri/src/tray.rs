@@ -114,6 +114,23 @@ pub fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
+/// Toggle pause/resume from a global shortcut backstop: pauses when recording
+/// and resumes when paused, reusing the tray pause/resume handlers (and their
+/// intermediate-state + error-reversion logic). No-op when not recording.
+pub fn toggle_pause_handler<R: Runtime>(app: &AppHandle<R>) {
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if !crate::audio::recording_commands::is_recording().await {
+            return;
+        }
+        if crate::audio::recording_commands::is_recording_paused().await {
+            resume_recording_handler(&app_clone);
+        } else {
+            pause_recording_handler(&app_clone);
+        }
+    });
+}
+
 fn pause_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     // Immediately show pausing state
     set_tray_state(app, RecordingState::Pausing);
@@ -149,7 +166,7 @@ fn resume_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     });
 }
 
-fn stop_recording_handler<R: Runtime>(app: &AppHandle<R>) {
+pub fn stop_recording_handler<R: Runtime>(app: &AppHandle<R>) {
     // Immediately show stopping state
     set_tray_state(app, RecordingState::Stopping);
 
