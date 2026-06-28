@@ -551,6 +551,53 @@ export const commands = {
 	cancelImportCommand: () => typedError<null, string>(__TAURI_INVOKE("cancel_import_command")),
 	/**  Check if import is in progress */
 	isImportInProgressCommand: () => __TAURI_INVOKE<boolean>("is_import_in_progress_command"),
+	calendarPermissionStatus: () => __TAURI_INVOKE<CalendarAuthStatus>("calendar_permission_status"),
+	calendarRequestAccess: () => typedError<CalendarAuthStatus, string>(__TAURI_INVOKE("calendar_request_access")),
+	calendarOpenSettings: () => typedError<null, string>(__TAURI_INVOKE("calendar_open_settings")),
+	calendarListCalendars: () => typedError<CalendarInfo[], string>(__TAURI_INVOKE("calendar_list_calendars")),
+	calendarGetContextEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("calendar_get_context_enabled")),
+	calendarSetContextEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_context_enabled", { enabled })),
+	calendarGetExcludedIds: () => typedError<string[], string>(__TAURI_INVOKE("calendar_get_excluded_ids")),
+	calendarSetExcludedIds: (ids: string[]) => typedError<null, string>(__TAURI_INVOKE("calendar_set_excluded_ids", { ids })),
+	calendarGetSendAttendeeNamesToCloud: () => typedError<boolean, string>(__TAURI_INVOKE("calendar_get_send_attendee_names_to_cloud")),
+	calendarSetSendAttendeeNamesToCloud: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_send_attendee_names_to_cloud", { enabled })),
+	calendarGetSendNotesToCloud: () => typedError<boolean, string>(__TAURI_INVOKE("calendar_get_send_notes_to_cloud")),
+	calendarSetSendNotesToCloud: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_send_notes_to_cloud", { enabled })),
+	/**  Read the calendar snapshot attached to a recording (for the detail view). */
+	calendarGetEvent: (meetingId: string) => typedError<{
+	meeting_id: string,
+	/**  EventKit series identifier (shared across recurring occurrences). */
+	event_identifier: string | null,
+	/**  Occurrence start (RFC3339) that disambiguates a recurring instance. */
+	occurrence_start: string | null,
+	title: string | null,
+	start_time: string | null,
+	end_time: string | null,
+	/**  Organizer display name only - never an email address. */
+	organizer_name: string | null,
+	/**  JSON array of `{name, status}` - names only, never emails. */
+	attendees_json: string | null,
+	location: string | null,
+	conference_url: string | null,
+	/**  Event notes/agenda, secret-scrubbed and length-capped before storage. */
+	notes: string | null,
+	calendar_name: string | null,
+	/**  Origin of the snapshot: "eventkit" (or "google" in a future fallback). */
+	source: string,
+	/**  How the event was matched: "high", "low", or "manual". */
+	match_confidence: string,
+	created_at: string,
+} | null, string>(__TAURI_INVOKE("calendar_get_event", { meetingId })),
+	/**
+	 *  Resolve and attach the calendar event for a recording. Called by the frontend
+	 *  after a recording is saved (auto), and on manual re-attach. Resolves for the
+	 *  meeting's start instant.
+	 */
+	calendarAttachEvent: (meetingId: string) => typedError<boolean, string>(__TAURI_INVOKE("calendar_attach_event", { meetingId })),
+	/**  Detach the calendar snapshot from a recording. */
+	calendarDetachEvent: (meetingId: string) => typedError<null, string>(__TAURI_INVOKE("calendar_detach_event", { meetingId })),
+	/**  Delete every stored calendar snapshot (offered when disabling the feature). */
+	calendarPurgeAllSnapshots: () => typedError<number, string>(__TAURI_INVOKE("calendar_purge_all_snapshots")),
 };
 
 /* Types */
@@ -595,6 +642,49 @@ export type BackendInfo = {
 	id: string,
 	name: string,
 	description: string,
+};
+
+/**
+ *  Read access state for the local calendar, mirroring `EKAuthorizationStatus`.
+ *  `WriteOnly` is treated as insufficient (same as `Denied`) - we only read.
+ */
+export type CalendarAuthStatus = "notdetermined" | "restricted" | "denied" | "writeonly" | "granted";
+
+/**
+ *  Snapshot of the calendar event a recording was matched to, taken at record
+ *  time. 1:1 with a meeting. Emails are never stored (see migration / plan).
+ */
+export type CalendarEvent = {
+	meeting_id: string,
+	/**  EventKit series identifier (shared across recurring occurrences). */
+	event_identifier: string | null,
+	/**  Occurrence start (RFC3339) that disambiguates a recurring instance. */
+	occurrence_start: string | null,
+	title: string | null,
+	start_time: string | null,
+	end_time: string | null,
+	/**  Organizer display name only - never an email address. */
+	organizer_name: string | null,
+	/**  JSON array of `{name, status}` - names only, never emails. */
+	attendees_json: string | null,
+	location: string | null,
+	conference_url: string | null,
+	/**  Event notes/agenda, secret-scrubbed and length-capped before storage. */
+	notes: string | null,
+	calendar_name: string | null,
+	/**  Origin of the snapshot: "eventkit" (or "google" in a future fallback). */
+	source: string,
+	/**  How the event was matched: "high", "low", or "manual". */
+	match_confidence: string,
+	created_at: string,
+};
+
+/**  A calendar the user can include or exclude from matching. */
+export type CalendarInfo = {
+	id: string,
+	title: string,
+	/**  True for noise calendars (subscriptions, birthdays) excluded by default. */
+	excluded_by_default: boolean,
 };
 
 /**

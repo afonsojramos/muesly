@@ -99,6 +99,22 @@ pub async fn get_dictation_enabled() -> Result<bool, String> {
 // `.await` (e.g. device reconnection); a std mutex held across `.await` risks blocking
 // a worker / deadlock. The other statics below stay on std::sync::Mutex — they're only
 // held briefly with no await in between.
+/// Resolve a high-confidence calendar meeting title for "now", or None. Used to
+/// auto-title a recording started without an explicit name. Returns None on any
+/// failure (calendar off, no permission, no/low-confidence match) so it can
+/// never block or fail a recording. Resolved before the `RecordingManager` lock
+/// is taken so an EventKit stall can't extend a contended lock.
+async fn calendar_title_override<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
+    let pool = app
+        .try_state::<crate::state::AppState>()?
+        .db_manager
+        .pool()
+        .clone();
+    let resolved =
+        crate::calendar::service::resolve_event_for_instant(&pool, chrono::Utc::now()).await?;
+    resolved.title_for_high_confidence().map(|s| s.to_string())
+}
+
 static RECORDING_MANAGER: std::sync::LazyLock<tokio::sync::Mutex<Option<RecordingManager>>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(None));
 static TRANSCRIPTION_TASK: Mutex<Option<JoinHandle<()>>> = Mutex::new(None);
@@ -331,12 +347,20 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         }
     };
 
-    // Always ensure a meeting name is set so incremental saver initializes
-    let effective_meeting_name = meeting_name.clone().unwrap_or_else(|| {
-        // Example: Meeting 2025-10-03_08-25-23
-        let now = chrono::Local::now();
-        format!("Meeting {}", now.format("%Y-%m-%d_%H-%M-%S"))
-    });
+    // Always ensure a meeting name is set so incremental saver initializes.
+    // When the user didn't name it, try the calendar for a high-confidence
+    // meeting title before falling back to a timestamp.
+    let effective_meeting_name = match meeting_name.clone() {
+        Some(name) => name,
+        None => match calendar_title_override(&app).await {
+            Some(title) => title,
+            None => {
+                // Example: Meeting 2025-10-03_08-25-23
+                let now = chrono::Local::now();
+                format!("Meeting {}", now.format("%Y-%m-%d_%H-%M-%S"))
+            }
+        },
+    };
     manager.set_meeting_name(Some(effective_meeting_name));
 
     // Set up error callback

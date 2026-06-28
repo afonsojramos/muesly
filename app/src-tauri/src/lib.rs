@@ -982,6 +982,22 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         audio::import::start_import_audio_command::<tauri::Wry>,
         audio::import::cancel_import_command,
         audio::import::is_import_in_progress_command,
+        calendar::commands::calendar_permission_status,
+        calendar::commands::calendar_request_access,
+        calendar::commands::calendar_open_settings,
+        calendar::commands::calendar_list_calendars,
+        calendar::commands::calendar_get_context_enabled,
+        calendar::commands::calendar_set_context_enabled,
+        calendar::commands::calendar_get_excluded_ids,
+        calendar::commands::calendar_set_excluded_ids,
+        calendar::commands::calendar_get_send_attendee_names_to_cloud,
+        calendar::commands::calendar_set_send_attendee_names_to_cloud,
+        calendar::commands::calendar_get_send_notes_to_cloud,
+        calendar::commands::calendar_set_send_notes_to_cloud,
+        calendar::commands::calendar_get_event,
+        calendar::commands::calendar_attach_event,
+        calendar::commands::calendar_detach_event,
+        calendar::commands::calendar_purge_all_snapshots,
     ])
 }
 
