@@ -64,6 +64,67 @@
 		await loadAccounts();
 	}
 
+	// Per-account calendar selection (expand a Google account to choose calendars).
+	let expandedAccountId = $state<string | null>(null);
+	let accountCalendars = $state<Record<string, CalendarInfo[]>>({});
+	let accountExcluded = $state<Record<string, Set<string>>>({});
+
+	function parseExcluded(json: string | null): Set<string> {
+		if (!json) return new Set();
+		try {
+			return new Set(JSON.parse(json) as string[]);
+		} catch {
+			return new Set();
+		}
+	}
+
+	async function toggleAccountCalendars(acct: CalendarAccount): Promise<void> {
+		if (expandedAccountId === acct.id) {
+			expandedAccountId = null;
+			return;
+		}
+		expandedAccountId = acct.id;
+		accountExcluded = { ...accountExcluded, [acct.id]: parseExcluded(acct.excluded_calendar_ids) };
+		if (!accountCalendars[acct.id]) {
+			const res = await commands.calendarListAccountCalendars(acct.id);
+			if (res.status === 'ok') {
+				accountCalendars = { ...accountCalendars, [acct.id]: res.data };
+			} else {
+				toast.error('Could not load calendars', { description: res.error });
+			}
+		}
+	}
+
+	async function toggleAccountCalendar(
+		accountId: string,
+		calId: string,
+		include: boolean
+	): Promise<void> {
+		const next = new Set(accountExcluded[accountId] ?? new Set<string>());
+		if (include) next.delete(calId);
+		else next.add(calId);
+		accountExcluded = { ...accountExcluded, [accountId]: next };
+		const res = await commands.calendarSetAccountExcludedIds(accountId, [...next]);
+		if (res.status === 'error') {
+			toast.error('Could not update calendar selection', { description: res.error });
+		}
+	}
+
+	// Upcoming-events preview (verification that sources are being read).
+	let previewEvents = $state<{ title: string; start: string; source: string }[] | null>(null);
+	let previewLoading = $state(false);
+
+	async function loadPreview(): Promise<void> {
+		previewLoading = true;
+		try {
+			const res = await commands.calendarPreviewUpcoming();
+			if (res.status === 'ok') previewEvents = res.data;
+			else toast.error('Could not load events', { description: res.error });
+		} finally {
+			previewLoading = false;
+		}
+	}
+
 	async function loadCalendars(): Promise<void> {
 		const list = await commands.calendarListCalendars();
 		if (list.status === 'ok') calendars = list.data;
@@ -224,23 +285,50 @@
 
 					<!-- Connected Google accounts -->
 					{#each googleAccounts as acct (acct.id)}
-						<div class="flex items-center justify-between">
-							<div class="text-sm">
-								{acct.email ?? 'Google account'}
-								{#if acct.status === 'reauth_required'}
-									<span class="ml-2 text-xs text-amber-600">(reconnect needed - remove &amp; re-add)</span>
-								{/if}
+						<div>
+							<div class="flex items-center justify-between">
+								<div class="text-sm">
+									{acct.email ?? 'Google account'}
+									{#if acct.status === 'reauth_required'}
+										<span class="ml-2 text-xs text-amber-600"
+											>(reconnect needed - remove &amp; re-add)</span
+										>
+									{/if}
+								</div>
+								<div class="flex items-center gap-3">
+									<button
+										onclick={() => toggleAccountCalendars(acct)}
+										class="text-xs text-muted-foreground transition-colors hover:text-foreground"
+									>
+										{expandedAccountId === acct.id ? 'Hide calendars' : 'Calendars'}
+									</button>
+									<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
+									<button
+										onclick={() => removeAccount(acct.id)}
+										class="text-xs text-muted-foreground transition-colors hover:text-destructive"
+										aria-label="Remove account"
+									>
+										Remove
+									</button>
+								</div>
 							</div>
-							<div class="flex items-center gap-3">
-								<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
-								<button
-									onclick={() => removeAccount(acct.id)}
-									class="text-xs text-muted-foreground transition-colors hover:text-destructive"
-									aria-label="Remove account"
-								>
-									Remove
-								</button>
-							</div>
+							{#if expandedAccountId === acct.id}
+								<div class="mt-2 space-y-1 border-l border-border pl-4">
+									{#if (accountCalendars[acct.id] ?? []).length === 0}
+										<div class="text-xs text-muted-foreground">No calendars found.</div>
+									{:else}
+										{#each accountCalendars[acct.id] as cal (cal.id)}
+											<div class="flex items-center justify-between">
+												<div class="text-sm">{cal.title}</div>
+												<Switch
+													checked={!accountExcluded[acct.id]?.has(cal.id)}
+													onCheckedChange={(v) => toggleAccountCalendar(acct.id, cal.id, v)}
+												/>
+											</div>
+										{/each}
+									{/if}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>
@@ -350,6 +438,43 @@
 					<div class="text-sm">Send agenda / notes</div>
 					<Switch checked={sendNotes} onCheckedChange={toggleSendNotes} />
 				</div>
+			</div>
+		{/if}
+
+		{#if enabled}
+			<div class="rounded-lg border border-border p-4">
+				<div class="mb-1 font-medium">Upcoming events</div>
+				<div class="mb-3 text-sm text-muted-foreground">
+					Preview what muesly reads from your enabled sources (next ~24 hours).
+				</div>
+				<button
+					onclick={loadPreview}
+					disabled={previewLoading}
+					class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary disabled:opacity-50"
+				>
+					{previewLoading ? 'Loading…' : 'Preview events'}
+				</button>
+				{#if previewEvents !== null}
+					{#if previewEvents.length === 0}
+						<div class="mt-3 text-sm text-muted-foreground">No upcoming events found.</div>
+					{:else}
+						<div class="mt-3 space-y-1">
+							{#each previewEvents as ev (ev.start + ev.title)}
+								<div class="flex items-center justify-between text-sm">
+									<span class="truncate">{ev.title}</span>
+									<span class="ml-3 shrink-0 text-xs text-muted-foreground">
+										{new Date(ev.start).toLocaleString([], {
+											month: 'short',
+											day: 'numeric',
+											hour: '2-digit',
+											minute: '2-digit'
+										})}
+									</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 
