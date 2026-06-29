@@ -239,12 +239,22 @@ mod imp {
         now: DateTime<Utc>,
         excluded_ids: &HashSet<String>,
     ) -> Vec<CalendarEventCandidate> {
+        // Fetch window wider than the candidate-eligibility window so the
+        // matcher's back-to-back tie-break has the neighbouring events.
+        fetch_candidates_in(
+            now - Duration::hours(2),
+            now + Duration::hours(2),
+            excluded_ids,
+        )
+    }
+
+    pub fn fetch_candidates_in(
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        excluded_ids: &HashSet<String>,
+    ) -> Vec<CalendarEventCandidate> {
         autoreleasepool(|_| {
             let store = unsafe { EKEventStore::new() };
-            // Fetch window wider than the candidate-eligibility window so the
-            // matcher's back-to-back tie-break has the neighbouring events.
-            let start = now - Duration::hours(2);
-            let end = now + Duration::hours(2);
             let start_date = NSDate::dateWithTimeIntervalSince1970(start.timestamp() as f64);
             let end_date = NSDate::dateWithTimeIntervalSince1970(end.timestamp() as f64);
             let predicate = unsafe {
@@ -306,6 +316,14 @@ mod imp {
 
     pub fn fetch_candidates(
         _now: DateTime<Utc>,
+        _excluded_ids: &HashSet<String>,
+    ) -> Vec<CalendarEventCandidate> {
+        Vec::new()
+    }
+
+    pub fn fetch_candidates_in(
+        _start: DateTime<Utc>,
+        _end: DateTime<Utc>,
         _excluded_ids: &HashSet<String>,
     ) -> Vec<CalendarEventCandidate> {
         Vec::new()

@@ -331,3 +331,12 @@ pub async fn calendar_set_account_excluded_ids(
     }
     Ok(())
 }
+
+/// Preview upcoming events across all enabled sources (settings verification).
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_preview_upcoming(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<service::PreviewEvent>, String> {
+    Ok(service::preview_upcoming(state.db_manager.pool(), chrono::Utc::now()).await)
+}

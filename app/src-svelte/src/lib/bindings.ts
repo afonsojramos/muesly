@@ -620,6 +620,8 @@ export const commands = {
 	calendarListAccountCalendars: (accountId: string) => typedError<CalendarInfo[], string>(__TAURI_INVOKE("calendar_list_account_calendars", { accountId })),
 	/**  Set the excluded calendar ids for one account. */
 	calendarSetAccountExcludedIds: (accountId: string, ids: string[]) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_excluded_ids", { accountId, ids })),
+	/**  Preview upcoming events across all enabled sources (settings verification). */
+	calendarPreviewUpcoming: () => typedError<PreviewEvent[], string>(__TAURI_INVOKE("calendar_preview_upcoming")),
 };
 
 /* Types */
@@ -1046,6 +1048,17 @@ export type ParakeetModelInfo = {
 	speed: string,
 	status: any,
 	description: string,
+};
+
+/**
+ *  A lightweight event for the settings "upcoming events" preview, so the user
+ *  can confirm a source is being read. Attendee names/notes are not included.
+ */
+export type PreviewEvent = {
+	title: string,
+	start: string,
+	source: string,
+	calendar_name: string | null,
 };
 
 /**

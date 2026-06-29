@@ -602,6 +602,22 @@ pub async fn fetch_candidates(
     account: &CalendarAccount,
     now: DateTime<Utc>,
 ) -> Result<Vec<CalendarEventCandidate>, GoogleError> {
+    fetch_in_window(
+        account,
+        now - chrono::Duration::hours(2),
+        now + chrono::Duration::hours(2),
+    )
+    .await
+}
+
+/// Fetch candidates across an account's non-excluded calendars in an explicit
+/// window (used by the matcher with a narrow window, and by the preview with a
+/// wider one).
+pub async fn fetch_in_window(
+    account: &CalendarAccount,
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
+) -> Result<Vec<CalendarEventCandidate>, GoogleError> {
     let cfg = oauth_config().ok_or(GoogleError::NotConfigured)?;
     let access = ensure_access_token(&cfg, &account.id).await?;
     let excluded: HashSet<String> = account
@@ -611,8 +627,6 @@ pub async fn fetch_candidates(
         .map(|v| v.into_iter().collect())
         .unwrap_or_default();
 
-    let start = now - chrono::Duration::hours(2);
-    let end = now + chrono::Duration::hours(2);
     let mut out = Vec::new();
     for cal in list_calendars_raw(&access)
         .await?

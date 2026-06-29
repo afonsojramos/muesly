@@ -237,3 +237,65 @@ pub async fn meeting_context_block(
         .unwrap_or(false);
     context::render_meeting_context(&event, egress, send_names, send_notes)
 }
+
+/// A lightweight event for the settings "upcoming events" preview, so the user
+/// can confirm a source is being read. Attendee names/notes are not included.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
+pub struct PreviewEvent {
+    pub title: String,
+    pub start: String,
+    pub source: String,
+    pub calendar_name: Option<String>,
+}
+
+/// Fetch upcoming events (roughly the next day) from all enabled sources,
+/// deduped and sorted. Best-effort: a failing source contributes nothing.
+pub async fn preview_upcoming(pool: &SqlitePool, now: DateTime<Utc>) -> Vec<PreviewEvent> {
+    let start = now - chrono::Duration::hours(1);
+    let end = now + chrono::Duration::hours(24);
+    let accounts = CalendarAccountsRepository::list(pool)
+        .await
+        .unwrap_or_default();
+    let mut all = Vec::new();
+    for account in accounts.iter().filter(|a| a.enabled) {
+        match account.source.as_str() {
+            "eventkit" => {
+                if eventkit::authorization_status() == CalendarAuthStatus::Granted {
+                    let excluded = excluded_set(account);
+                    let fut = tokio::task::spawn_blocking(move || {
+                        eventkit::fetch_candidates_in(start, end, &excluded)
+                    });
+                    if let Ok(Ok(mut v)) = tokio::time::timeout(Duration::from_secs(5), fut).await {
+                        all.append(&mut v);
+                    }
+                }
+            }
+            "google" => {
+                if let Ok(Ok(mut v)) = tokio::time::timeout(
+                    Duration::from_secs(8),
+                    google::fetch_in_window(account, start, end),
+                )
+                .await
+                {
+                    all.append(&mut v);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut deduped = dedup::dedupe(all);
+    deduped.sort_by_key(|c| c.start);
+    deduped
+        .into_iter()
+        .map(|c| PreviewEvent {
+            title: c.title.unwrap_or_else(|| "(no title)".to_string()),
+            start: c.start.to_rfc3339(),
+            source: match c.source {
+                SourceKind::EventKit => "eventkit",
+                SourceKind::Google => "google",
+            }
+            .to_string(),
+            calendar_name: c.calendar_name,
+        })
+        .collect()
+}
