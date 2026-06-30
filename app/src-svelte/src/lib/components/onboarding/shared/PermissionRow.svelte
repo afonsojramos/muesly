@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import { CheckCircle2, Loader2, XCircle } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
-	import Button from '$lib/ui/button.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import type { PermissionStatus } from '$lib/types/onboarding';
 
 	interface Props {
@@ -60,13 +60,13 @@
 			<div class="font-medium truncate text-foreground">{title}</div>
 			<div class="text-sm text-muted-foreground">
 				{#if isAuthorized}
-					<span class="text-green-600 flex items-center gap-1">
-						<CheckCircle2 class="w-3.5 h-3.5" />
+					<span class="text-success flex items-center gap-1">
+						<CheckCircle2 class="size-3.5" />
 						Access Granted
 					</span>
 				{:else if isDenied}
 					<span class="text-destructive flex items-center gap-1">
-						<XCircle class="w-3.5 h-3.5" />
+						<XCircle class="size-3.5" />
 						Access Denied - Please grant in System Settings
 					</span>
 				{:else}
@@ -87,13 +87,13 @@
 				class="min-w-[100px]"
 			>
 				{#if isChecking}
-					<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+					<Loader2 class="animate-spin" data-icon="inline-start" />
 				{/if}
 				{buttonText}
 			</Button>
 		{:else}
-			<div class="flex size-8 items-center justify-center rounded-full bg-green-100">
-				<CheckCircle2 class="w-4 h-4 text-green-600" />
+			<div class="flex size-8 items-center justify-center rounded-full bg-success/15">
+				<CheckCircle2 class="size-4 text-success" />
 			</div>
 		{/if}
 	</div>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { Mic, Volume2 } from '@lucide/svelte';
-	import Button from '$lib/ui/button.svelte';
+	import { Button } from '$lib/components/ui/button';
 	import { onboarding } from '$lib/stores/onboarding.svelte';
 	import OnboardingContainer from '../OnboardingContainer.svelte';
 	import PermissionRow from '../shared/PermissionRow.svelte';
@@ -108,9 +108,9 @@
 	showNavigation={allPermissionsGranted}
 	canGoNext={allPermissionsGranted}
 >
-	<div class="max-w-lg mx-auto space-y-6">
+	<div class="mx-auto flex max-w-lg flex-col gap-6">
 		<!-- Permission Rows -->
-		<div class="space-y-4">
+		<div class="flex flex-col gap-4">
 			<PermissionRow
 				title="Microphone"
 				description="Required to capture your voice during meetings"
@@ -138,17 +138,18 @@
 
 		<!-- Action Buttons -->
 		<div class="flex flex-col gap-3 pt-4">
-			<Button onclick={handleFinish} disabled={!allPermissionsGranted} class="w-full h-11">
+			<Button onclick={handleFinish} disabled={!allPermissionsGranted} class="h-11 w-full">
 				Finish Setup
 			</Button>
 
-			<button
-				type="button"
+			<Button
+				variant="ghost"
+				size="sm"
 				onclick={handleSkip}
-				class="text-sm text-muted-foreground hover:text-foreground transition-colors"
+				class="text-muted-foreground hover:text-foreground"
 			>
 				I'll do this later
-			</button>
+			</Button>
 
 			{#if !allPermissionsGranted}
 				<p class="text-xs text-center text-muted-foreground">

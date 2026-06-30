@@ -4,7 +4,10 @@
 	import { fly } from 'svelte/transition';
 	import { Mic, Sparkles, Check, Loader2, Download, RotateCw } from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
-	import Button from '$lib/ui/button.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Alert from '$lib/components/ui/alert';
+	import * as Card from '$lib/components/ui/card';
+	import { Progress } from '$lib/components/ui/progress';
 	import { toast } from '$lib/toast';
 	import { onboarding } from '$lib/stores/onboarding.svelte';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
@@ -311,74 +314,70 @@
 </script>
 
 {#snippet downloadCard(title: string, icon: Snippet, state: DownloadState, modelSize: string)}
-	<div class="bg-card rounded-xl border border-border p-5">
-		<div class="flex items-center justify-between mb-4">
-			<div class="flex items-center gap-3">
-				<div class="w-10 h-10 rounded-full bg-muted flex items-center justify-center">
-					{@render icon()}
+	<Card.Root>
+		<Card.Content>
+			<div class="flex items-center justify-between mb-4">
+				<div class="flex items-center gap-3">
+					<div class="flex size-10 items-center justify-center rounded-full bg-muted">
+						{@render icon()}
+					</div>
+					<div>
+						<h3 class="font-medium text-foreground">{title}</h3>
+						<p class="text-sm text-muted-foreground">{modelSize}</p>
+					</div>
 				</div>
 				<div>
-					<h3 class="font-medium text-foreground">{title}</h3>
-					<p class="text-sm text-muted-foreground">{modelSize}</p>
+					{#if state.status === 'waiting'}
+						<span class="text-sm text-muted-foreground">Waiting...</span>
+					{:else if state.status === 'downloading'}
+						<Loader2 class="size-5 text-foreground animate-spin" />
+					{:else if state.status === 'completed'}
+						<div class="flex size-6 items-center justify-center rounded-full bg-success/15">
+							<Check class="size-4 text-success" />
+						</div>
+					{:else if state.status === 'error'}
+						<span class="text-sm text-destructive">Failed</span>
+					{/if}
 				</div>
 			</div>
-			<div>
-				{#if state.status === 'waiting'}
-					<span class="text-sm text-muted-foreground">Waiting...</span>
-				{:else if state.status === 'downloading'}
-					<Loader2 class="w-5 h-5 text-foreground animate-spin" />
-				{:else if state.status === 'completed'}
-					<div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
-						<Check class="w-4 h-4 text-green-600" />
-					</div>
-				{:else if state.status === 'error'}
-					<span class="text-sm text-destructive">Failed</span>
-				{/if}
-			</div>
-		</div>
 
-		<!-- Progress Bar -->
-		{#if state.status === 'downloading' || state.status === 'completed'}
-			<div class="space-y-2">
-				<div class="w-full h-2 bg-secondary rounded-full overflow-hidden">
-					<div
-						class="h-full bg-primary rounded-full transition-all duration-300"
-						style="width: {state.progress}%"
-					></div>
-				</div>
-				<div class="flex items-center justify-between text-sm">
-					<span class="text-muted-foreground">
-						{state.downloadedMb.toFixed(1)} MB / {state.totalMb.toFixed(1)} MB
-					</span>
-					<div class="flex items-center gap-2">
-						{#if state.speedMbps > 0}
-							<span class="text-muted-foreground">{state.speedMbps.toFixed(1)} MB/s</span>
-						{/if}
-						<span class="font-semibold text-foreground">{Math.round(state.progress)}%</span>
+			<!-- Progress Bar -->
+			{#if state.status === 'downloading' || state.status === 'completed'}
+				<div class="flex flex-col gap-2">
+					<Progress value={Math.min(state.progress, 100)} class="h-2" />
+					<div class="flex items-center justify-between text-sm">
+						<span class="text-muted-foreground">
+							{state.downloadedMb.toFixed(1)} MB / {state.totalMb.toFixed(1)} MB
+						</span>
+						<div class="flex items-center gap-2">
+							{#if state.speedMbps > 0}
+								<span class="text-muted-foreground">{state.speedMbps.toFixed(1)} MB/s</span>
+							{/if}
+							<span class="font-semibold text-foreground">{Math.round(state.progress)}%</span>
+						</div>
 					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		{#if state.status === 'error' && state.error}
-			<div class="mt-2 p-3 bg-destructive/5 border border-destructive/20 rounded-md">
-				<p class="text-sm text-destructive font-medium">Download Error</p>
-				<p class="text-xs text-destructive/80 mt-1">{state.error}</p>
-				{#if title === 'Transcription Engine' || title === 'Summary Engine'}
-					<button
-						type="button"
-						onclick={title === 'Transcription Engine'
-							? handleRetryDownload
-							: handleRetrySummaryDownload}
-						class="mt-3 w-full h-9 px-4 bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium rounded-md transition-colors flex items-center justify-center gap-2"
-					>
-						<RotateCw class="w-4 h-4" />
-						Try Again
-					</button>
-				{/if}
-			</div>
-		{/if}
-	</div>
+			{#if state.status === 'error' && state.error}
+				<div class="mt-2 p-3 bg-destructive/5 border border-destructive/20 rounded-md">
+					<p class="text-sm text-destructive font-medium">Download Error</p>
+					<p class="text-xs text-destructive/80 mt-1">{state.error}</p>
+					{#if title === 'Transcription Engine' || title === 'Summary Engine'}
+						<Button
+							onclick={title === 'Transcription Engine'
+								? handleRetryDownload
+								: handleRetrySummaryDownload}
+							class="mt-3 w-full"
+						>
+							<RotateCw />
+							Try Again
+						</Button>
+					{/if}
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 {/snippet}
 
 <OnboardingContainer
@@ -387,26 +386,21 @@
 	step={3}
 	{totalSteps}
 >
-	<div class="flex flex-col items-center space-y-6">
+	<div class="flex flex-col items-center gap-6">
 		<!-- Download Cards -->
-		<div class="w-full max-w-lg space-y-4">
+		<div class="flex w-full max-w-lg flex-col gap-4">
 			{@render downloadCard('Transcription Engine', micIcon, parakeetState, '~670 MB')}
 			{@render downloadCard('Summary Engine', sparklesIcon, gemmaState, summaryModelSize)}
 		</div>
 
 		<!-- Info Message - Only show when Parakeet is downloaded -->
 		{#if onboarding.parakeetDownloaded && !onboarding.summaryModelDownloaded}
-			<div
-				class="w-full max-w-lg bg-muted rounded-lg p-4 text-sm text-foreground"
-				transition:fly={{ y: -10, duration: 300 }}
-			>
-				<div class="flex items-start gap-3">
-					<Download class="w-5 h-5 text-muted-foreground flex-shrink-0 mt-0.5" />
-					<div>
-						<p class="font-medium">You can continue while this finishes</p>
-						<p class="text-muted-foreground mt-1">Download will continue in the background.</p>
-					</div>
-				</div>
+			<div class="w-full max-w-lg" transition:fly={{ y: -10, duration: 300 }}>
+				<Alert.Root class="bg-muted">
+					<Download class="text-muted-foreground" />
+					<Alert.Title>You can continue while this finishes</Alert.Title>
+					<Alert.Description>Download will continue in the background.</Alert.Description>
+				</Alert.Root>
 			</div>
 		{/if}
 
@@ -415,10 +409,10 @@
 			<Button
 				onclick={handleContinue}
 				disabled={!onboarding.parakeetDownloaded || isCompleting}
-				class="w-full h-11"
+				class="h-11 w-full"
 			>
 				{#if isCompleting || !onboarding.parakeetDownloaded}
-					<Loader2 class="w-4 h-4 mr-2 animate-spin" />
+					<Loader2 class="animate-spin" />
 				{:else}
 					Continue
 				{/if}
@@ -428,9 +422,9 @@
 </OnboardingContainer>
 
 {#snippet micIcon()}
-	<Mic class="w-5 h-5 text-muted-foreground" />
+	<Mic class="size-5 text-muted-foreground" />
 {/snippet}
 
 {#snippet sparklesIcon()}
-	<Sparkles class="w-5 h-5 text-muted-foreground" />
+	<Sparkles class="size-5 text-muted-foreground" />
 {/snippet}
