@@ -1,7 +1,7 @@
 use crate::database::models::{Setting, TranscriptSetting};
 use crate::keychain::{entry_key, SecretStore};
 use crate::summary::CustomOpenAIConfig;
-use sqlx::SqlitePool;
+use sqlx::{AssertSqlSafe, SqlitePool};
 
 #[derive(serde::Deserialize, Debug)]
 pub struct SaveModelConfigRequest {
@@ -263,7 +263,7 @@ impl SettingsRepository {
             "#,
             api_key_column, api_key_column
         );
-        sqlx::query(&query)
+        sqlx::query(AssertSqlSafe(query))
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -308,7 +308,7 @@ impl SettingsRepository {
             "SELECT {} FROM settings WHERE id = '1' LIMIT 1",
             api_key_column
         );
-        let api_key = sqlx::query_scalar(&query)
+        let api_key = sqlx::query_scalar(AssertSqlSafe(query))
             .fetch_optional(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -381,7 +381,7 @@ impl SettingsRepository {
             crate::config::DEFAULT_PARAKEET_MODEL,
             api_key_column
         );
-        sqlx::query(&query)
+        sqlx::query(AssertSqlSafe(query))
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -417,7 +417,7 @@ impl SettingsRepository {
             "SELECT {} FROM transcript_settings WHERE id = '1' LIMIT 1",
             api_key_column
         );
-        let api_key = sqlx::query_scalar(&query)
+        let api_key = sqlx::query_scalar(AssertSqlSafe(query))
             .fetch_optional(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -473,7 +473,7 @@ impl SettingsRepository {
             "UPDATE settings SET {} = NULL WHERE id = '1'",
             api_key_column
         );
-        sqlx::query(&query)
+        sqlx::query(AssertSqlSafe(query))
             .execute(pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -610,7 +610,7 @@ impl SettingsRepository {
                 column
             );
             let value: Option<Option<String>> =
-                sqlx::query_scalar(&query).fetch_optional(pool).await?;
+                sqlx::query_scalar(AssertSqlSafe(query)).fetch_optional(pool).await?;
             let value = value.flatten();
 
             if let Some(v) = value {
@@ -619,7 +619,7 @@ impl SettingsRepository {
                     Ok(()) => {
                         let null_query =
                             format!("UPDATE settings SET {} = NULL WHERE id = '1'", column);
-                        if let Err(e) = sqlx::query(&null_query).execute(pool).await {
+                        if let Err(e) = sqlx::query(AssertSqlSafe(null_query)).execute(pool).await {
                             log::error!("Failed to NULL {} after keychain write: {}", column, e);
                             any_failed = true;
                         }
@@ -694,7 +694,7 @@ impl SettingsRepository {
                 column
             );
             let value: Option<Option<String>> =
-                sqlx::query_scalar(&query).fetch_optional(pool).await?;
+                sqlx::query_scalar(AssertSqlSafe(query)).fetch_optional(pool).await?;
             let value = value.flatten();
 
             if let Some(v) = value {
@@ -705,7 +705,7 @@ impl SettingsRepository {
                             "UPDATE transcript_settings SET {} = NULL WHERE id = '1'",
                             column
                         );
-                        if let Err(e) = sqlx::query(&null_query).execute(pool).await {
+                        if let Err(e) = sqlx::query(AssertSqlSafe(null_query)).execute(pool).await {
                             log::error!(
                                 "Failed to NULL transcript {} after keychain write: {}",
                                 column,
@@ -1052,7 +1052,7 @@ mod tests {
             "#,
             column, column
         );
-        sqlx::query(&query)
+        sqlx::query(AssertSqlSafe(query))
             .bind(value)
             .execute(pool)
             .await
