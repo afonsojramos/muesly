@@ -243,8 +243,28 @@ pub enum GoogleError {
     NoRefreshToken,
     #[error("this account needs to be reconnected")]
     InvalidGrant,
+    #[error("could not access the keychain")]
+    Keychain,
     #[error("a calendar request failed")]
     Request,
+}
+
+/// Dedicated HTTP client for the Google OAuth + REST layer. Unlike the shared
+/// app client, this one: (1) refuses to follow redirects, so a 30x from a token
+/// endpoint can never forward the client_secret / code / refresh_token in the
+/// body to an attacker-controlled Location; (2) enforces HTTPS; (3) has explicit
+/// timeouts so a stalled endpoint can't hang the refresh path.
+fn google_http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .https_only(true)
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(20))
+            .build()
+            .expect("failed to build google http client")
+    })
 }
 
 struct OAuthConfig {
@@ -301,12 +321,26 @@ async fn accept_code(listener: TcpListener, expected_state: &str) -> Result<Stri
         .map_err(|_| GoogleError::Cancelled)?
         .map_err(|_| GoogleError::Cancelled)?;
 
-    let mut buf = [0u8; 4096];
-    let n = stream
-        .read(&mut buf)
-        .await
-        .map_err(|_| GoogleError::Cancelled)?;
-    let req = String::from_utf8_lossy(&buf[..n]);
+    // A single read is not guaranteed to return the whole request line (TCP is a
+    // stream; the GET line can be split across packets). Read until the first CRLF
+    // (the request line, which carries ?code=&state=) or a hard cap, bounded by a
+    // short timeout so a stalled/slow-loris connection can't hang the flow.
+    let mut buf: Vec<u8> = Vec::with_capacity(1024);
+    let mut tmp = [0u8; 1024];
+    loop {
+        let n = match tokio::time::timeout(Duration::from_secs(10), stream.read(&mut tmp)).await {
+            Ok(Ok(n)) => n,
+            _ => break, // timeout or read error: parse whatever we have
+        };
+        if n == 0 {
+            break; // EOF
+        }
+        buf.extend_from_slice(&tmp[..n]);
+        if buf.windows(2).any(|w| w == b"\r\n") || buf.len() >= 16384 {
+            break;
+        }
+    }
+    let req = String::from_utf8_lossy(&buf);
     let path = req
         .lines()
         .next()
@@ -320,6 +354,8 @@ async fn accept_code(listener: TcpListener, expected_state: &str) -> Result<Stri
         body
     );
     let _ = stream.write_all(resp.as_bytes()).await;
+    // Flush before the stream is dropped so the browser reliably receives the page.
+    let _ = stream.flush().await;
 
     let parsed =
         url::Url::parse(&format!("http://127.0.0.1{path}")).map_err(|_| GoogleError::Cancelled)?;
@@ -352,7 +388,7 @@ async fn exchange_code(
     code: &str,
     verifier: &str,
 ) -> Result<TokenResponse, GoogleError> {
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     let params = [
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -379,7 +415,7 @@ async fn refresh_call(
     cfg: &OAuthConfig,
     refresh_token: &str,
 ) -> Result<TokenResponse, GoogleError> {
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     let params = [
         ("grant_type", "refresh_token"),
         ("client_id", cfg.client_id.as_str()),
@@ -416,7 +452,7 @@ struct UserInfo {
 }
 
 async fn fetch_userinfo(access_token: &str) -> Result<UserInfo, GoogleError> {
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     let resp = client
         .get(USERINFO_ENDPOINT)
         .bearer_auth(access_token)
@@ -441,11 +477,14 @@ fn store_refresh(sub: &str, token: &str) -> Result<(), GoogleError> {
         .map_err(|_| GoogleError::Request)
 }
 
-fn get_refresh(sub: &str) -> Option<String> {
+/// Read the refresh token. `Ok(None)` means the keychain genuinely has no entry
+/// (the account must be reconnected); `Err(Keychain)` means the keychain itself
+/// could not be read (locked, service down, transient ACL prompt) and must NOT be
+/// confused with a missing token, or a healthy account gets flagged for reauth.
+fn get_refresh(sub: &str) -> Result<Option<String>, GoogleError> {
     crate::keychain::keyring_store()
         .get(&token_key(sub))
-        .ok()
-        .flatten()
+        .map_err(|_| GoogleError::Keychain)
 }
 
 struct CachedToken {
@@ -453,9 +492,7 @@ struct CachedToken {
     expires_at: Instant,
 }
 
-/// In-memory access-token cache. The async mutex also serializes refreshes
-/// (coarse single-flight) so two concurrent fetches for the same account never
-/// double-refresh and trip Google's token rotation.
+/// In-memory access-token cache, keyed by account `sub`.
 fn token_cache() -> &'static tokio::sync::Mutex<std::collections::HashMap<String, CachedToken>> {
     static CACHE: OnceLock<tokio::sync::Mutex<std::collections::HashMap<String, CachedToken>>> =
         OnceLock::new();
@@ -463,13 +500,18 @@ fn token_cache() -> &'static tokio::sync::Mutex<std::collections::HashMap<String
 }
 
 async fn ensure_access_token(cfg: &OAuthConfig, sub: &str) -> Result<String, GoogleError> {
-    let mut guard = token_cache().lock().await;
-    if let Some(c) = guard.get(sub) {
-        if c.expires_at > Instant::now() + Duration::from_secs(30) {
-            return Ok(c.access_token.clone());
+    // Fast path: a still-valid cached token. Take the lock only to read, then
+    // release it BEFORE the network refresh so a slow refresh for one account
+    // never blocks another account's cache hit.
+    {
+        let guard = token_cache().lock().await;
+        if let Some(c) = guard.get(sub) {
+            if c.expires_at > Instant::now() + Duration::from_secs(30) {
+                return Ok(c.access_token.clone());
+            }
         }
     }
-    let refresh = match get_refresh(sub) {
+    let refresh = match get_refresh(sub)? {
         Some(r) => r,
         None => {
             log::warn!(
@@ -478,9 +520,12 @@ async fn ensure_access_token(cfg: &OAuthConfig, sub: &str) -> Result<String, Goo
             return Err(GoogleError::InvalidGrant);
         }
     };
+    // Refresh with no lock held. Google does not rotate installed-app refresh
+    // tokens, so two concurrent refreshes for the same account both succeed; the
+    // last writer wins the cache slot.
     let token = refresh_call(cfg, &refresh).await?;
     let expires_at = Instant::now() + Duration::from_secs(token.expires_in.unwrap_or(3600));
-    guard.insert(
+    token_cache().lock().await.insert(
         sub.to_string(),
         CachedToken {
             access_token: token.access_token.clone(),
@@ -521,13 +566,15 @@ pub async fn connect_account() -> Result<(String, Option<String>), GoogleError> 
 /// drop the cached access token, then best-effort revoke at Google. The caller
 /// deletes the DB row only after this returns Ok, so a token is never orphaned.
 pub async fn disconnect_account(sub: &str) -> Result<(), GoogleError> {
-    let refresh = get_refresh(sub);
+    // Best-effort: a keychain read error here just means we skip the revoke; the
+    // local delete below is the authoritative removal.
+    let refresh = get_refresh(sub).ok().flatten();
     crate::keychain::keyring_store()
         .delete(&token_key(sub))
         .map_err(|_| GoogleError::Request)?;
     token_cache().lock().await.remove(sub);
     if let Some(r) = refresh {
-        let client = crate::providers::common::http_client();
+        let client = google_http_client();
         let _ = client
             .post(REVOKE_ENDPOINT)
             .form(&[("token", r.as_str())])
@@ -551,7 +598,7 @@ pub struct CalendarListEntry {
 }
 
 async fn list_calendars_raw(access_token: &str) -> Result<Vec<CalendarListEntry>, GoogleError> {
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     let resp = client
         .get(CALENDAR_LIST_ENDPOINT)
         .bearer_auth(access_token)
@@ -590,7 +637,7 @@ async fn events_list_raw(
         .append_pair("maxResults", "2500")
         .append_pair("showDeleted", "false");
 
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     let resp = client
         .get(url)
         .bearer_auth(access_token)
@@ -652,11 +699,17 @@ pub async fn diagnose(account: &CalendarAccount) -> String {
     let _ = store.delete("google-oauth-selftest");
     lines.push(format!("keychain self-test: {selftest}"));
 
-    if get_refresh(&account.id).is_none() {
-        lines.push("keychain refresh token: MISSING (reconnect needed)".to_string());
-        return lines.join("\n");
+    match get_refresh(&account.id) {
+        Ok(Some(_)) => lines.push("keychain refresh token: present".to_string()),
+        Ok(None) => {
+            lines.push("keychain refresh token: MISSING (reconnect needed)".to_string());
+            return lines.join("\n");
+        }
+        Err(_) => {
+            lines.push("keychain refresh token: read error (keychain locked/unavailable)".to_string());
+            return lines.join("\n");
+        }
     }
-    lines.push("keychain refresh token: present".to_string());
 
     let access = match ensure_access_token(&cfg, &account.id).await {
         Ok(a) => {
@@ -669,7 +722,7 @@ pub async fn diagnose(account: &CalendarAccount) -> String {
         }
     };
 
-    let client = crate::providers::common::http_client();
+    let client = google_http_client();
     match client
         .get(CALENDAR_LIST_ENDPOINT)
         .bearer_auth(&access)
