@@ -15,5 +15,5 @@
 </script>
 
 {#if show}
-	<span class={type === 'success' ? 'text-green-500' : 'text-red-500'}>{message}</span>
+	<span class={type === 'success' ? 'text-success' : 'text-destructive'}>{message}</span>
 {/if}

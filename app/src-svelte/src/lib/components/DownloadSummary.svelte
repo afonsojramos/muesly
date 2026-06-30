@@ -16,7 +16,7 @@
 		<span class="text-muted-foreground">💾 {formatSize(totalSizeMb)} total</span>
 	</div>
 	{#if downloadedModels > 0}
-		<div class="mt-1 text-xs text-green-600">
+		<div class="mt-1 text-xs text-success">
 			✓ Models run locally — no internet required for transcription
 		</div>
 	{/if}
