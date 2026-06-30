@@ -49,6 +49,13 @@ jobs:
     permissions:
       contents: write
     runs-on: ${{ inputs.platform }}
+    # Sourcemap upload credentials (job-level so beforeBuildCommand's upload
+    # script inherits them). Absent secrets => empty => upload step is skipped
+    # and the script no-ops, so this never affects builds without them.
+    env:
+      POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+      POSTHOG_CLI_ENV_ID: ${{ secrets.POSTHOG_CLI_ENV_ID }}
+      POSTHOG_CLI_HOST: https://eu.posthog.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -563,6 +570,11 @@ jobs:
       # vars; the unsigned one passes none of them. They must not be set to empty
       # strings on unsigned builds, the tauri bundler treats a present-but-empty
       # APPLE_CERTIFICATE as "import this cert" and fails (`security import`).
+      - name: Install posthog-cli (sourcemap upload)
+        if: ${{ env.POSTHOG_CLI_TOKEN != '' }}
+        shell: bash
+        run: cargo install posthog-cli --locked
+
       - name: Build with Tauri (signed)
         if: inputs.sign-binaries
         uses: tauri-apps/tauri-action@v0

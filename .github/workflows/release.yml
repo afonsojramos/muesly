@@ -132,6 +132,11 @@ jobs:
     env:
       WHISPER_NO_AVX: "ON"
       WHISPER_NO_AVX2: "ON"
+      # Sourcemap upload credentials (job-level so beforeBuildCommand inherits
+      # them). Empty when the secrets are unset, which skips the upload safely.
+      POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
+      POSTHOG_CLI_ENV_ID: ${{ secrets.POSTHOG_CLI_ENV_ID }}
+      POSTHOG_CLI_HOST: https://eu.posthog.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -188,6 +193,10 @@ jobs:
         with:
           path: app/src-tauri/binaries/ffmpeg-*
           key: ${{ runner.os }}-ffmpeg-${{ hashFiles('app/src-tauri/build.rs', 'app/src-tauri/build/ffmpeg.rs') }}
+
+      - name: Install posthog-cli (sourcemap upload)
+        if: ${{ env.POSTHOG_CLI_TOKEN != '' }}
+        run: cargo install posthog-cli --locked
 
       - name: Build Tauri app (deb + AppImage)
         uses: tauri-apps/tauri-action@v0
