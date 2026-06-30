@@ -42,6 +42,8 @@ Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks ru
 - Audio naming: always "microphone" and "system", never "input"/"output".
 - Hot-path logging: use the `perf_debug!` macro (zero cost in release builds), not `log::debug!`.
 - File paths: use Tauri path APIs (`app_data_dir`, etc.). Never hardcode paths.
+- Class merging: `cn()` is re-exported from `cnfast` (drop-in for `clsx` + `tailwind-merge`, ~3.8x faster, byte-identical) in `app/src-svelte/src/lib/utils.ts`. Always merge conditional/variant classes with `cn()`, never template-literal ternaries; don't import `clsx` directly. (`tailwind-merge` stays in deps only because shadcn's `tailwind-variants` requires it — don't use it directly.)
+- UI components: built with **shadcn-svelte** (bits-ui underneath), as source under `app/src-svelte/src/lib/components/ui/`. **Reuse, don't reinvent — before building ANY UI, check whether a component already exists.** Look first in `src/lib/components/ui/` (installed primitives), then `src/lib/components/` (composed feature components), then the shadcn-svelte registry (`bunx --bun shadcn-svelte@latest add` to browse). Never hand-roll markup a primitive already provides (`<button>`→`Button`, custom input→`Input`, card `div`→`Card`, dropdown→`DropdownMenu`/`Select`, modal→`Dialog`, callout→`Alert`, `<hr>`→`Separator`). Only write a new component when none exists — and prefer adding it from the registry over custom markup. Compose with built-in `variant`/`size` props and semantic tokens (`bg-primary`, `text-muted-foreground`, `text-destructive`), never raw palette colors (`green-500`). Follow the `shadcn-svelte` skill for the full conventions (imports, Card/Tabs/Field composition, `data-icon` on button icons, `gap-*` over `space-*`).
 - Documentation: when a change affects commands, architecture, or behavior described in this file, `docs/`, or `README.md`, update those docs in the same change.
 
 ## Gotchas
@@ -59,3 +61,4 @@ RUST_LOG=app_lib::audio=debug pnpm tauri:dev  # audio pipeline only
 ```
 
 DevTools: `Cmd+Shift+I` (macOS) / `Ctrl+Shift+I` (Windows). The app shows real-time audio metrics while recording.
+We are currently working purely on main. When ready, we will switch to a feature branching model.
