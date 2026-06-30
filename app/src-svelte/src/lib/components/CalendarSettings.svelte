@@ -125,6 +125,14 @@
 		}
 	}
 
+	// One-click, secret-free diagnostic shown inline under the account.
+	let diagnoseText = $state<string | null>(null);
+	async function diagnose(accountId: string): Promise<void> {
+		diagnoseText = 'Running…';
+		const res = await commands.calendarDiagnose(accountId);
+		diagnoseText = res.status === 'ok' ? res.data : `error: ${res.error}`;
+	}
+
 	async function loadCalendars(): Promise<void> {
 		const list = await commands.calendarListCalendars();
 		if (list.status === 'ok') calendars = list.data;
@@ -302,6 +310,12 @@
 									>
 										{expandedAccountId === acct.id ? 'Hide calendars' : 'Calendars'}
 									</button>
+									<button
+										onclick={() => diagnose(acct.id)}
+										class="text-xs text-muted-foreground transition-colors hover:text-foreground"
+									>
+										Diagnose
+									</button>
 									<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
 									<button
 										onclick={() => removeAccount(acct.id)}
@@ -353,6 +367,10 @@
 						</p>
 					{/if}
 				</div>
+				{#if diagnoseText}
+					<pre
+						class="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">{diagnoseText}</pre>
+				{/if}
 			</div>
 		{/if}
 
