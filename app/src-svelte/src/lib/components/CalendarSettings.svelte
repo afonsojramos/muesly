@@ -2,8 +2,11 @@
 	import { onMount } from 'svelte';
 	import { Calendar, ExternalLink, ShieldAlert, Trash2 } from '@lucide/svelte';
 
-	import Switch from '$lib/ui/switch.svelte';
-	import Alert from '$lib/ui/alert.svelte';
+	import { Switch } from '$lib/components/ui/switch';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from '$lib/toast';
 	import {
 		commands,
@@ -241,12 +244,12 @@
 </script>
 
 {#if loading}
-	<div class="animate-pulse">
-		<div class="mb-4 h-8 rounded bg-secondary"></div>
-		<div class="mb-4 h-8 rounded bg-secondary"></div>
+	<div class="flex flex-col gap-4">
+		<Skeleton class="h-8 w-full" />
+		<Skeleton class="h-8 w-full" />
 	</div>
 {:else}
-	<div class="space-y-6">
+	<div class="flex flex-col gap-6">
 		<div>
 			<h3 class="mb-4 text-lg font-semibold">Calendar</h3>
 			<p class="mb-6 text-sm text-muted-foreground">
@@ -257,7 +260,7 @@
 			</p>
 		</div>
 
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
+		<Card.Root class="flex flex-row items-center justify-between p-4">
 			<div class="flex-1">
 				<div class="font-medium">Use calendar context</div>
 				<div class="text-sm text-muted-foreground">
@@ -265,22 +268,22 @@
 				</div>
 			</div>
 			<Switch checked={enabled} disabled={requesting} onCheckedChange={handleEnableToggle} />
-		</div>
+		</Card.Root>
 
 		{#if enabled}
-			<div class="rounded-lg border border-border p-4">
+			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Calendar sources</div>
 				<div class="mb-3 text-sm text-muted-foreground">
 					Enable one or more sources. Events from all enabled sources are matched to your
 					recordings.
 				</div>
-				<div class="space-y-2">
+				<div class="flex flex-col gap-2">
 					<!-- Local macOS source -->
 					<div class="flex items-center justify-between">
 						<div class="text-sm">
 							On this Mac
 							{#if !granted}
-								<span class="ml-2 text-xs text-amber-600">(calendar access needed)</span>
+								<span class="ml-2 text-xs text-warning">(calendar access needed)</span>
 							{/if}
 						</div>
 						{#each accounts.filter((a) => a.source === 'eventkit') as local (local.id)}
@@ -298,36 +301,36 @@
 								<div class="text-sm">
 									{acct.email ?? 'Google account'}
 									{#if acct.status === 'reauth_required'}
-										<span class="ml-2 text-xs text-amber-600"
+										<span class="ml-2 text-xs text-warning"
 											>(reconnect needed - remove &amp; re-add)</span
 										>
 									{/if}
 								</div>
 								<div class="flex items-center gap-3">
-									<button
+									<Button
+										variant="ghost"
+										size="sm"
 										onclick={() => toggleAccountCalendars(acct)}
-										class="text-xs text-muted-foreground transition-colors hover:text-foreground"
 									>
 										{expandedAccountId === acct.id ? 'Hide calendars' : 'Calendars'}
-									</button>
-									<button
-										onclick={() => diagnose(acct.id)}
-										class="text-xs text-muted-foreground transition-colors hover:text-foreground"
-									>
+									</Button>
+									<Button variant="ghost" size="sm" onclick={() => diagnose(acct.id)}>
 										Diagnose
-									</button>
+									</Button>
 									<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
-									<button
+									<Button
+										variant="ghost"
+										size="sm"
+										class="text-muted-foreground hover:text-destructive"
 										onclick={() => removeAccount(acct.id)}
-										class="text-xs text-muted-foreground transition-colors hover:text-destructive"
 										aria-label="Remove account"
 									>
 										Remove
-									</button>
+									</Button>
 								</div>
 							</div>
 							{#if expandedAccountId === acct.id}
-								<div class="mt-2 space-y-1 border-l border-border pl-4">
+								<div class="mt-2 flex flex-col gap-1 border-l border-border pl-4">
 									{#if (accountCalendars[acct.id] ?? []).length === 0}
 										<div class="text-xs text-muted-foreground">No calendars found.</div>
 									{:else}
@@ -349,13 +352,10 @@
 
 				<div class="mt-4">
 					{#if googleConfigured}
-						<button
-							onclick={addGoogleAccount}
-							class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary"
-						>
-							<Calendar class="size-4" />
+						<Button variant="outline" size="sm" onclick={addGoogleAccount}>
+							<Calendar data-icon="inline-start" />
 							Add Google account
-						</button>
+						</Button>
 						<p class="mt-2 text-xs text-muted-foreground">
 							Read-only. Opens your browser; nothing is routed through a muesly server. While in
 							review, you may need to reconnect about weekly.
@@ -371,40 +371,37 @@
 					<pre
 						class="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-secondary/40 p-3 text-xs text-muted-foreground">{diagnoseText}</pre>
 				{/if}
-			</div>
+			</Card.Root>
 		{/if}
 
 		{#if enabled && !granted}
-			<Alert variant="warning">
-				{#snippet icon()}<ShieldAlert class="size-4" />{/snippet}
-				{#snippet title()}Calendar access required{/snippet}
-				{#if authStatus === 'restricted'}
-					<p>Calendar access is restricted by your device management and cannot be granted here.</p>
-				{:else if authStatus === 'denied' || authStatus === 'writeonly'}
-					<p class="mb-2">
-						muesly needs read access to your calendar. Grant full access in System Settings.
-					</p>
-					<button
-						onclick={openSettings}
-						class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary"
-					>
-						<ExternalLink class="size-4" /> Open System Settings
-					</button>
-				{:else}
-					<p class="mb-2">muesly needs read access to your calendar.</p>
-					<button
-						onclick={requestAccess}
-						disabled={requesting}
-						class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary disabled:opacity-50"
-					>
-						<Calendar class="size-4" /> Grant calendar access
-					</button>
-				{/if}
-			</Alert>
+			<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
+				<ShieldAlert />
+				<Alert.Title>Calendar access required</Alert.Title>
+				<Alert.Description class="text-warning/90">
+					{#if authStatus === 'restricted'}
+						<p>
+							Calendar access is restricted by your device management and cannot be granted here.
+						</p>
+					{:else if authStatus === 'denied' || authStatus === 'writeonly'}
+						<p class="mb-2">
+							muesly needs read access to your calendar. Grant full access in System Settings.
+						</p>
+						<Button variant="outline" size="sm" onclick={openSettings}>
+							<ExternalLink data-icon="inline-start" /> Open System Settings
+						</Button>
+					{:else}
+						<p class="mb-2">muesly needs read access to your calendar.</p>
+						<Button variant="outline" size="sm" disabled={requesting} onclick={requestAccess}>
+							<Calendar data-icon="inline-start" /> Grant calendar access
+						</Button>
+					{/if}
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
 		{#if enabled && granted}
-			<div class="rounded-lg border border-border p-4">
+			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Calendars</div>
 				<div class="mb-3 text-sm text-muted-foreground">
 					Choose which calendars are used to match meetings. Holiday and subscribed calendars are
@@ -415,7 +412,7 @@
 						No calendars found. Add an account in the macOS Calendar app.
 					</div>
 				{:else}
-					<div class="space-y-2">
+					<div class="flex flex-col gap-2">
 						{#each calendars as cal (cal.id)}
 							<div class="flex items-center justify-between">
 								<div class="text-sm">
@@ -433,21 +430,23 @@
 						{/each}
 					</div>
 				{/if}
-			</div>
+			</Card.Root>
 
-			<div class="rounded-lg border border-border p-4">
+			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Cloud summaries</div>
 				<div class="mb-3 text-sm text-muted-foreground">
 					When you use a cloud summary provider, these control what calendar data may leave your
 					device. Attendee emails are never sent or stored.
 				</div>
-				<Alert variant="warning" class="mb-4">
-					{#snippet icon()}<ShieldAlert class="size-4" />{/snippet}
-					<p>
-						With a cloud provider selected, anything enabled below is sent to that provider when a
-						summary is generated. Local summaries always include full context and send nothing.
-					</p>
-				</Alert>
+				<Alert.Root class="mb-4 border-warning/50 bg-warning/10 text-warning">
+					<ShieldAlert />
+					<Alert.Description class="text-warning/90">
+						<p>
+							With a cloud provider selected, anything enabled below is sent to that provider when a
+							summary is generated. Local summaries always include full context and send nothing.
+						</p>
+					</Alert.Description>
+				</Alert.Root>
 				<div class="flex items-center justify-between py-2">
 					<div class="text-sm">Send attendee &amp; organizer names</div>
 					<Switch checked={sendNames} onCheckedChange={toggleSendNames} />
@@ -456,27 +455,23 @@
 					<div class="text-sm">Send agenda / notes</div>
 					<Switch checked={sendNotes} onCheckedChange={toggleSendNotes} />
 				</div>
-			</div>
+			</Card.Root>
 		{/if}
 
 		{#if enabled}
-			<div class="rounded-lg border border-border p-4">
+			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Upcoming events</div>
 				<div class="mb-3 text-sm text-muted-foreground">
 					Preview what muesly reads from your enabled sources (next ~24 hours).
 				</div>
-				<button
-					onclick={loadPreview}
-					disabled={previewLoading}
-					class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary disabled:opacity-50"
-				>
+				<Button variant="outline" size="sm" disabled={previewLoading} onclick={loadPreview}>
 					{previewLoading ? 'Loading…' : 'Preview events'}
-				</button>
+				</Button>
 				{#if previewEvents !== null}
 					{#if previewEvents.length === 0}
 						<div class="mt-3 text-sm text-muted-foreground">No upcoming events found.</div>
 					{:else}
-						<div class="mt-3 space-y-1">
+						<div class="mt-3 flex flex-col gap-1">
 							{#each previewEvents as ev (ev.start + ev.title)}
 								<div class="flex items-center justify-between text-sm">
 									<span class="truncate">{ev.title}</span>
@@ -493,22 +488,19 @@
 						</div>
 					{/if}
 				{/if}
-			</div>
+			</Card.Root>
 		{/if}
 
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
+		<Card.Root class="flex flex-row items-center justify-between p-4">
 			<div class="flex-1">
 				<div class="font-medium">Delete stored calendar data</div>
 				<div class="text-sm text-muted-foreground">
 					Remove every calendar snapshot saved with your recordings, keeping the recordings.
 				</div>
 			</div>
-			<button
-				onclick={purgeData}
-				class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary"
-			>
-				<Trash2 class="size-4" /> Delete
-			</button>
-		</div>
+			<Button variant="outline" size="sm" onclick={purgeData}>
+				<Trash2 data-icon="inline-start" /> Delete
+			</Button>
+		</Card.Root>
 	</div>
 {/if}
