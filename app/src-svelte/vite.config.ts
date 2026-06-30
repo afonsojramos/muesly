@@ -25,6 +25,9 @@ export default defineConfig({
 		//   - Linux WebKitGTK (recent)
 		target: 'es2022',
 		minify: !process.env.TAURI_ENV_DEBUG ? 'oxc' : false,
-		sourcemap: !!process.env.TAURI_ENV_DEBUG
+		// Debug: full sourcemaps. Release: 'hidden' so maps are emitted for upload
+		// to PostHog (readable error-tracking stacks) without a public
+		// sourceMappingURL; the upload step strips them before bundling.
+		sourcemap: process.env.TAURI_ENV_DEBUG ? true : 'hidden'
 	}
 });

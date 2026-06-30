@@ -7,7 +7,7 @@
         "frontendDist": "../src-svelte/build",
         "devUrl": "http://localhost:1420",
         "beforeDevCommand": "pnpm -C src-svelte dev",
-        "beforeBuildCommand": "pnpm -C src-svelte build"
+        "beforeBuildCommand": "pnpm -C src-svelte build:tauri"
     },
     "app": {
         "windows": [
