@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { CircleAlert, Loader2 } from '@lucide/svelte';
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 	import { onDestroy } from 'svelte';
 
 	import type { Summary, SummaryDataResponse } from '$lib/types';
@@ -7,6 +8,7 @@
 	import { saveStatus } from '$lib/stores/save-status.svelte';
 	import { debounce } from '$lib/utils/debounce';
 	import { toast } from '$lib/toast';
+	import * as Alert from '$lib/components/ui/alert';
 	import Editor from './Editor.svelte';
 
 	type SummaryStatus =
@@ -88,37 +90,33 @@
 </script>
 
 {#if error}
-	<div class="w-full rounded-lg border border-destructive/30 bg-destructive/5 p-4">
-		<div class="mb-2 flex items-center gap-2">
-			<CircleAlert class="size-5 text-destructive" />
-			<h3 class="font-medium text-destructive">Error Generating Summary</h3>
-		</div>
-		<p class="text-sm text-destructive/90">{error}</p>
-		<p class="mt-2 text-xs text-muted-foreground">
-			Please check your model configuration and API keys, or try again.
-		</p>
-	</div>
+	<Alert.Root variant="destructive">
+		<CircleAlertIcon />
+		<Alert.Title>Error Generating Summary</Alert.Title>
+		<Alert.Description>
+			<p>{error}</p>
+			<p class="text-muted-foreground">
+				Please check your model configuration and API keys, or try again.
+			</p>
+		</Alert.Description>
+	</Alert.Root>
 {:else if isLoading}
-	<div class="w-full rounded-lg border border-accent/20 bg-accent/5 p-4">
-		<div class="flex items-center gap-3">
-			<Loader2 class="size-5 animate-spin text-accent" />
-			<div>
-				<h3 class="font-medium">
-					{status === 'processing' ? 'Processing Transcript' : 'Generating Summary'}
-				</h3>
-				<p class="text-sm text-muted-foreground">
-					{status === 'processing'
-						? 'Analyzing your transcript…'
-						: 'Creating a detailed summary of your meeting…'}
-				</p>
-			</div>
-		</div>
-	</div>
+	<Alert.Root class="text-accent">
+		<Loader2Icon class="animate-spin" />
+		<Alert.Title>
+			{status === 'processing' ? 'Processing Transcript' : 'Generating Summary'}
+		</Alert.Title>
+		<Alert.Description>
+			{status === 'processing'
+				? 'Analyzing your transcript…'
+				: 'Creating a detailed summary of your meeting…'}
+		</Alert.Description>
+	</Alert.Root>
 {:else if !hasContent && status === 'completed'}
-	<div class="w-full rounded-lg border border-border bg-secondary/40 p-4 text-center">
-		<p class="text-muted-foreground">No summary content available.</p>
-		<p class="mt-1 text-sm text-muted-foreground/70">Try generating a new summary.</p>
-	</div>
+	<Alert.Root class="text-center">
+		<Alert.Title>No summary content available.</Alert.Title>
+		<Alert.Description>Try generating a new summary.</Alert.Description>
+	</Alert.Root>
 {:else}
 	<Editor value={incomingMarkdown} {editable} onChange={handleChange} />
 {/if}

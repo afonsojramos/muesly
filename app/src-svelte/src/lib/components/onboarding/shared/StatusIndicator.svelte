@@ -15,15 +15,15 @@
 	let { status, size = 'md', class: className }: Props = $props();
 
 	const sizeClasses: Record<StatusIndicatorSize, string> = {
-		sm: 'w-2 h-2',
-		md: 'w-3 h-3',
-		lg: 'w-4 h-4'
+		sm: 'size-2',
+		md: 'size-3',
+		lg: 'size-4'
 	};
 
 	const statusColors: Record<StatusIndicatorStatus, string> = {
 		idle: 'bg-muted-foreground/40',
-		checking: 'bg-yellow-400 animate-pulse',
-		success: 'bg-green-500',
+		checking: 'bg-warning animate-pulse',
+		success: 'bg-success',
 		error: 'bg-destructive'
 	};
 </script>

@@ -3,10 +3,11 @@
 	import { Eye, EyeOff, Lock, Unlock, Plus, X } from '@lucide/svelte';
 
 	import type { TranscriptModelProps } from '$lib/services/config';
-	import Label from '$lib/ui/label.svelte';
-	import Input from '$lib/ui/input.svelte';
-	import Button from '$lib/ui/button.svelte';
-	import Select from '$lib/ui/select.svelte';
+	import * as Field from '$lib/components/ui/field';
+	import * as InputGroup from '$lib/components/ui/input-group';
+	import * as Select from '$lib/components/ui/select';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import WhisperModelManager from './WhisperModelManager.svelte';
 	import ParakeetModelManager from './ParakeetModelManager.svelte';
 	import { config } from '$lib/stores/config.svelte';
@@ -57,8 +58,12 @@
 		}
 	}
 
-	function handleProviderChange(value: string[]): void {
-		const provider = (value[0] ?? 'parakeet') as TranscriptModelProps['provider'];
+	const providerLabel = $derived(
+		providerItems.find((item) => item.value === uiProvider)?.label ?? 'Select provider'
+	);
+
+	function handleProviderChange(value: string): void {
+		const provider = (value ?? 'parakeet') as TranscriptModelProps['provider'];
 		uiProvider = provider;
 		if (provider !== 'localWhisper' && provider !== 'parakeet') {
 			void fetchApiKey(provider);
@@ -76,18 +81,26 @@
 	}
 </script>
 
-<div class="space-y-4 pb-6">
-	<div>
-		<Label class="mb-1 block">Transcript Model</Label>
-		<div class="mx-1">
-			<Select
-				items={providerItems}
-				value={[uiProvider]}
-				placeholder="Select provider"
-				onValueChange={handleProviderChange}
-			/>
-		</div>
-	</div>
+<div class="flex flex-col gap-4 pb-6">
+	<Field.Field>
+		<Field.FieldLabel for="transcript-provider">Transcript Model</Field.FieldLabel>
+		<Select.Root
+			type="single"
+			value={uiProvider}
+			onValueChange={handleProviderChange}
+		>
+			<Select.Trigger id="transcript-provider" class="w-full">
+				{providerLabel}
+			</Select.Trigger>
+			<Select.Content>
+				<Select.Group>
+					{#each providerItems as item (item.value)}
+						<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+					{/each}
+				</Select.Group>
+			</Select.Content>
+		</Select.Root>
+	</Field.Field>
 
 	{#if uiProvider === 'localWhisper'}
 		<div class="mt-6">
@@ -112,36 +125,44 @@
 	{/if}
 
 	{#if requiresApiKey}
-		<div>
-			<Label class="mb-1 block">API Key</Label>
-			<div class="relative mx-1">
-				<Input
+		<Field.Field>
+			<Field.FieldLabel for="transcript-api-key">API Key</Field.FieldLabel>
+			<InputGroup.Root>
+				<InputGroup.Input
+					id="transcript-api-key"
 					type={showApiKey ? 'text' : 'password'}
-					class="pr-24"
 					value={apiKey ?? ''}
 					disabled={isApiKeyLocked}
 					oninput={(e) => (apiKey = e.currentTarget.value)}
 					placeholder="Enter your API key"
 				/>
-				<div class="absolute inset-y-0 right-0 flex items-center pr-1">
-					<Button variant="ghost" size="icon" onclick={() => (isApiKeyLocked = !isApiKeyLocked)}>
-						{#if isApiKeyLocked}<Lock class="size-4" />{:else}<Unlock class="size-4" />{/if}
-					</Button>
-					<Button variant="ghost" size="icon" onclick={() => (showApiKey = !showApiKey)}>
-						{#if showApiKey}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
-					</Button>
-				</div>
-			</div>
-		</div>
+				<InputGroup.Addon align="inline-end">
+					<InputGroup.Button
+						size="icon-xs"
+						aria-label={isApiKeyLocked ? 'Unlock API key' : 'Lock API key'}
+						onclick={() => (isApiKeyLocked = !isApiKeyLocked)}
+					>
+						{#if isApiKeyLocked}<Lock />{:else}<Unlock />{/if}
+					</InputGroup.Button>
+					<InputGroup.Button
+						size="icon-xs"
+						aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
+						onclick={() => (showApiKey = !showApiKey)}
+					>
+						{#if showApiKey}<EyeOff />{:else}<Eye />{/if}
+					</InputGroup.Button>
+				</InputGroup.Addon>
+			</InputGroup.Root>
+		</Field.Field>
 	{/if}
 
-	<div>
-		<Label class="mb-1 block">Custom Vocabulary</Label>
-		<p class="text-muted-foreground mx-1 mb-2 text-xs">
+	<Field.Field>
+		<Field.FieldLabel>Custom Vocabulary</Field.FieldLabel>
+		<Field.FieldDescription>
 			Fix words the transcriber mishears (proper nouns, jargon, acronyms). Matching is whole-word
 			and case-insensitive.
-		</p>
-		<div class="mx-1 space-y-2">
+		</Field.FieldDescription>
+		<div class="flex flex-col gap-2">
 			{#each config.customVocabulary as entry, i}
 				<div class="flex items-center gap-2">
 					<Input
@@ -170,25 +191,27 @@
 					<Button
 						variant="ghost"
 						size="icon"
+						aria-label="Remove term"
 						onclick={() => {
 							const updated = config.customVocabulary.filter((_, idx) => idx !== i);
 							config.setCustomVocabulary(updated);
 						}}
 					>
-						<X class="size-4" />
+						<X />
 					</Button>
 				</div>
 			{/each}
 			<Button
 				variant="outline"
 				size="sm"
+				class="self-start"
 				onclick={() => {
 					config.setCustomVocabulary([...config.customVocabulary, { from: '', to: '' }]);
 				}}
 			>
-				<Plus class="mr-1 size-4" />
+				<Plus data-icon="inline-start" />
 				Add term
 			</Button>
 		</div>
-	</div>
+	</Field.Field>
 </div>

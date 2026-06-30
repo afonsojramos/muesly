@@ -12,7 +12,10 @@
 		type ModelStatus
 	} from '$lib/ai/parakeet';
 	import ParakeetModelCard from './ParakeetModelCard.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Alert from '$lib/components/ui/alert';
 	import { toast } from '$lib/toast';
+	import { cn } from '$lib/utils';
 
 	const RECOMMENDED = 'parakeet-tdt-0.6b-v3-int8';
 
@@ -168,19 +171,17 @@
 </script>
 
 {#if loading}
-	<div class={`space-y-3 ${className}`}>
-		<div class="animate-pulse space-y-3">
-			<div class="h-20 rounded-lg bg-secondary"></div>
-			<div class="h-20 rounded-lg bg-secondary"></div>
-		</div>
+	<div class={cn('flex flex-col gap-3', className)}>
+		<Skeleton class="h-20 rounded-lg" />
+		<Skeleton class="h-20 rounded-lg" />
 	</div>
 {:else if error}
-	<div class={`rounded-lg border border-destructive/20 bg-destructive/5 p-4 ${className}`}>
-		<p class="text-sm text-destructive">Failed to load models</p>
-		<p class="mt-1 text-xs text-destructive/80">{error}</p>
-	</div>
+	<Alert.Root variant="destructive" class={className}>
+		<Alert.Title>Failed to load models</Alert.Title>
+		<Alert.Description>{error}</Alert.Description>
+	</Alert.Root>
 {:else}
-	<div class={`space-y-3 ${className}`}>
+	<div class={cn('flex flex-col gap-3', className)}>
 		{#if recommendedModel}
 			<ParakeetModelCard
 				model={recommendedModel}

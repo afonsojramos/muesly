@@ -24,9 +24,12 @@
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import { getModelIcon, WhisperAPI, type ModelInfo, type ModelStatus } from '$lib/ai/whisper';
-	import Accordion from '$lib/ui/accordion.svelte';
+	import * as Accordion from '$lib/components/ui/accordion';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Alert from '$lib/components/ui/alert';
 	import ModelCard from './ModelCard.svelte';
 	import { toast } from '$lib/toast';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		selectedModel?: string;
@@ -198,21 +201,19 @@
 </script>
 
 {#if loading}
-	<div class={`space-y-3 ${className}`}>
-		<div class="animate-pulse space-y-3">
-			<div class="h-20 rounded-lg bg-secondary"></div>
-			<div class="h-20 rounded-lg bg-secondary"></div>
-			<div class="h-20 rounded-lg bg-secondary"></div>
-		</div>
+	<div class={cn('flex flex-col gap-3', className)}>
+		<Skeleton class="h-20 rounded-lg" />
+		<Skeleton class="h-20 rounded-lg" />
+		<Skeleton class="h-20 rounded-lg" />
 	</div>
 {:else if error}
-	<div class={`rounded-lg border border-destructive/20 bg-destructive/5 p-4 ${className}`}>
-		<p class="text-sm text-destructive">Failed to load models</p>
-		<p class="mt-1 text-xs text-destructive/80">{error}</p>
-	</div>
+	<Alert.Root variant="destructive" class={className}>
+		<Alert.Title>Failed to load models</Alert.Title>
+		<Alert.Description>{error}</Alert.Description>
+	</Alert.Root>
 {:else}
-	<div class={`space-y-3 ${className}`}>
-		<div class="space-y-3">
+	<div class={cn('flex flex-col gap-3', className)}>
+		<div class="flex flex-col gap-3">
 			{#each basicModels as model (model.name)}
 				<ModelCard
 					{model}
@@ -229,23 +230,28 @@
 		</div>
 
 		{#if advancedModels.length > 0}
-			<Accordion title="Advanced Models" value="advanced-models">
-				<div class="space-y-3 pt-4">
-					{#each advancedModels as model (model.name)}
-						<ModelCard
-							{model}
-							isSelected={selectedModel === model.name}
-							isRecommended={false}
-							isDownloading={downloadingModels.has(model.name)}
-							displayName={whisperDisplayName(model.name)}
-							onSelect={() => model.status === 'Available' && selectModel(model.name)}
-							onDownload={() => downloadModel(model.name)}
-							onCancel={() => cancelDownload(model.name)}
-							onDelete={() => deleteModel(model.name)}
-						/>
-					{/each}
-				</div>
-			</Accordion>
+			<Accordion.Root type="single">
+				<Accordion.Item value="advanced-models">
+					<Accordion.Trigger>Advanced Models</Accordion.Trigger>
+					<Accordion.Content>
+						<div class="flex flex-col gap-3 pt-4">
+							{#each advancedModels as model (model.name)}
+								<ModelCard
+									{model}
+									isSelected={selectedModel === model.name}
+									isRecommended={false}
+									isDownloading={downloadingModels.has(model.name)}
+									displayName={whisperDisplayName(model.name)}
+									onSelect={() => model.status === 'Available' && selectModel(model.name)}
+									onDownload={() => downloadModel(model.name)}
+									onCancel={() => cancelDownload(model.name)}
+									onDelete={() => deleteModel(model.name)}
+								/>
+							{/each}
+						</div>
+					</Accordion.Content>
+				</Accordion.Item>
+			</Accordion.Root>
 		{/if}
 
 		{#if selectedModel}

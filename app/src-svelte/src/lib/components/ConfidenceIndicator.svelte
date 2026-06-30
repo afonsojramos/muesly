@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cn } from '$lib/utils';
+
 	interface Props {
 		confidence: number;
 		showIndicator?: boolean;
@@ -8,12 +10,12 @@
 
 	const colorClass = $derived(
 		confidence >= 0.8
-			? 'bg-green-500'
+			? 'bg-success'
 			: confidence >= 0.7
-				? 'bg-yellow-500'
+				? 'bg-warning'
 				: confidence >= 0.4
-					? 'bg-orange-500'
-					: 'bg-red-500'
+					? 'bg-warning'
+					: 'bg-destructive'
 	);
 
 	const label = $derived(
@@ -35,6 +37,9 @@
 		title={`${percent}% confidence - ${label}`}
 		aria-label={`Transcription confidence: ${percent}%`}
 	>
-		<div class={`size-2 rounded-full ${colorClass} transition-colors duration-200`} role="status"></div>
+		<div
+			class={cn('size-2 rounded-full transition-colors duration-200', colorClass)}
+			role="status"
+		></div>
 	</div>
 {/if}

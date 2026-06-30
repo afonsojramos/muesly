@@ -5,9 +5,10 @@
 	import { AlertCircle, Mic, Pause, Play, Square, X } from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
-	import Alert from '$lib/ui/alert.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
+	import { cn } from '$lib/utils';
 	import type { SelectedDevices } from '$lib/stores/config.svelte';
 
 	interface Props {
@@ -182,52 +183,56 @@
 	});
 </script>
 
-<div class="flex flex-col space-y-2">
+<div class="flex flex-col gap-2">
 	<div
-		class="flex items-center space-x-2 rounded-full border border-border bg-card px-4 py-2 shadow-[0_8px_30px_rgb(0,0,0,0.08)]"
+		class="flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 shadow-[0_8px_30px_rgb(0,0,0,0.08)]"
 	>
 		{#if isProcessing && !isParentProcessing}
-			<div class="flex items-center space-x-2">
+			<div class="flex items-center gap-2">
 				<div class="size-5 animate-spin rounded-full border-b-2 border-foreground"></div>
 				<span class="text-sm text-muted-foreground">Processing recording...</span>
 			</div>
 		{:else if !isRecording}
-			<Tooltip>
-				{#snippet trigger()}
-					<button
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger
 						onclick={() => {
 							void Analytics.trackButtonClick('start_recording', 'recording_controls');
 							void handleStartRecording();
 						}}
 						disabled={isStarting || isProcessing || isRecordingDisabled || isValidatingModel}
-						class={`relative flex size-12 items-center justify-center rounded-full text-white transition-colors ${
+						class={cn(
+							'relative flex size-12 items-center justify-center rounded-full text-white transition-colors',
 							isStarting || isProcessing || isValidatingModel
 								? 'bg-muted-foreground/50'
 								: 'bg-accent hover:opacity-90'
-						}`}
+						)}
 					>
 						{#if isValidatingModel}
 							<div class="size-5 animate-spin rounded-full border-b-2 border-white"></div>
 						{:else}
 							<Mic size={20} />
 						{/if}
-					</button>
-				{/snippet}
-				{#snippet content()}<p>Start recording</p>{/snippet}
-			</Tooltip>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Start recording</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 
-			<div class="mx-4 flex items-center space-x-1">
+			<div class="mx-4 flex items-center gap-1">
 				{#each barHeights as height, index (index)}
 					<div
-						class={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-muted-foreground/60' : 'bg-accent'}`}
+						class={cn(
+							'w-1 rounded-full transition-all duration-200',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
 				{/each}
 			</div>
 		{:else}
-			<Tooltip>
-				{#snippet trigger()}
-					<button
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger
 						onclick={() => {
 							if (isPaused) {
 								void Analytics.trackButtonClick('resume_recording', 'recording_controls');
@@ -238,11 +243,12 @@
 							}
 						}}
 						disabled={isPausing || isResuming || isStopping}
-						class={`relative flex size-10 items-center justify-center rounded-full border-2 transition-colors ${
+						class={cn(
+							'relative flex size-10 items-center justify-center rounded-full border-2 transition-colors',
 							isPausing || isResuming || isStopping
 								? 'border-border bg-secondary text-muted-foreground'
 								: 'border-border bg-card text-muted-foreground hover:bg-secondary'
-						}`}
+						)}
 					>
 						{#if isPaused}<Play size={16} />{:else}<Pause size={16} />{/if}
 						{#if isPausing || isResuming}
@@ -250,24 +256,25 @@
 								{isPausing ? 'Pausing...' : 'Resuming...'}
 							</div>
 						{/if}
-					</button>
-				{/snippet}
-				{#snippet content()}<p>{isPaused ? 'Resume recording' : 'Pause recording'}</p>{/snippet}
-			</Tooltip>
+					</Tooltip.Trigger>
+					<Tooltip.Content>{isPaused ? 'Resume recording' : 'Pause recording'}</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 
-			<Tooltip>
-				{#snippet trigger()}
-					<button
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger
 						onclick={() => {
 							void Analytics.trackButtonClick('stop_recording', 'recording_controls');
 							void handleStopRecording();
 						}}
 						disabled={isStopping || isPausing || isResuming}
-						class={`relative flex size-10 items-center justify-center rounded-full text-white transition-colors ${
+						class={cn(
+							'relative flex size-10 items-center justify-center rounded-full text-white transition-colors',
 							isStopping || isPausing || isResuming
 								? 'bg-muted-foreground/50'
 								: 'bg-destructive hover:opacity-90'
-						}`}
+						)}
 					>
 						<Square size={16} />
 						{#if isStopping}
@@ -275,15 +282,18 @@
 								Stopping...
 							</div>
 						{/if}
-					</button>
-				{/snippet}
-				{#snippet content()}<p>Stop recording</p>{/snippet}
-			</Tooltip>
+					</Tooltip.Trigger>
+					<Tooltip.Content>Stop recording</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 
-			<div class="mx-4 flex items-center space-x-1">
+			<div class="mx-4 flex items-center gap-1">
 				{#each barHeights as height, index (index)}
 					<div
-						class={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-muted-foreground/60' : 'bg-accent'}`}
+						class={cn(
+							'w-1 rounded-full transition-all duration-200',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
 				{/each}
@@ -300,19 +310,23 @@
 	{#if deviceError}
 		{@const lines = deviceError.message.split('\n')}
 		{@const errorTitle = deviceError.title}
-		<Alert variant="destructive" class="mt-4">
-			{#snippet icon()}<AlertCircle class="size-5" />{/snippet}
-			{#snippet title()}<span>{errorTitle}</span>{/snippet}
-			<button
-				onclick={() => (deviceError = null)}
-				class="absolute right-3 top-3 text-destructive transition-colors hover:opacity-80"
-				aria-label="Close alert"
-			>
-				<X class="size-4" />
-			</button>
-			{#each lines as line, i (i)}
-				<div class={i > 0 ? 'ml-2' : ''}>{line}</div>
-			{/each}
-		</Alert>
+		<Alert.Root variant="destructive" class="mt-4">
+			<AlertCircle />
+			<Alert.Title>{errorTitle}</Alert.Title>
+			<Alert.Description>
+				{#each lines as line, i (i)}
+					<div class={cn(i > 0 && 'ml-2')}>{line}</div>
+				{/each}
+			</Alert.Description>
+			<Alert.Action>
+				<button
+					onclick={() => (deviceError = null)}
+					class="text-destructive transition-colors hover:opacity-80"
+					aria-label="Close alert"
+				>
+					<X class="size-4" />
+				</button>
+			</Alert.Action>
+		</Alert.Root>
 	{/if}
 </div>

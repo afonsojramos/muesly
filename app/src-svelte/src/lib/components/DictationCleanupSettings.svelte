@@ -3,13 +3,16 @@
 
 	import { commands, type DictationCleanupPreset } from '$lib/bindings';
 	import { toast } from '$lib/toast';
-	import Button from '$lib/ui/button.svelte';
-	import Input from '$lib/ui/input.svelte';
-	import Switch from '$lib/ui/switch.svelte';
-	import Textarea from '$lib/ui/textarea.svelte';
+	import * as RadioGroup from '$lib/components/ui/radio-group';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Switch } from '$lib/components/ui/switch';
+	import { Textarea } from '$lib/components/ui/textarea';
 
 	let enabled = $state(false);
 	let presets = $state<DictationCleanupPreset[]>([]);
+
+	const activePresetId = $derived(presets.find((p) => p.is_active)?.id ?? '');
 
 	onMount(() => {
 		void load();
@@ -80,29 +83,25 @@
 </div>
 
 {#if enabled}
-	<div class="space-y-3 rounded-lg border border-border p-4">
+	<div class="flex flex-col gap-3 rounded-lg border border-border p-4">
 		<div class="flex items-center justify-between">
 			<div class="font-medium">Cleanup presets</div>
-			<Button variant="outline" onclick={create}>New preset</Button>
+			<Button variant="outline" size="sm" onclick={create}>New preset</Button>
 		</div>
-		{#each presets as preset (preset.id)}
-			<div class="space-y-2 rounded-md border border-border p-3">
-				<div class="flex items-center gap-2">
-					<input
-						type="radio"
-						name="cleanup-preset"
-						checked={preset.is_active}
-						onchange={() => setActive(preset.id)}
-						aria-label={`Use ${preset.name}`}
-					/>
-					<Input bind:value={preset.name} class="flex-1" />
-					<Button variant="ghost" onclick={() => remove(preset.id)}>Delete</Button>
+		<RadioGroup.Root value={activePresetId} onValueChange={setActive} class="gap-3">
+			{#each presets as preset (preset.id)}
+				<div class="flex flex-col gap-2 rounded-md border border-border p-3">
+					<div class="flex items-center gap-2">
+						<RadioGroup.Item value={preset.id} aria-label={`Use ${preset.name}`} />
+						<Input bind:value={preset.name} class="flex-1" />
+						<Button variant="ghost" size="sm" onclick={() => remove(preset.id)}>Delete</Button>
+					</div>
+					<Textarea bind:value={preset.prompt} rows={3} />
+					<div class="flex justify-end">
+						<Button variant="outline" size="sm" onclick={() => save(preset)}>Save</Button>
+					</div>
 				</div>
-				<Textarea bind:value={preset.prompt} rows={3} />
-				<div class="flex justify-end">
-					<Button variant="outline" onclick={() => save(preset)}>Save</Button>
-				</div>
-			</div>
-		{/each}
+			{/each}
+		</RadioGroup.Root>
 	</div>
 {/if}

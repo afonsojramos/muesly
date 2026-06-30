@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { AlertTriangle, Mic, RefreshCw, Speaker } from '@lucide/svelte';
-	import Alert from '$lib/ui/alert.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 
 	interface Props {
@@ -35,62 +36,61 @@
 </script>
 
 {#if !platform.isLinux && !(hasMicrophone && hasSystemAudio)}
-	<div class="mb-4 max-w-md space-y-3">
-		<Alert variant="warning">
-			{#snippet icon()}<AlertTriangle class="size-5" />{/snippet}
-			{#snippet title()}
+	<div class="mb-4 max-w-md">
+		<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
+			<AlertTriangle />
+			<Alert.Title>
 				<span class="flex items-center gap-2">
 					{#if !hasMicrophone}<Mic class="size-4" />{/if}
 					{#if !hasSystemAudio}<Speaker class="size-4" />{/if}
 					{title}
 				</span>
-			{/snippet}
+			</Alert.Title>
+			<Alert.Description class="text-warning/90">
+				<div class="mb-2 mt-2 flex flex-wrap gap-2">
+					{#if isMacOS && !hasMicrophone}
+						<Button
+							size="sm"
+							onclick={() => openSettings('Privacy_Microphone')}
+							class="bg-warning text-warning-foreground hover:bg-warning/90"
+						>
+							<Mic data-icon="inline-start" /> Open Microphone Settings
+						</Button>
+					{/if}
+					{#if isMacOS && !hasSystemAudio}
+						<Button
+							size="sm"
+							onclick={() => openSettings('Privacy_ScreenCapture')}
+							class="bg-warning text-warning-foreground hover:bg-warning/90"
+						>
+							<Speaker /> Open Screen Recording Settings
+						</Button>
+					{/if}
+					<Button variant="outline" size="sm" onclick={onRecheck} disabled={isRechecking}>
+						<RefreshCw class={isRechecking ? 'animate-spin' : ''} data-icon="inline-start" /> Recheck
+					</Button>
+				</div>
 
-			<div class="mb-2 mt-4 flex flex-wrap gap-2">
-				{#if isMacOS && !hasMicrophone}
-					<button
-						onclick={() => openSettings('Privacy_Microphone')}
-						class="inline-flex items-center gap-2 rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700"
-					>
-						<Mic class="size-4" /> Open Microphone Settings
-					</button>
+				{#if !hasMicrophone}
+					<p class="mb-3">
+						muesly needs microphone access to record meetings. No microphone devices were detected.
+					</p>
 				{/if}
-				{#if isMacOS && !hasSystemAudio}
-					<button
-						onclick={() => openSettings('Privacy_ScreenCapture')}
-						class="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:opacity-90"
-					>
-						<Speaker class="size-4" /> Open Screen Recording Settings
-					</button>
+				{#if !hasSystemAudio}
+					<p class="mb-3">
+						{hasMicrophone
+							? "System audio capture isn't available. You can still record with your microphone, but computer audio won't be captured."
+							: 'System audio capture is also not available.'}
+					</p>
+					{#if isMacOS}
+						<ul class="ml-2 flex list-inside list-disc flex-col gap-1 text-sm">
+							<li>Install a virtual audio device (e.g. BlackHole 2ch)</li>
+							<li>Grant Screen Recording permission to muesly</li>
+							<li>Configure routing in Audio MIDI Setup</li>
+						</ul>
+					{/if}
 				{/if}
-				<button
-					onclick={onRecheck}
-					disabled={isRechecking}
-					class="inline-flex items-center gap-2 rounded-md bg-amber-100 px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-200 disabled:opacity-50"
-				>
-					<RefreshCw class={`size-4 ${isRechecking ? 'animate-spin' : ''}`} /> Recheck
-				</button>
-			</div>
-
-			{#if !hasMicrophone}
-				<p class="mb-3">
-					muesly needs microphone access to record meetings. No microphone devices were detected.
-				</p>
-			{/if}
-			{#if !hasSystemAudio}
-				<p class="mb-3">
-					{hasMicrophone
-						? "System audio capture isn't available. You can still record with your microphone, but computer audio won't be captured."
-						: 'System audio capture is also not available.'}
-				</p>
-				{#if isMacOS}
-					<ul class="ml-2 list-inside list-disc space-y-1 text-sm">
-						<li>Install a virtual audio device (e.g. BlackHole 2ch)</li>
-						<li>Grant Screen Recording permission to muesly</li>
-						<li>Configure routing in Audio MIDI Setup</li>
-					</ul>
-				{/if}
-			{/if}
-		</Alert>
+			</Alert.Description>
+		</Alert.Root>
 	</div>
 {/if}

@@ -5,9 +5,12 @@
 	import { onMount } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
-	import Alert from '$lib/ui/alert.svelte';
-	import Button from '$lib/ui/button.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
+	import { Progress } from '$lib/components/ui/progress';
+	import { Separator } from '$lib/components/ui/separator';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { toast } from '$lib/toast';
 	import { cn } from '$lib/utils';
 
@@ -155,7 +158,11 @@
 		Loading models...
 	</div>
 {:else if hasFetched && models.length === 0}
-	<Alert>No models found. Download a model to get started with Built-in AI.</Alert>
+	<Alert.Root>
+		<Alert.Description>
+			No models found. Download a model to get started with Built-in AI.
+		</Alert.Description>
+	</Alert.Root>
 {:else}
 	<div>
 		<div class="mb-4 flex items-center justify-between">
@@ -190,18 +197,18 @@
 							<div class="mb-1 flex items-center gap-2">
 								<span class="text-base font-bold">{model.display_name || model.name}</span>
 								{#if isAvailable}
-									<span class="flex items-center gap-1 text-xs font-medium text-green-600">
-										<span class="size-2 rounded-full bg-green-600"></span> Ready
+									<span class="flex items-center gap-1 text-xs font-medium text-success">
+										<span class="size-2 rounded-full bg-success"></span> Ready
 									</span>
 									{#if selectedModel === model.name}
-										<span class="rounded bg-accent/15 px-2 py-0.5 text-xs font-medium text-accent">Selected</span>
+										<Badge class="bg-accent/15 text-accent">Selected</Badge>
 									{/if}
 								{:else if isCorrupted}
-									<span class="flex items-center gap-1 rounded bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-										<BadgeAlert class="size-3" /> Corrupted
-									</span>
+									<Badge variant="destructive">
+										<BadgeAlert /> Corrupted
+									</Badge>
 								{:else if isError}
-									<span class="rounded bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">Error</span>
+									<Badge variant="destructive">Error</Badge>
 								{:else if isNotDownloaded && !modelIsDownloading}
 									<span class="text-xs font-medium text-muted-foreground">Not Downloaded</span>
 								{/if}
@@ -217,7 +224,7 @@
 						<div class="ml-4 flex items-center gap-2">
 							{#if isNotDownloaded && !modelIsDownloading}
 								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
-									<Download class="size-4" /> Download
+									<Download data-icon="inline-start" /> Download
 								</Button>
 							{:else if modelIsDownloading}
 								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); cancelDownload(model.name); }}>
@@ -225,33 +232,42 @@
 								</Button>
 							{:else if isError}
 								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
-									<RefreshCw class="size-4" /> Retry
+									<RefreshCw data-icon="inline-start" /> Retry
 								</Button>
 							{:else if isCorrupted}
 								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
-									<RefreshCw class="size-4" /> Retry
+									<RefreshCw data-icon="inline-start" /> Retry
 								</Button>
 								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); deleteModel(model.name); }}>
-									<Trash2 class="size-4" /> Delete
+									<Trash2 data-icon="inline-start" /> Delete
 								</Button>
 							{:else if isAvailable && selectedModel !== model.name}
-								<Tooltip label="Delete model">
-									{#snippet trigger()}
-										<button
-											class="rounded p-2 text-muted-foreground transition-colors hover:bg-secondary hover:text-destructive"
-											onclick={(e) => { e.stopPropagation(); deleteModel(model.name); }}
-											aria-label="Delete model"
-										>
-											<Trash2 class="size-4" />
-										</button>
-									{/snippet}
-								</Tooltip>
+								<Tooltip.Provider delayDuration={300}>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-sm"
+													class="text-muted-foreground hover:text-destructive"
+													onclick={(e) => { e.stopPropagation(); deleteModel(model.name); }}
+													aria-label="Delete model"
+												>
+													<Trash2 />
+												</Button>
+											{/snippet}
+										</Tooltip.Trigger>
+										<Tooltip.Content>Delete model</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
 							{/if}
 						</div>
 					</div>
 
 					{#if modelIsDownloading && progress !== undefined}
-						<div class="mt-3 border-t border-border pt-3">
+						<div class="mt-3">
+							<Separator class="mb-3" />
 							<div class="mb-1 flex items-center justify-between">
 								<span class="text-sm font-medium">Downloading...</span>
 								<span class="text-sm font-semibold">{Math.round(progress)}%</span>
@@ -266,9 +282,7 @@
 									{model.size_mb} MB
 								{/if}
 							</div>
-							<div class="h-2.5 w-full overflow-hidden rounded-full bg-secondary">
-								<div class="h-full rounded-full bg-primary transition-all duration-300" style={`width: ${progress}%`}></div>
-							</div>
+							<Progress value={progress} class="h-2.5" />
 						</div>
 					{/if}
 				</div>

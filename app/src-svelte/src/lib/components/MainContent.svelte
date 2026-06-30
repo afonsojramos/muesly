@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		children: Snippet;
@@ -14,7 +15,7 @@
      Without this it refuses to shrink below that, overflowing the window on
      narrow sizes and dragging the side panel past the right edge. -->
 <main
-	class={`min-w-0 flex-1 ${sidebar.isResizing ? '' : 'transition-[margin] duration-300'}`}
+	class={cn('min-w-0 flex-1', !sidebar.isResizing && 'transition-[margin] duration-300')}
 	style={`margin-left: ${sidebar.effectiveWidth}px`}
 >
 	{@render children()}

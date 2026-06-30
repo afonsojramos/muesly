@@ -2,8 +2,8 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { Check, Copy, Info, Loader2 } from '@lucide/svelte';
 
-	import Button from '$lib/ui/button.svelte';
-	import Switch from '$lib/ui/switch.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Switch } from '$lib/components/ui/switch';
 	import { Analytics } from '$lib/analytics';
 	import { analyticsConsent } from '$lib/stores/analytics-consent.svelte';
 	import AnalyticsDataModal from './AnalyticsDataModal.svelte';
@@ -80,7 +80,7 @@
 	}
 </script>
 
-<div class="space-y-4">
+<div class="flex flex-col gap-4">
 	<div>
 		<h3 class="mb-2 text-base font-semibold">Usage Analytics</h3>
 		<p class="mb-4 text-sm text-muted-foreground">
@@ -118,9 +118,11 @@
 				</code>
 				<Button variant="outline" size="sm" class="shrink-0" onclick={handleCopyUserId}>
 					{#if isCopied}
-						<Check class="size-3.5 text-green-600" /><span class="text-green-600">Copied!</span>
+						<Check data-icon="inline-start" class="text-success" /><span class="text-success"
+							>Copied!</span
+						>
 					{:else}
-						<Copy class="size-3.5" /><span>Copy</span>
+						<Copy data-icon="inline-start" /><span>Copy</span>
 					{/if}
 				</Button>
 			</div>

@@ -34,10 +34,11 @@
 	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
-	import Dialog from '$lib/ui/dialog.svelte';
-	import Button from '$lib/ui/button.svelte';
-	import Input from '$lib/ui/input.svelte';
-	import Select from '$lib/ui/select.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Progress } from '$lib/components/ui/progress';
+	import * as Select from '$lib/components/ui/select';
 	import { toast } from '$lib/toast';
 	import { LANGUAGES } from '$lib/constants/languages';
 	import { config } from '$lib/stores/config.svelte';
@@ -103,6 +104,14 @@
 			label: `${m.displayName} (${Math.round(m.size_mb)} MB)`,
 			value: `${m.provider}:${m.name}`
 		}))
+	);
+
+	const selectedLangLabel = $derived(
+		languageItems.find((i) => i.value === selectedLang)?.label ?? 'Select language'
+	);
+	const selectedModelLabel = $derived(
+		modelItems.find((i) => i.value === models.selectedModelKey)?.label ??
+			(models.loadingModels ? 'Loading models...' : 'Select model')
 	);
 
 	// Initialise only when transitioning from closed to open.
@@ -173,38 +182,39 @@
 	}
 </script>
 
-<Dialog {open} onOpenChange={handleOpenChange} class="sm:max-w-[500px]" showClose={false}>
-	<div class="space-y-1">
-		<h2 class="flex items-center gap-2 text-lg font-semibold">
-			{#if importer.isProcessing}
-				<Loader2 class="size-5 animate-spin text-accent" />
-				Importing Audio...
-			{:else if importer.error}
-				<AlertCircle class="size-5 text-destructive" />
-				Import Failed
-			{:else if importer.status === 'complete'}
-				<CheckCircle2 class="size-5 text-green-600" />
-				Import Complete
-			{:else}
-				<Upload class="size-5 text-accent" />
-				Import Audio File
-			{/if}
-		</h2>
-		<p class="text-sm text-muted-foreground">
-			{#if importer.isProcessing}
-				{importer.progress?.message || 'Processing audio...'}
-			{:else if importer.error}
-				An error occurred during import
-			{:else}
-				Import an audio file to create a new meeting with transcripts
-			{/if}
-		</p>
-	</div>
+<Dialog.Root {open} onOpenChange={handleOpenChange}>
+	<Dialog.Content class="sm:max-w-[500px]" showCloseButton={false}>
+		<Dialog.Header>
+			<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
+				{#if importer.isProcessing}
+					<Loader2 class="size-5 animate-spin text-accent" />
+					Importing Audio...
+				{:else if importer.error}
+					<AlertCircle class="size-5 text-destructive" />
+					Import Failed
+				{:else if importer.status === 'complete'}
+					<CheckCircle2 class="size-5 text-success" />
+					Import Complete
+				{:else}
+					<Upload class="size-5 text-accent" />
+					Import Audio File
+				{/if}
+			</Dialog.Title>
+			<Dialog.Description>
+				{#if importer.isProcessing}
+					{importer.progress?.message || 'Processing audio...'}
+				{:else if importer.error}
+					An error occurred during import
+				{:else}
+					Import an audio file to create a new meeting with transcripts
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
 
-	<div class="space-y-4 py-4">
+		<div class="flex flex-col gap-4 py-4">
 		{#if !importer.isProcessing && !importer.error}
 			{#if importer.fileInfo}
-				<div class="space-y-3 rounded-lg bg-secondary p-4">
+				<div class="flex flex-col gap-3 rounded-lg bg-secondary p-4">
 					<div class="flex items-start gap-3">
 						<FileAudio class="size-8 shrink-0 text-accent" />
 						<div class="min-w-0 flex-1">
@@ -223,7 +233,7 @@
 						</div>
 					</div>
 
-					<div class="space-y-1">
+					<div class="flex flex-col gap-1">
 						<label for="import-title" class="text-sm font-medium text-foreground">
 							Meeting Title
 						</label>
@@ -247,10 +257,10 @@
 					<FileAudio class="mx-auto mb-4 size-12 text-muted-foreground" />
 					<Button onclick={handleSelectFile} disabled={importer.status === 'validating'}>
 						{#if importer.status === 'validating'}
-							<Loader2 class="mr-2 size-4 animate-spin" />
+							<Loader2 data-icon="inline-start" class="animate-spin" />
 							Validating...
 						{:else}
-							<Upload class="mr-2 size-4" />
+							<Upload data-icon="inline-start" />
 							Select Audio File
 						{/if}
 					</Button>
@@ -262,33 +272,44 @@
 
 			{#if importer.fileInfo}
 				<div class="rounded-lg border border-border">
-					<button
+					<Button
+						variant="ghost"
 						onclick={() => (showAdvanced = !showAdvanced)}
-						class="flex w-full items-center justify-between p-3 text-sm font-medium text-foreground hover:bg-secondary"
+						class="h-auto w-full justify-between p-3 text-sm font-medium text-foreground"
 					>
 						<span>Advanced Options</span>
-						{#if showAdvanced}<ChevronUp class="size-4" />{:else}<ChevronDown class="size-4" />{/if}
-					</button>
+						{#if showAdvanced}<ChevronUp data-icon="inline-end" />{:else}<ChevronDown
+								data-icon="inline-end"
+							/>{/if}
+					</Button>
 
 					{#if showAdvanced}
-						<div class="space-y-4 border-t border-border p-3 pt-0">
+						<div class="flex flex-col gap-4 border-t border-border p-3 pt-0">
 							{#if !isParakeetModel}
-								<div class="space-y-2">
+								<div class="flex flex-col gap-2">
 									<div class="flex items-center gap-2">
 										<Globe class="size-4 text-muted-foreground" />
 										<span class="text-sm font-medium">Language</span>
 									</div>
-									<Select
-										items={languageItems}
-										value={[selectedLang]}
-										placeholder="Select language"
+									<Select.Root
+										type="single"
+										value={selectedLang}
 										onValueChange={(v) => {
-											if (v[0]) selectedLang = v[0];
+											if (v) selectedLang = v;
 										}}
-									/>
+									>
+										<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
+										<Select.Content>
+											<Select.Group>
+												{#each languageItems as item (item.value)}
+													<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+												{/each}
+											</Select.Group>
+										</Select.Content>
+									</Select.Root>
 								</div>
 							{:else}
-								<div class="space-y-2">
+								<div class="flex flex-col gap-2">
 									<div class="flex items-center gap-2">
 										<Globe class="size-4 text-muted-foreground" />
 										<span class="text-sm font-medium">Language</span>
@@ -301,20 +322,28 @@
 							{/if}
 
 							{#if models.availableModels.length > 0}
-								<div class="space-y-2">
+								<div class="flex flex-col gap-2">
 									<div class="flex items-center gap-2">
 										<Cpu class="size-4 text-muted-foreground" />
 										<span class="text-sm font-medium">Model</span>
 									</div>
-									<Select
-										items={modelItems}
-										value={models.selectedModelKey ? [models.selectedModelKey] : []}
-										placeholder={models.loadingModels ? 'Loading models...' : 'Select model'}
+									<Select.Root
+										type="single"
+										value={models.selectedModelKey ?? ''}
 										disabled={models.loadingModels}
 										onValueChange={(v) => {
-											if (v[0]) models.setSelectedModelKey(v[0]);
+											if (v) models.setSelectedModelKey(v);
 										}}
-									/>
+									>
+										<Select.Trigger class="w-full">{selectedModelLabel}</Select.Trigger>
+										<Select.Content>
+											<Select.Group>
+												{#each modelItems as item (item.value)}
+													<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+												{/each}
+											</Select.Group>
+										</Select.Content>
+									</Select.Root>
 								</div>
 							{/if}
 						</div>
@@ -324,14 +353,9 @@
 		{/if}
 
 		{#if importer.isProcessing && importer.progress}
-			<div class="space-y-2">
-				<div class="relative">
-					<div class="h-3 w-full rounded-full bg-secondary">
-						<div
-							class="h-3 rounded-full bg-accent transition-all duration-300 ease-out"
-							style={`width: ${Math.min(importer.progress.progress_percentage, 100)}%`}
-						></div>
-					</div>
+			<div class="flex flex-col gap-2">
+				<div>
+					<Progress value={Math.min(importer.progress.progress_percentage, 100)} />
 					<div class="mt-1 flex justify-between text-xs text-muted-foreground">
 						<span>{importer.progress.stage}</span>
 						<span>{Math.round(importer.progress.progress_percentage)}%</span>
@@ -346,23 +370,24 @@
 				<p class="text-sm text-destructive">{importer.error}</p>
 			</div>
 		{/if}
-	</div>
+		</div>
 
-	{#snippet footer()}
-		{#if !importer.isProcessing && !importer.error}
-			<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
-			<Button onclick={handleStartImport} disabled={!importer.fileInfo}>
-				<Upload class="mr-2 size-4" />
-				Import
-			</Button>
-		{:else if importer.isProcessing}
-			<Button variant="outline" onclick={handleCancel}>
-				<X class="mr-2 size-4" />
-				Cancel
-			</Button>
-		{:else if importer.error}
-			<Button variant="outline" onclick={() => onOpenChange(false)}>Close</Button>
-			<Button variant="outline" onclick={importer.reset}>Try Again</Button>
-		{/if}
-	{/snippet}
-</Dialog>
+		<Dialog.Footer>
+			{#if !importer.isProcessing && !importer.error}
+				<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
+				<Button onclick={handleStartImport} disabled={!importer.fileInfo}>
+					<Upload data-icon="inline-start" />
+					Import
+				</Button>
+			{:else if importer.isProcessing}
+				<Button variant="outline" onclick={handleCancel}>
+					<X data-icon="inline-start" />
+					Cancel
+				</Button>
+			{:else if importer.error}
+				<Button variant="outline" onclick={() => onOpenChange(false)}>Close</Button>
+				<Button variant="outline" onclick={importer.reset}>Try Again</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

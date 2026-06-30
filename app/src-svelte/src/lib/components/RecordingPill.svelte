@@ -6,6 +6,7 @@
 	import { Pause, Play, Square } from '@lucide/svelte';
 
 	import { recordingState } from '$lib/stores/recording-state.svelte';
+	import { cn } from '$lib/utils';
 
 	const isPaused = $derived(recordingState.isPaused);
 
@@ -164,11 +165,12 @@
 				onclick={handleTogglePause}
 				disabled={isPausing || isResuming || isStopping}
 				aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-				class={`relative flex size-11 items-center justify-center rounded-full border-2 transition-colors ${
+				class={cn(
+					'relative flex size-11 items-center justify-center rounded-full border-2 transition-colors',
 					isPausing || isResuming || isStopping
 						? 'border-border bg-secondary text-muted-foreground'
 						: 'border-border bg-card text-muted-foreground hover:bg-secondary'
-				}`}
+				)}
 			>
 				{#if isPaused}<Play size={18} />{:else}<Pause size={18} />{/if}
 			</button>
@@ -177,11 +179,12 @@
 				onclick={handleStop}
 				disabled={isStopping || isPausing || isResuming}
 				aria-label="Stop recording"
-				class={`relative flex size-11 items-center justify-center rounded-full text-white transition-colors ${
+				class={cn(
+					'relative flex size-11 items-center justify-center rounded-full text-white transition-colors',
 					isStopping || isPausing || isResuming
 						? 'bg-muted-foreground/50'
 						: 'bg-destructive hover:opacity-90'
-				}`}
+				)}
 			>
 				<Square size={18} />
 			</button>
@@ -189,7 +192,10 @@
 			<div class="relative flex h-6 items-center justify-center gap-1" aria-hidden="true">
 				{#each barHeights as height, index (index)}
 					<div
-						class={`w-1 rounded-full transition-all duration-200 ${isPaused ? 'bg-muted-foreground/60' : 'bg-accent'}`}
+						class={cn(
+							'w-1 rounded-full transition-all duration-200',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+						)}
 						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
 				{/each}

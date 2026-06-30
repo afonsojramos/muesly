@@ -1,14 +1,12 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import {
-		AlertTriangle,
-		FileText,
-		Languages,
-		Loader2,
-		Settings,
-		Sparkles,
-		Square
-	} from '@lucide/svelte';
+	import AlertTriangleIcon from '@lucide/svelte/icons/alert-triangle';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import LanguagesIcon from '@lucide/svelte/icons/languages';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import SquareIcon from '@lucide/svelte/icons/square';
 
 	import type { ModelConfig } from '$lib/services/config';
 	import type { BuiltInModelInfo } from '$lib/ai/builtin-ai';
@@ -20,9 +18,10 @@
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
 	import { isOllamaNotInstalledError } from '$lib/utils';
-	import Button from '$lib/ui/button.svelte';
-	import Dialog from '$lib/ui/dialog.svelte';
-	import Menu from '$lib/ui/menu.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import ModelSettingsModal from '$lib/components/ModelSettingsModal.svelte';
 
 	interface Props {
@@ -214,7 +213,8 @@
 	const templateItems = $derived(
 		availableTemplates.map((t) => ({
 			value: t.id,
-			label: t.id === selectedTemplate ? `${t.name} ✓` : t.name
+			label: t.name,
+			checked: t.id === selectedTemplate
 		}))
 	);
 
@@ -227,7 +227,8 @@
 		[{ code: AUTO_SUMMARY_LANGUAGE, name: 'Automatic (English)' }, ...SUMMARY_LANGUAGES].map(
 			(l) => ({
 				value: l.code,
-				label: l.code === summaryLanguage.preferred ? `${l.name} ✓` : l.name
+				label: l.name,
+				checked: l.code === summaryLanguage.preferred
 			})
 		)
 	);
@@ -248,110 +249,177 @@
 {#if hasTranscripts}
 	<div class="flex items-center gap-1">
 		{#if isGenerating}
-			<Button
-				variant="outline"
-				size="sm"
-				class="border-destructive/30 bg-destructive/10 hover:bg-destructive/20 xl:px-4"
-				aria-label="Stop summary generation"
-				tooltip="Stop summary generation"
-				onclick={() => {
-					Analytics.trackButtonClick('stop_summary_generation', 'meeting_details');
-					onStopGeneration();
-				}}
-			>
-				<Square fill="currentColor" />
-				<span class="hidden lg:inline xl:inline">Stop</span>
-			</Button>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="destructive"
+								size="sm"
+								class="xl:px-4"
+								aria-label="Stop summary generation"
+								onclick={() => {
+									Analytics.trackButtonClick('stop_summary_generation', 'meeting_details');
+									onStopGeneration();
+								}}
+							>
+								<SquareIcon fill="currentColor" data-icon="inline-start" />
+								<span class="hidden lg:inline xl:inline">Stop</span>
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Stop summary generation</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		{:else}
-			<Button
-				variant="accent"
-				size="sm"
-				class="rounded-full xl:px-4"
-				disabled={isCheckingModels || isModelConfigLoading}
-				aria-label="Enhance notes with AI"
-				tooltip={isModelConfigLoading
-					? 'Loading model configuration...'
-					: isCheckingModels
-						? 'Checking models...'
-						: 'Enhance notes with AI'}
-				onclick={() => {
-					Analytics.trackButtonClick('generate_summary', 'meeting_details');
-					void checkOllamaModelsAndGenerate();
-				}}
-			>
-				{#if isCheckingModels || isModelConfigLoading}
-					<Loader2 class="animate-spin" />
-					<span class="hidden xl:inline">Processing...</span>
-				{:else}
-					<Sparkles />
-					<span class="hidden lg:inline xl:inline">Enhance notes</span>
-				{/if}
-			</Button>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="accent"
+								size="sm"
+								class="rounded-full xl:px-4"
+								disabled={isCheckingModels || isModelConfigLoading}
+								aria-label="Enhance notes with AI"
+								onclick={() => {
+									Analytics.trackButtonClick('generate_summary', 'meeting_details');
+									void checkOllamaModelsAndGenerate();
+								}}
+							>
+								{#if isCheckingModels || isModelConfigLoading}
+									<Loader2Icon class="animate-spin" />
+									<span class="hidden xl:inline">Processing...</span>
+								{:else}
+									<SparklesIcon />
+									<span class="hidden lg:inline xl:inline">Enhance notes</span>
+								{/if}
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						{isModelConfigLoading
+							? 'Loading model configuration...'
+							: isCheckingModels
+								? 'Checking models...'
+								: 'Enhance notes with AI'}
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		{/if}
 
-		<Dialog bind:open={settingsDialogOpen} title="Model Settings" hideTitle>
-			{#snippet trigger()}
-				<Button
-					variant="ghost"
-					size="sm"
-					class="text-muted-foreground hover:text-foreground"
-					aria-label="Summary settings"
-					tooltip="Summary Settings"
-				>
-					<Settings />
-					<span class="hidden lg:inline">AI Model</span>
-				</Button>
-			{/snippet}
-			<ModelSettingsModal
-				{modelConfig}
-				{setModelConfig}
-				onSave={async (config) => {
-					await onSaveModelConfig(config);
-					settingsDialogOpen = false;
-				}}
-			/>
-		</Dialog>
-
-		{#if availableTemplates.length > 0}
-			<Menu items={templateItems} onSelect={handleTemplateSelect}>
-				{#snippet trigger()}
+		<Dialog.Root bind:open={settingsDialogOpen}>
+			<Dialog.Trigger>
+				{#snippet child({ props })}
 					<Button
+						{...props}
 						variant="ghost"
 						size="sm"
 						class="text-muted-foreground hover:text-foreground"
-						aria-label="Select summary template"
-						tooltip="Select summary template"
+						aria-label="Summary settings"
+						title="Summary Settings"
 					>
-						<FileText />
-						<span class="hidden lg:inline">Template</span>
+						<SettingsIcon data-icon="inline-start" />
+						<span class="hidden lg:inline">AI Model</span>
 					</Button>
 				{/snippet}
-			</Menu>
+			</Dialog.Trigger>
+			<Dialog.Content class="sm:max-w-lg">
+				<Dialog.Title class="sr-only">Model Settings</Dialog.Title>
+				<ModelSettingsModal
+					{modelConfig}
+					{setModelConfig}
+					onSave={async (config) => {
+						await onSaveModelConfig(config);
+						settingsDialogOpen = false;
+					}}
+				/>
+			</Dialog.Content>
+		</Dialog.Root>
+
+		{#if availableTemplates.length > 0}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="ghost"
+							size="sm"
+							class="text-muted-foreground hover:text-foreground"
+							aria-label="Select summary template"
+							title="Select summary template"
+						>
+							<FileTextIcon data-icon="inline-start" />
+							<span class="hidden lg:inline">Template</span>
+						</Button>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content class="max-h-72 overflow-y-auto">
+					<DropdownMenu.Group>
+						{#each templateItems as item (item.value)}
+							<DropdownMenu.CheckboxItem
+								checked={item.checked}
+								onSelect={() => handleTemplateSelect(item.value)}
+							>
+								{item.label}
+							</DropdownMenu.CheckboxItem>
+						{/each}
+					</DropdownMenu.Group>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
 		{/if}
 
-		<Menu items={languageItems} onSelect={handleLanguageSelect}>
-			{#snippet trigger()}
-				<Button
-					variant="ghost"
-					size="sm"
-					class="text-muted-foreground hover:text-foreground"
-					aria-label="Select summary language"
-					tooltip="Select summary language"
-				>
-					<Languages />
-					<span class="hidden lg:inline">Language</span>
-				</Button>
-			{/snippet}
-		</Menu>
+		<DropdownMenu.Root>
+			<DropdownMenu.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="ghost"
+						size="sm"
+						class="text-muted-foreground hover:text-foreground"
+						aria-label="Select summary language"
+						title="Select summary language"
+					>
+						<LanguagesIcon data-icon="inline-start" />
+						<span class="hidden lg:inline">Language</span>
+					</Button>
+				{/snippet}
+			</DropdownMenu.Trigger>
+			<DropdownMenu.Content class="max-h-72 overflow-y-auto">
+				<DropdownMenu.Group>
+					{#each languageItems as item (item.value)}
+						<DropdownMenu.CheckboxItem
+							checked={item.checked}
+							onSelect={() => handleLanguageSelect(item.value)}
+						>
+							{item.label}
+						</DropdownMenu.CheckboxItem>
+					{/each}
+				</DropdownMenu.Group>
+			</DropdownMenu.Content>
+		</DropdownMenu.Root>
 
 		{#if showTranslateFidelityNote}
-			<span
-				class="flex items-center text-amber-600"
-				title="Transcription is set to translate audio to English, so the transcript is stored in English. A non-English summary is translated from that English text and may lose original-language nuance. For best fidelity, set the transcription language to a specific language or Auto Detect (Original Language)."
-			>
-				<AlertTriangle class="size-4" />
-				<span class="sr-only">Translation fidelity warning</span>
-			</span>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<span {...props} class="flex items-center text-warning">
+								<AlertTriangleIcon class="size-4" />
+								<span class="sr-only">Translation fidelity warning</span>
+							</span>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content class="max-w-xs">
+						Transcription is set to translate audio to English, so the transcript is stored in
+						English. A non-English summary is translated from that English text and may lose
+						original-language nuance. For best fidelity, set the transcription language to a specific
+						language or Auto Detect (Original Language).
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		{/if}
 	</div>
 {/if}

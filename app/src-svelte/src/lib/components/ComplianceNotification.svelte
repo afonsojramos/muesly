@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { AlertTriangle, CheckCircle, X } from '@lucide/svelte';
-	import Button from '$lib/ui/button.svelte';
+	import { Button } from '$lib/components/ui/button';
 
 	interface Props {
 		open: boolean;
@@ -39,18 +39,24 @@
 		<div class="rounded-lg border border-border bg-card p-3 shadow-lg">
 			<div class="mb-2 flex items-start justify-between">
 				<div class="flex items-center gap-1">
-					<AlertTriangle class="size-3 shrink-0 text-amber-500" />
+					<AlertTriangle class="size-3 shrink-0 text-warning" />
 					<h3 class="text-xs font-semibold">Recording Notice</h3>
 				</div>
-				<button onclick={onClose} class="rounded p-0.5 text-muted-foreground hover:bg-secondary" aria-label="Close">
+				<Button
+					variant="ghost"
+					size="icon"
+					class="size-5"
+					onclick={onClose}
+					aria-label="Close"
+				>
 					<X class="size-3" />
-				</button>
+				</Button>
 			</div>
 
 			<div class="mb-2">
 				<p class="mb-1 text-xs text-muted-foreground">Inform participants about recording.</p>
-				<div class="rounded border border-amber-200 bg-amber-50 p-1">
-					<p class="text-xs font-medium text-amber-800">US compliance required</p>
+				<div class="rounded border border-warning/30 bg-warning/10 p-1">
+					<p class="text-xs font-medium text-warning">US compliance required</p>
 				</div>
 			</div>
 

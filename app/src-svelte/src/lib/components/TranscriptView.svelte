@@ -54,7 +54,8 @@
 	import { config } from '$lib/stores/config.svelte';
 	import ConfidenceIndicator from './ConfidenceIndicator.svelte';
 	import RecordingStatusBar from './RecordingStatusBar.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		transcripts: Transcript[];
@@ -177,27 +178,34 @@
 			(originalWasEmpty && !isStreaming ? '[Silence]' : '')}
 		<div in:fly={{ y: 5, duration: 150 }} class="mb-3">
 			<div class="flex items-start gap-2">
-				<Tooltip>
-					{#snippet trigger()}
-						<span class="mt-1 min-w-[50px] flex-shrink-0 text-xs tabular-nums text-muted-foreground/70">
-							{transcript.audio_start_time !== undefined
-								? formatRecordingTime(transcript.audio_start_time)
-								: transcript.timestamp}
-						</span>
-					{/snippet}
-					{#snippet content()}
-						{#if transcript.duration !== undefined}
-							<span class="text-xs text-muted-foreground/70">
-								{transcript.duration.toFixed(1)}s
-								{#if transcript.confidence !== undefined}
-									<ConfidenceIndicator confidence={transcript.confidence} showIndicator={showConfidence} />
-								{/if}
-							</span>
-						{:else}
-							<span class="text-xs">No timing data</span>
-						{/if}
-					{/snippet}
-				</Tooltip>
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<span
+									{...props}
+									class="mt-1 min-w-[50px] flex-shrink-0 text-xs tabular-nums text-muted-foreground/70"
+								>
+									{transcript.audio_start_time !== undefined
+										? formatRecordingTime(transcript.audio_start_time)
+										: transcript.timestamp}
+								</span>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content>
+							{#if transcript.duration !== undefined}
+								<span class="text-xs text-muted-foreground/70">
+									{transcript.duration.toFixed(1)}s
+									{#if transcript.confidence !== undefined}
+										<ConfidenceIndicator confidence={transcript.confidence} showIndicator={showConfidence} />
+									{/if}
+								</span>
+							{:else}
+								<span class="text-xs">No timing data</span>
+							{/if}
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
 				<div class="flex-1">
 					{#if isStreaming}
 						<div class="rounded-lg border border-border bg-secondary px-3 py-2">
@@ -236,7 +244,7 @@
 		<div in:fade class="mt-8 text-center text-muted-foreground">
 			{#if isRecording}
 				<div class="mb-3 flex items-center justify-center">
-					<div class={`size-3 rounded-full ${isPaused ? 'bg-orange-500' : 'animate-pulse bg-accent'}`}></div>
+					<div class={cn('size-3 rounded-full', isPaused ? 'bg-warning' : 'animate-pulse bg-accent')}></div>
 				</div>
 				<p class="text-sm text-muted-foreground">
 					{isPaused ? 'Recording paused' : 'Listening for speech...'}

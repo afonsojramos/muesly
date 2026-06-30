@@ -24,7 +24,8 @@
 	import TranscriptPanel from '$lib/components/home/TranscriptPanel.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
 	import TranscriptRecovery from '$lib/components/TranscriptRecovery/TranscriptRecovery.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	const isBrowser = typeof window !== 'undefined';
 
@@ -197,21 +198,32 @@
 				data-tauri-drag-region="deep"
 				class="flex flex-shrink-0 items-center justify-end px-8 pb-1 pt-7"
 			>
-				<Tooltip label={showTranscript ? 'Hide transcript' : 'Show transcript'} shortcut="⌘T">
-					{#snippet trigger()}
-						<button
-							onclick={() => (showTranscript = !showTranscript)}
-							class="flex-shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-							aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
-						>
-							{#if showTranscript}
-								<PanelRightClose class="size-4" />
-							{:else}
-								<PanelRightOpen class="size-4" />
-							{/if}
-						</button>
-					{/snippet}
-				</Tooltip>
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="icon"
+									class="shrink-0 text-muted-foreground"
+									onclick={() => (showTranscript = !showTranscript)}
+									aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
+								>
+									{#if showTranscript}
+										<PanelRightClose />
+									{:else}
+										<PanelRightOpen />
+									{/if}
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content>
+							{showTranscript ? 'Hide transcript' : 'Show transcript'}
+							<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
 			</div>
 
 			<div class="flex-1 overflow-y-auto">

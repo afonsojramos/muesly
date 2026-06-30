@@ -14,7 +14,11 @@
 	import { onMount } from 'svelte';
 
 	import { Analytics } from '$lib/analytics';
-	import Switch from '$lib/ui/switch.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
+	import { Separator } from '$lib/components/ui/separator';
+	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from '$lib/toast';
 	import DeviceSelection, { type SelectedDevices } from './DeviceSelection.svelte';
 	import DictationCleanupSettings from './DictationCleanupSettings.svelte';
@@ -170,12 +174,12 @@
 </script>
 
 {#if loading}
-	<div class="animate-pulse">
-		<div class="mb-4 h-4 w-1/4 rounded bg-secondary"></div>
-		<div class="mb-4 h-8 rounded bg-secondary"></div>
+	<div class="flex flex-col gap-4">
+		<Skeleton class="h-4 w-1/4" />
+		<Skeleton class="h-8 w-full" />
 	</div>
 {:else}
-	<div class="space-y-6">
+	<div class="flex flex-col gap-6">
 		<div>
 			<h3 class="mb-4 text-lg font-semibold">Recording Settings</h3>
 			<p class="mb-6 text-sm text-muted-foreground">
@@ -194,18 +198,15 @@
 		</div>
 
 		{#if preferences.auto_save}
-			<div class="space-y-4">
+			<div class="flex flex-col gap-4">
 				<div class="rounded-lg border border-border bg-secondary/40 p-4">
 					<div class="mb-2 font-medium">Save Location</div>
 					<div class="mb-3 break-all text-sm text-muted-foreground">
 						{preferences.save_folder || 'Default folder'}
 					</div>
-					<button
-						onclick={handleOpenFolder}
-						class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm transition-colors hover:bg-secondary"
-					>
-						<FolderOpen class="size-4" /> Open Folder
-					</button>
+					<Button variant="outline" size="sm" onclick={handleOpenFolder}>
+						<FolderOpen data-icon="inline-start" /> Open Folder
+					</Button>
 				</div>
 
 				<div class="rounded-lg border border-accent/20 bg-accent/5 p-4">
@@ -219,12 +220,12 @@
 				</div>
 			</div>
 		{:else}
-			<div class="rounded-lg border border-amber-500/30 bg-amber-50 p-4">
-				<div class="text-sm text-amber-800">
+			<Alert.Root class="border-warning/30 text-warning">
+				<Alert.Description class="text-warning/90">
 					Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your
 					meeting audio.
-				</div>
-			</div>
+				</Alert.Description>
+			</Alert.Root>
 		{/if}
 
 		<div class="flex items-center justify-between rounded-lg border border-border p-4">
@@ -282,8 +283,10 @@
 			<DictationCleanupSettings />
 		{/if}
 
-		<div class="space-y-4">
-			<div class="border-t border-border pt-6">
+		<Separator />
+
+		<div class="flex flex-col gap-4">
+			<div>
 				<h4 class="mb-4 text-base font-medium">Default Audio Devices</h4>
 				<p class="mb-4 text-sm text-muted-foreground">
 					Set your preferred microphone and system audio devices for recording. These will be

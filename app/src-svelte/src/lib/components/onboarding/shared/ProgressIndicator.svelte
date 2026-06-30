@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Check, Lock, Download, CheckCircle2, BrainCircuit } from '@lucide/svelte';
 	import type { Component } from 'svelte';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		current: number;
@@ -30,21 +31,24 @@
 				type="button"
 				onclick={() => isClickable && onStepClick?.(step)}
 				disabled={!isClickable}
-				class="relative flex items-center justify-center transition-all duration-300 {isCompleted
-					? 'w-7 h-7 bg-green-600 rounded-full'
-					: isActive
-						? 'w-8 h-8 bg-primary rounded-full'
-						: 'w-6 h-6 bg-muted-foreground/30 rounded-full'} {isClickable
-					? 'cursor-pointer hover:scale-110 hover:shadow-md'
-					: 'cursor-default'}"
+				class={cn(
+					'relative flex items-center justify-center rounded-full transition-all duration-300',
+					isCompleted
+						? 'size-7 bg-success'
+						: isActive
+							? 'size-8 bg-primary'
+							: 'size-6 bg-muted-foreground/30',
+					isClickable ? 'cursor-pointer hover:scale-110 hover:shadow-md' : 'cursor-default'
+				)}
 			>
 				{#if isCompleted}
-					<Check class="w-4 h-4 text-white" />
+					<Check class="size-4 text-success-foreground" />
 				{:else}
 					<StepIcon
-						class="transition-all duration-300 {isActive
-							? 'w-4 h-4 text-primary-foreground'
-							: 'w-3 h-3 text-muted-foreground'}"
+						class={cn(
+							'transition-all duration-300',
+							isActive ? 'size-4 text-primary-foreground' : 'size-3 text-muted-foreground'
+						)}
 					/>
 				{/if}
 			</button>
@@ -52,9 +56,10 @@
 			<!-- Connector Line -->
 			{#if index < visibleSteps.length - 1}
 				<div
-					class="h-0.5 w-6 transition-all duration-300 {isCompleted
-						? 'bg-green-600'
-						: 'bg-muted-foreground/30'}"
+					class={cn(
+						'h-0.5 w-6 transition-all duration-300',
+						isCompleted ? 'bg-success' : 'bg-muted-foreground/30'
+					)}
 				></div>
 			{/if}
 		{/each}

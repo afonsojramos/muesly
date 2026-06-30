@@ -5,6 +5,8 @@
 
 	import { toast } from '$lib/toast';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
+	import * as Card from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
 
 	interface TrashedMeeting {
 		id: string;
@@ -62,62 +64,73 @@
 	onMount(loadTrash);
 </script>
 
-<div class="space-y-6">
-	<div class="rounded-lg border border-border bg-card p-6 shadow-sm">
-		<h3 class="mb-2 text-lg font-semibold">Trash</h3>
-		<p class="mb-6 text-sm text-muted-foreground">
-			Deleted meetings are kept here so you can restore them. Permanently deleting removes the
-			meeting, its transcript, and summary for good.
-		</p>
-
-		{#if isLoading}
-			<p class="text-sm text-muted-foreground">Loading…</p>
-		{:else if trashed.length === 0}
-			<div class="rounded-lg border border-border bg-secondary/40 p-6 text-center">
-				<p class="text-sm text-muted-foreground">Trash is empty</p>
-			</div>
-		{:else}
-			<div class="space-y-2">
-				{#each trashed as meeting (meeting.id)}
-					<div
-						class="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-3"
-					>
-						<div class="min-w-0 flex-1">
-							<div class="truncate font-medium">{meeting.title}</div>
-							<div class="text-xs text-muted-foreground">{formatDate(meeting.created_at)}</div>
-						</div>
-
-						<button
-							onclick={() => handleRestore(meeting)}
-							class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm transition-colors hover:bg-secondary"
+<div class="flex flex-col gap-6">
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Trash</Card.Title>
+			<Card.Description>
+				Deleted meetings are kept here so you can restore them. Permanently deleting removes the
+				meeting, its transcript, and summary for good.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content>
+			{#if isLoading}
+				<p class="text-sm text-muted-foreground">Loading…</p>
+			{:else if trashed.length === 0}
+				<div class="rounded-lg border border-border bg-secondary/40 p-6 text-center">
+					<p class="text-sm text-muted-foreground">Trash is empty</p>
+				</div>
+			{:else}
+				<div class="flex flex-col gap-2">
+					{#each trashed as meeting (meeting.id)}
+						<div
+							class="flex items-center gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-3"
 						>
-							<RotateCcw class="size-3.5" /> Restore
-						</button>
+							<div class="min-w-0 flex-1">
+								<div class="truncate font-medium">{meeting.title}</div>
+								<div class="text-xs text-muted-foreground">{formatDate(meeting.created_at)}</div>
+							</div>
 
-						{#if confirmingId === meeting.id}
-							<button
-								onclick={() => handlePermanentDelete(meeting)}
-								class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md bg-destructive px-3 py-1.5 text-sm text-destructive-foreground transition-opacity hover:opacity-90"
+							<Button
+								variant="outline"
+								size="sm"
+								class="flex-shrink-0"
+								onclick={() => handleRestore(meeting)}
 							>
-								<Trash2 class="size-3.5" /> Confirm
-							</button>
-							<button
-								onclick={() => (confirmingId = null)}
-								class="flex-shrink-0 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground"
-							>
-								Cancel
-							</button>
-						{:else}
-							<button
-								onclick={() => (confirmingId = meeting.id)}
-								class="inline-flex flex-shrink-0 items-center gap-1.5 rounded-md border border-destructive/40 px-3 py-1.5 text-sm text-destructive transition-colors hover:bg-destructive/10"
-							>
-								<Trash2 class="size-3.5" /> Delete forever
-							</button>
-						{/if}
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
+								<RotateCcw data-icon="inline-start" /> Restore
+							</Button>
+
+							{#if confirmingId === meeting.id}
+								<Button
+									variant="destructive"
+									size="sm"
+									class="flex-shrink-0"
+									onclick={() => handlePermanentDelete(meeting)}
+								>
+									<Trash2 data-icon="inline-start" /> Confirm
+								</Button>
+								<Button
+									variant="ghost"
+									size="sm"
+									class="flex-shrink-0"
+									onclick={() => (confirmingId = null)}
+								>
+									Cancel
+								</Button>
+							{:else}
+								<Button
+									variant="destructive"
+									size="sm"
+									class="flex-shrink-0"
+									onclick={() => (confirmingId = meeting.id)}
+								>
+									<Trash2 data-icon="inline-start" /> Delete forever
+								</Button>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 </div>

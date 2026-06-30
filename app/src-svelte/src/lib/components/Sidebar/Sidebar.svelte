@@ -28,10 +28,10 @@
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { sidebar, type CurrentMeeting } from '$lib/stores/sidebar.svelte';
-	import Dialog from '$lib/ui/dialog.svelte';
-	import Button from '$lib/ui/button.svelte';
-	import Input from '$lib/ui/input.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	let searchQuery = $state('');
 
@@ -461,21 +461,34 @@
 <!-- The toggle lives outside the (zero-width when closed) sidebar so it stays
      anchored next to the traffic lights and only changes state. -->
 <div class="fixed left-[4.55rem] top-[5px] z-50">
-	<Tooltip label={sidebar.isCollapsed ? 'Open sidebar' : 'Close sidebar'} shortcut="⌘S">
-		{#snippet trigger()}
-			<button
-				onclick={sidebar.toggleCollapse}
-				class="rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-secondary hover:text-foreground"
-				aria-label={sidebar.isCollapsed ? 'Open sidebar' : 'Close sidebar'}
-			>
-				{#if sidebar.isCollapsed}
-					<PanelLeftOpen class="size-4" />
-				{:else}
-					<PanelLeftClose class="size-4" />
-				{/if}
-			</button>
-		{/snippet}
-	</Tooltip>
+	<Tooltip.Provider delayDuration={300}>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="ghost"
+						size="icon-sm"
+						onclick={sidebar.toggleCollapse}
+						class="text-muted-foreground/70"
+						aria-label={sidebar.isCollapsed ? 'Open sidebar' : 'Close sidebar'}
+					>
+						{#if sidebar.isCollapsed}
+							<PanelLeftOpen />
+						{:else}
+							<PanelLeftClose />
+						{/if}
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<span class="flex items-center">
+					{sidebar.isCollapsed ? 'Open sidebar' : 'Close sidebar'}
+					<span class="ml-1.5 tracking-wide opacity-60">⌘S</span>
+				</span>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
 </div>
 
 <div class="fixed left-0 top-0 z-40 h-screen">
@@ -493,9 +506,10 @@
 				role="separator"
 				aria-orientation="vertical"
 				aria-label="Resize sidebar"
-				class={`absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40 ${
-					sidebar.isResizing ? 'bg-accent/50' : ''
-				}`}
+				class={cn(
+					'absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
+					sidebar.isResizing && 'bg-accent/50'
+				)}
 				onpointerdown={startResize}
 			></div>
 		{/if}
@@ -511,7 +525,7 @@
 					/>
 					<Input
 						id="sidebar-search"
-						class="h-7 rounded-md border-transparent bg-foreground/[0.04] pl-8 pr-8 text-[13px] shadow-none placeholder:text-muted-foreground/70 focus:bg-background"
+						class="h-7 border-transparent bg-foreground/[0.04] pl-8 pr-8 shadow-none focus:bg-background"
 						placeholder="Search"
 						value={searchQuery}
 						oninput={(e) => handleSearchChange(e.currentTarget.value)}
@@ -524,27 +538,20 @@
 						</span>
 					{/if}
 					{#if searchQuery}
-						<button
+						<Button
+							variant="ghost"
+							size="icon-xs"
 							onclick={() => handleSearchChange('')}
-							class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+							class="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground"
 							aria-label="Clear search"
 						>
-							<X class="size-3.5" />
-						</button>
+							<X />
+						</Button>
 					{/if}
 				</div>
 
-				<button
-					onclick={handleRecordingToggle}
-					disabled={recordingState.isRecording}
-					class={cn(
-						'mt-2 flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1 text-[13px] font-medium transition-colors',
-						recordingState.isRecording
-							? 'cursor-not-allowed bg-destructive/10 text-destructive'
-							: 'bg-accent text-accent-foreground hover:opacity-90'
-					)}
-				>
-					{#if recordingState.isRecording}
+				{#if recordingState.isRecording}
+					<Button disabled variant="destructive" size="sm" class="mt-2 w-full cursor-not-allowed">
 						<span class="relative flex size-2">
 							<span
 								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
@@ -552,11 +559,13 @@
 							<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
 						</span>
 						<span>Recording...</span>
-					{:else}
-						<Plus class="size-4" />
+					</Button>
+				{:else}
+					<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="mt-2 h-7 w-full">
+						<Plus />
 						<span>New note</span>
-					{/if}
-				</button>
+					</Button>
+				{/if}
 			</div>
 
 			<!-- Nav -->
@@ -585,86 +594,110 @@
 				 real <button> (flex-1) for navigation; the hover controls are siblings,
 				 so nothing interactive is nested in another control. The whole row is
 				 draggable onto a folder. -->
-				{#snippet meetingRow(child: CurrentMeeting)}
-					{@const isActive = sidebar.currentMeeting?.id === child.id}
-					{@const isMeeting = isMeetingItem(child.id)}
-					{@const matchingResult = isMeeting ? findMatchingSnippet(child.id) : null}
-					{@const time = timeLabel(child.createdAt)}
+				{#snippet meetingRow(meeting: CurrentMeeting)}
+					{@const isActive = sidebar.currentMeeting?.id === meeting.id}
+					{@const isMeeting = isMeetingItem(meeting.id)}
+					{@const matchingResult = isMeeting ? findMatchingSnippet(meeting.id) : null}
+					{@const time = timeLabel(meeting.createdAt)}
 					<div
 						class={cn(
 							'group my-px flex flex-col rounded-md px-2 py-1 text-[13px] transition-colors duration-150',
 							isActive
 								? 'bg-secondary font-medium text-foreground'
 								: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
-							draggingMeetingId === child.id && 'opacity-50'
+							draggingMeetingId === meeting.id && 'opacity-50'
 						)}
 						role="listitem"
 						data-roving-row
-						onpointerdown={(e) => handleRowPointerDown(e, child)}
+						onpointerdown={(e) => handleRowPointerDown(e, meeting)}
 					>
 						<div class="flex h-5 w-full items-center gap-2">
 							<button
 								type="button"
-								onclick={() => selectMeeting(child)}
+								onclick={() => selectMeeting(meeting)}
 								onkeydown={handleRovingKeydown}
 								data-roving
 								class="min-w-0 flex-1 truncate rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								aria-label={isMeeting ? `Open meeting: ${child.title}` : child.title}
+								aria-label={isMeeting ? `Open meeting: ${meeting.title}` : meeting.title}
 							>
-								{child.title}
+								{meeting.title}
 							</button>
 							{#if isMeeting}
 								<div
 									data-no-drag
 									class="hidden flex-shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex"
 								>
-									<Tooltip label="Move to folder" closeOnEscape={false}>
-										{#snippet trigger()}
-											<button
-												onclick={() => (moveModal = { open: true, meetingId: child.id })}
-												onkeydown={handleRovingKeydown}
-												data-roving
-												tabindex={-1}
-												class="rounded p-0.5 text-muted-foreground hover:bg-border hover:text-foreground"
-												aria-label="Move to folder"
-											>
-												<FolderInput class="size-3.5" />
-											</button>
-										{/snippet}
-									</Tooltip>
-									<Tooltip label="Edit title" closeOnEscape={false}>
-										{#snippet trigger()}
-											<button
-												onclick={() => handleEditStart(child.id, child.title)}
-												onkeydown={handleRovingKeydown}
-												data-roving
-												tabindex={-1}
-												class="rounded p-0.5 text-muted-foreground hover:bg-border hover:text-foreground"
-												aria-label="Edit meeting title"
-											>
-												<Pencil class="size-3.5" />
-											</button>
-										{/snippet}
-									</Tooltip>
-									<Tooltip label="Delete meeting" closeOnEscape={false}>
-										{#snippet trigger()}
-											<button
-												onclick={() => (deleteModal = { open: true, itemId: child.id })}
-												onkeydown={handleRovingKeydown}
-												data-roving
-												tabindex={-1}
-												class="rounded p-0.5 text-muted-foreground hover:bg-border hover:text-destructive"
-												aria-label="Delete meeting"
-											>
-												<Trash2 class="size-3.5" />
-											</button>
-										{/snippet}
-									</Tooltip>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onclick={() => (moveModal = { open: true, meetingId: meeting.id })}
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border"
+														aria-label="Move to folder"
+													>
+														<FolderInput />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Move to folder</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onclick={() => handleEditStart(meeting.id, meeting.title)}
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border"
+														aria-label="Edit meeting title"
+													>
+														<Pencil />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Edit title</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onclick={() => (deleteModal = { open: true, itemId: meeting.id })}
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border hover:text-destructive"
+														aria-label="Delete meeting"
+													>
+														<Trash2 />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Delete meeting</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
 								</div>
 							{/if}
 							{#if time}
 								<span
-									class="flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/60 group-hover:hidden group-focus-within:hidden"
+									class="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60 group-hover:hidden group-focus-within:hidden"
 								>
 									{time}
 								</span>
@@ -674,7 +707,7 @@
 						{#if matchingResult}
 							<button
 								type="button"
-								onclick={() => selectMeeting(child)}
+								onclick={() => selectMeeting(meeting)}
 								class="mt-1 line-clamp-2 text-left text-xs text-muted-foreground"
 							>
 								{matchingResult.matchContext}
@@ -685,18 +718,26 @@
 
 				<!-- Folders header + create -->
 				<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
-					<span class="text-[11px] font-medium text-muted-foreground/70">Folders</span>
-					<Tooltip label="New folder">
-						{#snippet trigger()}
-							<button
-								onclick={openCreateFolder}
-								class="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
-								aria-label="New folder"
-							>
-								<FolderPlus class="size-3.5" />
-							</button>
-						{/snippet}
-					</Tooltip>
+					<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-xs"
+										onclick={openCreateFolder}
+										class="text-muted-foreground"
+										aria-label="New folder"
+									>
+										<FolderPlus />
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>New folder</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
 				</div>
 
 				{#each folderSections as section (section.id)}
@@ -734,43 +775,59 @@
 							<div
 								class="hidden flex-shrink-0 items-center gap-0.5 group-hover/folder:flex group-focus-within/folder:flex"
 							>
-								<Tooltip label="Rename folder" closeOnEscape={false}>
-									{#snippet trigger()}
-										<button
-											onclick={() => openRenameFolder(section.id, section.name)}
-											onkeydown={handleRovingKeydown}
-											data-roving
-											tabindex={-1}
-											class="rounded p-0.5 text-muted-foreground hover:bg-border hover:text-foreground"
-											aria-label="Rename folder"
-										>
-											<Pencil class="size-3.5" />
-										</button>
-									{/snippet}
-								</Tooltip>
-								<Tooltip label="Delete folder" closeOnEscape={false}>
-									{#snippet trigger()}
-										<button
-											onclick={() =>
-												(deleteFolderModal = {
-													open: true,
-													folderId: section.id,
-													name: section.name
-												})}
-											onkeydown={handleRovingKeydown}
-											data-roving
-											tabindex={-1}
-											class="rounded p-0.5 text-muted-foreground hover:bg-border hover:text-destructive"
-											aria-label="Delete folder"
-										>
-											<Trash2 class="size-3.5" />
-										</button>
-									{/snippet}
-								</Tooltip>
+								<Tooltip.Provider delayDuration={300}>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-xs"
+													onclick={() => openRenameFolder(section.id, section.name)}
+													onkeydown={handleRovingKeydown}
+													data-roving
+													tabindex={-1}
+													class="text-muted-foreground hover:bg-border"
+													aria-label="Rename folder"
+												>
+													<Pencil />
+												</Button>
+											{/snippet}
+										</Tooltip.Trigger>
+										<Tooltip.Content>Rename folder</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
+								<Tooltip.Provider delayDuration={300}>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-xs"
+													onclick={() =>
+														(deleteFolderModal = {
+															open: true,
+															folderId: section.id,
+															name: section.name
+														})}
+													onkeydown={handleRovingKeydown}
+													data-roving
+													tabindex={-1}
+													class="text-muted-foreground hover:bg-border hover:text-destructive"
+													aria-label="Delete folder"
+												>
+													<Trash2 />
+												</Button>
+											{/snippet}
+										</Tooltip.Trigger>
+										<Tooltip.Content>Delete folder</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
 							</div>
 							{#if !collapsed && section.meetings.length === 0}
 								<span
-									class="flex-shrink-0 text-[11px] text-muted-foreground/50 group-hover/folder:hidden group-focus-within/folder:hidden"
+									class="flex-shrink-0 text-xs text-muted-foreground/50 group-hover/folder:hidden group-focus-within/folder:hidden"
 									>empty</span
 								>
 							{/if}
@@ -795,7 +852,7 @@
 					)}
 				>
 					{#each uncategorizedGroups as group (group.label)}
-						<div class="px-2 pb-0.5 pt-3 text-[11px] font-medium text-muted-foreground/70">
+						<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
 							{group.label}
 						</div>
 						{#each group.items as child (child.id)}
@@ -849,75 +906,66 @@
 {/if}
 
 <!-- Delete confirmation -->
-<Dialog
+<Dialog.Root
 	open={deleteModal.open}
 	onOpenChange={(next) => {
 		if (!next) deleteModal = { open: false, itemId: null };
 	}}
-	title="Delete meeting"
-	hideTitle
 >
-	<p class="text-sm">
-		Move this meeting to the trash? You can restore it from Settings → Trash.
-	</p>
-	{#snippet footer()}
-		<Button variant="outline" onclick={() => (deleteModal = { open: false, itemId: null })}>
-			Cancel
-		</Button>
-		<Button variant="destructive" onclick={handleDeleteConfirm}>Delete</Button>
-	{/snippet}
-</Dialog>
+	<Dialog.Content>
+		<Dialog.Title class="sr-only">Delete meeting</Dialog.Title>
+		<p class="text-sm">
+			Move this meeting to the trash? You can restore it from Settings → Trash.
+		</p>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (deleteModal = { open: false, itemId: null })}>
+				Cancel
+			</Button>
+			<Button variant="destructive" onclick={handleDeleteConfirm}>Delete</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Edit meeting title -->
-<Dialog
+<Dialog.Root
 	open={editModal.open}
 	onOpenChange={(next) => {
 		if (!next) handleEditCancel();
 	}}
-	title="Edit Meeting Title"
-	hideTitle
-	class="sm:max-w-[425px]"
 >
-	<div class="py-4">
-		<h3 class="mb-4 text-lg font-semibold">Edit Meeting Title</h3>
-		<div class="space-y-4">
-			<div>
-				<label for="meeting-title" class="mb-2 block text-sm font-medium text-foreground">
-					Meeting Title
-				</label>
-				<Input
-					id="meeting-title"
-					value={editingTitle}
-					oninput={(e) => (editingTitle = e.currentTarget.value)}
-					onkeydown={(e) => {
-						if (e.key === 'Enter') void handleEditConfirm();
-						else if (e.key === 'Escape') handleEditCancel();
-					}}
-					placeholder="Enter meeting title"
-				/>
-			</div>
+	<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Title class="text-lg font-semibold">Edit Meeting Title</Dialog.Title>
+		<div class="flex flex-col gap-2">
+			<label for="meeting-title" class="text-sm font-medium text-foreground">Meeting Title</label>
+			<Input
+				id="meeting-title"
+				value={editingTitle}
+				oninput={(e) => (editingTitle = e.currentTarget.value)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') void handleEditConfirm();
+					else if (e.key === 'Escape') handleEditCancel();
+				}}
+				placeholder="Enter meeting title"
+			/>
 		</div>
-	</div>
-	{#snippet footer()}
-		<Button variant="outline" onclick={handleEditCancel}>Cancel</Button>
-		<Button onclick={handleEditConfirm}>Save</Button>
-	{/snippet}
-</Dialog>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={handleEditCancel}>Cancel</Button>
+			<Button onclick={handleEditConfirm}>Save</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Create / rename folder -->
-<Dialog
+<Dialog.Root
 	open={folderModal.open}
 	onOpenChange={(next) => {
 		if (!next) folderModal = { open: false, mode: 'create', folderId: null };
 	}}
-	title={folderModal.mode === 'create' ? 'New folder' : 'Rename folder'}
-	hideTitle
-	class="sm:max-w-[425px]"
 >
-	<div class="py-4">
-		<h3 class="mb-4 text-lg font-semibold">
+	<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Title class="text-lg font-semibold">
 			{folderModal.mode === 'create' ? 'New folder' : 'Rename folder'}
-		</h3>
+		</Dialog.Title>
 		<Input
 			value={folderNameInput}
 			oninput={(e) => (folderNameInput = e.currentTarget.value)}
@@ -926,57 +974,55 @@
 			}}
 			placeholder="Folder name"
 		/>
-	</div>
-	{#snippet footer()}
-		<Button
-			variant="outline"
-			onclick={() => (folderModal = { open: false, mode: 'create', folderId: null })}
-		>
-			Cancel
-		</Button>
-		<Button onclick={submitFolder}>
-			{folderModal.mode === 'create' ? 'Create' : 'Save'}
-		</Button>
-	{/snippet}
-</Dialog>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (folderModal = { open: false, mode: 'create', folderId: null })}
+			>
+				Cancel
+			</Button>
+			<Button onclick={submitFolder}>
+				{folderModal.mode === 'create' ? 'Create' : 'Save'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Delete folder confirmation -->
-<Dialog
+<Dialog.Root
 	open={deleteFolderModal.open}
 	onOpenChange={(next) => {
 		if (!next) deleteFolderModal = { open: false, folderId: null, name: '' };
 	}}
-	title="Delete folder"
-	hideTitle
 >
-	<p class="text-sm">
-		Delete the folder <strong>{deleteFolderModal.name}</strong>? Notes inside it are kept and moved
-		back to the date list.
-	</p>
-	{#snippet footer()}
-		<Button
-			variant="outline"
-			onclick={() => (deleteFolderModal = { open: false, folderId: null, name: '' })}
-		>
-			Cancel
-		</Button>
-		<Button variant="destructive" onclick={confirmDeleteFolder}>Delete folder</Button>
-	{/snippet}
-</Dialog>
+	<Dialog.Content>
+		<Dialog.Title class="sr-only">Delete folder</Dialog.Title>
+		<p class="text-sm">
+			Delete the folder <strong>{deleteFolderModal.name}</strong>? Notes inside it are kept and moved
+			back to the date list.
+		</p>
+		<Dialog.Footer>
+			<Button
+				variant="outline"
+				onclick={() => (deleteFolderModal = { open: false, folderId: null, name: '' })}
+			>
+				Cancel
+			</Button>
+			<Button variant="destructive" onclick={confirmDeleteFolder}>Delete folder</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- Move meeting to folder -->
-<Dialog
+<Dialog.Root
 	open={moveModal.open}
 	onOpenChange={(next) => {
 		if (!next) moveModal = { open: false, meetingId: null };
 	}}
-	title="Move to folder"
-	hideTitle
-	class="sm:max-w-[425px]"
 >
-	<div class="py-4">
-		<h3 class="mb-4 text-lg font-semibold">Move to folder</h3>
-		<div class="space-y-1">
+	<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Title class="text-lg font-semibold">Move to folder</Dialog.Title>
+		<div class="flex flex-col gap-1">
 			{#each sidebar.folders as folder (folder.id)}
 				<button
 					onclick={() => moveTo(folder.id)}
@@ -999,5 +1045,5 @@
 				</p>
 			{/if}
 		</div>
-	</div>
-</Dialog>
+	</Dialog.Content>
+</Dialog.Root>

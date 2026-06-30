@@ -29,7 +29,8 @@
 	import { useTranscriptStreaming } from '$lib/hooks/use-transcript-streaming.svelte';
 	import ConfidenceIndicator from './ConfidenceIndicator.svelte';
 	import RecordingStatusBar from './RecordingStatusBar.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		segments: TranscriptSegmentData[];
@@ -138,13 +139,13 @@
 		</div>
 	{/if}
 
-	<div class={isRecording ? 'pt-2' : ''}>
+	<div class={cn(isRecording && 'pt-2')}>
 		{#if segments.length === 0}
 			<div in:fade class="mt-8 text-center text-muted-foreground">
 				{#if isRecording}
 					<div class="mb-3 flex items-center justify-center">
 						<div
-							class={`size-3 rounded-full ${isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent'}`}
+							class={cn('size-3 rounded-full', isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent')}
 						></div>
 					</div>
 					<p class="text-sm text-muted-foreground">
@@ -167,30 +168,39 @@
 					{@const isMe = segment.speaker === 'mic'}
 					<div in:fly={{ y: 5, duration: 150 }} id={`segment-${segment.id}`} class="mb-3">
 						<div class="flex items-start gap-2">
-							<Tooltip>
-								{#snippet trigger()}
-									<span class="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/60">
-										{formatRecordingTime(segment.timestamp)}
-									</span>
-								{/snippet}
-								{#snippet content()}
-									{#if segment.confidence !== undefined && showConfidence}
-										<ConfidenceIndicator confidence={segment.confidence} showIndicator={showConfidence} />
-									{:else}
-										<span class="text-xs">No confidence data</span>
-									{/if}
-								{/snippet}
-							</Tooltip>
-								<div class={`min-w-0 flex-1 ${isMe ? 'text-right' : ''}`}>
+							<Tooltip.Provider delayDuration={300}>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										{#snippet child({ props })}
+											<span
+												{...props}
+												class="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/60"
+											>
+												{formatRecordingTime(segment.timestamp)}
+											</span>
+										{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content>
+										{#if segment.confidence !== undefined && showConfidence}
+											<ConfidenceIndicator confidence={segment.confidence} showIndicator={showConfidence} />
+										{:else}
+											<span class="text-xs">No confidence data</span>
+										{/if}
+									</Tooltip.Content>
+								</Tooltip.Root>
+							</Tooltip.Provider>
+								<div class={cn('min-w-0 flex-1', isMe && 'text-right')}>
 								{#if isMe && segment.speaker_id != null}
 									<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground">Speaker {segment.speaker_id + 1}</span>
 								{/if}
 								<!-- Granola-style attribution: your mic on the right (accent
 								     tint), other participants on the left (gray). -->
 								<div
-									class={`inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left ${
-										isMe ? 'bg-accent/15' : 'bg-secondary'
-									} ${isStreaming ? 'ring-1 ring-accent/30' : ''}`}
+									class={cn(
+										'inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left',
+										isMe ? 'bg-accent/15' : 'bg-secondary',
+										isStreaming && 'ring-1 ring-accent/30'
+									)}
 								>
 									<p class="text-sm leading-relaxed text-foreground break-words [overflow-wrap:anywhere]">
 										{displayTextFor(segment)}
