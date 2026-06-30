@@ -3188,15 +3188,6 @@ dependencies = [
 
 [[package]]
 name = "infer"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb33622da908807a06f9513c19b3c1ad50fab3e4137d82a78107d502075aa199"
-dependencies = [
- "cfb",
-]
-
-[[package]]
-name = "infer"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
@@ -3854,7 +3845,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "hex",
- "infer 0.15.0",
+ "infer",
  "keyring",
  "lazy_static",
  "libc",
@@ -3883,7 +3874,7 @@ dependencies = [
  "specta",
  "specta-typescript",
  "sqlx",
- "strsim 0.10.0",
+ "strsim 0.11.1",
  "symphonia",
  "sysinfo",
  "tar",
@@ -7207,7 +7198,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "http 1.4.2",
- "infer 0.19.0",
+ "infer",
  "log",
  "minisign-verify",
  "osakit",
@@ -7325,7 +7316,7 @@ dependencies = [
  "dunce",
  "glob",
  "http 1.4.2",
- "infer 0.19.0",
+ "infer",
  "json-patch",
  "log",
  "memchr",
