@@ -1,7 +1,10 @@
 <script lang="ts">
-	import { Pencil, Trash2 } from '@lucide/svelte';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	interface Props {
 		title: string;
@@ -37,20 +40,20 @@
 {#if isEditing}
 	<div class="flex-1">
 		<!-- svelte-ignore a11y_autofocus -->
-		<textarea
-			bind:this={textarea}
+		<Textarea
+			bind:ref={textarea}
 			value={title}
 			oninput={(e) => onChange(e.currentTarget.value)}
 			onblur={onFinishEditing}
 			onkeydown={handleKeydown}
-			class="w-full resize-none overflow-hidden rounded border border-input bg-secondary px-3 py-1 text-2xl font-bold focus:outline-none focus:ring-2 focus:ring-ring"
+			class="resize-none overflow-hidden bg-secondary px-3 py-1 text-2xl font-bold"
 			style="min-width: 300px; min-height: 40px;"
 			autofocus
 			rows={1}
-		></textarea>
+		/>
 	</div>
 {:else}
-	<div class="group flex flex-1 items-center space-x-2">
+	<div class="group flex flex-1 items-center gap-2">
 		<button
 			type="button"
 			class="flex-1 cursor-pointer whitespace-pre-wrap rounded px-1 text-left text-2xl font-bold hover:bg-secondary"
@@ -59,30 +62,46 @@
 		>
 			{title}
 		</button>
-		<div class="flex space-x-1">
-			<Tooltip label="Edit title">
-				{#snippet trigger()}
-					<button
-						onclick={onStartEditing}
-						class="rounded p-1 opacity-0 transition-opacity duration-200 hover:bg-secondary group-hover:opacity-100"
-						aria-label="Edit title"
-					>
-						<Pencil class="size-4" />
-					</button>
-				{/snippet}
-			</Tooltip>
+		<div class="flex gap-1">
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="ghost"
+								size="icon-sm"
+								onclick={onStartEditing}
+								class="opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+								aria-label="Edit title"
+							>
+								<PencilIcon />
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>Edit title</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 			{#if onDelete}
-				<Tooltip label="Delete">
-					{#snippet trigger()}
-						<button
-							onclick={onDelete}
-							class="rounded p-1 text-destructive opacity-0 transition-opacity duration-200 hover:bg-secondary group-hover:opacity-100"
-							aria-label="Delete"
-						>
-							<Trash2 class="size-4" />
-						</button>
-					{/snippet}
-				</Tooltip>
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="icon-sm"
+									onclick={onDelete}
+									class="text-destructive opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+									aria-label="Delete"
+								>
+									<Trash2Icon />
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content>Delete</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
 			{/if}
 		</div>
 	</div>

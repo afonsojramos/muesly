@@ -3,7 +3,8 @@
 
 	import type { Transcript, TranscriptSegmentData } from '$lib/types';
 	import VirtualizedTranscriptView from '$lib/components/VirtualizedTranscriptView.svelte';
-	import Textarea from '$lib/ui/textarea.svelte';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import { cn } from '$lib/utils';
 	import {
 		sidePanelState,
 		SIDE_PANEL_MIN_WIDTH,
@@ -167,7 +168,10 @@
      rendered width can never exceed MAX even if the stored width is stale. -->
 <div
 	bind:this={panelEl}
-	class={`@container relative shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar ${sidePanelState.open ? 'hidden md:flex' : 'hidden'}`}
+	class={cn(
+		'@container relative shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar',
+		sidePanelState.open ? 'hidden md:flex' : 'hidden'
+	)}
 	style={`width: ${sidePanelState.width}px; max-width: min(${SIDE_PANEL_MAX_WIDTH}px, calc(100% - ${SIDE_PANEL_SUMMARY_MIN_WIDTH}px)); min-width: ${SIDE_PANEL_MIN_WIDTH}px`}
 >
 	<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -175,9 +179,10 @@
 		role="separator"
 		aria-orientation="vertical"
 		aria-label="Resize side panel"
-		class={`absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors hover:bg-accent/40 ${
-			isResizing ? 'bg-accent/50' : ''
-		}`}
+		class={cn(
+			'absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
+			isResizing && 'bg-accent/50'
+		)}
 		onpointerdown={startResize}
 	></div>
 
@@ -194,11 +199,12 @@
 				role="tab"
 				aria-selected={sidePanelState.activeTab === tab.id}
 				onclick={() => selectTab(tab.id)}
-				class={`relative rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors ${
+				class={cn(
+					'relative rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors',
 					sidePanelState.activeTab === tab.id
 						? 'text-foreground'
 						: 'text-muted-foreground hover:text-foreground'
-				}`}
+				)}
 			>
 				{tab.label}
 				{#if sidePanelState.activeTab === tab.id}
@@ -254,7 +260,7 @@
 
 	<!-- Notes tab: always mounted (hidden when inactive) to preserve unsaved edits. -->
 	<div
-		class={`min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-3 ${sidePanelState.activeTab === 'notes' ? '' : 'hidden'}`}
+		class={cn('min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-3', sidePanelState.activeTab !== 'notes' && 'hidden')}
 	>
 		<NotesView bind:this={notesView} {notesMarkdown} onSave={onSaveNotes} />
 	</div>

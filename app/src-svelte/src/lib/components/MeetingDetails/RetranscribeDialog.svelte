@@ -1,16 +1,23 @@
 <script lang="ts">
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { invoke } from '@tauri-apps/api/core';
-	import { AlertCircle, Cpu, Globe, Loader2, RefreshCw, X } from '@lucide/svelte';
+	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
+	import CpuIcon from '@lucide/svelte/icons/cpu';
+	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
+	import XIcon from '@lucide/svelte/icons/x';
 
 	import { LANGUAGES } from '$lib/constants/languages';
 	import { config } from '$lib/stores/config.svelte';
 	import { useTranscriptionModels, type ModelOption } from '$lib/hooks/use-transcription-models.svelte';
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
-	import Button from '$lib/ui/button.svelte';
-	import Dialog from '$lib/ui/dialog.svelte';
-	import Select from '$lib/ui/select.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import AccentButton from '$lib/ui/button.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Progress } from '$lib/components/ui/progress';
+	import * as Select from '$lib/components/ui/select';
 
 	interface Props {
 		open: boolean;
@@ -208,11 +215,18 @@
 	}
 
 	const languageItems = LANGUAGES.map((lang) => ({ value: lang.code, label: lang.name }));
+	const selectedLangLabel = $derived(
+		languageItems.find((l) => l.value === selectedLang)?.label ?? 'Select language'
+	);
 	const modelItems = $derived(
 		models.availableModels.map((model) => ({
 			value: `${model.provider}:${model.name}`,
 			label: `${model.displayName} (${Math.round(model.size_mb)} MB)`
 		}))
+	);
+	const selectedModelLabel = $derived(
+		modelItems.find((m) => m.value === models.selectedModelKey)?.label ??
+			(models.loadingModels ? 'Loading models...' : 'Select model')
 	);
 
 	const dialogTitle = $derived(
@@ -227,126 +241,134 @@
 	);
 </script>
 
-<Dialog
-	bind:open
-	onOpenChange={handleOpenChange}
-	class="sm:max-w-[450px]"
-	showClose={!isProcessing}
->
-	<div class="flex items-center gap-2 text-lg font-semibold">
-		{#if isProcessing}
-			<Loader2 class="size-5 animate-spin text-accent" />
-		{:else if error}
-			<AlertCircle class="size-5 text-destructive" />
-		{:else}
-			<RefreshCw class="size-5 text-accent" />
-		{/if}
-		{dialogTitle}
-	</div>
-	<p class="mt-1 text-sm text-muted-foreground">{dialogDescription}</p>
-
-	<div class="space-y-4 py-4">
-		{#if !isProcessing && !error}
-			{#if !isParakeetModel}
-				<div class="space-y-3">
-					<div class="flex items-center gap-2">
-						<Globe class="size-4 text-muted-foreground" />
-						<span class="text-sm font-medium">Language</span>
-					</div>
-					<Select
-						items={languageItems}
-						value={[selectedLang]}
-						placeholder="Select language"
-						onValueChange={(v) => {
-							if (v[0]) selectedLang = v[0];
-						}}
-					/>
-					<p class="text-xs text-muted-foreground">
-						Select a specific language to improve accuracy, or use auto-detect
-					</p>
-				</div>
+<Dialog.Root {open} onOpenChange={handleOpenChange}>
+	<Dialog.Content class="sm:max-w-[450px]" showCloseButton={!isProcessing}>
+		<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
+			{#if isProcessing}
+				<Loader2Icon class="size-5 animate-spin text-accent" />
+			{:else if error}
+				<AlertCircleIcon class="size-5 text-destructive" />
 			{:else}
-				<div class="space-y-3">
-					<div class="flex items-center gap-2">
-						<Globe class="size-4 text-muted-foreground" />
-						<span class="text-sm font-medium">Language</span>
+				<RefreshCwIcon class="size-5 text-accent" />
+			{/if}
+			{dialogTitle}
+		</Dialog.Title>
+		<Dialog.Description>{dialogDescription}</Dialog.Description>
+
+		<div class="flex flex-col gap-4 py-4">
+			{#if !isProcessing && !error}
+				{#if !isParakeetModel}
+					<div class="flex flex-col gap-3">
+						<div class="flex items-center gap-2">
+							<GlobeIcon class="size-4 text-muted-foreground" />
+							<span class="text-sm font-medium">Language</span>
+						</div>
+						<Select.Root
+							type="single"
+							value={selectedLang}
+							onValueChange={(v) => {
+								if (v) selectedLang = v;
+							}}
+						>
+							<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
+							<Select.Content>
+								<Select.Group>
+									{#each languageItems as item (item.value)}
+										<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+									{/each}
+								</Select.Group>
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							Select a specific language to improve accuracy, or use auto-detect
+						</p>
 					</div>
-					<p class="text-xs text-muted-foreground">
-						Language selection isn't supported for Parakeet. It always uses automatic detection.
-					</p>
+				{:else}
+					<div class="flex flex-col gap-3">
+						<div class="flex items-center gap-2">
+							<GlobeIcon class="size-4 text-muted-foreground" />
+							<span class="text-sm font-medium">Language</span>
+						</div>
+						<p class="text-xs text-muted-foreground">
+							Language selection isn't supported for Parakeet. It always uses automatic detection.
+						</p>
+					</div>
+				{/if}
+
+				{#if models.availableModels.length > 0}
+					<div class="flex flex-col gap-3">
+						<div class="flex items-center gap-2">
+							<CpuIcon class="size-4 text-muted-foreground" />
+							<span class="text-sm font-medium">Model</span>
+						</div>
+						<Select.Root
+							type="single"
+							value={models.selectedModelKey ?? ''}
+							disabled={models.loadingModels}
+							onValueChange={(v) => {
+								if (v) models.setSelectedModelKey(v);
+							}}
+						>
+							<Select.Trigger class="w-full">{selectedModelLabel}</Select.Trigger>
+							<Select.Content>
+								<Select.Group>
+									{#each modelItems as item (item.value)}
+										<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+									{/each}
+								</Select.Group>
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">Choose a transcription model</p>
+					</div>
+				{/if}
+			{/if}
+
+			{#if isProcessing && progress}
+				<div class="flex flex-col gap-2">
+					<div>
+						<Progress value={Math.min(progress.progress_percentage, 100)} />
+						<div class="mt-1 flex justify-between text-xs text-muted-foreground">
+							<span>{progress.stage}</span>
+							<span>{Math.round(progress.progress_percentage)}%</span>
+						</div>
+					</div>
+					<p class="text-center text-sm text-muted-foreground">{progress.message}</p>
 				</div>
 			{/if}
 
-			{#if models.availableModels.length > 0}
-				<div class="space-y-3">
-					<div class="flex items-center gap-2">
-						<Cpu class="size-4 text-muted-foreground" />
-						<span class="text-sm font-medium">Model</span>
-					</div>
-					<Select
-						items={modelItems}
-						value={models.selectedModelKey ? [models.selectedModelKey] : []}
-						placeholder={models.loadingModels ? 'Loading models...' : 'Select model'}
-						disabled={models.loadingModels}
-						onValueChange={(v) => {
-							if (v[0]) models.setSelectedModelKey(v[0]);
-						}}
-					/>
-					<p class="text-xs text-muted-foreground">Choose a transcription model</p>
+			{#if error}
+				<div class="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
+					<p class="text-sm text-destructive">{error}</p>
 				</div>
 			{/if}
-		{/if}
+		</div>
 
-		{#if isProcessing && progress}
-			<div class="space-y-2">
-				<div class="relative">
-					<div class="h-3 w-full rounded-full bg-secondary">
-						<div
-							class="h-3 rounded-full bg-accent transition-all duration-300 ease-out"
-							style={`width: ${Math.min(progress.progress_percentage, 100)}%`}
-						></div>
-					</div>
-					<div class="mt-1 flex justify-between text-xs text-muted-foreground">
-						<span>{progress.stage}</span>
-						<span>{Math.round(progress.progress_percentage)}%</span>
-					</div>
-				</div>
-				<p class="text-center text-sm text-muted-foreground">{progress.message}</p>
-			</div>
-		{/if}
-
-		{#if error}
-			<div class="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-				<p class="text-sm text-destructive">{error}</p>
-			</div>
-		{/if}
-	</div>
-
-	<div class="mt-2 flex justify-end gap-2">
-		{#if !isProcessing && !error}
-			<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
-			<Button variant="accent" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
-				<RefreshCw class="size-4" />
-				Start Retranscription
-			</Button>
-		{/if}
-		{#if isProcessing}
-			<Button variant="outline" onclick={handleCancel}>
-				<X class="size-4" />
-				Cancel
-			</Button>
-		{/if}
-		{#if error}
-			<Button variant="outline" onclick={() => onOpenChange(false)}>Close</Button>
-			<Button
-				variant="outline"
-				onclick={() => {
-					error = null;
-					progress = null;
-				}}
-			>
-				Try Again
-			</Button>
-		{/if}
-	</div>
-</Dialog>
+		<Dialog.Footer>
+			{#if !isProcessing && !error}
+				<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
+				<AccentButton variant="accent" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
+					<RefreshCwIcon />
+					Start Retranscription
+				</AccentButton>
+			{/if}
+			{#if isProcessing}
+				<Button variant="outline" onclick={handleCancel}>
+					<XIcon data-icon="inline-start" />
+					Cancel
+				</Button>
+			{/if}
+			{#if error}
+				<Button variant="outline" onclick={() => onOpenChange(false)}>Close</Button>
+				<Button
+					variant="outline"
+					onclick={() => {
+						error = null;
+						progress = null;
+					}}
+				>
+					Try Again
+				</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

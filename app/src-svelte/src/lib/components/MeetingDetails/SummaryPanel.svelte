@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { Loader2 } from '@lucide/svelte';
+	import Loader2Icon from '@lucide/svelte/icons/loader-2';
 
 	import type { Summary } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
 	import type { SummaryStatus } from '$lib/hooks/use-summary-generation.svelte';
 	import type { Template } from '$lib/hooks/use-templates.svelte';
 	import { Analytics } from '$lib/analytics';
+	import { Button } from '$lib/components/ui/button';
 	import EmptyStateSummary from '$lib/components/EmptyStateSummary.svelte';
 	import SummaryView from '$lib/components/SummaryView.svelte';
 	import SummaryGeneratorButtonGroup from './SummaryGeneratorButtonGroup.svelte';
@@ -119,7 +120,7 @@
 			</div>
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center">
-					<Loader2 class="mx-auto mb-4 size-12 animate-spin text-accent" />
+					<Loader2Icon class="mx-auto mb-4 size-12 animate-spin text-accent" />
 					<p class="text-muted-foreground">Generating AI Summary...</p>
 				</div>
 			</div>
@@ -162,16 +163,17 @@
 				/>
 				{#if summaryError}
 					<div class="mt-4">
-						<button
-							type="button"
-							class="text-sm text-accent underline"
+						<Button
+							variant="link"
+							size="sm"
+							class="h-auto p-0 text-accent"
 							onclick={() => {
 								Analytics.trackButtonClick('regenerate_summary', 'meeting_details');
 								void onRegenerateSummary();
 							}}
 						>
 							Regenerate summary
-						</button>
+						</Button>
 					</div>
 				{/if}
 			</div>

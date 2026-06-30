@@ -1,9 +1,14 @@
 <script lang="ts">
-	import { Check, Copy, Globe } from '@lucide/svelte';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import CopyIcon from '@lucide/svelte/icons/copy';
+	import GlobeIcon from '@lucide/svelte/icons/globe';
+	import { tick } from 'svelte';
 
 	import type { TranscriptSegmentData } from '$lib/types';
-	import Button, { buttonVariants } from '$lib/ui/button.svelte';
-	import Popover from '$lib/ui/popover.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Command from '$lib/components/ui/command';
+	import * as Popover from '$lib/components/ui/popover';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import VirtualizedTranscriptView from '$lib/components/VirtualizedTranscriptView.svelte';
 	import { LANGUAGES } from '$lib/constants/languages';
 	import { config } from '$lib/stores/config.svelte';
@@ -36,19 +41,12 @@
 	// /settings: it reads/writes config.selectedLanguage, which persists to the DB
 	// and syncs to the Rust transcription engine via set_language_preference.
 	let langOpen = $state(false);
-	let langQuery = $state('');
-	const filteredLanguages = $derived.by(() => {
-		const q = langQuery.trim().toLowerCase();
-		if (!q) return LANGUAGES;
-		return LANGUAGES.filter(
-			(l) => l.name.toLowerCase().includes(q) || l.code.toLowerCase().includes(q)
-		);
-	});
+	let langTriggerRef = $state<HTMLButtonElement>(null!);
 
 	function selectLanguage(code: string): void {
 		config.setSelectedLanguage(code);
 		langOpen = false;
-		langQuery = '';
+		void tick().then(() => langTriggerRef?.focus());
 	}
 </script>
 
@@ -62,65 +60,66 @@
 	>
 		<div class="flex items-center justify-end gap-1">
 			{#if transcriptStore.transcripts.length > 0}
-				<Button
-					variant="ghost"
-					size="sm"
-					class="text-muted-foreground hover:text-foreground"
-					onclick={transcriptStore.copyTranscript}
-					aria-label="Copy transcript"
-					tooltip="Copy Transcript"
-				>
-					<Copy />
-					<span class="hidden md:inline">Copy</span>
-				</Button>
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="ghost"
+									size="sm"
+									class="text-muted-foreground hover:text-foreground"
+									onclick={transcriptStore.copyTranscript}
+									aria-label="Copy transcript"
+								>
+									<CopyIcon data-icon="inline-start" />
+									<span class="hidden md:inline">Copy</span>
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content>Copy Transcript</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
 			{/if}
 			{#if config.transcriptModelConfig.provider === 'localWhisper'}
-				<Popover bind:open={langOpen} placement="bottom-end" class="w-64 p-0">
-					{#snippet trigger()}
-						<span
-							class={cn(
-								buttonVariants({ variant: 'ghost', size: 'sm' }),
-								'text-muted-foreground hover:text-foreground'
-							)}
-						>
-							<Globe />
-							<span class="hidden md:inline">Language</span>
-							<span class="sr-only">Choose transcription language</span>
-						</span>
-					{/snippet}
-					{#snippet children()}
-						<div class="flex max-h-80 flex-col">
-							<div class="border-b border-border p-2">
-								<input
-									bind:value={langQuery}
-									placeholder="Search language"
-									aria-label="Search language"
-									class="w-full rounded-md bg-secondary px-2 py-1.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-								/>
-							</div>
-							<div class="overflow-y-auto p-1">
-								{#each filteredLanguages as lang (lang.code)}
-									<button
-										type="button"
-										onclick={() => selectLanguage(lang.code)}
-										class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-secondary"
-									>
-										<span class={lang.code === config.selectedLanguage ? 'font-medium' : ''}>
-											{lang.name}
-										</span>
-										{#if lang.code === config.selectedLanguage}
-											<Check class="size-4 shrink-0 text-accent" />
-										{/if}
-									</button>
-								{:else}
-									<div class="px-2 py-3 text-center text-sm text-muted-foreground">
-										No languages match.
-									</div>
-								{/each}
-							</div>
-						</div>
-					{/snippet}
-				</Popover>
+				<Popover.Root bind:open={langOpen}>
+					<Popover.Trigger bind:ref={langTriggerRef}>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="ghost"
+								size="sm"
+								class="text-muted-foreground hover:text-foreground"
+								role="combobox"
+								aria-expanded={langOpen}
+								aria-label="Choose transcription language"
+							>
+								<GlobeIcon data-icon="inline-start" />
+								<span class="hidden md:inline">Language</span>
+							</Button>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content align="end" class="w-64 p-0">
+						<Command.Root>
+							<Command.Input placeholder="Search language" />
+							<Command.List>
+								<Command.Empty>No languages match.</Command.Empty>
+								<Command.Group value="languages">
+									{#each LANGUAGES as lang (lang.code)}
+										{@const isSelected = lang.code === config.selectedLanguage}
+										<Command.Item
+											value={`${lang.name} ${lang.code}`}
+											onSelect={() => selectLanguage(lang.code)}
+										>
+											<CheckIcon class={cn('text-accent', !isSelected && 'text-transparent')} />
+											<span class={cn(isSelected && 'font-medium')}>{lang.name}</span>
+										</Command.Item>
+									{/each}
+								</Command.Group>
+							</Command.List>
+						</Command.Root>
+					</Popover.Content>
+				</Popover.Root>
 			{/if}
 		</div>
 	</div>

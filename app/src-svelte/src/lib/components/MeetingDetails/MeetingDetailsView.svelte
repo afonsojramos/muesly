@@ -3,7 +3,9 @@
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { Download, PanelRightClose, PanelRightOpen } from '@lucide/svelte';
+	import DownloadIcon from '@lucide/svelte/icons/download';
+	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
+	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
@@ -20,7 +22,9 @@
 	import { useCopyOperations } from '$lib/hooks/use-copy-operations.svelte';
 	import { useMeetingOperations } from '$lib/hooks/use-meeting-operations.svelte';
 	import { useSummaryGeneration } from '$lib/hooks/use-summary-generation.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import SidePanel from './SidePanel.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
 
@@ -310,8 +314,8 @@
 			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-7">
 				<div class="flex items-start gap-2">
 					{#if isEditingTitle}
-						<input
-							bind:this={titleInputEl}
+						<Input
+							bind:ref={titleInputEl}
 							type="text"
 							value={meetingData.meetingTitle}
 							oninput={(e) => {
@@ -323,7 +327,7 @@
 								if (e.key === 'Enter' || e.key === 'Escape') e.currentTarget.blur();
 							}}
 							placeholder="Untitled meeting"
-							class="min-w-0 flex-1 border-none bg-transparent font-display text-3xl font-medium text-foreground outline-none placeholder:text-muted-foreground/50"
+							class="h-auto min-w-0 flex-1 border-none bg-transparent p-0 font-display text-3xl font-medium shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-muted-foreground/50"
 						/>
 					{:else}
 						<button
@@ -339,36 +343,54 @@
 							{/if}
 						</button>
 					{/if}
-					<Tooltip label="Export as Markdown">
-						{#snippet trigger()}
-							<button
-								onclick={handleExport}
-								class="mt-1.5 flex-shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-								aria-label="Export note as Markdown"
-							>
-								<Download class="size-4" />
-							</button>
-						{/snippet}
-					</Tooltip>
-					<Tooltip
-						label={sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
-						shortcut="⌘T"
-					>
-						{#snippet trigger()}
-							<button
-								onclick={() => sidePanelState.toggle()}
-								class="mt-1.5 flex-shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-								aria-label={sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
-								aria-pressed={sidePanelState.open}
-							>
-								{#if sidePanelState.open}
-									<PanelRightClose class="size-4" />
-								{:else}
-									<PanelRightOpen class="size-4" />
-								{/if}
-							</button>
-						{/snippet}
-					</Tooltip>
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										onclick={handleExport}
+										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
+										aria-label="Export note as Markdown"
+									>
+										<DownloadIcon />
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>Export as Markdown</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										onclick={() => sidePanelState.toggle()}
+										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
+										aria-label={sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
+										aria-pressed={sidePanelState.open}
+									>
+										{#if sidePanelState.open}
+											<PanelRightCloseIcon />
+										{:else}
+											<PanelRightOpenIcon />
+										{/if}
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>
+								<span class="flex items-center">
+									{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
+									<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
+								</span>
+							</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
 				</div>
 				{#if !isNaN(createdDate.getTime())}
 					<p class="mt-1 text-sm text-muted-foreground">

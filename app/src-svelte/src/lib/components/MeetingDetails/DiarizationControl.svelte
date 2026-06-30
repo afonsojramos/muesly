@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { Users } from '@lucide/svelte';
+	import UsersIcon from '@lucide/svelte/icons/users';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onMount } from 'svelte';
 
 	import { commands } from '$lib/bindings';
 	import { toast } from '$lib/toast';
-	import Button from '$lib/ui/button.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	interface Props {
 		meetingId: string;
@@ -78,30 +79,48 @@
 
 {#if ready !== null}
 	{#if ready}
-		<Button
-			variant="outline"
-			size="sm"
-			class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
-			disabled={diarizing}
-			aria-label="Identify speakers"
-			tooltip="Identify who said what in this recording"
-			onclick={identifySpeakers}
-		>
-			<Users class="@[28rem]:mr-2" />
-			<span class="hidden @[22rem]:inline">{diarizing ? 'Identifying…' : 'Speakers'}</span>
-		</Button>
+		<Tooltip.Provider delayDuration={300}>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							size="sm"
+							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
+							disabled={diarizing}
+							aria-label="Identify speakers"
+							onclick={identifySpeakers}
+						>
+							<UsersIcon data-icon="inline-start" />
+							<span class="hidden @[22rem]:inline">{diarizing ? 'Identifying…' : 'Speakers'}</span>
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>Identify who said what in this recording</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
 	{:else}
-		<Button
-			variant="outline"
-			size="sm"
-			class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
-			disabled={downloading}
-			aria-label="Download speaker models"
-			tooltip="Download the speaker-identification models (~35 MB)"
-			onclick={downloadModels}
-		>
-			<Users class="@[28rem]:mr-2" />
-			<span class="hidden @[22rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span>
-		</Button>
+		<Tooltip.Provider delayDuration={300}>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="outline"
+							size="sm"
+							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
+							disabled={downloading}
+							aria-label="Download speaker models"
+							onclick={downloadModels}
+						>
+							<UsersIcon data-icon="inline-start" />
+							<span class="hidden @[22rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span>
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>Download the speaker-identification models (~35 MB)</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
 	{/if}
 {/if}
