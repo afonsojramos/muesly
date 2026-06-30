@@ -20,7 +20,7 @@ impl Default for AnalyticsConfig {
     fn default() -> Self {
         Self {
             api_key: String::new(),
-            host: Some("https://us.i.posthog.com".to_string()),
+            host: Some("https://eu.i.posthog.com".to_string()),
             enabled: false,
         }
     }
@@ -158,7 +158,14 @@ pub struct AnalyticsClient {
 impl AnalyticsClient {
     pub async fn new(config: AnalyticsConfig) -> Self {
         let client = if config.enabled && !config.api_key.is_empty() {
-            Some(Arc::new(posthog_rs::client(config.api_key.as_str()).await))
+            // Pass the configured host so EU / self-hosted projects reach the
+            // correct ingestion endpoint. Without this the client defaults to the
+            // US endpoint and silently drops every event for a non-US project.
+            let client = match config.host.as_deref() {
+                Some(host) => posthog_rs::client((config.api_key.as_str(), host)).await,
+                None => posthog_rs::client(config.api_key.as_str()).await,
+            };
+            Some(Arc::new(client))
         } else {
             None
         };

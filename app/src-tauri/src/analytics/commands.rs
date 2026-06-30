@@ -20,7 +20,7 @@ pub async fn init_analytics() -> Result<(), String> {
 
     let config = AnalyticsConfig {
         api_key: api_key.unwrap_or_default().to_string(),
-        host: Some("https://us.i.posthog.com".to_string()),
+        host: Some("https://eu.i.posthog.com".to_string()),
         enabled: api_key.is_some(),
     };
 
