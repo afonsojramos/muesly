@@ -6,7 +6,7 @@ authors = ["afonsojramos"]
 license = "MIT"
 repository = "https://github.com/afonsojramos/muesly"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.88"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -160,9 +160,11 @@ tempfile = "3.3.0"
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", rev = "a1216c3d0256112702b4c1967101a55488088965" }
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
-# A platform backend feature is REQUIRED in keyring v3; without one it silently
-# uses an in-memory mock that doesn't persist (set succeeds, get finds nothing).
-keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+# keyring v4's default `v1` feature auto-selects a PERSISTENT native backend per
+# platform: macOS Keychain, Windows Credential Manager, and on Linux the Secret
+# Service via zbus (pure Rust, no libdbus system dependency). All survive reboot,
+# so Linux gets the same experience as macOS. (v4 requires Rust 1.88+.)
+keyring = "4"
 
 # Common Tauri configuration
 tauri = { version = "2.6.2", features = [ "macos-private-api", "protocol-asset", "tray-icon"] }
