@@ -160,7 +160,9 @@ tempfile = "3.3.0"
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", rev = "a1216c3d0256112702b4c1967101a55488088965" }
 
 sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "chrono"] }
-keyring = "3"
+# A platform backend feature is REQUIRED in keyring v3; without one it silently
+# uses an in-memory mock that doesn't persist (set succeeds, get finds nothing).
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 
 # Common Tauri configuration
 tauri = { version = "2.6.2", features = [ "macos-private-api", "protocol-asset", "tray-icon"] }

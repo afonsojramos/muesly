@@ -638,6 +638,20 @@ pub async fn diagnose(account: &CalendarAccount) -> String {
             return lines.join("\n");
         }
     };
+    // Keychain self-test: a real backend round-trips a throwaway value; a
+    // missing/mock backend will fail to read back what it just wrote.
+    let store = crate::keychain::keyring_store();
+    let selftest = match store.set("google-oauth-selftest", "ok") {
+        Ok(()) => match store.get("google-oauth-selftest") {
+            Ok(Some(v)) if v == "ok" => "round-trips",
+            Ok(_) => "set ok but read back nothing (no real keychain backend)",
+            Err(_) => "read error",
+        },
+        Err(_) => "write error",
+    };
+    let _ = store.delete("google-oauth-selftest");
+    lines.push(format!("keychain self-test: {selftest}"));
+
     if get_refresh(&account.id).is_none() {
         lines.push("keychain refresh token: MISSING (reconnect needed)".to_string());
         return lines.join("\n");
