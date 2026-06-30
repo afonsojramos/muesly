@@ -13,13 +13,16 @@
 	import type { OllamaModel } from '$lib/stores/config.svelte';
 	import { configService, type ModelConfig } from '$lib/services/config';
 	import { ollamaDownload } from '$lib/stores/ollama-download.svelte';
-	import Alert from '$lib/ui/alert.svelte';
-	import Button from '$lib/ui/button.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
+	import { Progress } from '$lib/components/ui/progress';
+	import { ScrollArea } from '$lib/components/ui/scroll-area';
+	import { Separator } from '$lib/components/ui/separator';
+	import * as Select from '$lib/components/ui/select';
 	import Combobox from '$lib/ui/combobox.svelte';
-	import Input from '$lib/ui/input.svelte';
-	import Label from '$lib/ui/label.svelte';
-	import ScrollArea from '$lib/ui/scroll-area.svelte';
-	import Select from '$lib/ui/select.svelte';
+	import AccentButton from '$lib/ui/button.svelte';
 	import BuiltInModelManager from './BuiltInModelManager.svelte';
 	import { toast } from '$lib/toast';
 	import { cn, isOllamaNotInstalledError } from '$lib/utils';
@@ -87,6 +90,10 @@
 	};
 
 	const cloudProvider = $derived(CLOUD_PROVIDERS[modelConfig.provider]);
+
+	const providerLabel = $derived(
+		providerItems.find((item) => item.value === modelConfig.provider)?.label ?? 'Select provider'
+	);
 
 	const RECOMMENDED_MODEL = 'gemma3:1b';
 
@@ -461,16 +468,24 @@
 		<h3 class="text-lg font-semibold">Model Settings</h3>
 	</div>
 
-	<div class="space-y-4">
-		<div>
-			<Label class="mb-1 block">Summarization Model</Label>
+	<div class="flex flex-col gap-4">
+		<div class="flex flex-col gap-1">
+			<Label>Summarization Model</Label>
 			<div class="flex gap-2">
-				<Select
-					items={providerItems}
-					value={[modelConfig.provider]}
-					placeholder="Select provider"
-					onValueChange={handleProviderChange}
-				/>
+				<Select.Root
+					type="single"
+					value={modelConfig.provider}
+					onValueChange={(value) => handleProviderChange([value])}
+				>
+					<Select.Trigger class="w-full">{providerLabel}</Select.Trigger>
+					<Select.Content>
+						<Select.Group>
+							{#each providerItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Group>
+					</Select.Content>
+				</Select.Root>
 
 				{#if modelConfig.provider === 'ollama'}
 					<Combobox
@@ -485,31 +500,32 @@
 		</div>
 
 		{#if modelConfig.provider === 'custom-openai'}
-			<div class="space-y-4 border-t border-border pt-4">
-				<div>
-					<Label for="custom-endpoint" class="mb-1 block">Endpoint URL *</Label>
+			<div class="flex flex-col gap-4">
+				<Separator />
+				<div class="flex flex-col gap-1">
+					<Label for="custom-endpoint">Endpoint URL *</Label>
 					<Input
 						id="custom-endpoint"
 						value={customOpenAIEndpoint}
 						oninput={(e) => (customOpenAIEndpoint = e.currentTarget.value)}
 						placeholder="http://localhost:8000/v1"
 					/>
-					<p class="mt-1 text-xs text-muted-foreground">Base URL of the OpenAI-compatible API</p>
+					<p class="text-xs text-muted-foreground">Base URL of the OpenAI-compatible API</p>
 				</div>
 
-				<div>
-					<Label for="custom-model" class="mb-1 block">Model Name *</Label>
+				<div class="flex flex-col gap-1">
+					<Label for="custom-model">Model Name *</Label>
 					<Input
 						id="custom-model"
 						value={customOpenAIModel}
 						oninput={(e) => (customOpenAIModel = e.currentTarget.value)}
 						placeholder="gpt-4, llama-3-70b, etc."
 					/>
-					<p class="mt-1 text-xs text-muted-foreground">Model identifier to use for requests</p>
+					<p class="text-xs text-muted-foreground">Model identifier to use for requests</p>
 				</div>
 
-				<div>
-					<Label for="custom-api-key" class="mb-1 block">API Key (optional)</Label>
+				<div class="flex flex-col gap-1">
+					<Label for="custom-api-key">API Key (optional)</Label>
 					<Input
 						id="custom-api-key"
 						type="password"
@@ -534,9 +550,9 @@
 					</button>
 
 					{#if isCustomOpenAIAdvancedOpen}
-						<div class="mt-2 space-y-3 border-l-2 border-border pl-2">
-							<div>
-								<Label for="custom-max-tokens" class="mb-1 block">Max Tokens</Label>
+						<div class="mt-2 flex flex-col gap-3 border-l-2 border-border pl-2">
+							<div class="flex flex-col gap-1">
+								<Label for="custom-max-tokens">Max Tokens</Label>
 								<Input
 									id="custom-max-tokens"
 									type="number"
@@ -545,8 +561,8 @@
 									placeholder="e.g., 4096"
 								/>
 							</div>
-							<div>
-								<Label for="custom-temperature" class="mb-1 block">Temperature (0.0-2.0)</Label>
+							<div class="flex flex-col gap-1">
+								<Label for="custom-temperature">Temperature (0.0-2.0)</Label>
 								<Input
 									id="custom-temperature"
 									type="number"
@@ -558,8 +574,8 @@
 									placeholder="e.g., 0.7"
 								/>
 							</div>
-							<div>
-								<Label for="custom-top-p" class="mb-1 block">Top P (0.0-1.0)</Label>
+							<div class="flex flex-col gap-1">
+								<Label for="custom-top-p">Top P (0.0-1.0)</Label>
 								<Input
 									id="custom-top-p"
 									type="number"
@@ -583,24 +599,27 @@
 					onclick={testCustomOpenAIConnection}
 				>
 					{#if isTestingConnection}
-						<RefreshCw class="size-4 animate-spin" /> Testing Connection…
+						<RefreshCw class="animate-spin" data-icon="inline-start" /> Testing Connection…
 					{:else}
-						<CheckCircle2 class="size-4" /> Test Connection
+						<CheckCircle2 data-icon="inline-start" /> Test Connection
 					{/if}
 				</Button>
 			</div>
 		{/if}
 
 		{#if cloudProvider}
-			<div class="space-y-4 border-t border-border pt-4">
-				<Alert variant="warning">
-					Heads up: with {cloudProvider.name}, your meeting transcript and notes are sent to
-					{cloudProvider.name}'s servers to generate the summary — this leaves your device. The
-					Built-in AI and Ollama options keep everything offline.
-				</Alert>
+			<div class="flex flex-col gap-4">
+				<Separator />
+				<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
+					<Alert.Description class="text-warning">
+						Heads up: with {cloudProvider.name}, your meeting transcript and notes are sent to
+						{cloudProvider.name}'s servers to generate the summary — this leaves your device. The
+						Built-in AI and Ollama options keep everything offline.
+					</Alert.Description>
+				</Alert.Root>
 
-				<div>
-					<Label for="cloud-api-key" class="mb-1 block">API Key *</Label>
+				<div class="flex flex-col gap-1">
+					<Label for="cloud-api-key">API Key *</Label>
 					<Input
 						id="cloud-api-key"
 						type="password"
@@ -608,7 +627,7 @@
 						oninput={(e) => setModelConfig({ ...modelConfig, apiKey: e.currentTarget.value })}
 						placeholder="Paste your API key"
 					/>
-					<p class="mt-1 text-xs text-muted-foreground">
+					<p class="text-xs text-muted-foreground">
 						Stored locally on this device. Get a key at
 						<button
 							type="button"
@@ -620,15 +639,15 @@
 					</p>
 				</div>
 
-				<div>
-					<Label for="cloud-model" class="mb-1 block">Model *</Label>
+				<div class="flex flex-col gap-1">
+					<Label for="cloud-model">Model *</Label>
 					<Input
 						id="cloud-model"
 						value={modelConfig.model}
 						oninput={(e) => setModelConfig({ ...modelConfig, model: e.currentTarget.value })}
 						placeholder={cloudProvider.modelPlaceholder}
 					/>
-					<p class="mt-1 text-xs text-muted-foreground">
+					<p class="text-xs text-muted-foreground">
 						The model identifier to request from {cloudProvider.name}.
 					</p>
 				</div>
@@ -661,11 +680,12 @@
 								value={ollamaEndpoint}
 								oninput={(e) => handleEndpointInput(e.currentTarget.value)}
 								placeholder="http://localhost:11434"
-								class={cn('pr-10', endpointValidationState === 'invalid' && 'border-destructive')}
+								aria-invalid={endpointValidationState === 'invalid'}
+								class="pr-10"
 							/>
 							{#if endpointValidationState === 'valid'}
 								<CheckCircle2
-									class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-green-600"
+									class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-success"
 								/>
 							{:else if endpointValidationState === 'invalid'}
 								<XCircle class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-destructive" />
@@ -679,17 +699,19 @@
 							onclick={() => fetchOllamaModels()}
 						>
 							{#if isLoadingOllama}
-								<RefreshCw class="size-4 animate-spin" /> Fetching…
+								<RefreshCw class="animate-spin" data-icon="inline-start" /> Fetching…
 							{:else}
-								<RefreshCw class="size-4" /> Fetch Models
+								<RefreshCw data-icon="inline-start" /> Fetch Models
 							{/if}
 						</Button>
 					</div>
 					{#if ollamaEndpointChanged && !error}
-						<Alert variant="warning" class="mt-3">
-							Endpoint changed. Please click "Fetch Models" to load models from the new endpoint
-							before saving.
-						</Alert>
+						<Alert.Root class="mt-3 border-warning/50 bg-warning/10 text-warning">
+							<Alert.Description class="text-warning">
+								Endpoint changed. Please click "Fetch Models" to load models from the new endpoint
+								before saving.
+							</Alert.Description>
+						</Alert.Root>
 					{/if}
 				{/if}
 			</div>
@@ -723,14 +745,16 @@
 						Loading models...
 					</div>
 				{:else if models.length === 0}
-					<div class="space-y-3">
+					<div class="flex flex-col gap-3">
 						{#if ollamaNotInstalled}
-							<div class="space-y-4">
-								<Alert variant="warning">
-									Ollama is not installed or not running. Please download and install Ollama to use
-									local models.
-								</Alert>
-								<Button
+							<div class="flex flex-col gap-4">
+								<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
+									<Alert.Description class="text-warning">
+										Ollama is not installed or not running. Please download and install Ollama to use
+										local models.
+									</Alert.Description>
+								</Alert.Root>
+								<AccentButton
 									variant="accent"
 									size="sm"
 									class="w-full"
@@ -738,22 +762,24 @@
 										invoke('open_external_url', { url: 'https://ollama.com/download' })}
 								>
 									<ExternalLink class="size-4" /> Download Ollama
-								</Button>
+								</AccentButton>
 								<div class="text-center text-sm text-muted-foreground">
 									After installing Ollama, restart this application and click "Fetch Models" to
 									continue.
 								</div>
 							</div>
 						{:else}
-							<Alert class="mb-4">
-								{ollamaEndpointChanged
-									? 'Endpoint changed. Click "Fetch Models" to load models from the new endpoint.'
-									: 'No models found. Download a recommended model or click "Fetch Models" to load available Ollama models.'}
-							</Alert>
+							<Alert.Root class="mb-4">
+								<Alert.Description>
+									{ollamaEndpointChanged
+										? 'Endpoint changed. Click "Fetch Models" to load models from the new endpoint.'
+										: 'No models found. Download a recommended model or click "Fetch Models" to load available Ollama models.'}
+								</Alert.Description>
+							</Alert.Root>
 							{#if !ollamaEndpointChanged}
 								{@const downloading = ollamaDownload.isDownloading(RECOMMENDED_MODEL)}
 								{@const progress = ollamaDownload.getProgress(RECOMMENDED_MODEL)}
-								<div class="space-y-3">
+								<div class="flex flex-col gap-3">
 									<Button
 										variant="outline"
 										size="sm"
@@ -762,9 +788,9 @@
 										onclick={downloadRecommendedModel}
 									>
 										{#if downloading}
-											<RefreshCw class="size-4 animate-spin" /> Downloading {RECOMMENDED_MODEL}…
+											<RefreshCw class="animate-spin" data-icon="inline-start" /> Downloading {RECOMMENDED_MODEL}…
 										{:else}
-											<Download class="size-4" /> Download {RECOMMENDED_MODEL} (Recommended, ~800MB)
+											<Download data-icon="inline-start" /> Download {RECOMMENDED_MODEL} (Recommended, ~800MB)
 										{/if}
 									</Button>
 
@@ -774,12 +800,7 @@
 												<span class="text-sm font-medium">Downloading {RECOMMENDED_MODEL}</span>
 												<span class="text-sm font-semibold">{Math.round(progress)}%</span>
 											</div>
-											<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-												<div
-													class="h-full rounded-full bg-primary transition-all duration-300"
-													style={`width: ${progress}%`}
-												></div>
-											</div>
+											<Progress value={progress} class="h-2" />
 										</div>
 									{/if}
 								</div>
@@ -789,7 +810,11 @@
 				{:else if !ollamaEndpointChanged}
 					<ScrollArea class="max-h-[calc(100vh-450px)] pr-4">
 						{#if filteredModels.length === 0}
-							<Alert>No models found matching "{searchQuery}". Try a different search term.</Alert>
+							<Alert.Root>
+								<Alert.Description>
+									No models found matching "{searchQuery}". Try a different search term.
+								</Alert.Description>
+							</Alert.Root>
 						{:else}
 							<div class="grid gap-4">
 								{#each filteredModels as model (model.id)}
@@ -819,17 +844,13 @@
 										</div>
 
 										{#if modelIsDownloading && progress !== undefined}
-											<div class="mt-3 border-t border-border pt-3">
+											<div class="mt-3">
+												<Separator class="mb-3" />
 												<div class="mb-2 flex items-center justify-between">
 													<span class="text-sm font-medium">Downloading...</span>
 													<span class="text-sm font-semibold">{Math.round(progress)}%</span>
 												</div>
-												<div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-													<div
-														class="h-full rounded-full bg-primary transition-all duration-300"
-														style={`width: ${progress}%`}
-													></div>
-												</div>
+												<Progress value={progress} class="h-2" />
 											</div>
 										{/if}
 									</div>
@@ -852,6 +873,6 @@
 	</div>
 
 	<div class="mt-6 flex justify-end">
-		<Button variant="accent" disabled={isDoneDisabled} onclick={handleSave}>Save</Button>
+		<AccentButton variant="accent" disabled={isDoneDisabled} onclick={handleSave}>Save</AccentButton>
 	</div>
 </div>
