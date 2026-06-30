@@ -11,17 +11,23 @@ static ANALYTICS_CLIENT: std::sync::Mutex<Option<Arc<AnalyticsClient>>> = std::s
 #[specta::specta]
 pub async fn init_analytics() -> Result<(), String> {
     // The PostHog ingest key is injected at build time via POSTHOG_API_KEY and is
-    // intentionally NOT committed to source. When unset (e.g. local dev builds),
-    // analytics stays disabled instead of shipping a hardcoded credential.
-    let api_key = option_env!("POSTHOG_API_KEY");
+    // intentionally NOT committed to source. Release binaries bake it in with
+    // option_env!; for local dev we fall back to the runtime env var so a key in
+    // `app/.env` (loaded by dotenvy at startup) enables analytics. When unset in
+    // both, analytics stays disabled instead of shipping a hardcoded credential.
+    let api_key: Option<String> = option_env!("POSTHOG_API_KEY")
+        .map(str::to_string)
+        .or_else(|| std::env::var("POSTHOG_API_KEY").ok())
+        .filter(|key| !key.trim().is_empty());
     if api_key.is_none() {
-        log::info!("POSTHOG_API_KEY not set at build time; analytics disabled");
+        log::info!("POSTHOG_API_KEY not set (build-time or env); analytics disabled");
     }
 
+    let enabled = api_key.is_some();
     let config = AnalyticsConfig {
-        api_key: api_key.unwrap_or_default().to_string(),
+        api_key: api_key.unwrap_or_default(),
         host: Some("https://eu.i.posthog.com".to_string()),
-        enabled: api_key.is_some(),
+        enabled,
     };
 
     let client = Arc::new(AnalyticsClient::new(config).await);
