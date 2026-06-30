@@ -193,6 +193,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Analytics ingest key, baked into the binary at compile time (option_env!).
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           # createUpdaterArtifacts is enabled in tauri.conf.json, so the signing key
           # must be present for the build to succeed. The resulting updater tarball
           # and .sig are intentionally NOT uploaded (Linux is download-only).

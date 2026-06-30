@@ -568,6 +568,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Analytics ingest key, baked into the binary at compile time (option_env!).
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -592,6 +594,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Analytics ingest key, baked into the binary at compile time (option_env!).
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
           # Updater signing still runs (createUpdaterArtifacts is on); OS code
           # signing does not. No APPLE_* vars: macOS falls back to ad-hoc signing.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
