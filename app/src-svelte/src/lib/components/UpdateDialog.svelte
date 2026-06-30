@@ -3,8 +3,10 @@
 	import { relaunch } from '@tauri-apps/plugin-process';
 	import { AlertCircle, Download, Loader2 } from '@lucide/svelte';
 
-	import Dialog from '$lib/ui/dialog.svelte';
-	import Button from '$lib/ui/button.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Button } from '$lib/components/ui/button';
+	import AccentButton from '$lib/ui/button.svelte';
+	import { Progress } from '$lib/components/ui/progress';
 	import { toast } from '$lib/toast';
 	import type { UpdateInfo, UpdateProgress } from '$lib/services/update';
 
@@ -146,103 +148,97 @@
 </script>
 
 {#if updateInfo?.available}
-	<Dialog
-		{open}
-		onOpenChange={handleOpenChange}
-		class="sm:max-w-[500px]"
-		showClose={!isDownloading}
-	>
-		<div class="flex items-center gap-2 text-lg font-semibold">
-			{#if isDownloading}
-				<Loader2 class="size-5 animate-spin text-accent" />
-				Downloading Update
-			{:else if error}
-				<AlertCircle class="size-5 text-destructive" />
-				Update Error
-			{:else}
-				<Download class="size-5 text-accent" />
-				Update Available
-			{/if}
-		</div>
-		<p class="mt-1 text-sm text-muted-foreground">
-			{#if isDownloading}
-				Downloading the latest version...
-			{:else if error}
-				An error occurred while updating
-			{:else}
-				A new version ({updateInfo.version}) is available
-			{/if}
-		</p>
+	<Dialog.Root {open} onOpenChange={handleOpenChange}>
+		<Dialog.Content class="sm:max-w-[500px]" showCloseButton={!isDownloading}>
+			<Dialog.Header>
+				<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
+					{#if isDownloading}
+						<Loader2 class="size-5 animate-spin text-accent" />
+						Downloading Update
+					{:else if error}
+						<AlertCircle class="size-5 text-destructive" />
+						Update Error
+					{:else}
+						<Download class="size-5 text-accent" />
+						Update Available
+					{/if}
+				</Dialog.Title>
+				<Dialog.Description>
+					{#if isDownloading}
+						Downloading the latest version...
+					{:else if error}
+						An error occurred while updating
+					{:else}
+						A new version ({updateInfo.version}) is available
+					{/if}
+				</Dialog.Description>
+			</Dialog.Header>
 
-		<div class="space-y-4 py-4">
-			{#if !isDownloading && !error}
-				<div class="space-y-2">
-					<div class="flex justify-between text-sm">
-						<span class="text-muted-foreground">Current Version:</span>
-						<span class="font-medium">{updateInfo.currentVersion}</span>
-					</div>
-					<div class="flex justify-between text-sm">
-						<span class="text-muted-foreground">New Version:</span>
-						<span class="font-medium text-accent">{updateInfo.version}</span>
-					</div>
-					{#if updateInfo.date}
+			<div class="flex flex-col gap-4 py-4">
+				{#if !isDownloading && !error}
+					<div class="flex flex-col gap-2">
 						<div class="flex justify-between text-sm">
-							<span class="text-muted-foreground">Release Date:</span>
-							<span class="font-medium">{formatDate(updateInfo.date)}</span>
+							<span class="text-muted-foreground">Current Version:</span>
+							<span class="font-medium">{updateInfo.currentVersion}</span>
+						</div>
+						<div class="flex justify-between text-sm">
+							<span class="text-muted-foreground">New Version:</span>
+							<span class="font-medium text-accent">{updateInfo.version}</span>
+						</div>
+						{#if updateInfo.date}
+							<div class="flex justify-between text-sm">
+								<span class="text-muted-foreground">Release Date:</span>
+								<span class="font-medium">{formatDate(updateInfo.date)}</span>
+							</div>
+						{/if}
+					</div>
+
+					{#if updateInfo.body}
+						<div class="max-h-40 overflow-y-auto rounded-lg bg-secondary p-3">
+							<p class="whitespace-pre-wrap text-sm text-muted-foreground">
+								{updateInfo.body}
+							</p>
 						</div>
 					{/if}
-				</div>
+				{/if}
 
-				{#if updateInfo.body}
-					<div class="max-h-40 overflow-y-auto rounded-lg bg-secondary p-3">
-						<p class="whitespace-pre-wrap text-sm text-muted-foreground">
-							{updateInfo.body}
+				{#if isDownloading && progress}
+					<div class="flex flex-col gap-2">
+						<div>
+							<Progress value={Math.min(progress.percentage, 100)} />
+							<div class="mt-1 flex justify-between text-xs text-muted-foreground">
+								<span>{Math.round(progress.percentage)}% complete</span>
+								{#if progress.total > 0}
+									<span>
+										{formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
+									</span>
+								{/if}
+							</div>
+						</div>
+						<p class="text-center text-sm text-muted-foreground">
+							The app will restart automatically after installation
 						</p>
 					</div>
 				{/if}
-			{/if}
 
-			{#if isDownloading && progress}
-				<div class="space-y-2">
-					<div class="relative">
-						<div class="h-3 w-full rounded-full bg-secondary">
-							<div
-								class="h-3 rounded-full bg-accent transition-all duration-300 ease-out"
-								style={`width: ${Math.min(progress.percentage, 100)}%`}
-							></div>
-						</div>
-						<div class="mt-1 flex justify-between text-xs text-muted-foreground">
-							<span>{Math.round(progress.percentage)}% complete</span>
-							{#if progress.total > 0}
-								<span>
-									{formatBytes(progress.downloaded)} / {formatBytes(progress.total)}
-								</span>
-							{/if}
-						</div>
+				{#if error}
+					<div class="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+						<p class="text-sm text-destructive">{error}</p>
 					</div>
-					<p class="text-center text-sm text-muted-foreground">
-						The app will restart automatically after installation
-					</p>
-				</div>
-			{/if}
+				{/if}
+			</div>
 
-			{#if error}
-				<div class="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-					<p class="text-sm text-destructive">{error}</p>
-				</div>
-			{/if}
-		</div>
-
-		{#snippet footer()}
-			{#if !isDownloading && !error}
-				<Button variant="outline" onclick={() => handleOpenChange(false)}>Later</Button>
-				<Button variant="accent" onclick={handleDownloadAndInstall}>
-					<Download class="size-4" />
-					Download & Install
-				</Button>
-			{:else if error}
-				<Button variant="outline" onclick={() => handleOpenChange(false)}>Close</Button>
-			{/if}
-		{/snippet}
-	</Dialog>
+			<Dialog.Footer>
+				{#if !isDownloading && !error}
+					<Button variant="outline" onclick={() => handleOpenChange(false)}>Later</Button>
+					<AccentButton variant="accent" onclick={handleDownloadAndInstall}>
+						<Download data-icon="inline-start" />
+						Download & Install
+					</AccentButton>
+				{:else if error}
+					<Button variant="outline" onclick={() => handleOpenChange(false)}>Close</Button>
+				{/if}
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 {/if}

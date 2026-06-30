@@ -17,8 +17,11 @@
 
 	import { track } from '$lib/analytics-events';
 	import { getDeviceMetadata } from '$lib/utils/device-metadata';
-	import Label from '$lib/ui/label.svelte';
-	import Select from '$lib/ui/select.svelte';
+	import { cn } from '$lib/utils';
+	import { Button } from '$lib/components/ui/button';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import AudioBackendSelector from './AudioBackendSelector.svelte';
 
 	interface Props {
@@ -71,8 +74,17 @@
 		await fetchDevices();
 	}
 
-	function handleMicDeviceChange(value: string[]): void {
-		const deviceName = value[0] ?? 'default';
+	const micValue = $derived(selectedDevices.micDevice ?? 'default');
+	const systemValue = $derived(selectedDevices.systemDevice ?? 'default');
+	const micLabel = $derived(
+		micItems.find((i) => i.value === micValue)?.label ?? 'Select Microphone'
+	);
+	const systemLabel = $derived(
+		systemItems.find((i) => i.value === systemValue)?.label ?? 'Select System Audio'
+	);
+
+	function handleMicDeviceChange(value: string | undefined): void {
+		const deviceName = value ?? 'default';
 		onDeviceChange({
 			...selectedDevices,
 			micDevice: deviceName === 'default' ? null : deviceName
@@ -86,8 +98,8 @@
 		}).catch((err) => console.error('Failed to track microphone selection:', err));
 	}
 
-	function handleSystemDeviceChange(value: string[]): void {
-		const deviceName = value[0] ?? 'default';
+	function handleSystemDeviceChange(value: string | undefined): void {
+		const deviceName = value ?? 'default';
 		onDeviceChange({
 			...selectedDevices,
 			systemDevice: deviceName === 'default' ? null : deviceName
@@ -103,25 +115,25 @@
 </script>
 
 {#if loading}
-	<div class="space-y-4 p-4">
-		<div class="animate-pulse">
-			<div class="mb-4 h-4 w-1/3 rounded bg-secondary"></div>
-			<div class="mb-3 h-10 rounded bg-secondary"></div>
-			<div class="h-10 rounded bg-secondary"></div>
-		</div>
+	<div class="flex flex-col gap-4 p-4">
+		<Skeleton class="h-4 w-1/3" />
+		<Skeleton class="h-10 w-full" />
+		<Skeleton class="h-10 w-full" />
 	</div>
 {:else}
-	<div class="space-y-4">
+	<div class="flex flex-col gap-4">
 		<div class="flex items-center justify-between">
 			<h4 class="text-sm font-medium">Audio Devices</h4>
-			<button
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-8"
 				onclick={handleRefresh}
 				disabled={refreshing || disabled}
-				class="inline-flex size-8 items-center justify-center rounded-md text-sm font-medium transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-50"
 				aria-label="Refresh devices"
 			>
-				<RefreshCw class={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
-			</button>
+				<RefreshCw class={cn(refreshing && 'animate-spin')} />
+			</Button>
 		</div>
 
 		{#if error}
@@ -130,36 +142,52 @@
 			</div>
 		{/if}
 
-		<div class="space-y-3">
-			<div class="space-y-2">
+		<div class="flex flex-col gap-3">
+			<div class="flex flex-col gap-2">
 				<div class="flex items-center gap-2">
 					<Mic class="size-4 text-muted-foreground" />
 					<Label class="text-sm font-medium">Microphone</Label>
 				</div>
-				<Select
-					items={micItems}
-					value={[selectedDevices.micDevice ?? 'default']}
-					placeholder="Select Microphone"
+				<Select.Root
+					type="single"
+					value={micValue}
 					{disabled}
 					onValueChange={handleMicDeviceChange}
-				/>
+				>
+					<Select.Trigger class="w-full">{micLabel}</Select.Trigger>
+					<Select.Content>
+						<Select.Group>
+							{#each micItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Group>
+					</Select.Content>
+				</Select.Root>
 				{#if inputDevices.length === 0}
 					<p class="text-xs text-muted-foreground">No microphone devices found</p>
 				{/if}
 			</div>
 
-			<div class="space-y-2">
+			<div class="flex flex-col gap-2">
 				<div class="flex items-center gap-2">
 					<Speaker class="size-4 text-muted-foreground" />
 					<Label class="text-sm font-medium">System Audio</Label>
 				</div>
-				<Select
-					items={systemItems}
-					value={[selectedDevices.systemDevice ?? 'default']}
-					placeholder="Select System Audio"
+				<Select.Root
+					type="single"
+					value={systemValue}
 					{disabled}
 					onValueChange={handleSystemDeviceChange}
-				/>
+				>
+					<Select.Trigger class="w-full">{systemLabel}</Select.Trigger>
+					<Select.Content>
+						<Select.Group>
+							{#each systemItems as item (item.value)}
+								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+							{/each}
+						</Select.Group>
+					</Select.Content>
+				</Select.Root>
 				{#if outputDevices.length === 0}
 					<p class="text-xs text-muted-foreground">No system audio devices found</p>
 				{/if}
@@ -172,7 +200,7 @@
 			</div>
 		</div>
 
-		<div class="space-y-1 text-xs text-muted-foreground">
+		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
 			<p>• <strong>Microphone:</strong> Records your voice and ambient sound</p>
 			<p>• <strong>System Audio:</strong> Records computer audio (music, calls, etc.)</p>
 		</div>

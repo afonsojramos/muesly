@@ -1,11 +1,13 @@
 /**
  * Toast abstraction.
  *
- * Stores call into this module instead of importing a UI library directly.
- * The actual toaster (Ark UI Toast) is wired in the root layout once Phase 5
- * (UI primitives) is built. Until then, this falls back to console output so
- * stores can be developed and tested independently of the UI layer.
+ * Stores and components call into this module instead of importing a UI library
+ * directly. Internally it forwards to `svelte-sonner`'s `toast`, which the
+ * shadcn `<Sonner />` Toaster (mounted once in the app layout) renders. Keeping
+ * the indirection means call sites never depend on the toast UI implementation.
  */
+
+import { toast as sonner } from 'svelte-sonner';
 
 export interface ToastAction {
 	label: string;
@@ -24,34 +26,37 @@ export interface ToastImpl {
 	info?(message: string, options?: ToastOptions): void;
 }
 
-let impl: ToastImpl = {
-	success(message, options) {
-		console.log('[toast.success]', message, options ?? '');
-	},
-	error(message, options) {
-		console.error('[toast.error]', message, options ?? '');
-	},
-	info(message, options) {
-		console.info('[toast.info]', message, options ?? '');
-	}
-};
+/** Map our option shape onto sonner's ExternalToast options. */
+function toSonner(options?: ToastOptions) {
+	if (!options) return undefined;
+	return {
+		description: options.description,
+		duration: options.duration,
+		action: options.action
+			? { label: options.action.label, onClick: options.action.onClick }
+			: undefined
+	};
+}
 
 /**
- * Register the real toaster implementation. Called once from the root layout
- * after the Ark UI Toaster is mounted.
+ * Retained for backward compatibility. The toaster used to register its
+ * implementation here at mount time; svelte-sonner needs no registration, so
+ * this is now a no-op.
+ *
+ * @deprecated The toast implementation forwards to svelte-sonner directly.
  */
-export function setToastImpl(next: ToastImpl): void {
-	impl = next;
+export function setToastImpl(_next: ToastImpl): void {
+	// Intentionally empty: svelte-sonner is wired statically.
 }
 
 export const toast = {
 	success(message: string, options?: ToastOptions): void {
-		impl.success(message, options);
+		sonner.success(message, toSonner(options));
 	},
 	error(message: string, options?: ToastOptions): void {
-		impl.error(message, options);
+		sonner.error(message, toSonner(options));
 	},
 	info(message: string, options?: ToastOptions): void {
-		impl.info?.(message, options);
+		sonner.info(message, toSonner(options));
 	}
 };

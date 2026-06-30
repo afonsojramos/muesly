@@ -18,7 +18,7 @@
 		setUpdateDialogCallback,
 		showUpdateNotification
 	} from '$lib/components/update-notification';
-	import Toaster from '$lib/ui/toaster.svelte';
+	import { Toaster } from '$lib/components/ui/sonner';
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
 	import MainContent from '$lib/components/MainContent.svelte';
 	import DownloadProgressToast from '$lib/components/shared/DownloadProgressToast.svelte';
@@ -381,4 +381,4 @@
 	updateInfo={updateCheck.updateInfo}
 />
 
-<Toaster />
+<Toaster position="bottom-right" richColors />

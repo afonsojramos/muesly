@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import Button from '$lib/ui/button.svelte';
-	import Label from '$lib/ui/label.svelte';
-	import Switch from '$lib/ui/switch.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import { Label } from '$lib/components/ui/label';
+	import { Switch } from '$lib/components/ui/switch';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 
 	let isLoading = $state(false);
@@ -25,7 +25,7 @@
 </script>
 
 {#if supported}
-	<div class="space-y-4">
+	<div class="flex flex-col gap-4">
 		<div class="flex items-center justify-between">
 			<Label>Developer Console</Label>
 			<Switch
@@ -35,7 +35,7 @@
 					checked ? run('show_console', true) : run('hide_console', false)}
 			/>
 		</div>
-		<div class="flex space-x-2">
+		<div class="flex gap-2">
 			<Button variant="outline" size="sm" disabled={isLoading} onclick={() => run('toggle_console', !consoleVisible)}>
 				Toggle Console
 			</Button>

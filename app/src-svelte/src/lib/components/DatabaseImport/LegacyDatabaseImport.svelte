@@ -2,7 +2,8 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { CheckCircle2, Database, FolderOpen, Loader2, XCircle } from '@lucide/svelte';
 
-	import Dialog from '$lib/ui/dialog.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Button } from '$lib/components/ui/button';
 	import { toast } from '$lib/toast';
 	import HomebrewDatabaseDetector from './HomebrewDatabaseDetector.svelte';
 
@@ -111,102 +112,92 @@
 	}
 </script>
 
-<Dialog
-	open={isOpen}
-	onOpenChange={() => {}}
-	title="Welcome to muesly!"
-	description="Do you have data from a previous muesly installation?"
-	class="sm:max-w-[600px]"
-	showClose={false}
->
-	<div class="space-y-6 py-4">
-		<!-- Homebrew Database Auto-Detection -->
-		<HomebrewDatabaseDetector
-			onImportSuccess={handleHomebrewImportSuccess}
-			onDecline={handleHomebrewDecline}
-		/>
+<Dialog.Root open={isOpen} onOpenChange={() => {}}>
+	<Dialog.Content class="sm:max-w-[600px]" showCloseButton={false}>
+		<Dialog.Header>
+			<Dialog.Title>Welcome to muesly!</Dialog.Title>
+			<Dialog.Description>
+				Do you have data from a previous muesly installation?
+			</Dialog.Description>
+		</Dialog.Header>
 
-		<!-- Browse Section -->
-		<div class="space-y-3">
-			<p class="text-sm text-muted-foreground">
-				Select your previous muesly folder, backend directory, or database file:
-			</p>
+		<div class="flex flex-col gap-6 py-4">
+			<!-- Homebrew Database Auto-Detection -->
+			<HomebrewDatabaseDetector
+				onImportSuccess={handleHomebrewImportSuccess}
+				onDecline={handleHomebrewDecline}
+			/>
 
-			<button
-				onclick={handleBrowse}
-				disabled={isLoading}
-				class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				{#if importState === 'selecting' || importState === 'detecting'}
-					<Loader2 class="size-5 animate-spin" />
-					<span>{importState === 'selecting' ? 'Selecting...' : 'Detecting database...'}</span>
-				{:else}
-					<FolderOpen class="size-5" />
-					<span>Browse for Database</span>
-				{/if}
-			</button>
-		</div>
+			<!-- Browse Section -->
+			<div class="flex flex-col gap-3">
+				<p class="text-sm text-muted-foreground">
+					Select your previous muesly folder, backend directory, or database file:
+				</p>
 
-		<!-- Detection Result -->
-		{#if detectedPath}
-			<div class="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
-				<div class="flex items-start gap-2">
-					<CheckCircle2 class="mt-0.5 size-5 shrink-0 text-green-600" />
-					<div class="min-w-0 flex-1">
-						<p class="text-sm font-medium text-green-700">Database found!</p>
-						<p class="mt-1 break-all text-xs text-green-700/80">{detectedPath}</p>
+				<Button class="w-full py-3" onclick={handleBrowse} disabled={isLoading}>
+					{#if importState === 'selecting' || importState === 'detecting'}
+						<Loader2 data-icon="inline-start" class="animate-spin" />
+						<span>{importState === 'selecting' ? 'Selecting...' : 'Detecting database...'}</span>
+					{:else}
+						<FolderOpen data-icon="inline-start" />
+						<span>Browse for Database</span>
+					{/if}
+				</Button>
+			</div>
+
+			<!-- Detection Result -->
+			{#if detectedPath}
+				<div class="rounded-lg border border-success/30 bg-success/10 p-3">
+					<div class="flex items-start gap-2">
+						<CheckCircle2 class="mt-0.5 size-5 shrink-0 text-success" />
+						<div class="min-w-0 flex-1">
+							<p class="text-sm font-medium text-success">Database found!</p>
+							<p class="mt-1 break-all text-xs text-success/80">{detectedPath}</p>
+						</div>
 					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- Error Message -->
-		{#if importState === 'error' && errorMessage}
-			<div class="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
-				<div class="flex items-start gap-2">
-					<XCircle class="mt-0.5 size-5 shrink-0 text-destructive" />
-					<div class="flex-1">
-						<p class="text-sm text-destructive">{errorMessage}</p>
+			<!-- Error Message -->
+			{#if importState === 'error' && errorMessage}
+				<div class="rounded-lg border border-destructive/30 bg-destructive/10 p-3">
+					<div class="flex items-start gap-2">
+						<XCircle class="mt-0.5 size-5 shrink-0 text-destructive" />
+						<div class="flex-1">
+							<p class="text-sm text-destructive">{errorMessage}</p>
+						</div>
 					</div>
 				</div>
-			</div>
-		{/if}
+			{/if}
 
-		<!-- Action Buttons -->
-		<div class="flex flex-col gap-3 pt-2">
-			<button
-				onclick={handleImport}
-				disabled={!canImport || isLoading}
-				class="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				{#if importState === 'importing'}
-					<Loader2 class="size-5 animate-spin" />
-					<span>Importing...</span>
-				{:else if importState === 'success'}
-					<CheckCircle2 class="size-5" />
-					<span>Success!</span>
-				{:else}
-					<Database class="size-5" />
-					<span>Import Database</span>
-				{/if}
-			</button>
+			<!-- Action Buttons -->
+			<div class="flex flex-col gap-3 pt-2">
+				<Button class="w-full py-3" onclick={handleImport} disabled={!canImport || isLoading}>
+					{#if importState === 'importing'}
+						<Loader2 data-icon="inline-start" class="animate-spin" />
+						<span>Importing...</span>
+					{:else if importState === 'success'}
+						<CheckCircle2 data-icon="inline-start" />
+						<span>Success!</span>
+					{:else}
+						<Database data-icon="inline-start" />
+						<span>Import Database</span>
+					{/if}
+				</Button>
 
-			<div class="relative">
-				<div class="absolute inset-0 flex items-center">
-					<div class="w-full border-t border-border"></div>
+				<div class="relative">
+					<div class="absolute inset-0 flex items-center">
+						<div class="w-full border-t border-border"></div>
+					</div>
+					<div class="relative flex justify-center text-sm">
+						<span class="bg-popover px-2 text-muted-foreground">or</span>
+					</div>
 				</div>
-				<div class="relative flex justify-center text-sm">
-					<span class="bg-card px-2 text-muted-foreground">or</span>
-				</div>
-			</div>
 
-			<button
-				onclick={handleStartFresh}
-				disabled={isLoading}
-				class="w-full rounded-lg border-2 border-input px-4 py-3 transition-colors hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
-			>
-				Start Fresh (No Import)
-			</button>
+				<Button variant="outline" class="w-full py-3" onclick={handleStartFresh} disabled={isLoading}>
+					Start Fresh (No Import)
+				</Button>
+			</div>
 		</div>
-	</div>
-</Dialog>
+	</Dialog.Content>
+</Dialog.Root>

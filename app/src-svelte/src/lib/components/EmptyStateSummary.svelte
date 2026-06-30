@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { scale } from 'svelte/transition';
 	import { FileQuestion, Sparkles } from '@lucide/svelte';
-	import Button from '$lib/ui/button.svelte';
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import AccentButton from '$lib/ui/button.svelte';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	interface Props {
 		onGenerate: () => void;
@@ -25,22 +26,24 @@
 	</p>
 
 	{#if hasModel}
-		<Button variant="accent" onclick={onGenerate} disabled={isGenerating}>
-			<Sparkles class="size-4" />
+		<AccentButton variant="accent" onclick={onGenerate} disabled={isGenerating}>
+			<Sparkles data-icon="inline-start" />
 			{isGenerating ? 'Enhancing...' : 'Enhance notes'}
-		</Button>
+		</AccentButton>
 	{:else}
-		<Tooltip>
-			{#snippet trigger()}
-				<Button disabled>
-					<Sparkles class="size-4" />
-					Enhance notes
-				</Button>
-			{/snippet}
-			{#snippet content()}
-				Please select a model in Settings first
-			{/snippet}
-		</Tooltip>
-		<p class="mt-3 text-xs text-amber-600">Please select a model in Settings first</p>
+		<Tooltip.Provider delayDuration={300}>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} disabled>
+							<Sparkles data-icon="inline-start" />
+							Enhance notes
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>Please select a model in Settings first</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+		<p class="mt-3 text-xs text-warning">Please select a model in Settings first</p>
 	{/if}
 </div>

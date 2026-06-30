@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { Speaker, X } from '@lucide/svelte';
-	import Alert from '$lib/ui/alert.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import { Button } from '$lib/components/ui/button';
 
 	interface AudioOutputInfo {
 		device_name: string;
@@ -49,22 +50,24 @@
 </script>
 
 {#if show}
-	<Alert variant="warning" class="mb-4">
-		{#snippet icon()}<Speaker class="size-4" />{/snippet}
-		{#snippet title()}Bluetooth Playback Detected{/snippet}
-		<div class="flex w-full items-start justify-between">
-			<div class="flex-1">
-				You're using <strong>{deviceName}</strong> for playback. Recordings may sound distorted or
-				sped up through Bluetooth devices; the recording itself is unaffected. For accurate
-				review, use <strong>computer speakers</strong> or <strong>wired headphones</strong>.
-			</div>
-			<button
+	<Alert.Root class="mb-4 border-warning/50 bg-warning/10 text-warning">
+		<Speaker />
+		<Alert.Title>Bluetooth Playback Detected</Alert.Title>
+		<Alert.Description class="text-warning/90">
+			You're using <strong>{deviceName}</strong> for playback. Recordings may sound distorted or
+			sped up through Bluetooth devices; the recording itself is unaffected. For accurate review,
+			use <strong>computer speakers</strong> or <strong>wired headphones</strong>.
+		</Alert.Description>
+		<Alert.Action>
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-6 text-warning hover:bg-warning/20 hover:text-warning"
 				onclick={() => (isDismissed = true)}
-				class="ml-4 rounded p-1 hover:bg-amber-100"
 				aria-label="Dismiss warning"
 			>
-				<X class="size-4" />
-			</button>
-		</div>
-	</Alert>
+				<X />
+			</Button>
+		</Alert.Action>
+	</Alert.Root>
 {/if}
