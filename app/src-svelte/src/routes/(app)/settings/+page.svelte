@@ -2,12 +2,13 @@
 	import { onMount } from 'svelte';
 	import { ArrowLeft } from '@lucide/svelte';
 
-	import Tooltip from '$lib/ui/tooltip.svelte';
+	import * as Tabs from '$lib/components/ui/tabs';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 
 	import { config } from '$lib/stores/config.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
-	import Tabs, { type TabItem } from '$lib/ui/tabs.svelte';
 	import About from '$lib/components/About.svelte';
 	// Beta section disabled: Import Audio & Retranscribe graduated to a standard feature.
 	// import BetaSettings from '$lib/components/BetaSettings.svelte';
@@ -22,7 +23,7 @@
 	const platform = usePlatform();
 
 	// Calendar context relies on macOS EventKit, so the tab is macOS-only.
-	const tabs: TabItem[] = $derived([
+	const tabs: { value: string; label: string }[] = $derived([
 		{ value: 'general', label: 'General' },
 		{ value: 'recording', label: 'Recordings' },
 		...(platform.isMac ? [{ value: 'calendar', label: 'Calendar' }] : []),
@@ -64,17 +65,28 @@
 				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3'
 			)}
 		>
-			<Tooltip label="Back" shortcut="⌘[">
-				{#snippet trigger()}
-					<button
-						onclick={goBack}
-						class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-						aria-label="Back"
-					>
-						<ArrowLeft class="size-4" />
-					</button>
-				{/snippet}
-			</Tooltip>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								onclick={goBack}
+								variant="ghost"
+								size="icon-sm"
+								class="text-muted-foreground hover:text-foreground"
+								aria-label="Back"
+							>
+								<ArrowLeft />
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						Back
+						<span class="tracking-wide opacity-60">⌘[</span>
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 			<h1
 				class="pointer-events-none absolute left-1/2 -translate-x-1/2 text-[13px] font-medium text-muted-foreground"
 			>
@@ -85,29 +97,40 @@
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
 		<div class="mx-auto max-w-6xl p-8 pt-6">
-			<Tabs {tabs}>
-				{#snippet panel(value)}
-					{#if value === 'general'}
-						<PreferenceSettings />
-					{:else if value === 'recording'}
-						<RecordingSettings />
-					{:else if value === 'calendar'}
+			<Tabs.Root value={tabs[0]?.value ?? 'general'} class="w-full">
+				<Tabs.List variant="line" class="w-full justify-start border-b border-border">
+					{#each tabs as tab (tab.value)}
+						<Tabs.Trigger value={tab.value}>{tab.label}</Tabs.Trigger>
+					{/each}
+				</Tabs.List>
+				<Tabs.Content value="general" class="mt-4">
+					<PreferenceSettings />
+				</Tabs.Content>
+				<Tabs.Content value="recording" class="mt-4">
+					<RecordingSettings />
+				</Tabs.Content>
+				{#if platform.isMac}
+					<Tabs.Content value="calendar" class="mt-4">
 						<CalendarSettings />
-					{:else if value === 'transcription'}
-						<TranscriptSettings
-							transcriptModelConfig={config.transcriptModelConfig}
-							setTranscriptModelConfig={config.setTranscriptModelConfig}
-						/>
-					{:else if value === 'summary'}
-						<SummaryModelSettings />
-					{:else if value === 'trash'}
-						<TrashSettings />
-						<!-- Beta tab disabled; Import & Retranscribe is now a standard feature. -->
-					{:else if value === 'about'}
-						<About />
-					{/if}
-				{/snippet}
-			</Tabs>
+					</Tabs.Content>
+				{/if}
+				<Tabs.Content value="transcription" class="mt-4">
+					<TranscriptSettings
+						transcriptModelConfig={config.transcriptModelConfig}
+						setTranscriptModelConfig={config.setTranscriptModelConfig}
+					/>
+				</Tabs.Content>
+				<Tabs.Content value="summary" class="mt-4">
+					<SummaryModelSettings />
+				</Tabs.Content>
+				<Tabs.Content value="trash" class="mt-4">
+					<TrashSettings />
+				</Tabs.Content>
+				<!-- Beta tab disabled; Import & Retranscribe is now a standard feature. -->
+				<Tabs.Content value="about" class="mt-4">
+					<About />
+				</Tabs.Content>
+			</Tabs.Root>
 		</div>
 	</div>
 </div>

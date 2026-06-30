@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { Info } from '@lucide/svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import * as RadioGroup from '$lib/components/ui/radio-group';
+	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Label } from '$lib/components/ui/label';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { cn } from '$lib/utils';
 
 	export interface BackendInfo {
@@ -21,7 +27,6 @@
 	let currentBackend = $state<string>('coreaudio');
 	let loading = $state(true);
 	let error = $state<string | null>(null);
-	let showTooltip = $state(false);
 
 	$effect(() => {
 		(async () => {
@@ -53,86 +58,84 @@
 </script>
 
 {#if loading}
-	<div class="animate-pulse">
-		<div class="mb-2 h-4 w-32 rounded bg-secondary"></div>
-		<div class="h-10 rounded bg-secondary"></div>
+	<div class="flex flex-col gap-2">
+		<Skeleton class="h-4 w-32" />
+		<Skeleton class="h-10 w-full" />
 	</div>
 {:else if backends.length > 1}
-	<div class="space-y-2">
+	<div class="flex flex-col gap-2">
 		<div class="flex items-center gap-2">
 			<span class="text-sm font-medium">System Audio Backend</span>
-			<div class="relative">
-				<button
-					type="button"
-					onmouseenter={() => (showTooltip = true)}
-					onmouseleave={() => (showTooltip = false)}
-					class="text-muted-foreground transition-colors hover:text-foreground"
-					aria-label="Backend info"
-				>
-					<Info class="size-4" />
-				</button>
-				{#if showTooltip}
-					<div
-						class="absolute left-6 top-0 z-10 w-64 rounded-lg bg-primary p-3 text-xs text-primary-foreground shadow-lg"
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger
+						class="text-muted-foreground transition-colors hover:text-foreground"
+						aria-label="Backend info"
 					>
-						<p class="mb-1 font-semibold">Audio Capture Methods:</p>
-						<ul class="space-y-1">
+						<Info class="size-4" />
+					</Tooltip.Trigger>
+					<Tooltip.Content class="max-w-64 flex-col items-start gap-1 p-3 text-left">
+						<p class="font-semibold">Audio Capture Methods:</p>
+						<ul class="flex flex-col gap-1">
 							{#each backends as backend (backend.id)}
 								<li><span class="font-medium">{backend.name}:</span> {backend.description}</li>
 							{/each}
 						</ul>
-						<p class="mt-2 text-primary-foreground/70">
+						<p class="text-background/70">
 							Try different backends to find which works best for your system.
 						</p>
-					</div>
-				{/if}
-			</div>
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		</div>
 
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/5 p-2 text-xs text-destructive">
-				{error}
-			</div>
+			<Alert.Root variant="destructive" class="py-2">
+				<Alert.Description class="text-xs">{error}</Alert.Description>
+			</Alert.Root>
 		{/if}
 
-		<div class="space-y-2">
+		<RadioGroup.Root
+			value={currentBackend}
+			onValueChange={handleBackendChange}
+			{disabled}
+			class="gap-2"
+		>
 			{#each backends as backend (backend.id)}
 				{@const isCoreAudio = backend.id === 'screencapturekit'}
 				{@const isDisabled = disabled || isCoreAudio}
-				<label
+				<Label
+					for={`backend-${backend.id}`}
 					class={cn(
-						'flex items-start rounded-lg border p-3 transition-all',
+						'flex items-start gap-3 rounded-lg border p-3 transition-all',
 						currentBackend === backend.id
 							? 'border-accent bg-accent/5'
 							: 'border-input bg-background hover:border-muted-foreground/40',
 						isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
 					)}
 				>
-					<input
-						type="radio"
-						name="audioBackend"
+					<RadioGroup.Item
+						id={`backend-${backend.id}`}
 						value={backend.id}
-						checked={currentBackend === backend.id}
-						onchange={() => handleBackendChange(backend.id)}
 						disabled={isDisabled}
-						class="mt-1 size-4"
+						class="mt-1"
 					/>
-					<div class="ml-3 flex-1">
+					<div class="flex-1">
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium">{backend.name}</span>
 							{#if currentBackend === backend.id}
-								<span class="rounded bg-accent/20 px-2 py-0.5 text-xs font-medium text-accent">Active</span>
+								<Badge variant="secondary" class="text-accent">Active</Badge>
 							{:else if isCoreAudio}
-								<span class="rounded bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">Disabled</span>
+								<Badge variant="secondary">Disabled</Badge>
 							{/if}
 						</div>
-						<p class="mt-1 text-xs text-muted-foreground">{backend.description}</p>
+						<p class="mt-1 text-xs font-normal text-muted-foreground">{backend.description}</p>
 					</div>
-				</label>
+				</Label>
 			{/each}
-		</div>
+		</RadioGroup.Root>
 
-		<div class="space-y-1 text-xs text-muted-foreground">
+		<div class="flex flex-col gap-1 text-xs text-muted-foreground">
 			<p>• Backend selection only affects system audio capture</p>
 			<p>• Microphone always uses the default method</p>
 			<p>• Changes apply to new recording sessions</p>

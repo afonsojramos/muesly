@@ -4,7 +4,10 @@
 	import { CheckCircle2, Cpu, Globe, Loader2, ShieldCheck, Sparkles, Wallet } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
-	import Button from '$lib/ui/button.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import * as Card from '$lib/components/ui/card';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Button } from '$lib/components/ui/button';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { toast } from '$lib/toast';
 
@@ -54,18 +57,14 @@
 	];
 </script>
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
 	<!-- Identity -->
-	<div class="rounded-lg border border-border bg-card p-6 shadow-sm">
-		<div class="flex flex-col items-center text-center">
+	<Card.Root>
+		<Card.Content class="flex flex-col items-center text-center">
 			<img src="/muesly.svg" alt="muesly" width={64} height={64} class="rounded-2xl" />
 			<div class="mt-3 flex items-center gap-2">
 				<h2 class="font-display text-2xl font-semibold tracking-tight">muesly</h2>
-				<span
-					class="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium tabular-nums text-muted-foreground"
-				>
-					v{currentVersion}
-				</span>
+				<Badge variant="secondary" class="tabular-nums">v{currentVersion}</Badge>
 			</div>
 			<p class="mt-2 max-w-sm text-sm text-muted-foreground">
 				Real-time notes and summaries that never leave your machine.
@@ -78,57 +77,63 @@
 					size="sm"
 				>
 					{#if updates.isChecking}
-						<Loader2 class="size-3 animate-spin" /> Checking...
+						<Loader2 data-icon="inline-start" class="animate-spin" /> Checking...
 					{:else}
-						<CheckCircle2 class="size-3" /> Check for Updates
+						<CheckCircle2 data-icon="inline-start" /> Check for Updates
 					{/if}
 				</Button>
 				{#if updates.updateInfo?.available}
 					<span class="text-xs text-accent">Update available: v{updates.updateInfo.version}</span>
 				{/if}
 			</div>
-		</div>
-	</div>
+		</Card.Content>
+	</Card.Root>
 
 	<!-- What makes muesly different -->
-	<div class="rounded-lg border border-border bg-card p-6 shadow-sm">
-		<h3 class="text-lg font-semibold">What makes muesly different</h3>
-		<div class="mt-4 grid gap-3 sm:grid-cols-2">
-			{#each features as feature (feature.title)}
-				{@const Icon = feature.icon}
-				<div
-					class="rounded-lg border border-border bg-secondary/40 p-4 transition-colors hover:bg-secondary/60"
-				>
-					<div class="flex size-9 items-center justify-center rounded-md bg-accent/10 text-accent">
-						<Icon class="size-5" />
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>What makes muesly different</Card.Title>
+		</Card.Header>
+		<Card.Content>
+			<div class="grid gap-3 sm:grid-cols-2">
+				{#each features as feature (feature.title)}
+					{@const Icon = feature.icon}
+					<div
+						class="rounded-lg border border-border bg-secondary/40 p-4 transition-colors hover:bg-secondary/60"
+					>
+						<div class="flex size-9 items-center justify-center rounded-md bg-accent/10 text-accent">
+							<Icon class="size-5" />
+						</div>
+						<h4 class="mt-3 text-sm font-semibold">{feature.title}</h4>
+						<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{feature.body}</p>
 					</div>
-					<h4 class="mt-3 text-sm font-semibold">{feature.title}</h4>
-					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{feature.body}</p>
-				</div>
-			{/each}
-		</div>
-	</div>
+				{/each}
+			</div>
+		</Card.Content>
+	</Card.Root>
 
 	<!-- Coming soon -->
-	<div class="flex gap-3 rounded-lg border border-accent/30 bg-accent/5 p-4">
-		<Sparkles class="mt-0.5 size-4 flex-shrink-0 text-accent" />
-		<p class="text-sm text-foreground">
+	<Alert.Root class="border-accent/30 text-accent">
+		<Sparkles />
+		<Alert.Description class="text-foreground">
 			<span class="font-semibold">Coming soon:</span> A library of on-device AI agents — automating
 			follow-ups, action tracking, and more.
-		</p>
-	</div>
+		</Alert.Description>
+	</Alert.Root>
 
 	<!-- Contact -->
-	<div class="rounded-lg border border-border bg-card p-6 text-center shadow-sm">
-		<h3 class="text-lg font-semibold">Ready to push your business further?</h3>
-		<p class="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-			If you're planning to build privacy-first custom AI agents or a fully tailored product, we can
-			help you build it.
-		</p>
-		<div class="mt-4">
-			<Button variant="accent" onclick={handleContactClick}>Chat with the muesly team</Button>
-		</div>
-	</div>
+	<Card.Root>
+		<Card.Header class="text-center">
+			<Card.Title>Ready to push your business further?</Card.Title>
+			<Card.Description class="mx-auto max-w-md">
+				If you're planning to build privacy-first custom AI agents or a fully tailored product, we
+				can help you build it.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content class="flex justify-center">
+			<Button onclick={handleContactClick}>Chat with the muesly team</Button>
+		</Card.Content>
+	</Card.Root>
 
 	<p class="text-center text-xs text-muted-foreground/60">Built by muesly</p>
 </div>

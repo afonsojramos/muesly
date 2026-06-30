@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { AlertCircle, FlaskConical } from '@lucide/svelte';
-	import Switch from '$lib/ui/switch.svelte';
+	import * as Alert from '$lib/components/ui/alert';
+	import * as Card from '$lib/components/ui/card';
+	import { Badge } from '$lib/components/ui/badge';
+	import { Switch } from '$lib/components/ui/switch';
 	import { config } from '$lib/stores/config.svelte';
 	import {
 		BETA_FEATURE_NAMES,
@@ -11,45 +14,43 @@
 	const featureOrder: BetaFeatureKey[] = ['importAndRetranscribe'];
 </script>
 
-<div class="space-y-6">
-	<div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-		<AlertCircle class="mt-0.5 size-5 shrink-0 text-amber-600" />
-		<div class="text-sm text-amber-800">
-			<p class="font-medium">Beta Features</p>
-			<p class="mt-1">
-				These features are still being tested. You may encounter issues, and we appreciate your
-				feedback.
-			</p>
-		</div>
-	</div>
+<div class="flex flex-col gap-6">
+	<Alert.Root class="border-warning/30 text-warning">
+		<AlertCircle />
+		<Alert.Title>Beta Features</Alert.Title>
+		<Alert.Description class="text-warning/90">
+			These features are still being tested. You may encounter issues, and we appreciate your
+			feedback.
+		</Alert.Description>
+	</Alert.Root>
 
 	{#each featureOrder as featureKey (featureKey)}
-		<div class="rounded-lg border border-border bg-card p-6 shadow-sm">
-			<div class="flex items-center justify-between">
-				<div class="flex-1">
-					<div class="mb-2 flex items-center gap-2">
-						<FlaskConical class="size-5 text-muted-foreground" />
-						<h3 class="text-lg font-semibold">{BETA_FEATURE_NAMES[featureKey]}</h3>
-						<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-							BETA
-						</span>
+		<Card.Root>
+			<Card.Header>
+				<div class="flex items-center justify-between">
+					<div class="flex-1">
+						<div class="mb-2 flex items-center gap-2">
+							<FlaskConical class="size-5 text-muted-foreground" />
+							<Card.Title>{BETA_FEATURE_NAMES[featureKey]}</Card.Title>
+							<Badge variant="secondary">BETA</Badge>
+						</div>
+						<Card.Description>{BETA_FEATURE_DESCRIPTIONS[featureKey]}</Card.Description>
 					</div>
-					<p class="text-sm text-muted-foreground">{BETA_FEATURE_DESCRIPTIONS[featureKey]}</p>
+					<div class="ml-6">
+						<Switch
+							checked={config.betaFeatures[featureKey]}
+							onCheckedChange={(checked) => config.toggleBetaFeature(featureKey, checked)}
+						/>
+					</div>
 				</div>
-				<div class="ml-6">
-					<Switch
-						checked={config.betaFeatures[featureKey]}
-						onCheckedChange={(checked) => config.toggleBetaFeature(featureKey, checked)}
-					/>
-				</div>
-			</div>
-		</div>
+			</Card.Header>
+		</Card.Root>
 	{/each}
 
-	<div class="rounded-lg border border-accent/20 bg-accent/5 p-4">
-		<p class="text-sm">
+	<Alert.Root class="border-accent/20">
+		<Alert.Description>
 			<strong>Note:</strong> When disabled, beta features will be hidden. Your existing meetings remain
 			unaffected.
-		</p>
-	</div>
+		</Alert.Description>
+	</Alert.Root>
 </div>
