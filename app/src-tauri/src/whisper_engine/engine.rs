@@ -4,7 +4,7 @@ use std::path::{PathBuf};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
+use whisper_rs::{WhisperContext, WhisperContextParameters, WhisperState, FullParams, SamplingStrategy};
 use serde::{Serialize, Deserialize};
 use anyhow::{Result, anyhow};
 use tokio::fs;
@@ -533,70 +533,13 @@ impl WhisperEngine {
         repeated_words as f32 / total_words
     }
     
-    /// Synchronous whisper inference shared by both transcribe entry points.
+    /// Apply the whisper decoding parameters common to every pass.
     ///
-    /// `state.full` blocks for seconds (CPU/GPU bound), so this MUST be run via
-    /// `tokio::task::spawn_blocking`, never directly on an async worker. `FullParams`
-    /// borrows the language string, so params are built here from owned data rather
-    /// than passed in. Returns the cleaned transcript and an average confidence.
-    fn run_full_blocking(
-        ctx: &WhisperContext,
-        audio_data: &[f32],
-        language: Option<String>,
-        beam_size: usize,
-        temperature: f32,
-        initial_prompt: Option<String>,
-    ) -> Result<(String, f32)> {
-        let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-            beam_size: beam_size as i32,
-            patience: 1.0,
-        });
-
-        if let Some(prompt) = initial_prompt.as_deref() {
-            params.set_initial_prompt(prompt);
-        }
-
-        // Language selection. "auto"/"auto-translate"/None mean automatic
-        // detection; everything else is an explicit ISO code (unchanged behaviour).
-        // "auto-translate" additionally translates to English.
-        //
-        // For the auto modes we "detect once and lock": once the session has
-        // locked a language (decided from the first few seconds of real speech),
-        // every later segment reuses it instead of re-detecting and flapping.
-        let is_auto = matches!(language.as_deref(), Some("auto") | Some("auto-translate") | None);
-        let should_translate = matches!(language.as_deref(), Some("auto-translate"));
-
-        // When `true`, this call ran detection (set_language(None)) and we must
-        // feed the detected id back into the lock after inference.
-        let mut ran_detection = false;
-        // Holds a locked language code string for the lifetime of `params`.
-        let locked_code: Option<&'static str> = if is_auto {
-            super::lang_lock::locked_language_id().and_then(whisper_rs::get_lang_str)
-        } else {
-            None
-        };
-
-        if is_auto {
-            match locked_code {
-                // Lock already decided: pin the language, but keep translation
-                // semantics so a locked "auto-translate" session still translates.
-                Some(code) => {
-                    params.set_language(Some(code));
-                    params.set_translate(should_translate);
-                }
-                // Not locked yet: detect this segment, then vote after inference.
-                None => {
-                    params.set_language(None);
-                    params.set_translate(should_translate);
-                    ran_detection = true;
-                }
-            }
-        } else {
-            // Explicit code path, byte-for-byte unchanged: set code, no translate.
-            params.set_language(language.as_deref());
-            params.set_translate(false);
-        }
-
+    /// Everything except language selection and translation is identical across
+    /// passes, so it lives here. Language/`set_translate` are set by the caller
+    /// before this is invoked, because `FullParams` borrows the language string
+    /// and that borrow must outlive the `state.full(..)` call.
+    fn apply_common_params(params: &mut FullParams, temperature: f32) {
         // Disable timestamp tokens to prevent whisper.cpp chunking heuristics that
         // incorrectly discard complete, valid transcriptions.
         params.set_no_timestamps(true);
@@ -618,37 +561,14 @@ impl WhisperEngine {
         params.set_no_speech_thold(0.55);
         params.set_max_len(200);
         params.set_single_segment(false);
+    }
 
-        let mut state = ctx.create_state()?;
-        state.full(params, audio_data)?;
-
-        // If this call auto-detected the language, feed the result into the
-        // session lock. `full_lang_id_from_state` is only meaningful after a
-        // `full(..)` that ran with `set_language(None)`.
-        if ran_detection {
-            match state.full_lang_id_from_state() {
-                Ok(detected_id) => {
-                    if let Some(locked_id) =
-                        super::lang_lock::record_detection(detected_id, audio_data.len())
-                    {
-                        // Infrequent (happens once per session) and useful.
-                        log::info!(
-                            "Locked auto-detected transcription language: {} (id {})",
-                            whisper_rs::get_lang_str(locked_id).unwrap_or("unknown"),
-                            locked_id
-                        );
-                    } else {
-                        perf_debug!(
-                            "Auto-detected language id {} ({} samples), lock undecided",
-                            detected_id,
-                            audio_data.len()
-                        );
-                    }
-                }
-                Err(e) => perf_debug!("Failed to read auto-detected language id: {}", e),
-            }
-        }
-
+    /// Collect and clean the transcript from a finished whisper state.
+    ///
+    /// Shared by both passes (the detect pass and the forced re-transcribe pass)
+    /// so the segment loop and confidence proxy are not duplicated. Returns the
+    /// cleaned transcript and an average confidence.
+    fn collect_segments(state: &WhisperState) -> Result<(String, f32)> {
         let num_segments = state.full_n_segments()?;
 
         let mut result = String::new();
@@ -691,6 +611,119 @@ impl WhisperEngine {
         };
 
         Ok((cleaned_result, avg_confidence))
+    }
+
+    /// Synchronous whisper inference shared by both transcribe entry points.
+    ///
+    /// `state.full` blocks for seconds (CPU/GPU bound), so this MUST be run via
+    /// `tokio::task::spawn_blocking`, never directly on an async worker. `FullParams`
+    /// borrows the language string, so params are built here from owned data rather
+    /// than passed in. Returns the cleaned transcript and an average confidence.
+    ///
+    /// Language modes:
+    /// - explicit ISO code: a single pass forced to that code (unchanged).
+    /// - `auto-translate`: a single pass with `set_language(None)` +
+    ///   `set_translate(true)`. The output is always English regardless of the
+    ///   spoken language, so there is nothing to keep stable: no `lang_lock`
+    ///   involvement, no second pass.
+    /// - `auto` (keep original language): an adaptive two-phase scheme. Pass 1
+    ///   always auto-detects (`set_language(None)`, no translate). The detected
+    ///   id is fed to `lang_lock::resolve_detection`, which returns either
+    ///   `UseDetected` (emit pass 1) or `ForceStable(id)` (run a second pass
+    ///   forced to the stable language). The second pass only runs on a genuine
+    ///   disagreement, so steady single-language audio stays at one pass.
+    fn run_full_blocking(
+        ctx: &WhisperContext,
+        audio_data: &[f32],
+        language: Option<String>,
+        beam_size: usize,
+        temperature: f32,
+        initial_prompt: Option<String>,
+    ) -> Result<(String, f32)> {
+        // Run one whisper pass with a given language selection / translate flag and
+        // return the finished state. A fresh state per pass keeps the forced
+        // re-transcribe independent of the detect pass. The state is returned (not
+        // its transcript) so the detect pass can both read the detected language id
+        // and collect segments from the SAME pass without re-running inference.
+        let run_pass_state = |lang: Option<&str>, translate: bool| -> Result<WhisperState> {
+            let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+                beam_size: beam_size as i32,
+                patience: 1.0,
+            });
+            if let Some(prompt) = initial_prompt.as_deref() {
+                params.set_initial_prompt(prompt);
+            }
+            params.set_language(lang);
+            params.set_translate(translate);
+            Self::apply_common_params(&mut params, temperature);
+
+            let mut state = ctx.create_state()?;
+            state.full(params, audio_data)?;
+            Ok(state)
+        };
+
+        let is_auto = matches!(language.as_deref(), Some("auto") | Some("auto-translate") | None);
+        let should_translate = matches!(language.as_deref(), Some("auto-translate"));
+
+        // Explicit code path, byte-for-byte unchanged: set code, no translate.
+        if !is_auto {
+            return Self::collect_segments(&run_pass_state(language.as_deref(), false)?);
+        }
+
+        // auto-translate: detect + translate to English in one pass. The output is
+        // English regardless of the spoken language, so the adaptive lang lock
+        // (which exists to keep the ORIGINAL language stable) does not apply.
+        if should_translate {
+            return Self::collect_segments(&run_pass_state(None, true)?);
+        }
+
+        // auto (keep original language): pass 1 always auto-detects.
+        let state = run_pass_state(None, false)?;
+
+        // `full_lang_id_from_state` is only meaningful after a `full(..)` that ran
+        // with `set_language(None)`. A read failure is treated as "no detection".
+        let detected_id = state.full_lang_id_from_state().unwrap_or(-1);
+        let prev_stable = super::lang_lock::current_stable();
+        let decision = super::lang_lock::resolve_detection(detected_id, audio_data.len());
+
+        match decision {
+            super::lang_lock::LangDecision::UseDetected => {
+                // Log once when the stable language first locks or actually switches
+                // old -> new; per-segment churn stays on the perf_debug hot path.
+                let new_stable = super::lang_lock::current_stable();
+                if new_stable != prev_stable {
+                    if let Some(id) = new_stable {
+                        log::info!(
+                            "Auto-detect stable language {} -> {} (id {})",
+                            prev_stable
+                                .and_then(whisper_rs::get_lang_str)
+                                .unwrap_or("none"),
+                            whisper_rs::get_lang_str(id).unwrap_or("unknown"),
+                            id
+                        );
+                    }
+                } else {
+                    perf_debug!(
+                        "Auto-detected language id {} ({} samples), used as-is",
+                        detected_id,
+                        audio_data.len()
+                    );
+                }
+                Self::collect_segments(&state)
+            }
+            super::lang_lock::LangDecision::ForceStable(id) => {
+                // A short/odd disagreement: re-transcribe forced to the stable
+                // language rather than emit the flapped detection. Drop pass 1's
+                // state before the second pass; a fresh pass runs pinned to `id`.
+                drop(state);
+                perf_debug!(
+                    "Auto-detect forcing stable language id {} (segment detected {})",
+                    id,
+                    detected_id
+                );
+                Self::collect_segments(&run_pass_state(whisper_rs::get_lang_str(id), false)?)
+            }
+        }
     }
 
     /// Transcribe audio with streaming support for partial results and adaptive quality
