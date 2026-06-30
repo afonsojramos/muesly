@@ -221,7 +221,10 @@ pub fn map_event(ev: GoogleEvent, account_id: &str) -> Option<CalendarEventCandi
 // email (a label) is persisted to SQLite. Error Display strings are value-free
 // (no token, email, or URL) so they are safe to log/surface.
 
-const SCOPE: &str = "openid email https://www.googleapis.com/auth/calendar.events.readonly";
+// events.readonly reads events on all calendars; calendarlist.readonly is
+// required separately to enumerate the user's calendars (calendarList.list does
+// NOT accept events.readonly). Both are read-only "sensitive" scopes.
+const SCOPE: &str = "openid email https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const USERINFO_ENDPOINT: &str = "https://openidconnect.googleapis.com/v1/userinfo";
@@ -390,8 +393,13 @@ async fn refresh_call(
         .await
         .map_err(|_| GoogleError::Request)?;
     if !resp.status().is_success() {
+        let status = resp.status();
         let body: serde_json::Value = resp.json().await.unwrap_or_default();
-        if body.get("error").and_then(|e| e.as_str()) == Some("invalid_grant") {
+        let err = body.get("error").and_then(|e| e.as_str());
+        // The `error` field is a short OAuth code (e.g. invalid_grant,
+        // invalid_client), not a secret - safe and useful to log.
+        log::warn!("google token refresh failed: HTTP {status}, error={err:?}");
+        if err == Some("invalid_grant") {
             return Err(GoogleError::InvalidGrant);
         }
         return Err(GoogleError::Request);
@@ -461,7 +469,15 @@ async fn ensure_access_token(cfg: &OAuthConfig, sub: &str) -> Result<String, Goo
             return Ok(c.access_token.clone());
         }
     }
-    let refresh = get_refresh(sub).ok_or(GoogleError::InvalidGrant)?;
+    let refresh = match get_refresh(sub) {
+        Some(r) => r,
+        None => {
+            log::warn!(
+                "google: no refresh token found in keychain for the account; reconnect required"
+            );
+            return Err(GoogleError::InvalidGrant);
+        }
+    };
     let token = refresh_call(cfg, &refresh).await?;
     let expires_at = Instant::now() + Duration::from_secs(token.expires_in.unwrap_or(3600));
     guard.insert(
@@ -542,11 +558,14 @@ async fn list_calendars_raw(access_token: &str) -> Result<Vec<CalendarListEntry>
         .send()
         .await
         .map_err(|_| GoogleError::Request)?;
-    if resp.status().as_u16() == 401 {
-        return Err(GoogleError::InvalidGrant);
-    }
-    if !resp.status().is_success() {
-        return Err(GoogleError::Request);
+    let status = resp.status();
+    if !status.is_success() {
+        log::warn!("google calendarList.list failed: HTTP {status}");
+        return Err(if status.as_u16() == 401 {
+            GoogleError::InvalidGrant
+        } else {
+            GoogleError::Request
+        });
     }
     let list: CalendarListResponse = resp.json().await.map_err(|_| GoogleError::Request)?;
     Ok(list.items)
@@ -594,6 +613,65 @@ pub async fn list_calendars(account_id: &str) -> Result<Vec<CalendarListEntry>, 
     let cfg = oauth_config().ok_or(GoogleError::NotConfigured)?;
     let access = ensure_access_token(&cfg, account_id).await?;
     list_calendars_raw(&access).await
+}
+
+/// A secret-free, human-readable report of exactly where the Google flow stands
+/// for an account: config presence, whether a token is in the keychain, whether
+/// a refresh succeeds, and the calendarList HTTP status + visible count. Never
+/// includes tokens or event content.
+pub async fn diagnose(account: &CalendarAccount) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    let cfg = match oauth_config() {
+        Some(c) => {
+            lines.push(format!(
+                "config: client_id set; client_secret {}",
+                if c.client_secret.is_empty() {
+                    "MISSING"
+                } else {
+                    "set"
+                }
+            ));
+            c
+        }
+        None => {
+            lines.push("config: MUESLY_GOOGLE_CLIENT_ID is not set".to_string());
+            return lines.join("\n");
+        }
+    };
+    if get_refresh(&account.id).is_none() {
+        lines.push("keychain refresh token: MISSING (reconnect needed)".to_string());
+        return lines.join("\n");
+    }
+    lines.push("keychain refresh token: present".to_string());
+
+    let access = match ensure_access_token(&cfg, &account.id).await {
+        Ok(a) => {
+            lines.push("token refresh: ok".to_string());
+            a
+        }
+        Err(e) => {
+            lines.push(format!("token refresh: FAILED ({e})"));
+            return lines.join("\n");
+        }
+    };
+
+    let client = crate::providers::common::http_client();
+    match client
+        .get(CALENDAR_LIST_ENDPOINT)
+        .bearer_auth(&access)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            let status = resp.status();
+            lines.push(format!("calendarList.list: HTTP {status}"));
+            if let Ok(list) = resp.json::<CalendarListResponse>().await {
+                lines.push(format!("calendars visible: {}", list.items.len()));
+            }
+        }
+        Err(_) => lines.push("calendarList.list: network error".to_string()),
+    }
+    lines.join("\n")
 }
 
 /// Fetch candidate events from all of an account's non-excluded calendars in the

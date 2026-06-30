@@ -622,6 +622,8 @@ export const commands = {
 	calendarSetAccountExcludedIds: (accountId: string, ids: string[]) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_excluded_ids", { accountId, ids })),
 	/**  Preview upcoming events across all enabled sources (settings verification). */
 	calendarPreviewUpcoming: () => typedError<PreviewEvent[], string>(__TAURI_INVOKE("calendar_preview_upcoming")),
+	/**  One-click, secret-free diagnostic for a calendar source (where it fails). */
+	calendarDiagnose: (accountId: string) => typedError<string, string>(__TAURI_INVOKE("calendar_diagnose", { accountId })),
 };
 
 /* Types */

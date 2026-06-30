@@ -340,3 +340,24 @@ pub async fn calendar_preview_upcoming(
 ) -> Result<Vec<service::PreviewEvent>, String> {
     Ok(service::preview_upcoming(state.db_manager.pool(), chrono::Utc::now()).await)
 }
+
+/// One-click, secret-free diagnostic for a calendar source (where it fails).
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_diagnose(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> Result<String, String> {
+    let pool = state.db_manager.pool();
+    let account = CalendarAccountsRepository::get(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "account not found".to_string())?;
+    if account.source == "eventkit" {
+        return Ok(format!(
+            "local source; permission: {:?}",
+            eventkit::authorization_status()
+        ));
+    }
+    Ok(google::diagnose(&account).await)
+}
