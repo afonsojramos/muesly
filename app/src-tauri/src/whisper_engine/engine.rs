@@ -552,7 +552,7 @@ impl WhisperEngine {
         params.set_print_timestamps(false);
 
         params.set_suppress_blank(true);
-        params.set_suppress_non_speech_tokens(true);
+        params.set_suppress_nst(true);
         params.set_temperature(temperature);
         params.set_max_initial_ts(1.0);
         params.set_entropy_thold(2.4);
@@ -569,16 +569,16 @@ impl WhisperEngine {
     /// so the segment loop and confidence proxy are not duplicated. Returns the
     /// cleaned transcript and an average confidence.
     fn collect_segments(state: &WhisperState) -> Result<(String, f32)> {
-        let num_segments = state.full_n_segments()?;
+        let num_segments = state.full_n_segments();
 
         let mut result = String::new();
         let mut total_confidence = 0.0f32;
         let mut segment_count = 0u32;
 
         for i in 0..num_segments {
-            let segment_text = match state.full_get_segment_text_lossy(i) {
-                Ok(text) => text,
-                Err(_) => continue,
+            let segment_text = match state.get_segment(i).and_then(|s| s.to_str_lossy().ok()) {
+                Some(text) => text.into_owned(),
+                None => continue,
             };
 
             // Confidence proxy based on segment text length (whisper-rs doesn't
@@ -681,8 +681,8 @@ impl WhisperEngine {
         let state = run_pass_state(None, false)?;
 
         // `full_lang_id_from_state` is only meaningful after a `full(..)` that ran
-        // with `set_language(None)`. A read failure is treated as "no detection".
-        let detected_id = state.full_lang_id_from_state().unwrap_or(-1);
+        // with `set_language(None)`. It returns -1 when there is no detection.
+        let detected_id = state.full_lang_id_from_state();
         let prev_stable = super::lang_lock::current_stable();
         let decision = super::lang_lock::resolve_detection(detected_id, audio_data.len());
 
