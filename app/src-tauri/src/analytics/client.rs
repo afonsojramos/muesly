@@ -113,9 +113,7 @@ impl AnalyticsClient {
             }
         }
         
-        if let Err(e) = client.capture(event).await {
-            eprintln!("Failed to identify user: {}", e);
-        }
+        client.capture(event);
         
         Ok(())
     }
@@ -156,9 +154,7 @@ impl AnalyticsClient {
             }
         }
         
-        if let Err(e) = client.capture(event).await {
-            log::warn!("Failed to track event {}: {}", event_name, e);
-        }
+        client.capture(event);
         
         Ok(())
     }
@@ -404,9 +400,7 @@ impl AnalyticsClient {
             }
         }
         
-        if let Err(e) = client.capture(event).await {
-            eprintln!("Failed to set user properties: {}", e);
-        }
+        client.capture(event);
         
         Ok(())
     }
