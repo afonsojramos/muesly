@@ -1,27 +1,31 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import {
+		Check,
 		CheckCircle2,
 		ChevronDown,
+		ChevronsUpDown,
 		ChevronUp,
 		Download,
 		ExternalLink,
 		RefreshCw,
 		XCircle
 	} from '@lucide/svelte';
+	import { tick } from 'svelte';
 
 	import type { OllamaModel } from '$lib/stores/config.svelte';
 	import { configService, type ModelConfig } from '$lib/services/config';
 	import { ollamaDownload } from '$lib/stores/ollama-download.svelte';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
+	import * as Command from '$lib/components/ui/command';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import * as Popover from '$lib/components/ui/popover';
 	import { Progress } from '$lib/components/ui/progress';
 	import { ScrollArea } from '$lib/components/ui/scroll-area';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Select from '$lib/components/ui/select';
-	import Combobox from '$lib/ui/combobox.svelte';
 	import BuiltInModelManager from './BuiltInModelManager.svelte';
 	import { toast } from '$lib/toast';
 	import { cn, isOllamaNotInstalledError } from '$lib/utils';
@@ -189,6 +193,13 @@
 	);
 
 	const ollamaComboItems = $derived(models.map((m) => ({ label: m.name, value: m.name })));
+
+	// Ollama model picker (Popover + Command combobox).
+	let ollamaModelPickerOpen = $state(false);
+	let ollamaModelPickerTriggerRef = $state<HTMLButtonElement>(null!);
+	const selectedOllamaModelLabel = $derived(
+		ollamaComboItems.find((item) => item.value === modelConfig.model)?.label
+	);
 
 	// Debounced endpoint URL validation with visual feedback.
 	$effect(() => {
@@ -370,6 +381,12 @@
 		if (model) setModelConfig({ ...modelConfig, model });
 	}
 
+	function selectOllamaModel(model: string): void {
+		handleOllamaModelSelect([model]);
+		ollamaModelPickerOpen = false;
+		void tick().then(() => ollamaModelPickerTriggerRef?.focus());
+	}
+
 	async function downloadRecommendedModel(): Promise<void> {
 		if (ollamaDownload.isDownloading(RECOMMENDED_MODEL)) {
 			toast.info(`${RECOMMENDED_MODEL} is already downloading`, {
@@ -487,13 +504,44 @@
 				</Select.Root>
 
 				{#if modelConfig.provider === 'ollama'}
-					<Combobox
-						items={ollamaComboItems}
-						value={modelConfig.model ? [modelConfig.model] : []}
-						placeholder="Select model…"
-						class="max-w-[240px]"
-						onValueChange={handleOllamaModelSelect}
-					/>
+					<Popover.Root bind:open={ollamaModelPickerOpen}>
+						<Popover.Trigger bind:ref={ollamaModelPickerTriggerRef}>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									variant="outline"
+									role="combobox"
+									aria-expanded={ollamaModelPickerOpen}
+									class="max-w-[240px] flex-1 justify-between font-normal"
+								>
+									<span class={cn('truncate', !selectedOllamaModelLabel && 'text-muted-foreground')}>
+										{selectedOllamaModelLabel ?? 'Select model…'}
+									</span>
+									<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
+								</Button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content align="end" class="w-[240px] p-0">
+							<Command.Root>
+								<Command.Input placeholder="Select model…" />
+								<Command.List>
+									<Command.Empty>No results</Command.Empty>
+									<Command.Group value="ollama-models">
+										{#each ollamaComboItems as item (item.value)}
+											{@const isSelected = item.value === modelConfig.model}
+											<Command.Item
+												value={item.label}
+												onSelect={() => selectOllamaModel(item.value)}
+											>
+												<Check class={cn('text-accent', !isSelected && 'text-transparent')} />
+												<span class={cn('truncate', isSelected && 'font-medium')}>{item.label}</span>
+											</Command.Item>
+										{/each}
+									</Command.Group>
+								</Command.List>
+							</Command.Root>
+						</Popover.Content>
+					</Popover.Root>
 				{/if}
 			</div>
 		</div>
