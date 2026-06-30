@@ -54,6 +54,11 @@
 		--muted-foreground: oklch(0.68 0.01 85);
 		--accent: oklch(0.65 0.18 35);
 		--accent-foreground: oklch(0.985 0 0);
+		/* Status hues brightened for the dark canvas — the light-mode values are
+		   tuned for paper and read muddy on dark. Foregrounds inherit the
+		   near-white from :root, matching the solid bg-success / bg-warning uses. */
+		--success: oklch(0.7 0.13 150);
+		--warning: oklch(0.72 0.13 70);
 		--border: oklch(0.315 0.01 80);
 		--input: oklch(0.315 0.01 80);
 		--ring: oklch(0.65 0.18 35);
