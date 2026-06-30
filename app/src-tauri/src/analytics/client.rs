@@ -1,10 +1,13 @@
 use posthog_rs::{Client, Event};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
+use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyticsConfig {
@@ -68,6 +71,81 @@ fn strip_sensitive_properties(
             .any(|sensitive| key.eq_ignore_ascii_case(sensitive))
     });
     properties
+}
+
+/// A single stack frame in an exception report. Mirrors the subset of PostHog's
+/// frame schema we populate. `filename`/`function` are code locations, not user
+/// data; the potentially-sensitive part (the message) is redacted separately.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, specta::Type)]
+pub struct ExceptionFrame {
+    pub filename: Option<String>,
+    pub function: Option<String>,
+    pub lineno: Option<u32>,
+    pub colno: Option<u32>,
+}
+
+/// Redact an exception message before it leaves the device: cap its length, then
+/// strip emails and filesystem paths. Mirrors the frontend `sanitizeErrorMessage`
+/// so Rust-origin panics get the same treatment as forwarded frontend errors.
+fn redact_exception_text(text: &str) -> String {
+    const MAX_LEN: usize = 1000;
+    static PATTERNS: OnceLock<Vec<(Regex, &'static str)>> = OnceLock::new();
+    let patterns = PATTERNS.get_or_init(|| {
+        vec![
+            (
+                Regex::new(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}").unwrap(),
+                "<email>",
+            ),
+            (Regex::new(r#"[A-Za-z]:\\[^\s'"]*"#).unwrap(), "<path>"), // Windows
+            (Regex::new(r#"~[/\\][^\s'"]*"#).unwrap(), "<path>"),      // home-relative
+            (Regex::new(r"/[^\s/]+(?:/[^\s/]*)+").unwrap(), "<path>"), // POSIX absolute
+        ]
+    });
+    let capped: String = text.chars().take(MAX_LEN).collect();
+    patterns
+        .iter()
+        .fold(capped, |acc, (re, repl)| re.replace_all(&acc, *repl).into_owned())
+}
+
+/// Build the PostHog `$exception_list` value from a redacted type/message and
+/// optional stack frames. Matches the shape PostHog's ingestion expects
+/// (`type`, `value`, `mechanism`, optional `stacktrace.frames`).
+fn build_exception_list(
+    exception_type: &str,
+    value: &str,
+    frames: &[ExceptionFrame],
+    handled: bool,
+) -> serde_json::Value {
+    let mut item = serde_json::Map::new();
+    item.insert("type".to_string(), json!(exception_type));
+    item.insert("value".to_string(), json!(value));
+    item.insert(
+        "mechanism".to_string(),
+        json!({ "type": "generic", "handled": handled, "synthetic": false }),
+    );
+    if !frames.is_empty() {
+        // PostHog renders frames innermost-last; callers pass outermost-first
+        // (both JS and the panic location), so reverse into PostHog's order.
+        let frames_json: Vec<serde_json::Value> = frames
+            .iter()
+            .rev()
+            .map(|f| {
+                json!({
+                    "filename": f.filename,
+                    "function": f.function.clone().unwrap_or_else(|| "<unknown>".to_string()),
+                    "lineno": f.lineno,
+                    "colno": f.colno,
+                    "in_app": true,
+                    "synthetic": false,
+                })
+            })
+            .collect();
+        item.insert(
+            "stacktrace".to_string(),
+            json!({ "type": "raw", "frames": frames_json }),
+        );
+    }
+    json!([serde_json::Value::Object(item)])
 }
 
 pub struct AnalyticsClient {
@@ -401,8 +479,72 @@ impl AnalyticsClient {
         }
         
         client.capture(event);
-        
+
         Ok(())
+    }
+
+    /// Capture a frontend-forwarded exception as a PostHog `$exception` event.
+    /// No-op when analytics is disabled. Uses the identified user when available,
+    /// falling back to "unidentified" so an error is never silently dropped.
+    pub async fn capture_exception(
+        &self,
+        exception_type: &str,
+        message: &str,
+        frames: Vec<ExceptionFrame>,
+        handled: bool,
+        source: &str,
+    ) -> Result<(), String> {
+        if self.client.is_none() {
+            return Ok(());
+        }
+        let distinct_id = self
+            .user_id
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| "unidentified".to_string());
+        self.emit_exception(&distinct_id, exception_type, message, &frames, handled, source);
+        Ok(())
+    }
+
+    /// Synchronous capture for the Rust panic hook. Safe to call from any thread
+    /// with no async runtime: `capture` only enqueues onto the background worker.
+    pub fn capture_panic(&self, message: &str, frames: Vec<ExceptionFrame>) {
+        if self.client.is_none() {
+            return;
+        }
+        let distinct_id = self
+            .user_id
+            .try_lock()
+            .ok()
+            .and_then(|guard| guard.clone())
+            .unwrap_or_else(|| "unidentified".to_string());
+        self.emit_exception(&distinct_id, "RustPanic", message, &frames, false, "rust");
+    }
+
+    /// Shared `$exception` event builder for both the async command path and the
+    /// sync panic hook. The message is redacted (emails, paths, length) here.
+    fn emit_exception(
+        &self,
+        distinct_id: &str,
+        exception_type: &str,
+        message: &str,
+        frames: &[ExceptionFrame],
+        handled: bool,
+        source: &str,
+    ) {
+        let Some(client) = &self.client else {
+            return;
+        };
+        let value = redact_exception_text(message);
+        let exception_list = build_exception_list(exception_type, &value, frames, handled);
+
+        let mut event = Event::new("$exception", distinct_id);
+        let _ = event.insert_prop("$exception_list", exception_list);
+        let _ = event.insert_prop("$exception_level", "error");
+        let _ = event.insert_prop("source", source);
+        let _ = event.insert_prop("app_version", env!("CARGO_PKG_VERSION"));
+        client.capture(event);
     }
 }
 
@@ -454,5 +596,50 @@ mod tests {
     #[test]
     fn empty_map_stays_empty() {
         assert!(strip_sensitive_properties(HashMap::new()).is_empty());
+    }
+
+    #[test]
+    fn redact_strips_emails_and_paths() {
+        let out = redact_exception_text(
+            "failed for alice@example.com reading /Users/alice/secret.wav and C:\\Users\\bob\\x.db",
+        );
+        assert!(!out.contains('@'), "email leaked: {out}");
+        assert!(!out.contains("secret.wav"), "posix path leaked: {out}");
+        assert!(!out.contains("bob"), "windows path leaked: {out}");
+        assert!(out.contains("<email>") && out.contains("<path>"));
+    }
+
+    #[test]
+    fn redact_caps_length() {
+        let long = "x".repeat(5000);
+        assert_eq!(redact_exception_text(&long).chars().count(), 1000);
+    }
+
+    #[test]
+    fn exception_list_has_type_value_and_mechanism() {
+        let list = build_exception_list("TypeError", "boom", &[], true);
+        let item = &list.as_array().unwrap()[0];
+        assert_eq!(item["type"], "TypeError");
+        assert_eq!(item["value"], "boom");
+        assert_eq!(item["mechanism"]["handled"], true);
+        // No frames -> no stacktrace key, but PostHog still groups on type+value.
+        assert!(item.get("stacktrace").is_none());
+    }
+
+    #[test]
+    fn exception_list_includes_frames_when_present() {
+        let frames = vec![ExceptionFrame {
+            filename: Some("engine.rs".to_string()),
+            function: Some("collect_segments".to_string()),
+            lineno: Some(572),
+            colno: None,
+        }];
+        let list = build_exception_list("RustPanic", "unwrap on None", &frames, false);
+        let item = &list.as_array().unwrap()[0];
+        let frames_json = item["stacktrace"]["frames"].as_array().unwrap();
+        assert_eq!(frames_json.len(), 1);
+        assert_eq!(frames_json[0]["function"], "collect_segments");
+        assert_eq!(frames_json[0]["lineno"], 572);
+        assert_eq!(item["mechanism"]["handled"], false);
     }
 }

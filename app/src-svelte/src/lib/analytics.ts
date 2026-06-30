@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sanitizeErrorMessage } from './utils/sanitize-error';
+import { parseStack } from './utils/parse-error-stack';
 
 export interface AnalyticsProperties {
   [key: string]: string;
@@ -84,6 +85,49 @@ export class Analytics {
       await invoke('track_event', { eventName, properties });
     } catch (error) {
       console.error(`Failed to track event ${eventName}:`, error);
+    }
+  }
+
+  /**
+   * Forward an unhandled error to PostHog error tracking. No-op unless analytics
+   * is initialized (i.e. the user has opted in). The message is path-sanitized
+   * here and further redacted (emails, length) on the Rust side. Never throws.
+   */
+  static async trackException(
+    error: unknown,
+    options?: { handled?: boolean; source?: string },
+  ): Promise<void> {
+    if (!this.initialized) return;
+
+    try {
+      let exceptionType = 'Error';
+      let message = '';
+      let stack: string | undefined;
+
+      if (error instanceof Error) {
+        exceptionType = error.name || 'Error';
+        message = error.message;
+        stack = error.stack ?? undefined;
+      } else if (typeof error === 'string') {
+        message = error;
+      } else {
+        try {
+          message = JSON.stringify(error);
+        } catch {
+          message = String(error);
+        }
+      }
+
+      const report = {
+        exceptionType,
+        message: sanitizeErrorMessage(message),
+        frames: parseStack(stack),
+        handled: options?.handled ?? false,
+        source: options?.source ?? 'frontend',
+      };
+      await invoke('track_exception', { report });
+    } catch (e) {
+      console.error('Failed to track exception:', e);
     }
   }
 

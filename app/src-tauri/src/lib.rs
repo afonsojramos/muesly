@@ -798,6 +798,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         analytics::commands::track_analytics_enabled,
         analytics::commands::track_analytics_disabled,
         analytics::commands::track_analytics_transparency_viewed,
+        analytics::commands::track_exception,
         whisper_engine::commands::whisper_init,
         whisper_engine::commands::whisper_get_available_models,
         whisper_engine::commands::whisper_load_model,
@@ -1017,6 +1018,36 @@ pub fn run() {
     // dev) so credentials like MUESLY_GOOGLE_CLIENT_ID/SECRET reach std::env.
     // No-op when absent; production builds embed config differently.
     let _ = dotenvy::dotenv();
+
+    // Best-effort crash reporting: forward Rust panics to PostHog error tracking.
+    // No-op unless analytics is enabled (the client is None otherwise), and the
+    // message is redacted before sending. Chains onto the previous hook so default
+    // logging/abort behavior is preserved; `capture_panic` only enqueues, so it is
+    // safe to call from the panic context.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if let Some(client) = analytics::commands::current_client() {
+            let message = info
+                .payload()
+                .downcast_ref::<&str>()
+                .map(|s| (*s).to_string())
+                .or_else(|| info.payload().downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "panic".to_string());
+            let frames = info
+                .location()
+                .map(|loc| {
+                    vec![analytics::ExceptionFrame {
+                        filename: Some(loc.file().to_string()),
+                        function: None,
+                        lineno: Some(loc.line()),
+                        colno: Some(loc.column()),
+                    }]
+                })
+                .unwrap_or_default();
+            client.capture_panic(&message, frames);
+        }
+        previous_hook(info);
+    }));
 
     let mut builder = tauri::Builder::default();
 

@@ -52,6 +52,7 @@ export const commands = {
 	trackAnalyticsEnabled: () => typedError<null, string>(__TAURI_INVOKE("track_analytics_enabled")),
 	trackAnalyticsDisabled: () => typedError<null, string>(__TAURI_INVOKE("track_analytics_disabled")),
 	trackAnalyticsTransparencyViewed: () => typedError<null, string>(__TAURI_INVOKE("track_analytics_transparency_viewed")),
+	trackException: (report: ExceptionReport) => typedError<null, string>(__TAURI_INVOKE("track_exception", { report })),
 	whisperInit: () => typedError<null, string>(__TAURI_INVOKE("whisper_init")),
 	whisperGetAvailableModels: () => typedError<WhisperModelInfo[], string>(__TAURI_INVOKE("whisper_get_available_models")),
 	whisperLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_load_model", { modelName })),
@@ -782,6 +783,30 @@ export type DictationCleanupPreset = {
 export type DisconnectedDeviceInfo = {
 	name: string,
 	device_type: string,
+};
+
+/**
+ *  A single stack frame in an exception report. Mirrors the subset of PostHog's
+ *  frame schema we populate. `filename`/`function` are code locations, not user
+ *  data; the potentially-sensitive part (the message) is redacted separately.
+ */
+export type ExceptionFrame = {
+	filename: string | null,
+	function: string | null,
+	lineno: number | null,
+	colno: number | null,
+};
+
+/**
+ *  An exception forwarded from the frontend (unhandled errors / promise
+ *  rejections). Bundled into one argument; the message is redacted Rust-side.
+ */
+export type ExceptionReport = {
+	exceptionType: string,
+	message: string,
+	frames?: ExceptionFrame[],
+	handled: boolean,
+	source: string,
 };
 
 export type Folder = {

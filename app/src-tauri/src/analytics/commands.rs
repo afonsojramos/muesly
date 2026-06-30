@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use serde::Deserialize;
 use tauri::command;
-use crate::analytics::{AnalyticsClient, AnalyticsConfig};
+use crate::analytics::{AnalyticsClient, AnalyticsConfig, ExceptionFrame};
 
 // Global analytics client
 static ANALYTICS_CLIENT: std::sync::Mutex<Option<Arc<AnalyticsClient>>> = std::sync::Mutex::new(None);
@@ -357,10 +357,56 @@ pub async fn is_analytics_session_active() -> bool {
         let guard = ANALYTICS_CLIENT.lock().unwrap_or_else(|e| e.into_inner());
         guard.as_ref().cloned()
     };
-    
+
     if let Some(client) = client {
         client.is_session_active().await
     } else {
         false
     }
+}
+
+/// An exception forwarded from the frontend (unhandled errors / promise
+/// rejections). Bundled into one argument; the message is redacted Rust-side.
+#[derive(Debug, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ExceptionReport {
+    pub exception_type: String,
+    pub message: String,
+    #[serde(default)]
+    pub frames: Vec<ExceptionFrame>,
+    pub handled: bool,
+    pub source: String,
+}
+
+#[command]
+#[specta::specta]
+pub async fn track_exception(report: ExceptionReport) -> Result<(), String> {
+    let client = {
+        let guard = ANALYTICS_CLIENT.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned()
+    };
+
+    if let Some(client) = client {
+        client
+            .capture_exception(
+                &report.exception_type,
+                &report.message,
+                report.frames,
+                report.handled,
+                &report.source,
+            )
+            .await
+    } else {
+        // Analytics disabled: silently drop, never surface to the error handler.
+        Ok(())
+    }
+}
+
+/// Snapshot of the global analytics client for the Rust panic hook in `run()`.
+pub fn current_client() -> Option<Arc<AnalyticsClient>> {
+    ANALYTICS_CLIENT
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .as_ref()
+        .cloned()
 }
