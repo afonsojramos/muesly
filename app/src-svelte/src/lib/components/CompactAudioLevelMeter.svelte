@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { cn } from '$lib/utils';
+
 	interface Props {
 		rmsLevel: number;
 		isActive: boolean;
@@ -14,13 +16,13 @@
 	});
 
 	const color = $derived(
-		rmsPercent / 100 < 0.3 ? 'bg-green-400' : rmsPercent / 100 < 0.7 ? 'bg-yellow-400' : 'bg-red-400'
+		rmsPercent / 100 < 0.3 ? 'bg-success' : rmsPercent / 100 < 0.7 ? 'bg-warning' : 'bg-destructive'
 	);
 </script>
 
-<div class={`flex items-center space-x-1 ${className}`}>
-	<div class={`size-1.5 rounded-full ${isActive ? 'bg-green-400' : 'bg-muted-foreground/30'}`}></div>
+<div class={cn('flex items-center gap-1', className)}>
+	<div class={cn('size-1.5 rounded-full', isActive ? 'bg-success' : 'bg-muted-foreground/30')}></div>
 	<div class="h-1.5 w-8 overflow-hidden rounded-sm bg-secondary">
-		<div class={`h-full ${color} transition-all duration-150`} style={`width: ${rmsPercent}%`}></div>
+		<div class={cn('h-full transition-all duration-150', color)} style={`width: ${rmsPercent}%`}></div>
 	</div>
 </div>

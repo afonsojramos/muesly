@@ -27,7 +27,7 @@
 			style={`margin-left: ${sidebar.effectiveWidth}px`}
 		>
 			<div class="flex w-2/3 max-w-[750px] justify-center">
-				<div class="flex items-center space-x-2 rounded-lg bg-card px-4 py-2 shadow-lg">
+				<div class="flex items-center gap-2 rounded-lg bg-card px-4 py-2 shadow-lg">
 					<div class="size-4 animate-spin rounded-full border-b-2 border-foreground"></div>
 					<span class="text-sm text-foreground">{overlay.message}</span>
 				</div>
