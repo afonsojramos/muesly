@@ -5,7 +5,6 @@
 
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import { Progress } from '$lib/components/ui/progress';
 	import { toast } from '$lib/toast';
 	import type { UpdateInfo, UpdateProgress } from '$lib/services/update';
@@ -231,10 +230,10 @@
 			<Dialog.Footer>
 				{#if !isDownloading && !error}
 					<Button variant="outline" onclick={() => handleOpenChange(false)}>Later</Button>
-					<AccentButton variant="accent" onclick={handleDownloadAndInstall}>
+					<Button variant="accent" onclick={handleDownloadAndInstall}>
 						<Download data-icon="inline-start" />
 						Download & Install
-					</AccentButton>
+					</Button>
 				{:else if error}
 					<Button variant="outline" onclick={() => handleOpenChange(false)}>Close</Button>
 				{/if}

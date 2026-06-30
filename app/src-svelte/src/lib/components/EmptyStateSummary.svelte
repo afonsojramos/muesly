@@ -2,7 +2,6 @@
 	import { scale } from 'svelte/transition';
 	import { FileQuestion, Sparkles } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	interface Props {
@@ -26,10 +25,10 @@
 	</p>
 
 	{#if hasModel}
-		<AccentButton variant="accent" onclick={onGenerate} disabled={isGenerating}>
+		<Button variant="accent" onclick={onGenerate} disabled={isGenerating}>
 			<Sparkles data-icon="inline-start" />
 			{isGenerating ? 'Enhancing...' : 'Enhance notes'}
-		</AccentButton>
+		</Button>
 	{:else}
 		<Tooltip.Provider delayDuration={300}>
 			<Tooltip.Root>

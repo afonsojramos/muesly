@@ -14,7 +14,6 @@
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Progress } from '$lib/components/ui/progress';
 	import * as Select from '$lib/components/ui/select';
@@ -346,10 +345,10 @@
 		<Dialog.Footer>
 			{#if !isProcessing && !error}
 				<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
-				<AccentButton variant="accent" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
+				<Button variant="accent" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
 					<RefreshCwIcon />
 					Start Retranscription
-				</AccentButton>
+				</Button>
 			{/if}
 			{#if isProcessing}
 				<Button variant="outline" onclick={handleCancel}>

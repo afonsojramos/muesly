@@ -14,7 +14,6 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import AccentButton from '$lib/ui/button.svelte';
 
 	interface Props {
 		model: ParakeetModelInfo;
@@ -124,7 +123,7 @@
 					</div>
 				{/if}
 			{:else if isMissing}
-				<AccentButton
+				<Button
 					variant="accent"
 					size="sm"
 					onclick={(e) => {
@@ -133,7 +132,7 @@
 					}}
 				>
 					Download
-				</AccentButton>
+				</Button>
 			{:else if downloadProgress === null && isError}
 				<Button
 					variant="destructive"
@@ -158,7 +157,7 @@
 					>
 						Delete
 					</Button>
-					<AccentButton
+					<Button
 						variant="accent"
 						size="sm"
 						onclick={(e) => {
@@ -167,7 +166,7 @@
 						}}
 					>
 						Re-download
-					</AccentButton>
+					</Button>
 				</div>
 			{/if}
 		</div>

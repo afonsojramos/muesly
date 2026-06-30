@@ -19,7 +19,6 @@
 	import { toast } from '$lib/toast';
 	import { isOllamaNotInstalledError } from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -274,30 +273,41 @@
 				</Tooltip.Root>
 			</Tooltip.Provider>
 		{:else}
-			<AccentButton
-				variant="accent"
-				size="sm"
-				class="rounded-full xl:px-4"
-				disabled={isCheckingModels || isModelConfigLoading}
-				aria-label="Enhance notes with AI"
-				tooltip={isModelConfigLoading
-					? 'Loading model configuration...'
-					: isCheckingModels
-						? 'Checking models...'
-						: 'Enhance notes with AI'}
-				onclick={() => {
-					Analytics.trackButtonClick('generate_summary', 'meeting_details');
-					void checkOllamaModelsAndGenerate();
-				}}
-			>
-				{#if isCheckingModels || isModelConfigLoading}
-					<Loader2Icon class="animate-spin" />
-					<span class="hidden xl:inline">Processing...</span>
-				{:else}
-					<SparklesIcon />
-					<span class="hidden lg:inline xl:inline">Enhance notes</span>
-				{/if}
-			</AccentButton>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="accent"
+								size="sm"
+								class="rounded-full xl:px-4"
+								disabled={isCheckingModels || isModelConfigLoading}
+								aria-label="Enhance notes with AI"
+								onclick={() => {
+									Analytics.trackButtonClick('generate_summary', 'meeting_details');
+									void checkOllamaModelsAndGenerate();
+								}}
+							>
+								{#if isCheckingModels || isModelConfigLoading}
+									<Loader2Icon class="animate-spin" />
+									<span class="hidden xl:inline">Processing...</span>
+								{:else}
+									<SparklesIcon />
+									<span class="hidden lg:inline xl:inline">Enhance notes</span>
+								{/if}
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						{isModelConfigLoading
+							? 'Loading model configuration...'
+							: isCheckingModels
+								? 'Checking models...'
+								: 'Enhance notes with AI'}
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
 		{/if}
 
 		<Dialog.Root bind:open={settingsDialogOpen}>

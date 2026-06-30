@@ -29,7 +29,6 @@
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { sidebar, type CurrentMeeting } from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -561,10 +560,10 @@
 						<span>Recording...</span>
 					</Button>
 				{:else}
-					<AccentButton variant="accent" size="sm" onclick={handleRecordingToggle} class="mt-2 h-7 w-full">
+					<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="mt-2 h-7 w-full">
 						<Plus />
 						<span>New note</span>
-					</AccentButton>
+					</Button>
 				{/if}
 			</div>
 

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { AlertTriangle, CheckCircle, X } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 
 	interface Props {
 		open: boolean;
@@ -65,9 +64,9 @@
 				<Button variant="outline" size="sm" class="h-6 flex-1 px-2 py-0.5 text-xs" onclick={onClose}>
 					Later
 				</Button>
-				<AccentButton variant="accent" size="sm" class="h-6 flex-1 px-2 py-0.5 text-xs" onclick={acknowledge}>
+				<Button variant="accent" size="sm" class="h-6 flex-1 px-2 py-0.5 text-xs" onclick={acknowledge}>
 					<CheckCircle class="mr-1 size-2" /> Done
-				</AccentButton>
+				</Button>
 			</div>
 		</div>
 	</div>

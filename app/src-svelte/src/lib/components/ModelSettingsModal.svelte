@@ -22,7 +22,6 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Select from '$lib/components/ui/select';
 	import Combobox from '$lib/ui/combobox.svelte';
-	import AccentButton from '$lib/ui/button.svelte';
 	import BuiltInModelManager from './BuiltInModelManager.svelte';
 	import { toast } from '$lib/toast';
 	import { cn, isOllamaNotInstalledError } from '$lib/utils';
@@ -754,7 +753,7 @@
 										local models.
 									</Alert.Description>
 								</Alert.Root>
-								<AccentButton
+								<Button
 									variant="accent"
 									size="sm"
 									class="w-full"
@@ -762,7 +761,7 @@
 										invoke('open_external_url', { url: 'https://ollama.com/download' })}
 								>
 									<ExternalLink class="size-4" /> Download Ollama
-								</AccentButton>
+								</Button>
 								<div class="text-center text-sm text-muted-foreground">
 									After installing Ollama, restart this application and click "Fetch Models" to
 									continue.
@@ -873,6 +872,6 @@
 	</div>
 
 	<div class="mt-6 flex justify-end">
-		<AccentButton variant="accent" disabled={isDoneDisabled} onclick={handleSave}>Save</AccentButton>
+		<Button variant="accent" disabled={isDoneDisabled} onclick={handleSave}>Save</Button>
 	</div>
 </div>

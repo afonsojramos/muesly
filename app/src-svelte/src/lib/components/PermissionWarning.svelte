@@ -3,7 +3,6 @@
 	import { AlertTriangle, Mic, RefreshCw, Speaker } from '@lucide/svelte';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
-	import AccentButton from '$lib/ui/button.svelte';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 
 	interface Props {
@@ -59,13 +58,13 @@
 						</Button>
 					{/if}
 					{#if isMacOS && !hasSystemAudio}
-						<AccentButton
+						<Button
 							variant="accent"
 							size="sm"
 							onclick={() => openSettings('Privacy_ScreenCapture')}
 						>
 							<Speaker /> Open Screen Recording Settings
-						</AccentButton>
+						</Button>
 					{/if}
 					<Button variant="outline" size="sm" onclick={onRecheck} disabled={isRechecking}>
 						<RefreshCw class={isRechecking ? 'animate-spin' : ''} data-icon="inline-start" /> Recheck
