@@ -752,7 +752,7 @@
 						data-drop-target={section.id}
 					>
 						<div
-							class="group/folder my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
+							class="group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
 							data-roving-row
 						>
 							<button
@@ -773,7 +773,7 @@
 								<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
 							</button>
 							<div
-								class="hidden flex-shrink-0 items-center gap-0.5 group-hover/folder:flex group-focus-within/folder:flex"
+								class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-secondary pl-2 group-hover/folder:flex group-focus-within/folder:flex"
 							>
 								<Tooltip.Provider delayDuration={300}>
 									<Tooltip.Root>
