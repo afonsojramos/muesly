@@ -59,9 +59,9 @@
 					{/if}
 					{#if isMacOS && !hasSystemAudio}
 						<Button
-							variant="accent"
 							size="sm"
 							onclick={() => openSettings('Privacy_ScreenCapture')}
+							class="bg-warning text-warning-foreground hover:bg-warning/90"
 						>
 							<Speaker /> Open Screen Recording Settings
 						</Button>

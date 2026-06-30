@@ -14,7 +14,7 @@
 			: confidence >= 0.7
 				? 'bg-warning'
 				: confidence >= 0.4
-					? 'bg-accent'
+					? 'bg-warning'
 					: 'bg-destructive'
 	);
 

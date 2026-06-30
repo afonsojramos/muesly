@@ -506,9 +506,10 @@
 				role="separator"
 				aria-orientation="vertical"
 				aria-label="Resize sidebar"
-				class={`absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40 ${
-					sidebar.isResizing ? 'bg-accent/50' : ''
-				}`}
+				class={cn(
+					'absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
+					sidebar.isResizing && 'bg-accent/50'
+				)}
 				onpointerdown={startResize}
 			></div>
 		{/if}
