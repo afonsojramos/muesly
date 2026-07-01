@@ -20,7 +20,7 @@
 
 	import { Analytics } from '$lib/analytics';
 	import { cn } from '$lib/utils';
-	import { compareByDateDesc, groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
+	import { groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
 	import { clock } from '$lib/now.svelte';
 	import { toast } from '$lib/toast';
 	import { config } from '$lib/stores/config.svelte';
@@ -31,8 +31,6 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-
-	let searchQuery = $state('');
 
 	let deleteModal = $state<{ open: boolean; itemId: string | null }>({
 		open: false,
@@ -46,50 +44,17 @@
 
 	const pathname = $derived(page.url.pathname);
 
-	function findMatchingSnippet(itemId: string) {
-		if (!searchQuery.trim() || !sidebar.searchResults.length) return null;
-		return sidebar.searchResults.find((result) => result.id === itemId) ?? null;
-	}
-
-	// Search-filtered meetings. `api_search_transcripts` returns `m.id` (a meeting
-	// id), so every search result id is also present in `sidebar.meetings` — the
-	// intersection below cannot hide a hit.
-	const filteredMeetings = $derived.by((): CurrentMeeting[] => {
-		const items = sidebar.meetings;
-		if (!searchQuery.trim()) return items;
-
-		const query = searchQuery.toLowerCase();
-		const matchedIds = new Set(sidebar.searchResults.map((r) => r.id));
-		return items.filter((item) =>
-			sidebar.searchResults.length > 0
-				? matchedIds.has(item.id) || item.title.toLowerCase().includes(query)
-				: item.title.toLowerCase().includes(query)
-		);
-	});
-
-	// O(1) folder-name lookup for the search-result folder chips — rebuilt only
-	// when folders change, instead of scanning sidebar.folders per rendered row.
-	const folderNames = $derived(new Map(sidebar.folders.map((f) => [f.id, f.name])));
-
-	// Flat, recency-sorted results while searching — spans folders and uncategorized
-	// notes so a note tucked inside a folder is still reachable from the search box.
-	const searchResults = $derived(
-		searchQuery.trim()
-			? [...filteredMeetings].sort((a, b) => compareByDateDesc(a.createdAt, b.createdAt))
-			: []
-	);
-
 	// Uncategorized notes, bucketed by recency. The current week is one free-flowing
 	// list (rendered without a header); older notes fall into wider, headed buckets.
 	const uncategorizedGroups = $derived(
 		groupByRecency(
-			filteredMeetings.filter((m) => !m.folderId),
+			sidebar.meetings.filter((m) => !m.folderId),
 			(m) => m.createdAt,
 			clock.now
 		)
 	);
 
-	const hasAnyNotes = $derived(filteredMeetings.length > 0 || sidebar.folders.length > 0);
+	const hasAnyNotes = $derived(sidebar.meetings.length > 0 || sidebar.folders.length > 0);
 
 	// Folder + move-to-folder modals.
 	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
@@ -217,9 +182,11 @@
 		window.addEventListener('pointercancel', onUp);
 	}
 
-	async function handleSearchChange(value: string): Promise<void> {
-		searchQuery = value;
-		await sidebar.searchTranscripts(value.trim() ? value : '');
+	// Search lives in the main-area /search view; this just opens it, pre-scoped to
+	// the current folder when one is being viewed.
+	function openSearch(): void {
+		const folderId = page.url.pathname === '/folder' ? page.url.searchParams.get('id') : null;
+		void goto(folderId ? `/search?folder=${folderId}` : '/search');
 	}
 
 	function handleRecordingToggle(): void {
@@ -360,7 +327,7 @@
 			void goto('/settings');
 		};
 
-		// Granola-style shortcuts: ⌘S toggles the sidebar, ⌘K focuses search.
+		// Granola-style shortcuts: ⌘S toggles the sidebar, ⌘K opens search.
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
 			const key = e.key.toLowerCase();
@@ -369,9 +336,7 @@
 				sidebar.toggleCollapse();
 			} else if (key === 'k') {
 				e.preventDefault();
-				if (sidebar.isCollapsed) sidebar.toggleCollapse();
-				// Wait for the expanded layout to render before focusing.
-				setTimeout(() => document.getElementById('sidebar-search')?.focus(), 50);
+				openSearch();
 			}
 		};
 		window.addEventListener('keydown', handleKeydown);
@@ -468,58 +433,51 @@
 		{/if}
 		<!-- Overlay title bar: reserve space for the macOS traffic lights and
 		     let the empty strip drag the window. -->
-		<div data-tauri-drag-region="deep" class="h-8 flex-shrink-0"></div>
+		<div data-tauri-drag-region="deep" class="h-8 shrink-0"></div>
 		{#if !sidebar.isCollapsed}
 			<!-- Header -->
-			<div class="flex-shrink-0 px-3 pb-1 pt-1">
-				<div class="relative">
-					<Search
-						class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input
-						id="sidebar-search"
-						class="h-7 border-transparent bg-foreground/[0.04] pl-8 pr-8 shadow-none focus:bg-background"
-						placeholder="Search"
-						aria-label="Search notes"
-						value={searchQuery}
-						oninput={(e) => handleSearchChange(e.currentTarget.value)}
-					/>
-					{#if !searchQuery}
-						<span
-							class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] tracking-wide text-muted-foreground/50"
-						>
-							⌘K
-						</span>
-					{/if}
-					{#if searchQuery}
-						<Button
-							variant="ghost"
-							size="icon-xs"
-							onclick={() => handleSearchChange('')}
-							class="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-							aria-label="Clear search"
-						>
-							<X />
+			<div class="shrink-0 px-3 pb-1 pt-1">
+				<div class="flex items-center gap-2">
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										variant="ghost"
+										size="icon-sm"
+										onclick={openSearch}
+										class="shrink-0 text-muted-foreground hover:text-foreground"
+										aria-label="Search notes"
+									>
+										<Search />
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>
+								Search
+								<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
+							</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
+
+					{#if recordingState.isRecording}
+						<Button disabled variant="destructive" size="sm" class="h-7 flex-1 cursor-not-allowed">
+							<span class="relative flex size-2">
+								<span
+									class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
+								></span>
+								<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
+							</span>
+							<span>Recording...</span>
+						</Button>
+					{:else}
+						<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="h-7 flex-1">
+							<Plus />
+							<span>New note</span>
 						</Button>
 					{/if}
 				</div>
-
-				{#if recordingState.isRecording}
-					<Button disabled variant="destructive" size="sm" class="mt-2 w-full cursor-not-allowed">
-						<span class="relative flex size-2">
-							<span
-								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
-							></span>
-							<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
-						</span>
-						<span>Recording...</span>
-					</Button>
-				{:else}
-					<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="mt-2 h-7 w-full">
-						<Plus />
-						<span>New note</span>
-					</Button>
-				{/if}
 			</div>
 
 			<!-- Nav -->
@@ -540,9 +498,6 @@
 
 			<!-- Notes list -->
 			<div class="custom-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-				{#if searchQuery && sidebar.isSearching}
-					<div class="px-2 py-1 text-xs text-muted-foreground">Searching...</div>
-				{/if}
 
 				<!-- Meeting row, reused in folder sections and date groups. The title is a
 				 real <button> (flex-1) for navigation; the hover controls are siblings,
@@ -551,8 +506,6 @@
 				{#snippet meetingRow(meeting: CurrentMeeting)}
 					{@const isActive = sidebar.currentMeeting?.id === meeting.id}
 					{@const isMeeting = isMeetingItem(meeting.id)}
-					{@const matchingResult = isMeeting ? findMatchingSnippet(meeting.id) : null}
-					{@const folderName = meeting.folderId ? (folderNames.get(meeting.folderId) ?? null) : null}
 					<div
 						class={cn(
 							'group my-px flex flex-col rounded-md px-2 py-1 text-[13px] transition-colors duration-150',
@@ -576,14 +529,6 @@
 							>
 								{meeting.title}
 							</button>
-							{#if folderName}
-								<span
-									class="flex min-w-0 max-w-[45%] flex-shrink-0 items-center gap-1 text-xs text-muted-foreground/60 group-hover:hidden group-focus-within:hidden"
-								>
-									<Folder class="size-3 shrink-0" />
-									<span class="truncate">{folderName}</span>
-								</span>
-							{/if}
 							{#if isMeeting}
 								<div
 									data-no-drag
@@ -659,25 +604,11 @@
 							{/if}
 						</div>
 
-						{#if matchingResult}
-							<button
-								type="button"
-								onclick={() => selectMeeting(meeting)}
-								class="mt-1 line-clamp-2 text-left text-xs text-muted-foreground"
-							>
-								{matchingResult.matchContext}
-							</button>
-						{/if}
 					</div>
 				{/snippet}
 
 				<!-- Folders header + create -->
-				<div
-					class={cn(
-						'flex items-center justify-between px-2 pb-0.5 pt-2',
-						searchQuery.trim() && 'hidden'
-					)}
-				>
+				<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
 					<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
 					<Tooltip.Provider delayDuration={300}>
 						<Tooltip.Root>
@@ -700,7 +631,7 @@
 					</Tooltip.Provider>
 				</div>
 
-				{#each searchQuery.trim() ? [] : sidebar.folders as section (section.id)}
+				{#each sidebar.folders as section (section.id)}
 					<!-- Whole section is a drop target; highlight while a note is dragged over. -->
 					<div
 						class={cn(
@@ -791,29 +722,19 @@
 						dragOverTarget === 'uncategorized' && 'bg-accent/10 ring-1 ring-accent/40'
 					)}
 				>
-					{#if searchQuery.trim()}
-						{#if searchResults.length === 0 && !sidebar.isSearching}
-							<div class="px-2 py-3 text-sm text-muted-foreground">No notes found</div>
-						{:else}
-							{#each searchResults as child (child.id)}
-								{@render meetingRow(child)}
-							{/each}
+					{#each uncategorizedGroups as group (group.label)}
+						{#if group.label !== RECENT_GROUP_LABEL}
+							<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
+								{group.label}
+							</div>
 						{/if}
-					{:else}
-						{#each uncategorizedGroups as group (group.label)}
-							{#if group.label !== RECENT_GROUP_LABEL}
-								<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
-									{group.label}
-								</div>
-							{/if}
-							{#each group.items as child (child.id)}
-								{@render meetingRow(child)}
-							{/each}
+						{#each group.items as child (child.id)}
+							{@render meetingRow(child)}
 						{/each}
-					{/if}
+					{/each}
 				</div>
 
-				{#if !hasAnyNotes && !searchQuery.trim()}
+				{#if !hasAnyNotes}
 					<div class="px-2 py-3 text-sm text-muted-foreground">No notes yet</div>
 				{/if}
 			</div>
