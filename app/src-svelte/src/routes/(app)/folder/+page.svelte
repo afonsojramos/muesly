@@ -6,7 +6,6 @@
 
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
 	import { cn } from '$lib/utils';
 	import { groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
 	import { clock } from '$lib/now.svelte';
@@ -19,19 +18,16 @@
 		folderId ? sidebar.meetings.filter((m) => m.folderId === folderId) : []
 	);
 
-	let query = $state('');
-
-	const filtered = $derived(
-		query.trim()
-			? meetings.filter((m) => m.title.toLowerCase().includes(query.trim().toLowerCase()))
-			: meetings
-	);
-
 	// Recency buckets, newest first; the current week lists freely (no header).
-	const groups = $derived(groupByRecency(filtered, (m) => m.createdAt, clock.now));
+	const groups = $derived(groupByRecency(meetings, (m) => m.createdAt, clock.now));
 
 	function goBack(): void {
 		history.back();
+	}
+
+	// Search scoped to this folder opens the shared main-area search view.
+	function openSearch(): void {
+		if (folderId) void goto(`/search?folder=${folderId}`);
 	}
 
 	function openMeeting(id: string): void {
@@ -52,7 +48,6 @@
 		});
 	}
 
-	// Standard macOS "back" shortcut, matching the title-bar tooltip hint.
 	onMount(() => {
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === '[') {
@@ -101,6 +96,30 @@
 			>
 				{folder?.name ?? 'Folder'}
 			</h1>
+			{#if folder && meetings.length > 0}
+				<Tooltip.Provider delayDuration={300}>
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							{#snippet child({ props })}
+								<Button
+									{...props}
+									onclick={openSearch}
+									variant="ghost"
+									size="icon-sm"
+									class="ml-auto text-muted-foreground hover:text-foreground"
+									aria-label="Search this folder"
+								>
+									<Search />
+								</Button>
+							{/snippet}
+						</Tooltip.Trigger>
+						<Tooltip.Content>
+							Search this folder
+							<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
+						</Tooltip.Content>
+					</Tooltip.Root>
+				</Tooltip.Provider>
+			{/if}
 		</div>
 	</div>
 
@@ -127,31 +146,12 @@
 					</div>
 				</header>
 
-				{#if meetings.length > 0}
-					<div class="relative mb-5">
-						<Search
-							class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-						/>
-						<Input
-							class="pl-9"
-							placeholder="Search notes in this folder"
-							aria-label="Search notes in this folder"
-							value={query}
-							oninput={(e) => (query = e.currentTarget.value)}
-						/>
-					</div>
-				{/if}
-
 				{#if meetings.length === 0}
 					<div class="flex flex-col items-center gap-2 py-20 text-center">
 						<p class="text-sm text-muted-foreground">No notes in this folder yet.</p>
 						<p class="text-xs text-muted-foreground/70">
 							Drag a note onto this folder in the sidebar to add it here.
 						</p>
-					</div>
-				{:else if filtered.length === 0}
-					<div class="py-16 text-center text-sm text-muted-foreground">
-						No notes match “{query.trim()}”.
 					</div>
 				{:else}
 					<div class="flex flex-col gap-5">
