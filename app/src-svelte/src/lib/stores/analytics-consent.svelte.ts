@@ -29,7 +29,7 @@ class AnalyticsConsentStore {
 		try {
 			const store = await load('analytics.json', {
 				autoSave: false,
-				defaults: { analyticsOptedIn: true }
+				defaults: { analyticsOptedIn: true },
 			});
 			if (!(await store.has('analyticsOptedIn'))) {
 				await store.set('analyticsOptedIn', true);
@@ -47,7 +47,7 @@ class AnalyticsConsentStore {
 		try {
 			const store = await load('analytics.json', {
 				autoSave: false,
-				defaults: { analyticsOptedIn: true }
+				defaults: { analyticsOptedIn: true },
 			});
 			await store.set('analyticsOptedIn', enabled);
 			await store.save();
@@ -83,7 +83,7 @@ class AnalyticsConsentStore {
 		// Store platform info in analytics.json for quick access.
 		const store = await load('analytics.json', {
 			autoSave: false,
-			defaults: { analyticsOptedIn: true }
+			defaults: { analyticsOptedIn: true },
 		});
 		await store.set('platform', deviceInfo.platform);
 		await store.set('os_version', deviceInfo.os_version);
@@ -103,7 +103,7 @@ class AnalyticsConsentStore {
 			platform: deviceInfo.platform,
 			os_version: deviceInfo.os_version,
 			architecture: deviceInfo.architecture,
-			first_seen: new Date().toISOString()
+			first_seen: new Date().toISOString(),
 		});
 
 		// Start analytics session with platform info.

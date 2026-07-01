@@ -52,7 +52,7 @@
 	async function create(): Promise<void> {
 		const res = await commands.createDictationCleanupPreset(
 			'New preset',
-			'Fix grammar, punctuation, and capitalization. Output only the corrected text.'
+			'Fix grammar, punctuation, and capitalization. Output only the corrected text.',
 		);
 		if (res.status === 'error') {
 			toast.error('Failed to create preset', { description: res.error });

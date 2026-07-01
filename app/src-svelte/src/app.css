@@ -48,9 +48,9 @@
 		--popover-foreground: oklch(0.94 0.006 90);
 		--primary: oklch(0.94 0.006 90);
 		--primary-foreground: oklch(0.255 0.009 80);
-		--secondary: oklch(0.30 0.01 80);
+		--secondary: oklch(0.3 0.01 80);
 		--secondary-foreground: oklch(0.94 0.006 90);
-		--muted: oklch(0.30 0.01 80);
+		--muted: oklch(0.3 0.01 80);
 		--muted-foreground: oklch(0.68 0.01 85);
 		--accent: oklch(0.65 0.18 35);
 		--accent-foreground: oklch(0.985 0 0);
@@ -62,7 +62,7 @@
 		--border: oklch(0.315 0.01 80);
 		--input: oklch(0.315 0.01 80);
 		--ring: oklch(0.65 0.18 35);
-		--sidebar: oklch(0.20 0.008 80);
+		--sidebar: oklch(0.2 0.008 80);
 	}
 
 	* {
@@ -131,8 +131,7 @@
 	--color-ring: var(--ring);
 	--color-sidebar: var(--sidebar);
 
-	--font-sans:
-		'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+	--font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
 	--font-display: 'Lora Variable', ui-serif, 'New York', Georgia, serif;
 
 	--radius-sm: calc(var(--radius) - 4px);

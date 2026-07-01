@@ -18,7 +18,7 @@
 	const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
 		{ value: 'light', label: 'Light', icon: Sun },
 		{ value: 'dark', label: 'Dark', icon: Moon },
-		{ value: 'system', label: 'System', icon: Monitor }
+		{ value: 'system', label: 'System', icon: Monitor },
 	];
 
 	function handleThemeChange(mode: ThemeMode): void {
@@ -36,7 +36,7 @@
 		config.notificationSettings
 			? config.notificationSettings.notification_preferences.show_recording_started &&
 					config.notificationSettings.notification_preferences.show_recording_stopped
-			: true
+			: true,
 	);
 
 	// Track a single "preferences viewed" event once settings are available.
@@ -46,7 +46,7 @@
 		void Analytics.track('preferences_viewed', {
 			notifications_enabled: config.notificationSettings
 				? config.notificationSettings.notification_preferences.show_recording_started.toString()
-				: 'false'
+				: 'false',
 		});
 	});
 
@@ -60,11 +60,11 @@
 				notification_preferences: {
 					...current.notification_preferences,
 					show_recording_started: enabled,
-					show_recording_stopped: enabled
-				}
+					show_recording_stopped: enabled,
+				},
 			});
 			await Analytics.track('notification_settings_changed', {
-				notifications_enabled: enabled.toString()
+				notifications_enabled: enabled.toString(),
 			});
 		} catch (error) {
 			console.error('Failed to update notification settings:', error);
@@ -147,8 +147,8 @@
 
 				<div class="rounded-md bg-accent/5 p-3">
 					<p class="text-xs text-foreground">
-						<strong>Note:</strong> Database and models are stored together in your application data
-						directory for unified management.
+						<strong>Note:</strong> Database and models are stored together in your application data directory
+						for unified management.
 					</p>
 				</div>
 			</Card.Content>

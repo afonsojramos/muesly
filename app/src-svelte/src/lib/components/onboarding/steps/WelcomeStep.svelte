@@ -10,7 +10,7 @@
 	const features: { icon: Component; title: string }[] = [
 		{ icon: Lock, title: 'Your data never leaves your device' },
 		{ icon: Sparkles, title: 'Intelligent summaries & insights' },
-		{ icon: Cpu, title: 'Works offline, no cloud required' }
+		{ icon: Cpu, title: 'Works offline, no cloud required' },
 	];
 </script>
 

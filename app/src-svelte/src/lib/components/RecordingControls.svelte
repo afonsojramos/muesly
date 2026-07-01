@@ -34,7 +34,7 @@
 		isRecordingDisabled,
 		isParentProcessing,
 		selectedDevices,
-		meetingName
+		meetingName,
 	}: Props = $props();
 
 	const isPaused = $derived(recordingState.isPaused);
@@ -64,7 +64,7 @@
 				deviceError = {
 					title: 'Microphone Not Available',
 					message:
-						'Unable to access your microphone. Please check that:\n• Your microphone is connected\n• The app has microphone permissions\n• No other app is using the microphone'
+						'Unable to access your microphone. Please check that:\n• Your microphone is connected\n• The app has microphone permissions\n• No other app is using the microphone',
 				};
 			} else if (
 				errorMsg.includes('system audio') ||
@@ -74,19 +74,19 @@
 				deviceError = {
 					title: 'System Audio Not Available',
 					message:
-						'Unable to capture system audio. Please check that:\n• A virtual audio device (like BlackHole) is installed\n• The app has screen recording permissions (macOS)\n• System audio is properly configured'
+						'Unable to capture system audio. Please check that:\n• A virtual audio device (like BlackHole) is installed\n• The app has screen recording permissions (macOS)\n• System audio is properly configured',
 				};
 			} else if (errorMsg.includes('permission')) {
 				deviceError = {
 					title: 'Permission Required',
 					message:
-						'Recording permissions are required. Please:\n• Grant microphone access in System Settings\n• Grant screen recording access for system audio (macOS)\n• Restart the app after granting permissions'
+						'Recording permissions are required. Please:\n• Grant microphone access in System Settings\n• Grant screen recording access for system audio (macOS)\n• Restart the app after granting permissions',
 				};
 			} else {
 				deviceError = {
 					title: 'Recording Failed',
 					message:
-						'Unable to start recording. Please check your audio device settings and try again.'
+						'Unable to start recording. Please check your audio device settings and try again.',
 				};
 			}
 		}
@@ -205,7 +205,7 @@
 							'relative flex size-12 items-center justify-center rounded-full text-white transition-colors',
 							isStarting || isProcessing || isValidatingModel
 								? 'bg-muted-foreground/50'
-								: 'bg-accent hover:opacity-90'
+								: 'bg-accent hover:opacity-90',
 						)}
 					>
 						{#if isValidatingModel}
@@ -223,7 +223,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
 						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
@@ -247,7 +247,7 @@
 							'relative flex size-10 items-center justify-center rounded-full border-2 transition-colors',
 							isPausing || isResuming || isStopping
 								? 'border-border bg-secondary text-muted-foreground'
-								: 'border-border bg-card text-muted-foreground hover:bg-secondary'
+								: 'border-border bg-card text-muted-foreground hover:bg-secondary',
 						)}
 					>
 						{#if isPaused}<Play size={16} />{:else}<Pause size={16} />{/if}
@@ -273,7 +273,7 @@
 							'relative flex size-10 items-center justify-center rounded-full text-white transition-colors',
 							isStopping || isPausing || isResuming
 								? 'bg-muted-foreground/50'
-								: 'bg-destructive hover:opacity-90'
+								: 'bg-destructive hover:opacity-90',
 						)}
 					>
 						<Square size={16} />
@@ -292,7 +292,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
 						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>

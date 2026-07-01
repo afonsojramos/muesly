@@ -77,6 +77,6 @@ export function usePlatform(): UsePlatform {
 		},
 		get isLinux() {
 			return current === 'linux';
-		}
+		},
 	};
 }

@@ -54,7 +54,7 @@
 	}
 
 	const isLoading = $derived(
-		status === 'processing' || status === 'summarizing' || status === 'regenerating'
+		status === 'processing' || status === 'summarizing' || status === 'regenerating',
 	);
 	const hasContent = $derived(incomingMarkdown.trim().length > 0);
 

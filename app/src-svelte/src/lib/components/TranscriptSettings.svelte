@@ -33,21 +33,24 @@
 		uiProvider = transcriptModelConfig.provider;
 	});
 	$effect(() => {
-		if (transcriptModelConfig.provider === 'localWhisper' || transcriptModelConfig.provider === 'parakeet') {
+		if (
+			transcriptModelConfig.provider === 'localWhisper' ||
+			transcriptModelConfig.provider === 'parakeet'
+		) {
 			apiKey = null;
 		}
 	});
 
 	const providerItems = [
 		{ value: 'parakeet', label: '⚡ Parakeet (Recommended — Real-time / Accurate)' },
-		{ value: 'localWhisper', label: '🏠 Local Whisper (High Accuracy)' }
+		{ value: 'localWhisper', label: '🏠 Local Whisper (High Accuracy)' },
 	];
 
 	const requiresApiKey = $derived(
 		uiProvider === 'deepgram' ||
 			uiProvider === 'elevenLabs' ||
 			uiProvider === 'openai' ||
-			uiProvider === 'groq'
+			uiProvider === 'groq',
 	);
 
 	async function fetchApiKey(provider: string): Promise<void> {
@@ -60,7 +63,7 @@
 	}
 
 	const providerLabel = $derived(
-		providerItems.find((item) => item.value === uiProvider)?.label ?? 'Select provider'
+		providerItems.find((item) => item.value === uiProvider)?.label ?? 'Select provider',
 	);
 
 	function handleProviderChange(value: string): void {
@@ -72,7 +75,11 @@
 	}
 
 	function handleWhisperSelect(modelName: string): void {
-		setTranscriptModelConfig({ ...transcriptModelConfig, provider: 'localWhisper', model: modelName });
+		setTranscriptModelConfig({
+			...transcriptModelConfig,
+			provider: 'localWhisper',
+			model: modelName,
+		});
 		onModelSelect?.();
 	}
 
@@ -177,7 +184,7 @@
 							placeholder="Mishear (e.g. cubernetes)"
 							oninput={(e) => {
 								const updated = config.customVocabulary.map((v, idx) =>
-									idx === i ? { ...v, from: e.currentTarget.value } : v
+									idx === i ? { ...v, from: e.currentTarget.value } : v,
 								);
 								config.setCustomVocabulary(updated);
 							}}
@@ -189,7 +196,7 @@
 							placeholder="Correction (e.g. Kubernetes)"
 							oninput={(e) => {
 								const updated = config.customVocabulary.map((v, idx) =>
-									idx === i ? { ...v, to: e.currentTarget.value } : v
+									idx === i ? { ...v, to: e.currentTarget.value } : v,
 								);
 								config.setCustomVocabulary(updated);
 							}}

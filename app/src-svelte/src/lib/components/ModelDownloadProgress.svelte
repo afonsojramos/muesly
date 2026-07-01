@@ -11,7 +11,7 @@
 	let { status, modelName }: Props = $props();
 
 	const progress = $derived(
-		typeof status === 'object' && 'Downloading' in status ? status.Downloading : null
+		typeof status === 'object' && 'Downloading' in status ? status.Downloading : null,
 	);
 	const isCompleted = $derived(progress !== null && progress >= 100);
 </script>

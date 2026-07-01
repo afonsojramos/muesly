@@ -6,7 +6,7 @@ const config = {
 	preprocess: vitePreprocess(),
 	compilerOptions: {
 		// Force runes mode everywhere except node_modules.
-		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true)
+		runes: ({ filename }) => (filename.split(/[/\\]/).includes('node_modules') ? undefined : true),
 	},
 	kit: {
 		// SPA mode for Tauri — the webview is the only consumer.
@@ -14,9 +14,9 @@ const config = {
 			pages: 'build',
 			assets: 'build',
 			fallback: 'index.html',
-			strict: false
-		})
-	}
+			strict: false,
+		}),
+	},
 };
 
 export default config;

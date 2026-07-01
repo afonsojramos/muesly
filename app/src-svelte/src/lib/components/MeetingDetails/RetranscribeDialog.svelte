@@ -10,7 +10,10 @@
 
 	import { LANGUAGES } from '$lib/constants/languages';
 	import { config } from '$lib/stores/config.svelte';
-	import { useTranscriptionModels, type ModelOption } from '$lib/hooks/use-transcription-models.svelte';
+	import {
+		useTranscriptionModels,
+		type ModelOption,
+	} from '$lib/hooks/use-transcription-models.svelte';
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
 	import { Button } from '$lib/components/ui/button';
@@ -26,7 +29,13 @@
 		onComplete?: () => void;
 	}
 
-	let { open = $bindable(), onOpenChange, meetingId, meetingFolderPath, onComplete }: Props = $props();
+	let {
+		open = $bindable(),
+		onOpenChange,
+		meetingId,
+		meetingFolderPath,
+		onComplete,
+	}: Props = $props();
 
 	interface RetranscriptionProgress {
 		meeting_id: string;
@@ -100,7 +109,7 @@
 					if (event.payload.meeting_id === meetingId) {
 						progress = event.payload;
 					}
-				}
+				},
 			);
 			if (cleanedUp) {
 				unlistenProgress();
@@ -115,16 +124,16 @@
 						await Analytics.track('enhance_transcript_completed', {
 							success: 'true',
 							duration_seconds: event.payload.duration_seconds.toString(),
-							segments_count: event.payload.segments_count.toString()
+							segments_count: event.payload.segments_count.toString(),
 						});
 						isProcessing = false;
 						toast.success(
-							`Retranscription complete! ${event.payload.segments_count} segments created.`
+							`Retranscription complete! ${event.payload.segments_count} segments created.`,
 						);
 						onComplete?.();
 						onOpenChange(false);
 					}
-				}
+				},
 			);
 			if (cleanedUp) {
 				unlistenComplete();
@@ -141,7 +150,7 @@
 						isProcessing = false;
 						error = event.payload.error;
 					}
-				}
+				},
 			);
 			if (cleanedUp) {
 				unlistenError();
@@ -174,7 +183,7 @@
 			await Analytics.track('enhance_transcript_started', {
 				language: isParakeetModel ? 'auto' : selectedLang === 'auto' ? 'auto' : selectedLang,
 				model_provider: selectedModelDetails?.provider || '',
-				model_name: selectedModelDetails?.name || ''
+				model_name: selectedModelDetails?.name || '',
 			});
 
 			await invoke('start_retranscription_command', {
@@ -182,7 +191,7 @@
 				meetingFolderPath,
 				language: languageToSend,
 				model: selectedModelDetails?.name || null,
-				provider: selectedModelDetails?.provider || null
+				provider: selectedModelDetails?.provider || null,
 			});
 		} catch (err) {
 			isProcessing = false;
@@ -215,28 +224,28 @@
 
 	const languageItems = LANGUAGES.map((lang) => ({ value: lang.code, label: lang.name }));
 	const selectedLangLabel = $derived(
-		languageItems.find((l) => l.value === selectedLang)?.label ?? 'Select language'
+		languageItems.find((l) => l.value === selectedLang)?.label ?? 'Select language',
 	);
 	const modelItems = $derived(
 		models.availableModels.map((model) => ({
 			value: `${model.provider}:${model.name}`,
-			label: `${model.displayName} (${Math.round(model.size_mb)} MB)`
-		}))
+			label: `${model.displayName} (${Math.round(model.size_mb)} MB)`,
+		})),
 	);
 	const selectedModelLabel = $derived(
 		modelItems.find((m) => m.value === models.selectedModelKey)?.label ??
-			(models.loadingModels ? 'Loading models...' : 'Select model')
+			(models.loadingModels ? 'Loading models...' : 'Select model'),
 	);
 
 	const dialogTitle = $derived(
-		isProcessing ? 'Retranscribing...' : error ? 'Retranscription Failed' : 'Retranscribe Meeting'
+		isProcessing ? 'Retranscribing...' : error ? 'Retranscription Failed' : 'Retranscribe Meeting',
 	);
 	const dialogDescription = $derived(
 		isProcessing
 			? progress?.message || 'Processing audio...'
 			: error
 				? 'An error occurred during retranscription'
-				: 'Re-process the audio with different language settings'
+				: 'Re-process the audio with different language settings',
 	);
 </script>
 

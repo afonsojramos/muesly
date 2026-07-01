@@ -34,7 +34,7 @@
 	// Transcript side panel: open by default only on wide windows, matching the
 	// saved-meeting view. The notes editor is the primary surface.
 	let showTranscript = $state(
-		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
+		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches,
 	);
 
 	// Non-reactive snapshot of the notes so the editor isn't re-seeded on every
@@ -68,7 +68,7 @@
 	const recovery = useTranscriptRecovery();
 
 	const isProcessingStop = $derived(
-		recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS || recordingState.isProcessing
+		recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS || recordingState.isProcessing,
 	);
 
 	async function handleRecovery(meetingId: string): Promise<void> {
@@ -85,10 +85,10 @@
 								label: 'View Meeting',
 								onClick: () => {
 									void goto(`/meeting-details?id=${result.meetingId}`);
-								}
+								},
 							}
 						: undefined,
-					duration: 10000
+					duration: 10000,
 				});
 
 				await sidebar.refetchMeetings();
@@ -106,7 +106,7 @@
 			}
 		} catch (error) {
 			toast.error('Failed to recover meeting', {
-				description: error instanceof Error ? error.message : 'Unknown error occurred'
+				description: error instanceof Error ? error.message : 'Unknown error occurred',
 			});
 			throw error;
 		}
@@ -177,10 +177,7 @@
 	});
 </script>
 
-<div
-	class="flex h-screen flex-col bg-background"
-	in:fly={{ y: 20, duration: 300 }}
->
+<div class="flex h-screen flex-col bg-background" in:fly={{ y: 20, duration: 300 }}>
 	<TranscriptRecovery
 		open={showRecoveryDialog}
 		onClose={handleDialogClose}
@@ -257,11 +254,7 @@
 			<aside
 				class="flex w-2/5 min-w-[340px] max-w-[460px] flex-col overflow-hidden border-l border-border"
 			>
-				<TranscriptPanel
-					{isProcessingStop}
-					isStopping={recordingState.isStopping}
-					compact
-				/>
+				<TranscriptPanel {isProcessingStop} isStopping={recordingState.isStopping} compact />
 			</aside>
 		{/if}
 

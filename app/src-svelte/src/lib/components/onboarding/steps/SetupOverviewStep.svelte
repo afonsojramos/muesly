@@ -11,7 +11,7 @@
 
 	const steps = [
 		{ number: 1, type: 'transcription', title: 'Download Transcription Engine' },
-		{ number: 2, type: 'summarization', title: 'Download Summarization Engine' }
+		{ number: 2, type: 'summarization', title: 'Download Summarization Engine' },
 	] as const;
 
 	const totalSteps = $derived(platform.isMac ? 4 : 3);

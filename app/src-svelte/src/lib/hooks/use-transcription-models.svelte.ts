@@ -11,11 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 export interface RawModelInfo {
 	name: string;
 	size_mb: number;
-	status:
-		| 'Available'
-		| 'Missing'
-		| { Downloading: { progress: number } }
-		| { Error: string };
+	status: 'Available' | 'Missing' | { Downloading: { progress: number } } | { Error: string };
 }
 
 export interface ModelOption {
@@ -40,7 +36,7 @@ export interface UseTranscriptionModels {
 }
 
 export function useTranscriptionModels(
-	getConfig: () => TranscriptModelConfig | undefined
+	getConfig: () => TranscriptModelConfig | undefined,
 ): UseTranscriptionModels {
 	let availableModels = $state<ModelOption[]>([]);
 	let selectedModelKey = $state<string>('');
@@ -68,7 +64,7 @@ export function useTranscriptionModels(
 						provider: 'whisper',
 						name: m.name,
 						displayName: `🏠 Whisper: ${m.name}`,
-						size_mb: m.size_mb
+						size_mb: m.size_mb,
 					});
 				}
 			}
@@ -84,7 +80,7 @@ export function useTranscriptionModels(
 						provider: 'parakeet',
 						name: m.name,
 						displayName: `⚡ Parakeet: ${m.name}`,
-						size_mb: m.size_mb
+						size_mb: m.size_mb,
 					});
 				}
 			}
@@ -105,7 +101,7 @@ export function useTranscriptionModels(
 					m.name === configuredModel) ||
 				(configuredProvider === 'parakeet' &&
 					m.provider === 'parakeet' &&
-					m.name === configuredModel)
+					m.name === configuredModel),
 		);
 
 		if (!userSelected) {
@@ -134,6 +130,6 @@ export function useTranscriptionModels(
 		},
 		setSelectedModelKey,
 		fetchModels,
-		resetSelection
+		resetSelection,
 	};
 }

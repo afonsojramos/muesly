@@ -30,7 +30,7 @@
 		auto_save: true,
 		file_format: 'mp4',
 		preferred_mic_device: null,
-		preferred_system_device: null
+		preferred_system_device: null,
 	});
 	let loading = $state(true);
 	let saving = $state(false);
@@ -61,7 +61,8 @@
 			try {
 				const { Store } = await import('@tauri-apps/plugin-store');
 				const store = await Store.load('preferences.json');
-				showRecordingNotification = (await store.get<boolean>('show_recording_notification')) ?? true;
+				showRecordingNotification =
+					(await store.get<boolean>('show_recording_notification')) ?? true;
 			} catch (error) {
 				console.error('Failed to load notification preference:', error);
 			}
@@ -88,7 +89,7 @@
 		if (warm.status === 'error' || hotkey.status === 'error') {
 			dictationEnabled = !enabled;
 			toast.error('Failed to update dictation', {
-				description: warm.status === 'error' ? warm.error : (hotkey as { error?: string }).error
+				description: warm.status === 'error' ? warm.error : (hotkey as { error?: string }).error,
 			});
 			return;
 		}
@@ -114,12 +115,12 @@
 			const micDevice = prefs.preferred_mic_device || 'Default';
 			const systemDevice = prefs.preferred_system_device || 'Default';
 			toast.success('Device preferences saved', {
-				description: `Microphone: ${micDevice}, System Audio: ${systemDevice}`
+				description: `Microphone: ${micDevice}, System Audio: ${systemDevice}`,
 			});
 		} catch (error) {
 			console.error('Failed to save recording preferences:', error);
 			toast.error('Failed to save device preferences', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		} finally {
 			saving = false;
@@ -130,7 +131,7 @@
 		preferences = { ...preferences, auto_save: enabled };
 		await savePreferences(preferences);
 		Analytics.track('auto_save_recording_toggled', { enabled: enabled.toString() }).catch((err) =>
-			console.error('Failed to track auto-save toggle:', err)
+			console.error('Failed to track auto-save toggle:', err),
 		);
 	}
 
@@ -138,12 +139,12 @@
 		preferences = {
 			...preferences,
 			preferred_mic_device: devices.micDevice,
-			preferred_system_device: devices.systemDevice
+			preferred_system_device: devices.systemDevice,
 		};
 		await savePreferences(preferences);
 		Analytics.track('default_devices_changed', {
 			has_preferred_microphone: (!!devices.micDevice).toString(),
-			has_preferred_system_audio: (!!devices.systemDevice).toString()
+			has_preferred_system_audio: (!!devices.systemDevice).toString(),
 		}).catch((err) => console.error('Failed to track device change:', err));
 	}
 
@@ -164,7 +165,7 @@
 			await store.save();
 			toast.success('Preference saved');
 			await Analytics.track('recording_notification_preference_changed', {
-				enabled: enabled.toString()
+				enabled: enabled.toString(),
 			});
 		} catch (error) {
 			console.error('Failed to save notification preference:', error);
@@ -194,7 +195,11 @@
 					Automatically save audio files when recording stops
 				</div>
 			</div>
-			<Switch checked={preferences.auto_save} disabled={saving} onCheckedChange={handleAutoSaveToggle} />
+			<Switch
+				checked={preferences.auto_save}
+				disabled={saving}
+				onCheckedChange={handleAutoSaveToggle}
+			/>
 		</div>
 
 		{#if preferences.auto_save}
@@ -297,7 +302,7 @@
 					<DeviceSelection
 						selectedDevices={{
 							micDevice: preferences.preferred_mic_device,
-							systemDevice: preferences.preferred_system_device
+							systemDevice: preferences.preferred_system_device,
 						}}
 						onDeviceChange={handleDeviceChange}
 						disabled={saving}

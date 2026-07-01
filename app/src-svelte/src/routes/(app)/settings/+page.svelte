@@ -31,7 +31,7 @@
 		{ value: 'summary', label: 'Summary' },
 		{ value: 'trash', label: 'Trash' },
 		// { value: 'beta', label: 'Beta' },
-		{ value: 'about', label: 'About' }
+		{ value: 'about', label: 'About' },
 	]);
 
 	function goBack(): void {
@@ -63,7 +63,7 @@
 			data-tauri-drag-region="deep"
 			class={cn(
 				'relative flex h-9 items-center pr-3 transition-[padding] duration-300',
-				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3'
+				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3',
 			)}
 		>
 			<Tooltip.Provider delayDuration={300}>

@@ -40,7 +40,7 @@
 			unlisteners.push(
 				await listen<{ progress?: number }>('diarization-model-download-progress', (e) => {
 					if (typeof e.payload?.progress === 'number') progress = Math.round(e.payload.progress);
-				})
+				}),
 			);
 			toast.info('Downloading speaker models…', { description: 'About 35 MB', duration: 4000 });
 			const res = await commands.downloadDiarizationModels();
@@ -49,7 +49,7 @@
 			toast.info('Speaker models ready', { duration: 3000 });
 		} catch (err) {
 			toast.error('Speaker model download failed', {
-				description: err instanceof Error ? err.message : 'Unknown error'
+				description: err instanceof Error ? err.message : 'Unknown error',
 			});
 		} finally {
 			unlisteners.forEach((u) => u());
@@ -64,12 +64,12 @@
 			const res = await commands.diarizeMeeting(meetingId);
 			if (res.status === 'error') throw new Error(res.error);
 			toast.info(`Identified speakers on ${res.data} segment${res.data === 1 ? '' : 's'}`, {
-				duration: 3000
+				duration: 3000,
 			});
 			await onComplete?.();
 		} catch (err) {
 			toast.error('Speaker identification failed', {
-				description: err instanceof Error ? err.message : 'Unknown error'
+				description: err instanceof Error ? err.message : 'Unknown error',
 			});
 		} finally {
 			diarizing = false;
@@ -115,7 +115,8 @@
 							onclick={downloadModels}
 						>
 							<UsersIcon data-icon="inline-start" />
-							<span class="hidden @[22rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span>
+							<span class="hidden @[22rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span
+							>
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>

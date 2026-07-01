@@ -12,7 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
 	indexedDBService,
 	type MeetingMetadata,
-	type StoredTranscript
+	type StoredTranscript,
 } from '$lib/services/indexed-db';
 import { storageService } from '$lib/services/storage';
 import type { Transcript } from '$lib/types';
@@ -67,11 +67,11 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 					if (meeting.folderPath) {
 						try {
 							const hasAudio = await invoke<boolean>('has_audio_checkpoints', {
-								meetingFolder: meeting.folderPath
+								meetingFolder: meeting.folderPath,
 							});
 							return {
 								...meeting,
-								folderPath: hasAudio ? meeting.folderPath : undefined
+								folderPath: hasAudio ? meeting.folderPath : undefined,
 							};
 						} catch (error) {
 							console.warn('Failed to check audio for meeting:', error);
@@ -79,7 +79,7 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 						}
 					}
 					return meeting;
-				})
+				}),
 			);
 
 			recoverableMeetings = meetingsWithAudioStatus;
@@ -130,7 +130,7 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 				try {
 					audioRecoveryStatus = await invoke<AudioRecoveryStatus>(
 						'recover_audio_from_checkpoints',
-						{ meetingFolder: folderPath, sampleRate: 48000 }
+						{ meetingFolder: folderPath, sampleRate: 48000 },
 					);
 				} catch (error) {
 					console.error('Audio recovery failed:', error);
@@ -138,7 +138,7 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 						status: 'failed',
 						chunk_count: 0,
 						estimated_duration_seconds: 0,
-						message: error instanceof Error ? error.message : 'Unknown error'
+						message: error instanceof Error ? error.message : 'Unknown error',
 					};
 				}
 			} else {
@@ -146,7 +146,7 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 					status: 'none',
 					chunk_count: 0,
 					estimated_duration_seconds: 0,
-					message: 'No folder path available'
+					message: 'No folder path available',
 				};
 			}
 
@@ -164,13 +164,13 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 				speaker:
 					t.source === 'mic' || t.source === 'system'
 						? (t.source as string)
-						: (t.speaker as string | undefined)
+						: (t.speaker as string | undefined),
 			}));
 
 			const saveResponse = await storageService.saveMeeting(
 				metadata.title,
 				formattedTranscripts,
-				folderPath ?? null
+				folderPath ?? null,
 			);
 
 			const savedMeetingId = saveResponse.meeting_id;
@@ -190,7 +190,7 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 			return {
 				success: true,
 				audioRecoveryStatus,
-				meetingId: savedMeetingId
+				meetingId: savedMeetingId,
 			};
 		} catch (error) {
 			console.error('Failed to recover meeting:', error);
@@ -223,6 +223,6 @@ export function useTranscriptRecovery(): UseTranscriptRecovery {
 		checkForRecoverableTranscripts,
 		recoverMeeting,
 		loadMeetingTranscripts,
-		deleteRecoverableMeeting
+		deleteRecoverableMeeting,
 	};
 }

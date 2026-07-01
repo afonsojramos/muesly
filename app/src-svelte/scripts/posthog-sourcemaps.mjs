@@ -18,49 +18,53 @@ const BUILD_DIR = 'build';
 const host = process.env.POSTHOG_CLI_HOST || 'https://eu.posthog.com';
 
 if (!process.env.POSTHOG_CLI_TOKEN || !process.env.POSTHOG_CLI_ENV_ID) {
-  console.log('[posthog] POSTHOG_CLI_TOKEN/POSTHOG_CLI_ENV_ID not set — skipping sourcemap upload.');
-  process.exit(0);
+	console.log(
+		'[posthog] POSTHOG_CLI_TOKEN/POSTHOG_CLI_ENV_ID not set — skipping sourcemap upload.',
+	);
+	process.exit(0);
 }
 
 let uploaded = false;
 try {
-  console.log(`[posthog] Injecting chunk ids and uploading sourcemaps from ./${BUILD_DIR} …`);
-  // posthog-cli reads POSTHOG_CLI_TOKEN / POSTHOG_CLI_ENV_ID from the environment.
-  execFileSync('posthog-cli', ['--host', host, 'sourcemap', 'process', BUILD_DIR], {
-    stdio: 'inherit',
-  });
-  uploaded = true;
-  console.log('[posthog] Sourcemap upload complete.');
+	console.log(`[posthog] Injecting chunk ids and uploading sourcemaps from ./${BUILD_DIR} …`);
+	// posthog-cli reads POSTHOG_CLI_TOKEN / POSTHOG_CLI_ENV_ID from the environment.
+	execFileSync('posthog-cli', ['--host', host, 'sourcemap', 'process', BUILD_DIR], {
+		stdio: 'inherit',
+	});
+	uploaded = true;
+	console.log('[posthog] Sourcemap upload complete.');
 } catch (err) {
-  console.warn(`[posthog] Sourcemap upload skipped/failed (build continues): ${err?.message ?? err}`);
+	console.warn(
+		`[posthog] Sourcemap upload skipped/failed (build continues): ${err?.message ?? err}`,
+	);
 }
 
 // Only strip .map files once PostHog has them, so a failed upload never loses them.
 if (uploaded) removeSourceMaps(BUILD_DIR);
 
 function removeSourceMaps(dir) {
-  let entries;
-  try {
-    entries = readdirSync(dir);
-  } catch {
-    return;
-  }
-  for (const name of entries) {
-    const path = join(dir, name);
-    let stats;
-    try {
-      stats = statSync(path);
-    } catch {
-      continue;
-    }
-    if (stats.isDirectory()) {
-      removeSourceMaps(path);
-    } else if (name.endsWith('.map')) {
-      try {
-        rmSync(path);
-      } catch {
-        /* best-effort */
-      }
-    }
-  }
+	let entries;
+	try {
+		entries = readdirSync(dir);
+	} catch {
+		return;
+	}
+	for (const name of entries) {
+		const path = join(dir, name);
+		let stats;
+		try {
+			stats = statSync(path);
+		} catch {
+			continue;
+		}
+		if (stats.isDirectory()) {
+			removeSourceMaps(path);
+		} else if (name.endsWith('.map')) {
+			try {
+				rmSync(path);
+			} catch {
+				/* best-effort */
+			}
+		}
+	}
 }

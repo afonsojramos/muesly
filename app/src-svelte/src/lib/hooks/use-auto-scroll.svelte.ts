@@ -39,7 +39,7 @@ export function useAutoScroll(options: UseAutoScrollOptions): UseAutoScroll {
 		getIsRecording,
 		getIsPaused,
 		getActiveSegmentId,
-		disableAutoScroll = false
+		disableAutoScroll = false,
 	} = options;
 
 	let autoScroll = $state(true);
@@ -152,6 +152,6 @@ export function useAutoScroll(options: UseAutoScrollOptions): UseAutoScroll {
 		setAutoScroll: (value: boolean) => {
 			autoScroll = value;
 		},
-		scrollToBottom
+		scrollToBottom,
 	};
 }

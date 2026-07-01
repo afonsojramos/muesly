@@ -21,7 +21,7 @@
 		FileText,
 		Loader2,
 		Trash2,
-		XCircle
+		XCircle,
 	} from '@lucide/svelte';
 
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -49,7 +49,7 @@
 	let isDeleting = $state(false);
 
 	const selectedMeeting = $derived(
-		recoverableMeetings.find((m) => m.meetingId === selectedMeetingId) ?? null
+		recoverableMeetings.find((m) => m.meetingId === selectedMeetingId) ?? null,
 	);
 
 	async function handleMeetingSelect(meetingId: string): Promise<void> {
@@ -153,44 +153,40 @@
 				<h3 class="mb-2 text-sm font-medium">Interrupted Meetings</h3>
 				<ScrollArea class="flex-1 rounded-lg border border-border">
 					<div class="flex flex-col gap-2 p-2">
-					{#each recoverableMeetings as meeting (meeting.meetingId)}
-						<button
-							onclick={() => handleMeetingSelect(meeting.meetingId)}
-							class={cn(
-								'w-full rounded-lg border p-3 text-left transition-colors',
-								selectedMeetingId === meeting.meetingId
-									? 'border-primary bg-primary/10'
-									: 'border-transparent hover:bg-secondary'
-							)}
-						>
-							<div class="flex items-start justify-between gap-2">
-								<div class="min-w-0 flex-1">
-									<p class="truncate text-sm font-medium">{meeting.title}</p>
-									<p
-										class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
-									>
-										<Clock class="size-3" />
-										{formatRelativeTime(meeting.lastUpdated)}
-									</p>
-									<p
-										class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
-									>
-										<FileText class="size-3" />
-										{meeting.transcriptCount} transcript{meeting.transcriptCount !== 1 ? 's' : ''}
-									</p>
+						{#each recoverableMeetings as meeting (meeting.meetingId)}
+							<button
+								onclick={() => handleMeetingSelect(meeting.meetingId)}
+								class={cn(
+									'w-full rounded-lg border p-3 text-left transition-colors',
+									selectedMeetingId === meeting.meetingId
+										? 'border-primary bg-primary/10'
+										: 'border-transparent hover:bg-secondary',
+								)}
+							>
+								<div class="flex items-start justify-between gap-2">
+									<div class="min-w-0 flex-1">
+										<p class="truncate text-sm font-medium">{meeting.title}</p>
+										<p class="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+											<Clock class="size-3" />
+											{formatRelativeTime(meeting.lastUpdated)}
+										</p>
+										<p class="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+											<FileText class="size-3" />
+											{meeting.transcriptCount} transcript{meeting.transcriptCount !== 1 ? 's' : ''}
+										</p>
+									</div>
+									{#if meeting.folderPath}
+										<span title="Audio available">
+											<CheckCircle2 class="size-4 shrink-0 text-success" />
+										</span>
+									{:else}
+										<span title="No audio">
+											<AlertCircle class="size-4 shrink-0 text-warning" />
+										</span>
+									{/if}
 								</div>
-								{#if meeting.folderPath}
-									<span title="Audio available">
-										<CheckCircle2 class="size-4 shrink-0 text-success" />
-									</span>
-								{:else}
-									<span title="No audio">
-										<AlertCircle class="size-4 shrink-0 text-warning" />
-									</span>
-								{/if}
-							</div>
-						</button>
-					{/each}
+							</button>
+						{/each}
 					</div>
 				</ScrollArea>
 			</div>
@@ -270,7 +266,9 @@
 		</div>
 
 		<Dialog.Footer>
-			<Button variant="outline" onclick={onClose} disabled={isRecovering || isDeleting}>Cancel</Button>
+			<Button variant="outline" onclick={onClose} disabled={isRecovering || isDeleting}
+				>Cancel</Button
+			>
 			<Button
 				variant="destructive"
 				onclick={handleDelete}

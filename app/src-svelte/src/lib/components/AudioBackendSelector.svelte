@@ -111,7 +111,7 @@
 						currentBackend === backend.id
 							? 'border-accent bg-accent/5'
 							: 'border-input bg-background hover:border-muted-foreground/40',
-						isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+						isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
 					)}
 				>
 					<RadioGroup.Item

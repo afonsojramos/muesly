@@ -96,6 +96,6 @@ export function usePermissionCheck(): UsePermissionCheck {
 			return error;
 		},
 		checkPermissions,
-		requestPermissions
+		requestPermissions,
 	};
 }

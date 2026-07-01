@@ -15,13 +15,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import { Analytics } from '$lib/analytics';
-import { configService, type ModelConfig, type TranscriptModelProps, type VocabularyEntry } from '$lib/services/config';
+import {
+	configService,
+	type ModelConfig,
+	type TranscriptModelProps,
+	type VocabularyEntry,
+} from '$lib/services/config';
 import {
 	DEFAULT_BETA_FEATURES,
 	loadBetaFeatures,
 	saveBetaFeatures,
 	type BetaFeatures,
-	type BetaFeatureKey
+	type BetaFeatureKey,
 } from '$lib/beta-features';
 
 export interface OllamaModel {
@@ -98,13 +103,13 @@ class ConfigStore {
 		provider: 'ollama',
 		model: 'llama3.2:latest',
 		whisperModel: 'large-v3',
-		ollamaEndpoint: null
+		ollamaEndpoint: null,
 	});
 
 	transcriptModelConfig = $state<TranscriptModelProps>({
 		provider: 'parakeet',
 		model: 'parakeet-tdt-0.6b-v3-int8',
-		apiKey: null
+		apiKey: null,
 	});
 
 	providerApiKeys = $state<ProviderApiKeys>({
@@ -112,7 +117,7 @@ class ConfigStore {
 		groq: null,
 		grok: null,
 		openai: null,
-		openrouter: null
+		openrouter: null,
 	});
 
 	models = $state<OllamaModel[]>([]);
@@ -126,7 +131,9 @@ class ConfigStore {
 	isAutoSummary = $state<boolean>(readLocalBoolean('isAutoSummary', false));
 	globalShortcutEnabled = $state<boolean>(readLocalBoolean('globalShortcutEnabled', true));
 
-	betaFeatures = $state<BetaFeatures>(isBrowser ? loadBetaFeatures() : { ...DEFAULT_BETA_FEATURES });
+	betaFeatures = $state<BetaFeatures>(
+		isBrowser ? loadBetaFeatures() : { ...DEFAULT_BETA_FEATURES },
+	);
 
 	notificationSettings = $state<NotificationSettings | null>(null);
 	storageLocations = $state<StorageLocations | null>(null);
@@ -141,7 +148,7 @@ class ConfigStore {
 			openrouter: [],
 			openai: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
 			'builtin-ai': [],
-			'custom-openai': []
+			'custom-openai': [],
 		};
 	}
 
@@ -160,8 +167,8 @@ class ConfigStore {
 		void this.#loadOllamaModels();
 		void this.#loadTranscriptConfig();
 		void this.#initLanguagePreference();
-		invoke('set_recording_shortcut_enabled', { enabled: this.globalShortcutEnabled }).catch(
-			(err) => console.error('Failed to apply recording shortcut state:', err)
+		invoke('set_recording_shortcut_enabled', { enabled: this.globalShortcutEnabled }).catch((err) =>
+			console.error('Failed to apply recording shortcut state:', err),
 		);
 		void this.#loadCustomVocabulary();
 		void this.#loadModelConfig();
@@ -209,7 +216,7 @@ class ConfigStore {
 				this.transcriptModelConfig = {
 					provider: config.provider ?? 'parakeet',
 					model: config.model ?? 'parakeet-tdt-0.6b-v3-int8',
-					apiKey: config.apiKey ?? null
+					apiKey: config.apiKey ?? null,
 				};
 			}
 		} catch (error) {
@@ -268,7 +275,7 @@ class ConfigStore {
 							customOpenAIApiKey: customConfig.apiKey,
 							maxTokens: customConfig.maxTokens,
 							temperature: customConfig.temperature,
-							topP: customConfig.topP
+							topP: customConfig.topP,
 						};
 
 						if (resolvedModel) {
@@ -286,7 +293,7 @@ class ConfigStore {
 				provider: data.provider,
 				model: data.model || this.modelConfig.model,
 				whisperModel: data.whisperModel || this.modelConfig.whisperModel,
-				ollamaEndpoint: data.ollamaEndpoint
+				ollamaEndpoint: data.ollamaEndpoint,
 			};
 
 			if (data.model) {
@@ -313,15 +320,15 @@ class ConfigStore {
 		try {
 			const [claude, groq, grok, openai, openrouter] = await Promise.all(
 				(['claude', 'groq', 'grok', 'openai', 'openrouter'] as const).map((p) =>
-					invoke<string>('api_get_api_key', { provider: p }).catch(() => null)
-				)
+					invoke<string>('api_get_api_key', { provider: p }).catch(() => null),
+				),
 			);
 			this.providerApiKeys = {
 				claude: claude ?? null,
 				groq: groq ?? null,
 				grok: grok ?? null,
 				openai: openai ?? null,
-				openrouter: openrouter ?? null
+				openrouter: openrouter ?? null,
 			};
 		} catch (error) {
 			console.error('[ConfigStore] Failed to load provider API keys:', error);
@@ -334,7 +341,7 @@ class ConfigStore {
 			if (prefs && (prefs.preferred_mic_device || prefs.preferred_system_device)) {
 				this.selectedDevices = {
 					micDevice: prefs.preferred_mic_device,
-					systemDevice: prefs.preferred_system_device
+					systemDevice: prefs.preferred_system_device,
 				};
 			}
 		} catch (error) {
@@ -346,14 +353,14 @@ class ConfigStore {
 		this.selectedLanguage = lang;
 		writeLocalString('primaryLanguage', lang);
 		invoke('set_language_preference', { language: lang }).catch((err) =>
-			console.error('Failed to sync language preference to Rust:', err)
+			console.error('Failed to sync language preference to Rust:', err),
 		);
 	};
 
 	setCustomVocabulary = (entries: VocabularyEntry[]): void => {
 		this.customVocabulary = entries;
 		invoke('set_custom_vocabulary', { entries }).catch((err) =>
-			console.error('Failed to sync custom vocabulary to Rust:', err)
+			console.error('Failed to sync custom vocabulary to Rust:', err),
 		);
 	};
 
@@ -374,7 +381,7 @@ class ConfigStore {
 		this.globalShortcutEnabled = enabled;
 		writeLocalBoolean('globalShortcutEnabled', enabled);
 		invoke('set_recording_shortcut_enabled', { enabled }).catch((err) =>
-			console.error('Failed to sync recording shortcut state:', err)
+			console.error('Failed to sync recording shortcut state:', err),
 		);
 	};
 
@@ -393,7 +400,7 @@ class ConfigStore {
 
 		Analytics.track('beta_feature_toggled', {
 			feature: featureKey,
-			enabled: enabled.toString()
+			enabled: enabled.toString(),
 		}).catch((err) => console.error('Failed to track beta feature toggle:', err));
 	};
 
@@ -419,13 +426,13 @@ class ConfigStore {
 			const [dbDir, modelsDir, recordingsDir] = await Promise.all([
 				invoke<string>('get_database_directory'),
 				invoke<string>('whisper_get_models_directory'),
-				invoke<string>('get_default_recordings_folder_path')
+				invoke<string>('get_default_recordings_folder_path'),
 			]);
 
 			this.storageLocations = {
 				database: dbDir,
 				models: modelsDir,
-				recordings: recordingsDir
+				recordings: recordingsDir,
 			};
 
 			this.#preferencesLoaded = true;

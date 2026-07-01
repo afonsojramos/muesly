@@ -34,7 +34,7 @@ function toSonner(options?: ToastOptions) {
 		duration: options.duration,
 		action: options.action
 			? { label: options.action.label, onClick: options.action.onClick }
-			: undefined
+			: undefined,
 	};
 }
 
@@ -58,5 +58,5 @@ export const toast = {
 	},
 	info(message: string, options?: ToastOptions): void {
 		sonner.info(message, toSonner(options));
-	}
+	},
 };

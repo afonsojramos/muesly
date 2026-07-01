@@ -7,7 +7,14 @@ import { REGISTRY } from './analytics-events';
  * ("What we never collect"). Must stay in sync with SENSITIVE_PROPERTY_KEYS in
  * app/src-tauri/src/analytics/client.rs.
  */
-const FORBIDDEN_KEYS = ['device_name', 'meeting_title', 'meeting_name', 'user_agent', 'file_name', 'file_path'];
+const FORBIDDEN_KEYS = [
+	'device_name',
+	'meeting_title',
+	'meeting_name',
+	'user_agent',
+	'file_name',
+	'file_path',
+];
 
 describe('analytics event registry conformance', () => {
 	it('no registered event declares a forbidden property key', () => {
@@ -15,18 +22,26 @@ describe('analytics event registry conformance', () => {
 			for (const key of allowedKeys) {
 				expect(
 					FORBIDDEN_KEYS,
-					`event "${eventName}" declares forbidden property key "${key}"`
+					`event "${eventName}" declares forbidden property key "${key}"`,
 				).not.toContain(key);
 			}
 		}
 	});
 
 	it('microphone_selected declares exactly the expected safe keys', () => {
-		expect(REGISTRY.microphone_selected).toEqual(['device_category', 'is_bluetooth', 'has_system_audio']);
+		expect(REGISTRY.microphone_selected).toEqual([
+			'device_category',
+			'is_bluetooth',
+			'has_system_audio',
+		]);
 	});
 
 	it('system_audio_selected declares exactly the expected safe keys', () => {
-		expect(REGISTRY.system_audio_selected).toEqual(['device_category', 'is_bluetooth', 'has_microphone']);
+		expect(REGISTRY.system_audio_selected).toEqual([
+			'device_category',
+			'is_bluetooth',
+			'has_microphone',
+		]);
 	});
 
 	it('theme_changed declares exactly the expected safe keys', () => {

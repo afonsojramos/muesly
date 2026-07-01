@@ -54,7 +54,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 			const firstPage = (await invoke('api_get_meeting_transcripts', {
 				meetingId,
 				limit: 1,
-				offset: 0
+				offset: 0,
 			})) as PaginatedTranscripts;
 
 			if (firstPage.total_count === 0) return [];
@@ -62,7 +62,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 			const all = (await invoke('api_get_meeting_transcripts', {
 				meetingId,
 				limit: firstPage.total_count,
-				offset: 0
+				offset: 0,
 			})) as PaginatedTranscripts;
 			return all.transcripts;
 		} catch (error) {
@@ -94,7 +94,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 			type: 'transcript',
 			meeting_id: meeting.id,
 			transcript_length: all.length.toString(),
-			word_count: wordCount.toString()
+			word_count: wordCount.toString(),
 		});
 	};
 
@@ -118,7 +118,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 							key !== 'markdown' &&
 							key !== 'summary_json' &&
 							key !== '_section_order' &&
-							key !== 'MeetingName'
+							key !== 'MeetingName',
 					)
 					.map(([, section]) => {
 						if (
@@ -150,7 +150,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 				month: 'long',
 				day: 'numeric',
 				hour: '2-digit',
-				minute: '2-digit'
+				minute: '2-digit',
 			};
 			const header = `# Meeting Summary: ${title}\n\n`;
 			const metadata =
@@ -164,7 +164,7 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 			await Analytics.track('copy', {
 				type: 'summary',
 				meeting_id: meeting.id,
-				has_markdown: (!!aiSummary && 'markdown' in aiSummary).toString()
+				has_markdown: (!!aiSummary && 'markdown' in aiSummary).toString(),
 			});
 		} catch (error) {
 			console.error('Failed to copy summary:', error);

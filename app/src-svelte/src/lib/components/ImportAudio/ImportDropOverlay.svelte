@@ -14,13 +14,13 @@
 {#if visible}
 	<div
 		class={cn(
-			'pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm'
+			'pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm',
 		)}
 		transition:fade={{ duration: 200 }}
 	>
 		<div
 			class={cn(
-				'scale-100 rounded-2xl border-2 border-dashed border-accent bg-accent/15 p-12 text-center shadow-2xl'
+				'scale-100 rounded-2xl border-2 border-dashed border-accent bg-accent/15 p-12 text-center shadow-2xl',
 			)}
 		>
 			<Upload class="mx-auto mb-4 size-16 text-accent" />

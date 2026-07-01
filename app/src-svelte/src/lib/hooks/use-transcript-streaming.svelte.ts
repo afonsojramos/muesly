@@ -25,7 +25,7 @@ export interface UseTranscriptStreaming {
 export function useTranscriptStreaming(
 	getSegments: () => TranscriptSegmentData[],
 	getIsRecording: () => boolean,
-	getEnableStreaming: () => boolean
+	getEnableStreaming: () => boolean,
 ): UseTranscriptStreaming {
 	let streamingSegment = $state<StreamingSegment | null>(null);
 	let lastSegmentId: string | null = null;
@@ -76,7 +76,7 @@ export function useTranscriptStreaming(
 				streamingSegment = {
 					id: latest.id,
 					fullText,
-					visibleText: fullText.substring(0, charIndex)
+					visibleText: fullText.substring(0, charIndex),
 				};
 			}
 		}, INTERVAL_MS);
@@ -93,6 +93,6 @@ export function useTranscriptStreaming(
 				return streamingSegment.visibleText;
 			}
 			return segment.text;
-		}
+		},
 	};
 }

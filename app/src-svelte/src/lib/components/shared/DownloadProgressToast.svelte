@@ -54,7 +54,7 @@
 		displayName: string,
 		status: DownloadStatus,
 		detail: string | undefined,
-		key: string
+		key: string,
 	): void {
 		if (lastStatus.get(key) === status && status === 'downloading') return;
 		lastStatus.set(key, status);
@@ -66,7 +66,7 @@
 			case 'error':
 				toast.error(displayName, {
 					description: detail || 'Download failed',
-					duration: 10000
+					duration: 10000,
 				});
 				break;
 			case 'cancelled':
@@ -107,8 +107,13 @@
 				const unlistenParakeetComplete = await listen<{ modelName: string }>(
 					'parakeet-model-download-complete',
 					(event) => {
-						notify('Transcription Model (Parakeet)', 'completed', undefined, event.payload.modelName);
-					}
+						notify(
+							'Transcription Model (Parakeet)',
+							'completed',
+							undefined,
+							event.payload.modelName,
+						);
+					},
 				);
 				if (cancelled) unlistenParakeetComplete();
 				else unsubscribers.push(unlistenParakeetComplete);
@@ -120,9 +125,9 @@
 							'Transcription Model (Parakeet)',
 							'error',
 							categorizeError(event.payload.error),
-							event.payload.modelName
+							event.payload.modelName,
 						);
-					}
+					},
 				);
 				if (cancelled) unlistenParakeetError();
 				else unsubscribers.push(unlistenParakeetError);

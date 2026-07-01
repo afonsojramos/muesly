@@ -70,7 +70,7 @@
 		isLoadingMore,
 		totalCount,
 		loadedCount,
-		onLoadMore
+		onLoadMore,
 	}: Props = $props();
 
 	// Seeded from the persisted summary context; this subtree is keyed by meeting
@@ -166,7 +166,7 @@
 
 			const savedPath = await invoke<string | null>('api_export_meeting_markdown', {
 				defaultFileName: safeName,
-				contents
+				contents,
 			});
 			if (savedPath) {
 				toast.success('Note exported', { description: savedPath });
@@ -209,7 +209,7 @@
 				model: configToSave.model,
 				whisperModel: configToSave.whisperModel,
 				apiKey: configToSave.apiKey ?? null,
-				ollamaEndpoint: configToSave.ollamaEndpoint ?? null
+				ollamaEndpoint: configToSave.ollamaEndpoint ?? null,
 			});
 			await emit('model-config-updated', configToSave);
 			toast.success('Model settings saved successfully');
@@ -232,7 +232,7 @@
 		onMeetingUpdated,
 		updateMeetingTitle: meetingData.updateMeetingTitle,
 		setAiSummary: meetingData.setAiSummary,
-		onOpenModelSettings: handleOpenModelSettings
+		onOpenModelSettings: handleOpenModelSettings,
 	});
 
 	const copyOperations = useCopyOperations({
@@ -240,7 +240,7 @@
 		meeting,
 		getMeetingTitle: () => meetingData.meetingTitle,
 		getAiSummary: () => meetingData.aiSummary,
-		getSummaryMarkdown: async () => summaryPanel?.getSummaryMarkdown() ?? ''
+		getSummaryMarkdown: async () => summaryPanel?.getSummaryMarkdown() ?? '',
 	});
 
 	// svelte-ignore state_referenced_locally
@@ -288,11 +288,7 @@
 	let autoGenStartedFor: string | null = null;
 	$effect(() => {
 		const id = meeting.id;
-		if (
-			shouldAutoGenerate &&
-			meeting.transcripts.length > 0 &&
-			autoGenStartedFor !== id
-		) {
+		if (shouldAutoGenerate && meeting.transcripts.length > 0 && autoGenStartedFor !== id) {
 			autoGenStartedFor = id;
 			void (async () => {
 				await summaryGeneration.handleGenerateSummary('');
@@ -302,10 +298,7 @@
 	});
 </script>
 
-<div
-	in:fly={{ y: 20, duration: 300 }}
-	class="flex h-screen flex-col bg-background"
->
+<div in:fly={{ y: 20, duration: 300 }} class="flex h-screen flex-col bg-background">
 	<div class="flex flex-1 overflow-hidden">
 		<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
 			<!-- Note header: large display title + date, Granola-style. Empty
@@ -372,7 +365,9 @@
 										size="icon-sm"
 										onclick={() => sidePanelState.toggle()}
 										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
-										aria-label={sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
+										aria-label={sidePanelState.open
+											? 'Hide transcript & notes'
+											: 'Show transcript & notes'}
 										aria-pressed={sidePanelState.open}
 									>
 										{#if sidePanelState.open}
@@ -397,36 +392,36 @@
 						{createdDate.toLocaleDateString(undefined, {
 							weekday: 'long',
 							month: 'long',
-							day: 'numeric'
+							day: 'numeric',
 						})} · {createdDate.toLocaleTimeString(undefined, {
 							hour: 'numeric',
-							minute: '2-digit'
+							minute: '2-digit',
 						})}
 					</p>
 				{/if}
 			</div>
 			<SummaryPanel
-			bind:this={summaryPanel}
-			onCopySummary={copyOperations.handleCopySummary}
-			onOpenFolder={meetingOperations.openMeetingFolder}
-			aiSummary={meetingData.aiSummary}
-			summaryStatus={summaryGeneration.summaryStatus}
-			transcripts={meeting.transcripts}
-			modelConfig={config.modelConfig}
-			setModelConfig={(c) => (config.modelConfig = c)}
-			onSaveModelConfig={handleSaveModelConfig}
-			onGenerateSummary={summaryGeneration.handleGenerateSummary}
-			onStopGeneration={summaryGeneration.handleStopGeneration}
-			{customPrompt}
-			onSaveSummary={handleSaveSummary}
-			summaryError={summaryGeneration.summaryError}
-			onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
-			availableTemplates={templates.availableTemplates}
-			selectedTemplate={templates.selectedTemplate}
-			onTemplateSelect={handleTemplateSelect}
-			isModelConfigLoading={false}
-			onOpenModelSettings={handleRegisterModalOpen}
-		/>
+				bind:this={summaryPanel}
+				onCopySummary={copyOperations.handleCopySummary}
+				onOpenFolder={meetingOperations.openMeetingFolder}
+				aiSummary={meetingData.aiSummary}
+				summaryStatus={summaryGeneration.summaryStatus}
+				transcripts={meeting.transcripts}
+				modelConfig={config.modelConfig}
+				setModelConfig={(c) => (config.modelConfig = c)}
+				onSaveModelConfig={handleSaveModelConfig}
+				onGenerateSummary={summaryGeneration.handleGenerateSummary}
+				onStopGeneration={summaryGeneration.handleStopGeneration}
+				{customPrompt}
+				onSaveSummary={handleSaveSummary}
+				summaryError={summaryGeneration.summaryError}
+				onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
+				availableTemplates={templates.availableTemplates}
+				selectedTemplate={templates.selectedTemplate}
+				onTemplateSelect={handleTemplateSelect}
+				isModelConfigLoading={false}
+				onOpenModelSettings={handleRegisterModalOpen}
+			/>
 		</div>
 		<!-- Combined Transcript / Notes panel. Always mounted so the notes editor
 		     keeps unsaved edits across collapsing; open/tab/width come from the

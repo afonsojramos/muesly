@@ -10,7 +10,7 @@
 	let { isPaused = false }: Props = $props();
 
 	const displaySeconds = $derived(
-		recordingState.activeDuration !== null ? Math.floor(recordingState.activeDuration) : 0
+		recordingState.activeDuration !== null ? Math.floor(recordingState.activeDuration) : 0,
 	);
 
 	function formatDuration(seconds: number): string {
@@ -27,12 +27,10 @@
 	<div
 		class={cn(
 			'size-2 rounded-full',
-			isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent'
+			isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent',
 		)}
 	></div>
-	<span
-		class={cn('text-sm tabular-nums', isPaused ? 'text-muted-foreground' : 'text-foreground')}
-	>
+	<span class={cn('text-sm tabular-nums', isPaused ? 'text-muted-foreground' : 'text-foreground')}>
 		{isPaused ? 'Paused' : 'Recording'} • {formatDuration(displaySeconds)}
 	</span>
 </div>

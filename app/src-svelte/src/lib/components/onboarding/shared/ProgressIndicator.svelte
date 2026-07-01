@@ -38,7 +38,7 @@
 						: isActive
 							? 'size-8 bg-primary'
 							: 'size-6 bg-muted-foreground/30',
-					isClickable ? 'cursor-pointer hover:scale-110 hover:shadow-md' : 'cursor-default'
+					isClickable ? 'cursor-pointer hover:scale-110 hover:shadow-md' : 'cursor-default',
 				)}
 			>
 				{#if isCompleted}
@@ -47,7 +47,7 @@
 					<StepIcon
 						class={cn(
 							'transition-all duration-300',
-							isActive ? 'size-4 text-primary-foreground' : 'size-3 text-muted-foreground'
+							isActive ? 'size-4 text-primary-foreground' : 'size-3 text-muted-foreground',
 						)}
 					/>
 				{/if}
@@ -58,7 +58,7 @@
 				<div
 					class={cn(
 						'h-0.5 w-6 transition-all duration-300',
-						isCompleted ? 'bg-success' : 'bg-muted-foreground/30'
+						isCompleted ? 'bg-success' : 'bg-muted-foreground/30',
 					)}
 				></div>
 			{/if}

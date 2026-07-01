@@ -61,7 +61,7 @@
 		isLoadingMore = false,
 		totalCount = 0,
 		loadedCount = 0,
-		onLoadMore
+		onLoadMore,
 	}: Props = $props();
 
 	let scrollEl = $state<HTMLDivElement>();
@@ -74,19 +74,26 @@
 		getIsPaused: () => isPaused,
 		// `disableAutoScroll` is fixed for a given mount (meeting-details vs live).
 		// svelte-ignore state_referenced_locally
-		disableAutoScroll
+		disableAutoScroll,
 	});
 
 	const streaming = useTranscriptStreaming(
 		() => segments,
 		() => isRecording,
-		() => enableStreaming
+		() => enableStreaming,
 	);
 
 	// Infinite scroll: observe the trigger element to load more.
 	$effect(() => {
 		const trigger = loadMoreTrigger;
-		if (!onLoadMore || !hasMore || isLoadingMore || isRecording || segments.length === 0 || !trigger) {
+		if (
+			!onLoadMore ||
+			!hasMore ||
+			isLoadingMore ||
+			isRecording ||
+			segments.length === 0 ||
+			!trigger
+		) {
 			return;
 		}
 
@@ -97,7 +104,7 @@
 					onLoadMore();
 				}
 			},
-			{ root: null, rootMargin: '100px', threshold: 0 }
+			{ root: null, rootMargin: '100px', threshold: 0 },
 		);
 		observer.observe(trigger);
 		return () => observer.disconnect();
@@ -145,7 +152,10 @@
 				{#if isRecording}
 					<div class="mb-3 flex items-center justify-center">
 						<div
-							class={cn('size-3 rounded-full', isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent')}
+							class={cn(
+								'size-3 rounded-full',
+								isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent',
+							)}
 						></div>
 					</div>
 					<p class="text-sm text-muted-foreground">
@@ -182,16 +192,21 @@
 									</Tooltip.Trigger>
 									<Tooltip.Content>
 										{#if segment.confidence !== undefined && showConfidence}
-											<ConfidenceIndicator confidence={segment.confidence} showIndicator={showConfidence} />
+											<ConfidenceIndicator
+												confidence={segment.confidence}
+												showIndicator={showConfidence}
+											/>
 										{:else}
 											<span class="text-xs">No confidence data</span>
 										{/if}
 									</Tooltip.Content>
 								</Tooltip.Root>
 							</Tooltip.Provider>
-								<div class={cn('min-w-0 flex-1', isMe && 'text-right')}>
+							<div class={cn('min-w-0 flex-1', isMe && 'text-right')}>
 								{#if isMe && segment.speaker_id != null}
-									<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground">Speaker {segment.speaker_id + 1}</span>
+									<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground"
+										>Speaker {segment.speaker_id + 1}</span
+									>
 								{/if}
 								<!-- Granola-style attribution: your mic on the right (accent
 								     tint), other participants on the left (gray). -->
@@ -199,10 +214,12 @@
 									class={cn(
 										'inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left',
 										isMe ? 'bg-accent/15' : 'bg-secondary',
-										isStreaming && 'ring-1 ring-accent/30'
+										isStreaming && 'ring-1 ring-accent/30',
 									)}
 								>
-									<p class="text-sm leading-relaxed text-foreground break-words [overflow-wrap:anywhere]">
+									<p
+										class="text-sm leading-relaxed text-foreground break-words [overflow-wrap:anywhere]"
+									>
 										{displayTextFor(segment)}
 									</p>
 								</div>

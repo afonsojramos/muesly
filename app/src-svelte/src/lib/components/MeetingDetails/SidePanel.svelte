@@ -10,7 +10,7 @@
 		SIDE_PANEL_MIN_WIDTH,
 		SIDE_PANEL_MAX_WIDTH,
 		SIDE_PANEL_SUMMARY_MIN_WIDTH,
-		type SidePanelTab
+		type SidePanelTab,
 	} from '$lib/stores/side-panel.svelte';
 	import TranscriptButtonGroup from './TranscriptButtonGroup.svelte';
 	import NotesView from './NotesView.svelte';
@@ -59,7 +59,7 @@
 		meetingFolderPath,
 		onRefetchTranscripts,
 		notesMarkdown,
-		onSaveNotes
+		onSaveNotes,
 	}: Props = $props();
 
 	// The notes editor stays mounted regardless of the active tab so unsaved edits
@@ -86,12 +86,12 @@
 			text: t.text,
 			confidence: t.confidence,
 			speaker: t.speaker,
-			speaker_id: t.speaker_id
+			speaker_id: t.speaker_id,
 		}));
 	});
 
 	const displayedCount = $derived(
-		usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length ?? 0)
+		usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length ?? 0),
 	);
 
 	// Width lives in the session store (persists across meetings). The rendered
@@ -105,7 +105,7 @@
 		const available = panelEl?.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
 		return Math.max(
 			SIDE_PANEL_MIN_WIDTH,
-			Math.min(SIDE_PANEL_MAX_WIDTH, Math.round(available - SIDE_PANEL_SUMMARY_MIN_WIDTH))
+			Math.min(SIDE_PANEL_MAX_WIDTH, Math.round(available - SIDE_PANEL_SUMMARY_MIN_WIDTH)),
 		);
 	}
 
@@ -126,7 +126,7 @@
 		const onMove = (ev: PointerEvent): void => {
 			sidePanelState.width = Math.min(
 				max,
-				Math.max(SIDE_PANEL_MIN_WIDTH, Math.round(rightEdge - ev.clientX))
+				Math.max(SIDE_PANEL_MIN_WIDTH, Math.round(rightEdge - ev.clientX)),
 			);
 		};
 		const onUp = (): void => {
@@ -158,7 +158,7 @@
 
 	const tabs: { id: SidePanelTab; label: string }[] = [
 		{ id: 'transcript', label: 'Transcript' },
-		{ id: 'notes', label: 'Notes' }
+		{ id: 'notes', label: 'Notes' },
 	];
 </script>
 
@@ -170,7 +170,7 @@
 	bind:this={panelEl}
 	class={cn(
 		'@container relative shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar',
-		sidePanelState.open ? 'hidden md:flex' : 'hidden'
+		sidePanelState.open ? 'hidden md:flex' : 'hidden',
 	)}
 	style={`width: ${sidePanelState.width}px; max-width: min(${SIDE_PANEL_MAX_WIDTH}px, calc(100% - ${SIDE_PANEL_SUMMARY_MIN_WIDTH}px)); min-width: ${SIDE_PANEL_MIN_WIDTH}px`}
 >
@@ -181,7 +181,7 @@
 		aria-label="Resize side panel"
 		class={cn(
 			'absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
-			isResizing && 'bg-accent/50'
+			isResizing && 'bg-accent/50',
 		)}
 		onpointerdown={startResize}
 	></div>
@@ -203,7 +203,7 @@
 					'relative rounded-md px-2.5 py-1 text-[13px] font-medium transition-colors',
 					sidePanelState.activeTab === tab.id
 						? 'text-foreground'
-						: 'text-muted-foreground hover:text-foreground'
+						: 'text-muted-foreground hover:text-foreground',
 				)}
 			>
 				{tab.label}
@@ -260,7 +260,10 @@
 
 	<!-- Notes tab: always mounted (hidden when inactive) to preserve unsaved edits. -->
 	<div
-		class={cn('min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-3', sidePanelState.activeTab !== 'notes' && 'hidden')}
+		class={cn(
+			'min-h-0 flex-1 overflow-y-auto px-6 pb-12 pt-3',
+			sidePanelState.activeTab !== 'notes' && 'hidden',
+		)}
 	>
 		<NotesView bind:this={notesView} {notesMarkdown} onSave={onSaveNotes} />
 	</div>

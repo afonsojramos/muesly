@@ -53,7 +53,7 @@ export function useTemplates(): UseTemplates {
 	const handleTemplateSelection = (templateId: string, templateName: string): void => {
 		selectedTemplate = templateId;
 		toast.success('Template selected', {
-			description: `Using "${templateName}" template for summary generation`
+			description: `Using "${templateName}" template for summary generation`,
 		});
 		Analytics.track('feature_used', { feature: 'template_selected' }).catch(() => {});
 	};
@@ -65,6 +65,6 @@ export function useTemplates(): UseTemplates {
 		get selectedTemplate() {
 			return selectedTemplate;
 		},
-		handleTemplateSelection
+		handleTemplateSelection,
 	};
 }

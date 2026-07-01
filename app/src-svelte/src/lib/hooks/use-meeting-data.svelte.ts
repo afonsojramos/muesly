@@ -65,7 +65,7 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 		// Keep the sidebar label tracking live edits (preserving createdAt so the
 		// date grouping does not collapse the note into "Earlier").
 		sidebar.meetings = sidebar.meetings.map((m) =>
-			m.id === meeting.id ? { ...m, title: newTitle } : m
+			m.id === meeting.id ? { ...m, title: newTitle } : m,
 		);
 		sidebar.setCurrentMeeting({ id: meeting.id, title: newTitle });
 	};
@@ -80,7 +80,7 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 			isTitleDirty = false;
 
 			sidebar.meetings = sidebar.meetings.map((m) =>
-				m.id === meeting.id ? { ...m, title: meetingTitle } : m
+				m.id === meeting.id ? { ...m, title: meetingTitle } : m,
 			);
 			sidebar.setCurrentMeeting({ id: meeting.id, title: meetingTitle });
 			return true;
@@ -90,12 +90,12 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 		}
 	};
 
-	const handleSaveSummary = async (
-		summary: Summary | BlockNoteSnapshot
-	): Promise<void> => {
+	const handleSaveSummary = async (summary: Summary | BlockNoteSnapshot): Promise<void> => {
 		try {
 			const isBlockNoteShape =
-				typeof summary === 'object' && summary !== null && ('markdown' in summary || 'summary_json' in summary);
+				typeof summary === 'object' &&
+				summary !== null &&
+				('markdown' in summary || 'summary_json' in summary);
 
 			const formattedSummary: unknown = isBlockNoteShape
 				? summary
@@ -104,14 +104,14 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 						MeetingNotes: {
 							sections: Object.entries(summary as Summary).map(([, section]) => ({
 								title: section.title,
-								blocks: section.blocks
-							}))
-						}
+								blocks: section.blocks,
+							})),
+						},
 					};
 
 			await invoke('api_save_meeting_summary', {
 				meetingId: meeting.id,
-				summary: formattedSummary
+				summary: formattedSummary,
 			});
 		} catch (error) {
 			console.error('Failed to save meeting summary:', error);
@@ -122,7 +122,7 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 	const updateMeetingTitle = (newTitle: string): void => {
 		meetingTitle = newTitle;
 		sidebar.meetings = sidebar.meetings.map((m) =>
-			m.id === meeting.id ? { ...m, title: newTitle } : m
+			m.id === meeting.id ? { ...m, title: newTitle } : m,
 		);
 		sidebar.setCurrentMeeting({ id: meeting.id, title: newTitle });
 	};
@@ -161,6 +161,6 @@ export function useMeetingData({ meeting, summaryData }: UseMeetingDataOptions):
 		handleSummaryChange,
 		handleSaveSummary,
 		handleSaveMeetingTitle,
-		updateMeetingTitle
+		updateMeetingTitle,
 	};
 }

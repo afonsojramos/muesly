@@ -19,5 +19,5 @@ if (typeof window !== 'undefined') {
 export const clock = {
 	get now(): Date {
 		return new Date(currentMs);
-	}
+	},
 };

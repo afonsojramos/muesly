@@ -71,7 +71,7 @@ class TranscriptStore {
 				}),
 				await transcriptService.onTranscriptUpdate((update) => {
 					this.#handleTranscriptUpdate(update);
-				})
+				}),
 			);
 		} catch (error) {
 			console.error('[TranscriptStore] Failed to set up listeners:', error);
@@ -102,16 +102,16 @@ class TranscriptStore {
 			audio_start_time: update.audio_start_time,
 			audio_end_time: update.audio_end_time,
 			duration: update.duration,
-			speaker: speakerFromSource(update.source)
+			speaker: speakerFromSource(update.source),
 		};
 
 		const duplicate = this.transcripts.some(
-			(t) => t.text === update.text && t.timestamp === update.timestamp
+			(t) => t.text === update.text && t.timestamp === update.timestamp,
 		);
 		if (duplicate) return;
 
 		this.transcripts = [...this.transcripts, newTranscript].sort(
-			(a, b) => (a.sequence_id ?? 0) - (b.sequence_id ?? 0)
+			(a, b) => (a.sequence_id ?? 0) - (b.sequence_id ?? 0),
 		);
 	};
 
@@ -178,7 +178,7 @@ class TranscriptStore {
 				lastUpdated: Date.now(),
 				transcriptCount: 0,
 				savedToSQLite: false,
-				folderPath: undefined
+				folderPath: undefined,
 			});
 
 			this.meetingTitle = effectiveTitle;
@@ -227,7 +227,7 @@ class TranscriptStore {
 			audio_start_time: update.audio_start_time,
 			audio_end_time: update.audio_end_time,
 			duration: update.duration,
-			speaker: speakerFromSource(update.source)
+			speaker: speakerFromSource(update.source),
 		};
 
 		this.#buffer.set(update.sequence_id, newTranscript);
@@ -291,16 +291,16 @@ class TranscriptStore {
 			...sequential,
 			...sortByChunkThenSequence(recent),
 			...sortByChunkThenSequence(stale),
-			...sortByChunkThenSequence(forced)
+			...sortByChunkThenSequence(forced),
 		];
 
 		if (allNew.length === 0) return;
 
 		const existingSequenceIds = new Set(
-			this.transcripts.map((t) => t.sequence_id).filter((id): id is number => id !== undefined)
+			this.transcripts.map((t) => t.sequence_id).filter((id): id is number => id !== undefined),
 		);
 		const uniqueNew = allNew.filter(
-			(t) => t.sequence_id !== undefined && !existingSequenceIds.has(t.sequence_id)
+			(t) => t.sequence_id !== undefined && !existingSequenceIds.has(t.sequence_id),
 		);
 		if (uniqueNew.length === 0) return;
 
@@ -327,7 +327,7 @@ class TranscriptStore {
 					audio_start_time: s.audio_start_time,
 					audio_end_time: s.audio_end_time,
 					duration: s.duration,
-					speaker: s.speaker
+					speaker: s.speaker,
 				};
 			});
 			this.transcripts = formatted;

@@ -15,7 +15,7 @@
 	// Homebrew paths differ between Intel and Apple Silicon Macs.
 	const HOMEBREW_PATHS = [
 		'/opt/homebrew/var/muesly/meeting_minutes.db', // Apple Silicon (M1/M2/M3)
-		'/usr/local/var/muesly/meeting_minutes.db' // Intel Macs
+		'/usr/local/var/muesly/meeting_minutes.db', // Intel Macs
 	];
 
 	let isChecking = $state(true);
@@ -38,7 +38,7 @@
 			for (const path of HOMEBREW_PATHS) {
 				const result = await invoke<{ exists: boolean; size: number } | null>(
 					'check_homebrew_database',
-					{ path }
+					{ path },
 				);
 
 				if (result && result.exists && result.size > 0) {

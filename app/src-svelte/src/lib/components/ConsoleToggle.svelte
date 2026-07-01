@@ -11,7 +11,10 @@
 	const platform = usePlatform();
 	const supported = $derived(platform.isMac || platform.isWindows);
 
-	async function run(command: 'toggle_console' | 'show_console' | 'hide_console', next: boolean): Promise<void> {
+	async function run(
+		command: 'toggle_console' | 'show_console' | 'hide_console',
+		next: boolean,
+	): Promise<void> {
 		isLoading = true;
 		try {
 			await invoke(command);
@@ -36,7 +39,12 @@
 			/>
 		</div>
 		<div class="flex gap-2">
-			<Button variant="outline" size="sm" disabled={isLoading} onclick={() => run('toggle_console', !consoleVisible)}>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={isLoading}
+				onclick={() => run('toggle_console', !consoleVisible)}
+			>
 				Toggle Console
 			</Button>
 		</div>

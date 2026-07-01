@@ -19,7 +19,7 @@ export async function showRecordingNotification(): Promise<void> {
 		if (showNotification) {
 			toast.info('🔴 Recording Started', {
 				description: 'Inform all participants this meeting is being recorded.',
-				duration: 10000
+				duration: 10000,
 			});
 		}
 	} catch (notificationError) {

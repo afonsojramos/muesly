@@ -40,7 +40,7 @@ export const SUMMARY_LANGUAGES: SummaryLanguage[] = [
 	{ code: 'hu', name: 'Hungarian' },
 	{ code: 'no', name: 'Norwegian' },
 	{ code: 'ro', name: 'Romanian' },
-	{ code: 'uk', name: 'Ukrainian' }
+	{ code: 'uk', name: 'Ukrainian' },
 ];
 
 export function summaryLanguageName(code: string | null | undefined): string | null {

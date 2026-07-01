@@ -16,13 +16,22 @@
 	});
 
 	const color = $derived(
-		rmsPercent / 100 < 0.3 ? 'bg-success' : rmsPercent / 100 < 0.7 ? 'bg-warning' : 'bg-destructive'
+		rmsPercent / 100 < 0.3
+			? 'bg-success'
+			: rmsPercent / 100 < 0.7
+				? 'bg-warning'
+				: 'bg-destructive',
 	);
 </script>
 
 <div class={cn('flex items-center gap-1', className)}>
-	<div class={cn('size-1.5 rounded-full', isActive ? 'bg-success' : 'bg-muted-foreground/30')}></div>
+	<div
+		class={cn('size-1.5 rounded-full', isActive ? 'bg-success' : 'bg-muted-foreground/30')}
+	></div>
 	<div class="h-1.5 w-8 overflow-hidden rounded-sm bg-secondary">
-		<div class={cn('h-full transition-all duration-150', color)} style={`width: ${rmsPercent}%`}></div>
+		<div
+			class={cn('h-full transition-all duration-150', color)}
+			style={`width: ${rmsPercent}%`}
+		></div>
 	</div>
 </div>

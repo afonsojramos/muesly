@@ -58,7 +58,7 @@ class OllamaDownloadStore {
 					const { modelName, progress } = event.payload;
 					this.downloadProgress.set(modelName, progress);
 					this.downloadingModels.add(modelName);
-				}
+				},
 			);
 
 			const unlistenComplete = await listen<CompletePayload>(
@@ -67,25 +67,22 @@ class OllamaDownloadStore {
 					const { modelName } = event.payload;
 					toast.success(`Model ${modelName} downloaded!`, {
 						description: 'Model is now ready to use',
-						duration: 4000
+						duration: 4000,
 					});
 					this.downloadProgress.delete(modelName);
 					this.downloadingModels.delete(modelName);
-				}
+				},
 			);
 
-			const unlistenError = await listen<ErrorPayload>(
-				'ollama-model-download-error',
-				(event) => {
-					const { modelName, error } = event.payload;
-					toast.error(`Download failed: ${modelName}`, {
-						description: error,
-						duration: 6000
-					});
-					this.downloadProgress.delete(modelName);
-					this.downloadingModels.delete(modelName);
-				}
-			);
+			const unlistenError = await listen<ErrorPayload>('ollama-model-download-error', (event) => {
+				const { modelName, error } = event.payload;
+				toast.error(`Download failed: ${modelName}`, {
+					description: error,
+					duration: 6000,
+				});
+				this.downloadProgress.delete(modelName);
+				this.downloadingModels.delete(modelName);
+			});
 
 			this.#unsubscribers.push(unlistenProgress, unlistenComplete, unlistenError);
 		} catch (error) {

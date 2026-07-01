@@ -15,8 +15,8 @@
 	const overlays = $derived(
 		[
 			{ show: isProcessing, message: 'Finalizing transcription...' },
-			{ show: isSaving, message: 'Saving transcript...' }
-		].filter((o) => o.show)
+			{ show: isSaving, message: 'Saving transcript...' },
+		].filter((o) => o.show),
 	);
 </script>
 

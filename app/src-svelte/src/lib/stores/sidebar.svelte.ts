@@ -87,9 +87,9 @@ class SidebarStore {
 				title: 'Notes',
 				type: 'folder',
 				children: this.meetings.map(
-					(m): SidebarItem => ({ id: m.id, title: m.title, type: 'file', createdAt: m.createdAt })
-				)
-			}
+					(m): SidebarItem => ({ id: m.id, title: m.title, type: 'file', createdAt: m.createdAt }),
+				),
+			},
 		];
 	}
 
@@ -137,7 +137,7 @@ class SidebarStore {
 				id: m.id,
 				title: m.title,
 				createdAt: m.created_at,
-				folderId: m.folder_id ?? undefined
+				folderId: m.folder_id ?? undefined,
 			}));
 		} catch (error) {
 			// Browser dev preview (vite dev without Tauri): sample notes so the
@@ -157,7 +157,7 @@ class SidebarStore {
 					{ id: 'dev-3', title: 'Q3 planning', createdAt: at(1, 14), folderId: 'dev-folder-1' },
 					{ id: 'dev-4', title: '1:1 with Alex', createdAt: at(1, 10) },
 					{ id: 'dev-5', title: 'Customer call: Acme Corp', createdAt: at(4, 15) },
-					{ id: 'dev-6', title: 'Roadmap sync', createdAt: at(12, 11) }
+					{ id: 'dev-6', title: 'Roadmap sync', createdAt: at(12, 11) },
 				];
 				this.folders = [{ id: 'dev-folder-1', name: 'Team' }];
 				return;
@@ -205,10 +205,7 @@ class SidebarStore {
 		await Promise.allSettled([this.refetchFolders(), this.refetchMeetings()]);
 	};
 
-	moveMeetingToFolder = async (
-		meetingId: string,
-		folderId: string | null
-	): Promise<void> => {
+	moveMeetingToFolder = async (meetingId: string, folderId: string | null): Promise<void> => {
 		await invoke('api_move_meeting_to_folder', { meetingId, folderId });
 		await this.refetchMeetings();
 	};
@@ -221,7 +218,9 @@ class SidebarStore {
 
 		try {
 			this.isSearching = true;
-			const results = (await invoke('api_search_transcripts', { query })) as TranscriptSearchResult[];
+			const results = (await invoke('api_search_transcripts', {
+				query,
+			})) as TranscriptSearchResult[];
 			this.searchResults = results;
 		} catch (error) {
 			console.error('[SidebarStore] Search failed:', error);
@@ -235,7 +234,7 @@ class SidebarStore {
 	startSummaryPolling = (
 		meetingId: string,
 		processId: string,
-		onUpdate: (result: SummaryPollResult) => void
+		onUpdate: (result: SummaryPollResult) => void,
 	): void => {
 		const existing = this.activeSummaryPolls.get(meetingId);
 		if (existing) clearInterval(existing);
@@ -251,7 +250,7 @@ class SidebarStore {
 				onUpdate({
 					status: 'error',
 					error:
-						'Summary generation timed out after 15 minutes. Please try again or check your model configuration.'
+						'Summary generation timed out after 15 minutes. Please try again or check your model configuration.',
 				});
 				return;
 			}
@@ -274,7 +273,7 @@ class SidebarStore {
 			} catch (error) {
 				onUpdate({
 					status: 'error',
-					error: error instanceof Error ? error.message : 'Unknown error'
+					error: error instanceof Error ? error.message : 'Unknown error',
 				});
 				clearInterval(interval);
 				this.activeSummaryPolls.delete(meetingId);
@@ -301,8 +300,8 @@ class SidebarStore {
 	requestRecordingToggle = (currentPath: string): 'on-home' | 'navigate-home' | 'noop' => {
 		if (recordingState.isRecording) return 'noop';
 
-		Analytics.track('button_click', { name: 'start_recording', location: 'sidebar' }).catch(
-			(err) => console.error('Analytics track failed:', err)
+		Analytics.track('button_click', { name: 'start_recording', location: 'sidebar' }).catch((err) =>
+			console.error('Analytics track failed:', err),
 		);
 
 		if (currentPath === '/') {

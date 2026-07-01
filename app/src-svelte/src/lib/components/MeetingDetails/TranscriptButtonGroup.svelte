@@ -24,7 +24,7 @@
 		onOpenMeetingFolder,
 		meetingId,
 		meetingFolderPath,
-		onRefetchTranscripts
+		onRefetchTranscripts,
 	}: Props = $props();
 
 	let showRetranscribeDialog = $state(false);

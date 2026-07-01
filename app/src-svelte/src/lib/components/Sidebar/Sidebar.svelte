@@ -15,7 +15,7 @@
 		Settings,
 		Trash2,
 		Upload,
-		X
+		X,
 	} from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
@@ -34,11 +34,11 @@
 
 	let deleteModal = $state<{ open: boolean; itemId: string | null }>({
 		open: false,
-		itemId: null
+		itemId: null,
 	});
 	let editModal = $state<{ open: boolean; meetingId: string | null }>({
 		open: false,
-		meetingId: null
+		meetingId: null,
 	});
 	let editingTitle = $state('');
 
@@ -50,8 +50,8 @@
 		groupByRecency(
 			sidebar.meetings.filter((m) => !m.folderId),
 			(m) => m.createdAt,
-			clock.now
-		)
+			clock.now,
+		),
 	);
 
 	const hasAnyNotes = $derived(sidebar.meetings.length > 0 || sidebar.folders.length > 0);
@@ -60,17 +60,17 @@
 	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
 		open: false,
 		mode: 'create',
-		folderId: null
+		folderId: null,
 	});
 	let folderNameInput = $state('');
 	let deleteFolderModal = $state<{ open: boolean; folderId: string | null; name: string }>({
 		open: false,
 		folderId: null,
-		name: ''
+		name: '',
 	});
 	let moveModal = $state<{ open: boolean; meetingId: string | null }>({
 		open: false,
-		meetingId: null
+		meetingId: null,
 	});
 
 	function openCreateFolder(): void {
@@ -91,7 +91,7 @@
 			folderNameInput = '';
 		} catch (error) {
 			toast.error('Failed to save folder', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		}
 	}
@@ -101,7 +101,7 @@
 			await sidebar.deleteFolder(deleteFolderModal.folderId);
 		} catch (error) {
 			toast.error('Failed to delete folder', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		} finally {
 			deleteFolderModal = { open: false, folderId: null, name: '' };
@@ -119,7 +119,7 @@
 			await sidebar.moveMeetingToFolder(meetingId, folderId);
 		} catch (error) {
 			toast.error('Failed to move note', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		}
 	}
@@ -251,8 +251,8 @@
 								console.error('Failed to restore meeting:', error);
 							}
 						})();
-					}
-				}
+					},
+				},
 			});
 
 			if (sidebar.currentMeeting?.id === itemId) {
@@ -263,7 +263,7 @@
 			console.error('Failed to delete meeting:', error);
 			const { toast } = await import('$lib/toast');
 			toast.error('Failed to delete meeting', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		}
 	}
@@ -296,7 +296,7 @@
 			await invoke('api_save_meeting_title', { meetingId, title: newTitle });
 
 			sidebar.meetings = sidebar.meetings.map((m: CurrentMeeting) =>
-				m.id === meetingId ? { ...m, title: newTitle } : m
+				m.id === meetingId ? { ...m, title: newTitle } : m,
 			);
 
 			if (sidebar.currentMeeting?.id === meetingId) {
@@ -311,7 +311,7 @@
 		} catch (error) {
 			console.error('Failed to update meeting title:', error);
 			toast.error('Failed to update meeting title', {
-				description: error instanceof Error ? error.message : String(error)
+				description: error instanceof Error ? error.message : String(error),
 			});
 		}
 	}
@@ -438,7 +438,7 @@
 		class={cn(
 			'relative flex h-screen flex-col overflow-hidden border-r border-border bg-sidebar',
 			!sidebar.isResizing && 'transition-[width] duration-300',
-			sidebar.isCollapsed && 'border-r-0'
+			sidebar.isCollapsed && 'border-r-0',
 		)}
 		style={`width: ${sidebar.effectiveWidth}px`}
 	>
@@ -450,7 +450,7 @@
 				aria-label="Resize sidebar"
 				class={cn(
 					'absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
-					sidebar.isResizing && 'bg-accent/50'
+					sidebar.isResizing && 'bg-accent/50',
 				)}
 				onpointerdown={startResize}
 			></div>
@@ -487,7 +487,7 @@
 						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 						pathname === '/'
 							? 'bg-secondary font-medium text-foreground'
-							: 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
 					)}
 				>
 					<Home class="size-4" />
@@ -497,7 +497,6 @@
 
 			<!-- Notes list -->
 			<div class="custom-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-
 				<!-- Meeting row, reused in folder sections and date groups. The title is a
 				 real <button> (flex-1) for navigation; the hover controls are siblings,
 				 so nothing interactive is nested in another control. The whole row is
@@ -511,7 +510,7 @@
 							isActive
 								? 'bg-secondary font-medium text-foreground'
 								: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
-							draggingMeetingId === meeting.id && 'opacity-50'
+							draggingMeetingId === meeting.id && 'opacity-50',
 						)}
 						role="listitem"
 						data-roving-row
@@ -602,7 +601,6 @@
 								</div>
 							{/if}
 						</div>
-
 					</div>
 				{/snippet}
 
@@ -635,7 +633,7 @@
 					<div
 						class={cn(
 							'rounded-md transition-colors',
-							dragOverTarget === section.id && 'bg-accent/10 ring-1 ring-accent/40'
+							dragOverTarget === section.id && 'bg-accent/10 ring-1 ring-accent/40',
 						)}
 						role="group"
 						data-drop-target={section.id}
@@ -692,7 +690,7 @@
 														(deleteFolderModal = {
 															open: true,
 															folderId: section.id,
-															name: section.name
+															name: section.name,
 														})}
 													onkeydown={handleRovingKeydown}
 													data-roving
@@ -718,7 +716,7 @@
 					data-drop-target="uncategorized"
 					class={cn(
 						'rounded-md transition-colors',
-						dragOverTarget === 'uncategorized' && 'bg-accent/10 ring-1 ring-accent/40'
+						dragOverTarget === 'uncategorized' && 'bg-accent/10 ring-1 ring-accent/40',
 					)}
 				>
 					{#each uncategorizedGroups as group (group.label)}
@@ -754,7 +752,7 @@
 						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 						pathname === '/settings'
 							? 'bg-secondary font-medium text-foreground'
-							: 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
 					)}
 				>
 					<Settings class="size-4" />
@@ -784,9 +782,7 @@
 >
 	<Dialog.Content>
 		<Dialog.Title class="sr-only">Delete meeting</Dialog.Title>
-		<p class="text-sm">
-			Move this meeting to the trash? You can restore it from Settings → Trash.
-		</p>
+		<p class="text-sm">Move this meeting to the trash? You can restore it from Settings → Trash.</p>
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (deleteModal = { open: false, itemId: null })}>
 				Cancel
@@ -868,8 +864,8 @@
 	<Dialog.Content>
 		<Dialog.Title class="sr-only">Delete folder</Dialog.Title>
 		<p class="text-sm">
-			Delete the folder <strong>{deleteFolderModal.name}</strong>? Notes inside it are kept and moved
-			back to the date list.
+			Delete the folder <strong>{deleteFolderModal.name}</strong>? Notes inside it are kept and
+			moved back to the date list.
 		</p>
 		<Dialog.Footer>
 			<Button

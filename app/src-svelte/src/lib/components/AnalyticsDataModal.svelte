@@ -17,9 +17,9 @@
 			items: [
 				'Transcription model (e.g. "Whisper large-v3", "Parakeet")',
 				'Summary model (e.g. "Llama 3.2", "Claude Sonnet")',
-				'Model provider (e.g. "Local", "Ollama", "OpenRouter")'
+				'Model provider (e.g. "Local", "Ollama", "OpenRouter")',
 			],
-			note: 'Helps us understand which models users prefer'
+			note: 'Helps us understand which models users prefer',
 		},
 		{
 			title: '2. Anonymous Meeting Metrics',
@@ -27,25 +27,33 @@
 				'Recording duration',
 				'Pause duration',
 				'Number of transcript segments',
-				'Number of audio chunks processed'
+				'Number of audio chunks processed',
 			],
-			note: 'Helps us optimize performance and understand usage patterns'
+			note: 'Helps us optimize performance and understand usage patterns',
 		},
 		{
 			title: '3. Device Types (Not Names)',
-			items: ['Microphone type: Bluetooth / Wired / Unknown', 'System audio type: Bluetooth / Wired / Unknown'],
-			note: 'Helps us improve compatibility, NOT the actual device names'
+			items: [
+				'Microphone type: Bluetooth / Wired / Unknown',
+				'System audio type: Bluetooth / Wired / Unknown',
+			],
+			note: 'Helps us improve compatibility, NOT the actual device names',
 		},
 		{
 			title: '4. App Usage Patterns',
-			items: ['App started/stopped events', 'Session duration', 'Feature usage', 'Error occurrences'],
-			note: 'Helps us improve user experience'
+			items: [
+				'App started/stopped events',
+				'Session duration',
+				'Feature usage',
+				'Error occurrences',
+			],
+			note: 'Helps us improve user experience',
 		},
 		{
 			title: '5. Platform Information',
 			items: ['Operating system', 'App version', 'Architecture (x86_64 / aarch64)'],
-			note: 'Helps us prioritize platform support'
-		}
+			note: 'Helps us prioritize platform support',
+		},
 	];
 
 	const notCollected = [
@@ -54,7 +62,7 @@
 		'Audio recordings',
 		'Device names (only types: Bluetooth/Wired)',
 		'Personal information',
-		'Any identifiable data'
+		'Any identifiable data',
 	];
 </script>
 

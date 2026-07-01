@@ -16,7 +16,7 @@
 	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
 	import {
 		setUpdateDialogCallback,
-		showUpdateNotification
+		showUpdateNotification,
 	} from '$lib/components/update-notification';
 	import { Toaster } from '$lib/components/ui/sonner';
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
@@ -37,7 +37,7 @@
 	// onboarding can never complete and would block UI previews.
 	const isTauriRuntime = isBrowser && '__TAURI_INTERNALS__' in window;
 	const showOnboarding = $derived(
-		(isTauriRuntime || !import.meta.env.DEV) && onboarding.statusLoaded && !onboarding.completed
+		(isTauriRuntime || !import.meta.env.DEV) && onboarding.statusLoaded && !onboarding.completed,
 	);
 
 	// Import audio overlay/dialog state (shell-level, mirrors the React layout).
@@ -58,7 +58,7 @@
 		onUpdateAvailable: (info) => {
 			// Show notification; the dialog opens from the tray path or its callback.
 			showUpdateNotification(info);
-		}
+		},
 	});
 
 	// Recording post-processing provider wiring (ports RecordingPostProcessingProvider):
@@ -66,7 +66,7 @@
 	// local setters are no-ops here.
 	const { handleRecordingStop } = useRecordingStop(
 		() => {},
-		() => {}
+		() => {},
 	);
 
 	function handleFileDrop(paths: string[]): void {
@@ -80,7 +80,7 @@
 			showImportDialog = true;
 		} else if (paths.length > 0) {
 			toast.error('Please drop an audio file', {
-				description: `Supported formats: ${getAudioFormatsDisplayList()}`
+				description: `Supported formats: ${getAudioFormatsDisplayList()}`,
 			});
 		}
 	}
@@ -179,13 +179,13 @@
 								onClick: () => {
 									void recordingService.startRecording().catch((error) => {
 										toast.error('Failed to start recording', {
-											description: error instanceof Error ? error.message : 'Unknown error'
+											description: error instanceof Error ? error.message : 'Unknown error',
 										});
 									});
-								}
-							}
+								},
+							},
 						});
-					}
+					},
 				);
 				if (cancelled) fn();
 				else unlisten = fn;
@@ -267,7 +267,7 @@
 				const unlistenTray = await listen('request-recording-toggle', () => {
 					if (!onboarding.completed) {
 						toast.error('Please complete setup first', {
-							description: 'You need to finish onboarding before you can start recording.'
+							description: 'You need to finish onboarding before you can start recording.',
 						});
 					} else if (isBrowser) {
 						window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
@@ -302,9 +302,7 @@
 					(event) => {
 						const denied = event.payload === 'denied';
 						toast.error(
-							denied
-								? 'System audio is not being captured'
-								: 'System audio may not be captured',
+							denied ? 'System audio is not being captured' : 'System audio may not be captured',
 							{
 								description: denied
 									? "muesly is missing the System Audio Recording permission, so other participants' audio will be silent. Your microphone still records."
@@ -314,13 +312,13 @@
 									label: 'Open Settings',
 									onClick: () => {
 										void import('@tauri-apps/api/core').then(({ invoke }) =>
-											invoke('open_system_settings', { preferencePane: 'Privacy_ScreenCapture' })
+											invoke('open_system_settings', { preferencePane: 'Privacy_ScreenCapture' }),
 										);
-									}
-								}
-							}
+									},
+								},
+							},
 						);
-					}
+					},
 				);
 				if (cancelled) unlistenAudioPermission();
 				else unsubscribers.push(unlistenAudioPermission);
@@ -335,9 +333,9 @@
 							description: device
 								? `"${device}" has been silent since recording started. Check the mute switch, or pick a different microphone.`
 								: 'Your microphone has been silent since recording started. Check the mute switch, or pick a different microphone.',
-							duration: 12000
+							duration: 12000,
 						});
-					}
+					},
 				);
 				if (cancelled) unlistenMicSilent();
 				else unsubscribers.push(unlistenMicSilent);

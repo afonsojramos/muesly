@@ -53,7 +53,7 @@
 		selectedTemplate,
 		onTemplateSelect,
 		isModelConfigLoading = false,
-		onOpenModelSettings
+		onOpenModelSettings,
 	}: Props = $props();
 
 	let summaryView = $state<ReturnType<typeof SummaryView>>();
@@ -65,7 +65,7 @@
 	const isSummaryLoading = $derived(
 		summaryStatus === 'processing' ||
 			summaryStatus === 'summarizing' ||
-			summaryStatus === 'regenerating'
+			summaryStatus === 'regenerating',
 	);
 
 	const hasModel = $derived(modelConfig.provider !== null && modelConfig.model !== null);

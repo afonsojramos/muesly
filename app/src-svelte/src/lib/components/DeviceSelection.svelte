@@ -42,14 +42,17 @@
 
 	const micItems = $derived([
 		{ value: 'default', label: 'Default Microphone' },
-		...inputDevices.map((d) => ({ value: `${d.name} (${d.device_type.toLowerCase()})`, label: d.name }))
+		...inputDevices.map((d) => ({
+			value: `${d.name} (${d.device_type.toLowerCase()})`,
+			label: d.name,
+		})),
 	]);
 	const systemItems = $derived([
 		{ value: 'default', label: 'Default System Audio' },
 		...outputDevices.map((d) => ({
 			value: `${d.name} (${d.device_type.toLowerCase()})`,
-			label: d.name
-		}))
+			label: d.name,
+		})),
 	]);
 
 	async function fetchDevices(): Promise<void> {
@@ -77,24 +80,24 @@
 	const micValue = $derived(selectedDevices.micDevice ?? 'default');
 	const systemValue = $derived(selectedDevices.systemDevice ?? 'default');
 	const micLabel = $derived(
-		micItems.find((i) => i.value === micValue)?.label ?? 'Select Microphone'
+		micItems.find((i) => i.value === micValue)?.label ?? 'Select Microphone',
 	);
 	const systemLabel = $derived(
-		systemItems.find((i) => i.value === systemValue)?.label ?? 'Select System Audio'
+		systemItems.find((i) => i.value === systemValue)?.label ?? 'Select System Audio',
 	);
 
 	function handleMicDeviceChange(value: string | undefined): void {
 		const deviceName = value ?? 'default';
 		onDeviceChange({
 			...selectedDevices,
-			micDevice: deviceName === 'default' ? null : deviceName
+			micDevice: deviceName === 'default' ? null : deviceName,
 		});
 
 		const metadata = getDeviceMetadata(deviceName);
 		track('microphone_selected', {
 			device_category: metadata.category,
 			is_bluetooth: metadata.isBluetooth.toString(),
-			has_system_audio: (!!selectedDevices.systemDevice).toString()
+			has_system_audio: (!!selectedDevices.systemDevice).toString(),
 		}).catch((err) => console.error('Failed to track microphone selection:', err));
 	}
 
@@ -102,14 +105,14 @@
 		const deviceName = value ?? 'default';
 		onDeviceChange({
 			...selectedDevices,
-			systemDevice: deviceName === 'default' ? null : deviceName
+			systemDevice: deviceName === 'default' ? null : deviceName,
 		});
 
 		const metadata = getDeviceMetadata(deviceName);
 		track('system_audio_selected', {
 			device_category: metadata.category,
 			is_bluetooth: metadata.isBluetooth.toString(),
-			has_microphone: (!!selectedDevices.micDevice).toString()
+			has_microphone: (!!selectedDevices.micDevice).toString(),
 		}).catch((err) => console.error('Failed to track system audio selection:', err));
 	}
 </script>
@@ -137,7 +140,9 @@
 		</div>
 
 		{#if error}
-			<div class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+			<div
+				class="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+			>
 				{error}
 			</div>
 		{/if}

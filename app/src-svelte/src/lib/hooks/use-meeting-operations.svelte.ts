@@ -21,6 +21,6 @@ export function useMeetingOperations(meeting: { id: string }): UseMeetingOperati
 				console.error('Failed to open meeting folder:', error);
 				toast.error(typeof error === 'string' ? error : 'Failed to open recording folder');
 			}
-		}
+		},
 	};
 }

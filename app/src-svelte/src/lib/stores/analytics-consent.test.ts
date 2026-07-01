@@ -9,21 +9,21 @@ vi.mock('@tauri-apps/plugin-store', () => {
 		set: vi.fn(async (key: string, value: unknown) => {
 			storeData[key] = value;
 		}),
-		save: vi.fn(async () => {})
+		save: vi.fn(async () => {}),
 	};
 	return {
-		load: vi.fn(async () => mockStore)
+		load: vi.fn(async () => mockStore),
 	};
 });
 
 // Mock @tauri-apps/api/app (getVersion).
 vi.mock('@tauri-apps/api/app', () => ({
-	getVersion: vi.fn(async () => '1.0.0')
+	getVersion: vi.fn(async () => '1.0.0'),
 }));
 
 // Mock @tauri-apps/api/core (invoke).
 vi.mock('@tauri-apps/api/core', () => ({
-	invoke: vi.fn(async () => {})
+	invoke: vi.fn(async () => {}),
 }));
 
 // Mock $lib/analytics — the store orchestrates these; we just verify calls.
@@ -34,7 +34,7 @@ vi.mock('$lib/analytics', () => ({
 		getDeviceInfo: vi.fn(async () => ({
 			platform: 'macos',
 			os_version: '15.0',
-			architecture: 'aarch64'
+			architecture: 'aarch64',
 		})),
 		identify: vi.fn(async () => {}),
 		startSession: vi.fn(async () => 'test-session-id'),
@@ -44,8 +44,8 @@ vi.mock('$lib/analytics', () => ({
 		checkAndTrackDailyUsage: vi.fn(async () => {}),
 		trackSessionEnded: vi.fn(async () => {}),
 		cleanup: vi.fn(async () => {}),
-		disable: vi.fn(async () => {})
-	}
+		disable: vi.fn(async () => {}),
+	},
 }));
 
 // Import after mocks are registered.

@@ -36,7 +36,7 @@
 		onNext,
 		onPrevious,
 		canGoNext = true,
-		canGoPrevious = true
+		canGoPrevious = true,
 	}: Props = $props();
 
 	function handlePrevious(): void {
@@ -54,12 +54,8 @@
 	}
 </script>
 
-<div
-	class="fixed inset-0 bg-background flex items-center justify-center z-50 overflow-hidden"
->
-	<div
-		class={cn('w-full max-w-2xl h-full max-h-screen flex flex-col px-6 py-6', className)}
-	>
+<div class="fixed inset-0 bg-background flex items-center justify-center z-50 overflow-hidden">
+	<div class={cn('w-full max-w-2xl h-full max-h-screen flex flex-col px-6 py-6', className)}>
 		<!-- Progress Indicator with Navigation - Fixed -->
 		{#if step && !hideProgress}
 			<div class="mb-2 relative flex-shrink-0">
@@ -76,7 +72,7 @@
 								'pointer-events-auto rounded-full bg-card shadow-sm transition-all duration-200',
 								canGoPrevious && step !== 1
 									? 'hover:bg-secondary hover:shadow-md hover:scale-110'
-									: 'opacity-0 cursor-not-allowed'
+									: 'opacity-0 cursor-not-allowed',
 							)}
 							aria-label="Previous step"
 						>
@@ -92,7 +88,7 @@
 								'pointer-events-auto rounded-full bg-card shadow-sm transition-all duration-200',
 								canGoNext && step !== totalSteps
 									? 'hover:bg-secondary hover:shadow-md hover:scale-110'
-									: 'opacity-0 cursor-not-allowed'
+									: 'opacity-0 cursor-not-allowed',
 							)}
 							aria-label="Next step"
 						>
@@ -107,10 +103,7 @@
 
 		<!-- Header - Fixed -->
 		<div class="mb-4 flex flex-col gap-3 text-center flex-shrink-0">
-			<h1
-				class="text-4xl font-semibold text-foreground"
-				in:fly={{ y: 10, duration: 300 }}
-			>
+			<h1 class="text-4xl font-semibold text-foreground" in:fly={{ y: 10, duration: 300 }}>
 				{title}
 			</h1>
 			{#if description}

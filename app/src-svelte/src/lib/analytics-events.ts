@@ -19,7 +19,7 @@ import { Analytics } from '$lib/analytics';
 export const REGISTRY = {
 	microphone_selected: ['device_category', 'is_bluetooth', 'has_system_audio'],
 	system_audio_selected: ['device_category', 'is_bluetooth', 'has_microphone'],
-	theme_changed: ['theme']
+	theme_changed: ['theme'],
 } as const;
 
 export type EventName = keyof typeof REGISTRY;

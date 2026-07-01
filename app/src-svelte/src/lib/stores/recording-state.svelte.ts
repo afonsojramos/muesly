@@ -20,13 +20,13 @@ export enum RecordingStatus {
 	PROCESSING_TRANSCRIPTS = 'processing',
 	SAVING = 'saving',
 	COMPLETED = 'completed',
-	ERROR = 'error'
+	ERROR = 'error',
 }
 
 const STOP_FLOW_STATUSES = new Set([
 	RecordingStatus.STOPPING,
 	RecordingStatus.PROCESSING_TRANSCRIPTS,
-	RecordingStatus.SAVING
+	RecordingStatus.SAVING,
 ]);
 
 class RecordingStateStore {
@@ -105,11 +105,7 @@ class RecordingStateStore {
 			return true;
 		} catch (error) {
 			const message =
-				error instanceof Error
-					? error.message
-					: typeof error === 'string'
-						? error
-						: String(error);
+				error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
 			if (message.includes('No recording in progress')) {
 				// Already stopped by another surface — treat as a no-op success.
 				return true;
@@ -171,7 +167,7 @@ class RecordingStateStore {
 				await recordingService.onRecordingResumed(() => {
 					this.isPaused = false;
 					this.isActive = true;
-				})
+				}),
 			);
 		} catch (error) {
 			console.error('[RecordingStateStore] Failed to set up event listeners:', error);

@@ -17,7 +17,10 @@
 	interface ModelInfo {
 		name: string;
 		display_name: string;
-		status: { type: 'not_downloaded' | 'downloading' | 'available' | 'corrupted' | 'error'; progress?: number };
+		status: {
+			type: 'not_downloaded' | 'downloading' | 'available' | 'corrupted' | 'error';
+			progress?: number;
+		};
 		size_mb: number;
 		context_size: number;
 		description: string;
@@ -122,7 +125,7 @@
 			downloadProgressInfo.set(model, {
 				downloadedMb: downloaded_mb ?? 0,
 				totalMb: total_mb ?? 0,
-				speedMbps: speed_mbps ?? 0
+				speedMbps: speed_mbps ?? 0,
 			});
 
 			if (status === 'downloading') {
@@ -137,7 +140,7 @@
 			} else if (status === 'error') {
 				clearProgress(model);
 				models = models.map((m) =>
-					m.name === model ? { ...m, status: { type: 'error', progress: 0 } } : m
+					m.name === model ? { ...m, status: { type: 'error', progress: 0 } } : m,
 				);
 			}
 		}).then((fn) => {
@@ -189,7 +192,7 @@
 						selectedModel === model.name
 							? 'border-accent ring-1 ring-inset ring-accent'
 							: 'border-border hover:border-muted-foreground/40',
-						isAvailable && !modelIsDownloading ? 'cursor-pointer bg-card' : 'bg-card'
+						isAvailable && !modelIsDownloading ? 'cursor-pointer bg-card' : 'bg-card',
 					)}
 				>
 					<div class="flex items-start justify-between">
@@ -223,22 +226,57 @@
 
 						<div class="ml-4 flex items-center gap-2">
 							{#if isNotDownloaded && !modelIsDownloading}
-								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={(e) => {
+										e.stopPropagation();
+										downloadModel(model.name);
+									}}
+								>
 									<Download data-icon="inline-start" /> Download
 								</Button>
 							{:else if modelIsDownloading}
-								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); cancelDownload(model.name); }}>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={(e) => {
+										e.stopPropagation();
+										cancelDownload(model.name);
+									}}
+								>
 									Cancel
 								</Button>
 							{:else if isError}
-								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={(e) => {
+										e.stopPropagation();
+										downloadModel(model.name);
+									}}
+								>
 									<RefreshCw data-icon="inline-start" /> Retry
 								</Button>
 							{:else if isCorrupted}
-								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); downloadModel(model.name); }}>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={(e) => {
+										e.stopPropagation();
+										downloadModel(model.name);
+									}}
+								>
 									<RefreshCw data-icon="inline-start" /> Retry
 								</Button>
-								<Button variant="outline" size="sm" onclick={(e) => { e.stopPropagation(); deleteModel(model.name); }}>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={(e) => {
+										e.stopPropagation();
+										deleteModel(model.name);
+									}}
+								>
 									<Trash2 data-icon="inline-start" /> Delete
 								</Button>
 							{:else if isAvailable && selectedModel !== model.name}
@@ -251,7 +289,10 @@
 													variant="ghost"
 													size="icon-sm"
 													class="text-muted-foreground hover:text-destructive"
-													onclick={(e) => { e.stopPropagation(); deleteModel(model.name); }}
+													onclick={(e) => {
+														e.stopPropagation();
+														deleteModel(model.name);
+													}}
 													aria-label="Delete model"
 												>
 													<Trash2 />
@@ -276,7 +317,9 @@
 								{#if progressInfo && progressInfo.totalMb > 0}
 									{progressInfo.downloadedMb.toFixed(1)} MB / {progressInfo.totalMb.toFixed(1)} MB
 									{#if progressInfo.speedMbps > 0}
-										<span class="ml-2 text-muted-foreground/70">({progressInfo.speedMbps.toFixed(1)} MB/s)</span>
+										<span class="ml-2 text-muted-foreground/70"
+											>({progressInfo.speedMbps.toFixed(1)} MB/s)</span
+										>
 									{/if}
 								{:else}
 									{model.size_mb} MB

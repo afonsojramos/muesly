@@ -22,6 +22,6 @@ export function useRecordingStateSync(): UseRecordingStateSync {
 		},
 		setIsRecordingDisabled: (value: boolean) => {
 			isRecordingDisabled = value;
-		}
+		},
 	};
 }

@@ -70,7 +70,7 @@ async function checkIfModelDownloading(): Promise<boolean> {
 
 export function useRecordingStart(
 	setIsRecording: (value: boolean) => void,
-	showModal?: (name: 'modelSelector', message?: string) => void
+	showModal?: (name: 'modelSelector', message?: string) => void,
 ): UseRecordingStart {
 	let isAutoStarting = $state(false);
 
@@ -80,13 +80,13 @@ export function useRecordingStart(
 			toast.info('Model download in progress', {
 				description:
 					'Please wait for the transcription model to finish downloading before recording.',
-				duration: 5000
+				duration: 5000,
 			});
 			void Analytics.trackButtonClick('start_recording_blocked_downloading', location);
 		} else {
 			toast.error('Transcription model not ready', {
 				description: 'Please download a transcription model before recording.',
-				duration: 5000
+				duration: 5000,
 			});
 			showModal?.('modelSelector', 'Transcription model setup required');
 			void Analytics.trackButtonClick('start_recording_blocked_missing', location);
@@ -99,7 +99,7 @@ export function useRecordingStart(
 		await recordingService.startRecordingWithDevices(
 			config.selectedDevices.micDevice || null,
 			config.selectedDevices.systemDevice || null,
-			title
+			title,
 		);
 		transcripts.setMeetingTitle(title);
 		// Optimistically flip UI state (mirrors React). The `recording-started`
@@ -126,7 +126,7 @@ export function useRecordingStart(
 			console.error('Failed to start recording:', error);
 			recordingState.setStatus(
 				RecordingStatus.ERROR,
-				error instanceof Error ? error.message : 'Failed to start recording'
+				error instanceof Error ? error.message : 'Failed to start recording',
 			);
 			setIsRecording(false);
 			void Analytics.trackButtonClick('start_recording_error', 'home_page');
@@ -153,7 +153,7 @@ export function useRecordingStart(
 			console.error(`Failed to ${location} recording:`, error);
 			recordingState.setStatus(
 				RecordingStatus.ERROR,
-				error instanceof Error ? error.message : 'Failed to start recording'
+				error instanceof Error ? error.message : 'Failed to start recording',
 			);
 			void Analytics.trackButtonClick('start_recording_error', location);
 		} finally {
@@ -187,6 +187,6 @@ export function useRecordingStart(
 		get isAutoStarting() {
 			return isAutoStarting;
 		},
-		handleRecordingStart
+		handleRecordingStart,
 	};
 }

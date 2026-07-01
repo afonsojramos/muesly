@@ -34,7 +34,7 @@
 		progress: onboarding.parakeetDownloaded ? 100 : 0,
 		downloadedMb: 0,
 		totalMb: 670,
-		speedMbps: 0
+		speedMbps: 0,
 	});
 
 	let gemmaState = $state<DownloadState>({
@@ -42,7 +42,7 @@
 		progress: onboarding.summaryModelDownloaded ? 100 : 0,
 		downloadedMb: 0,
 		totalMb: 806,
-		speedMbps: 0
+		speedMbps: 0,
 	});
 
 	let isCompleting = $state(false);
@@ -60,7 +60,7 @@
 			error: undefined,
 			progress: 0,
 			downloadedMb: 0,
-			speedMbps: 0
+			speedMbps: 0,
 		};
 
 		try {
@@ -70,10 +70,10 @@
 			parakeetState = {
 				...parakeetState,
 				status: 'error',
-				error: error instanceof Error ? error.message : 'Retry failed'
+				error: error instanceof Error ? error.message : 'Retry failed',
 			};
 			toast.error('Download retry failed', {
-				description: 'Please check your connection and try again.'
+				description: 'Please check your connection and try again.',
 			});
 		} finally {
 			setTimeout(() => {
@@ -92,22 +92,22 @@
 			error: undefined,
 			progress: 0,
 			downloadedMb: 0,
-			speedMbps: 0
+			speedMbps: 0,
 		};
 
 		try {
 			await invoke('builtin_ai_download_model', {
-				modelName: onboarding.selectedSummaryModel || recommendedModel
+				modelName: onboarding.selectedSummaryModel || recommendedModel,
 			});
 		} catch (error) {
 			console.error('[DownloadProgressStep] Summary retry failed:', error);
 			gemmaState = {
 				...gemmaState,
 				status: 'error',
-				error: error instanceof Error ? error.message : 'Retry failed'
+				error: error instanceof Error ? error.message : 'Retry failed',
 			};
 			toast.error('Summary model download retry failed', {
-				description: 'Please check your connection and try again.'
+				description: 'Please check your connection and try again.',
 			});
 		} finally {
 			setTimeout(() => {
@@ -146,7 +146,7 @@
 				parakeetState = { ...parakeetState, status: 'completed', progress: 100 };
 			} else if (!actuallyAvailable && parakeetState.status === 'error') {
 				toast.error('Transcription engine required', {
-					description: 'Please retry the download before continuing.'
+					description: 'Please retry the download before continuing.',
 				});
 				return;
 			}
@@ -161,7 +161,7 @@
 			toast.info('Downloads will continue in the background', {
 				description:
 					'You can start using the app. Recording will be available once speech recognition is ready.',
-				duration: 5000
+				duration: 5000,
 			});
 		}
 
@@ -229,7 +229,7 @@
 						progress,
 						downloadedMb: downloaded_mb ?? parakeetState.downloadedMb,
 						totalMb: total_mb ?? parakeetState.totalMb,
-						speedMbps: speed_mbps ?? parakeetState.speedMbps
+						speedMbps: speed_mbps ?? parakeetState.speedMbps,
 					};
 					if (status === 'completed' || progress >= 100) {
 						onboarding.setParakeetDownloaded(true);
@@ -244,7 +244,7 @@
 						if (event.payload.modelName !== PARAKEET_MODEL) return;
 						parakeetState = { ...parakeetState, status: 'completed', progress: 100 };
 						onboarding.setParakeetDownloaded(true);
-					}
+					},
 				);
 				if (cancelled) unlistenComplete();
 				else unsubscribers.push(unlistenComplete);
@@ -254,7 +254,7 @@
 					(event) => {
 						if (event.payload.modelName !== PARAKEET_MODEL) return;
 						parakeetState = { ...parakeetState, status: 'error', error: event.payload.error };
-					}
+					},
 				);
 				if (cancelled) unlistenError();
 				else unsubscribers.push(unlistenError);
@@ -284,7 +284,7 @@
 						downloadedMb: downloaded_mb ?? gemmaState.downloadedMb,
 						totalMb: total_mb ?? gemmaState.totalMb,
 						speedMbps: speed_mbps ?? gemmaState.speedMbps,
-						error: status === 'error' ? error : undefined
+						error: status === 'error' ? error : undefined,
 					};
 					if (status === 'completed' || progress >= 100) {
 						onboarding.setSummaryModelDownloaded(true);
@@ -308,7 +308,7 @@
 		'qwen3.5:4b': '~2.6 GB',
 		'qwen3.5:2b': '~1.2 GB',
 		'gemma3:4b': '~2.5 GB',
-		'gemma3:1b': '~1 GB'
+		'gemma3:1b': '~1 GB',
 	};
 	const summaryModelSize = $derived(SUMMARY_MODEL_SIZES[recommendedModel] ?? '~1.2 GB');
 </script>

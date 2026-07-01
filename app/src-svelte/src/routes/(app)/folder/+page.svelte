@@ -15,7 +15,7 @@
 	const folder = $derived(sidebar.folders.find((f) => f.id === folderId) ?? null);
 
 	const meetings = $derived(
-		folderId ? sidebar.meetings.filter((m) => m.folderId === folderId) : []
+		folderId ? sidebar.meetings.filter((m) => m.folderId === folderId) : [],
 	);
 
 	// Recency buckets, newest first; the current week lists freely (no header).
@@ -44,7 +44,7 @@
 			day: 'numeric',
 			year: 'numeric',
 			hour: 'numeric',
-			minute: '2-digit'
+			minute: '2-digit',
 		});
 	}
 
@@ -66,7 +66,7 @@
 			data-tauri-drag-region="deep"
 			class={cn(
 				'relative flex h-9 items-center pr-3 transition-[padding] duration-300',
-				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3'
+				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3',
 			)}
 		>
 			<Tooltip.Provider delayDuration={300}>

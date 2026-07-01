@@ -14,7 +14,7 @@
 	// Optional folder scope, passed by the trigger when a folder is being viewed.
 	const scopeFolderId = $derived(page.url.searchParams.get('folder'));
 	const scopeFolder = $derived(
-		scopeFolderId ? (sidebar.folders.find((f) => f.id === scopeFolderId) ?? null) : null
+		scopeFolderId ? (sidebar.folders.find((f) => f.id === scopeFolderId) ?? null) : null,
 	);
 
 	let query = $state('');
@@ -63,7 +63,7 @@
 			day: 'numeric',
 			year: 'numeric',
 			hour: 'numeric',
-			minute: '2-digit'
+			minute: '2-digit',
 		});
 	}
 
@@ -96,7 +96,7 @@
 			data-tauri-drag-region="deep"
 			class={cn(
 				'relative flex h-9 items-center pr-3 transition-[padding] duration-300',
-				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3'
+				sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3',
 			)}
 		>
 			<Tooltip.Provider delayDuration={300}>

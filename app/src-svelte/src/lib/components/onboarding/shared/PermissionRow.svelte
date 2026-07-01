@@ -20,9 +20,7 @@
 	const isDenied = $derived(status === 'denied');
 	const isChecking = $derived(isPending);
 
-	const buttonText = $derived(
-		isChecking ? 'Checking...' : isDenied ? 'Open Settings' : 'Enable'
-	);
+	const buttonText = $derived(isChecking ? 'Checking...' : isDenied ? 'Open Settings' : 'Enable');
 </script>
 
 <div
@@ -32,7 +30,7 @@
 			? 'border-primary bg-secondary'
 			: isDenied
 				? 'border-destructive/30 bg-destructive/5'
-				: 'bg-card border-border'
+				: 'bg-card border-border',
 	)}
 >
 	<!-- Left side: Icon + Info -->
@@ -40,7 +38,7 @@
 		<div
 			class={cn(
 				'flex size-10 items-center justify-center rounded-full flex-shrink-0',
-				isAuthorized ? 'bg-secondary' : isDenied ? 'bg-destructive/10' : 'bg-muted'
+				isAuthorized ? 'bg-secondary' : isDenied ? 'bg-destructive/10' : 'bg-muted',
 			)}
 		>
 			<div
@@ -49,7 +47,7 @@
 						? 'text-foreground'
 						: isDenied
 							? 'text-destructive'
-							: 'text-muted-foreground'
+							: 'text-muted-foreground',
 				)}
 			>
 				{@render icon()}

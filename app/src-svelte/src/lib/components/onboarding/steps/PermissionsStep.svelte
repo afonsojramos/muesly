@@ -36,7 +36,7 @@
 				await invoke('open_system_settings', { preferencePane: 'Privacy_Microphone' });
 			} catch {
 				alert(
-					'Please enable microphone access in System Preferences > Security & Privacy > Microphone'
+					'Please enable microphone access in System Preferences > Security & Privacy > Microphone',
 				);
 			}
 			return;
@@ -60,7 +60,7 @@
 				await invoke('open_system_settings', { preferencePane: 'Privacy_ScreenCapture' });
 			} catch {
 				alert(
-					'Please enable muesly under System Settings → Privacy & Security → Screen & System Audio Recording'
+					'Please enable muesly under System Settings → Privacy & Security → Screen & System Audio Recording',
 				);
 			}
 			return;
@@ -96,7 +96,7 @@
 
 	const allPermissionsGranted = $derived(
 		onboarding.permissions.microphone === 'authorized' &&
-			onboarding.permissions.systemAudio === 'authorized'
+			onboarding.permissions.systemAudio === 'authorized',
 	);
 </script>
 

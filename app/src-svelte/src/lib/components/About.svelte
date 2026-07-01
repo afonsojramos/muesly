@@ -15,7 +15,9 @@
 	const updates = useUpdateCheck({ checkOnMount: false });
 
 	onMount(() => {
-		getVersion().then((v) => (currentVersion = v)).catch(console.error);
+		getVersion()
+			.then((v) => (currentVersion = v))
+			.catch(console.error);
 	});
 
 	async function handleCheckForUpdates(): Promise<void> {
@@ -37,23 +39,23 @@
 		{
 			title: 'Privacy-first',
 			body: 'Your data & AI processing can stay within your premises. No cloud, no leaks.',
-			icon: ShieldCheck
+			icon: ShieldCheck,
 		},
 		{
 			title: 'Use Any Model',
 			body: 'Prefer a local open-source model? Great. Want an external API? Also fine. No lock-in.',
-			icon: Cpu
+			icon: Cpu,
 		},
 		{
 			title: 'Cost-Smart',
 			body: 'Avoid pay-per-minute bills by running models locally (or pay only for what you choose).',
-			icon: Wallet
+			icon: Wallet,
 		},
 		{
 			title: 'Works everywhere',
 			body: 'Google Meet, Zoom, Teams — online or offline.',
-			icon: Globe
-		}
+			icon: Globe,
+		},
 	];
 </script>
 
@@ -101,7 +103,9 @@
 					<div
 						class="rounded-lg border border-border bg-secondary/40 p-4 transition-colors hover:bg-secondary/60"
 					>
-						<div class="flex size-9 items-center justify-center rounded-md bg-accent/10 text-accent">
+						<div
+							class="flex size-9 items-center justify-center rounded-md bg-accent/10 text-accent"
+						>
 							<Icon class="size-5" />
 						</div>
 						<h4 class="mt-3 text-sm font-semibold">{feature.title}</h4>
@@ -116,8 +120,8 @@
 	<Alert.Root class="border-accent/30 text-accent">
 		<Sparkles />
 		<Alert.Description class="text-foreground">
-			<span class="font-semibold">Coming soon:</span> A library of on-device AI agents — automating
-			follow-ups, action tracking, and more.
+			<span class="font-semibold">Coming soon:</span> A library of on-device AI agents — automating follow-ups,
+			action tracking, and more.
 		</Alert.Description>
 	</Alert.Root>
 

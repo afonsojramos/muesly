@@ -36,7 +36,7 @@ const emptyProgress = (): ProgressInfo => ({
 	percent: 0,
 	downloadedMb: 0,
 	totalMb: 0,
-	speedMbps: 0
+	speedMbps: 0,
 });
 
 class OnboardingStore {
@@ -60,7 +60,7 @@ class OnboardingStore {
 	permissions = $state<OnboardingPermissions>({
 		microphone: 'not_determined',
 		systemAudio: 'not_determined',
-		screenRecording: 'not_determined'
+		screenRecording: 'not_determined',
 	});
 	permissionsSkipped = $state<boolean>(false);
 
@@ -77,7 +77,7 @@ class OnboardingStore {
 			this.#loadOnboardingStatus(),
 			this.#checkDatabaseStatus(),
 			this.#initializeDatabaseInBackground(),
-			this.#fetchRecommendedModel()
+			this.#fetchRecommendedModel(),
 		]);
 
 		// Status has now been resolved (or failed) — safe for the layout to gate.
@@ -100,7 +100,7 @@ class OnboardingStore {
 						percent: p.progress,
 						downloadedMb: p.downloaded_mb ?? 0,
 						totalMb: p.total_mb ?? 0,
-						speedMbps: p.speed_mbps ?? 0
+						speedMbps: p.speed_mbps ?? 0,
 					};
 					if (p.status === 'completed' || p.progress >= 100) {
 						this.parakeetDownloaded = true;
@@ -117,7 +117,7 @@ class OnboardingStore {
 						if (event.payload.modelName === PARAKEET_MODEL) {
 							console.error('[OnboardingStore] Parakeet download error:', event.payload.error);
 						}
-					}
+					},
 				),
 				await listen<{
 					model: string;
@@ -139,12 +139,12 @@ class OnboardingStore {
 						percent: p.progress,
 						downloadedMb: p.downloaded_mb ?? 0,
 						totalMb: p.total_mb ?? 0,
-						speedMbps: p.speed_mbps ?? 0
+						speedMbps: p.speed_mbps ?? 0,
 					};
 					if (p.status === 'completed' || p.progress >= 100) {
 						this.summaryModelDownloaded = true;
 					}
-				})
+				}),
 			);
 		} catch (error) {
 			console.error('[OnboardingStore] Failed to set up event listeners:', error);
@@ -193,7 +193,7 @@ class OnboardingStore {
 	};
 	setPermissionStatus = (
 		permission: keyof OnboardingPermissions,
-		status: PermissionStatus
+		status: PermissionStatus,
 	): void => {
 		this.permissions = { ...this.permissions, [permission]: status };
 	};
@@ -225,17 +225,15 @@ class OnboardingStore {
 		try {
 			if (!this.parakeetDownloaded) {
 				invoke('parakeet_download_model', { modelName: PARAKEET_MODEL }).catch((err) =>
-					console.error('[OnboardingStore] Parakeet download failed:', err)
+					console.error('[OnboardingStore] Parakeet download failed:', err),
 				);
 			}
 
 			if (includeGemma && !this.summaryModelDownloaded) {
 				setTimeout(() => {
 					invoke('builtin_ai_download_model', {
-						modelName: this.selectedSummaryModel || 'gemma3:1b'
-					}).catch((err) =>
-						console.error('[OnboardingStore] Gemma download failed:', err)
-					);
+						modelName: this.selectedSummaryModel || 'gemma3:1b',
+					}).catch((err) => console.error('[OnboardingStore] Gemma download failed:', err));
 				}, 3000);
 			}
 		} catch (error) {
@@ -283,9 +281,7 @@ class OnboardingStore {
 		}
 
 		try {
-			const availableModel = await invoke<string | null>(
-				'builtin_ai_get_available_summary_model'
-			);
+			const availableModel = await invoke<string | null>('builtin_ai_get_available_summary_model');
 			summaryModelDownloaded = !!availableModel;
 		} catch (error) {
 			console.warn('[OnboardingStore] Failed to verify summary model:', error);
@@ -298,7 +294,7 @@ class OnboardingStore {
 			currentStep,
 			completed: saved.completed,
 			parakeetDownloaded,
-			summaryModelDownloaded
+			summaryModelDownloaded,
 		};
 	}
 
@@ -313,10 +309,10 @@ class OnboardingStore {
 					current_step: this.currentStep,
 					model_status: {
 						parakeet: this.parakeetDownloaded ? 'downloaded' : 'not_downloaded',
-						summary: this.summaryModelDownloaded ? 'downloaded' : 'not_downloaded'
+						summary: this.summaryModelDownloaded ? 'downloaded' : 'not_downloaded',
 					},
-					last_updated: new Date().toISOString()
-				}
+					last_updated: new Date().toISOString(),
+				},
 			});
 		} catch (error) {
 			console.error('[OnboardingStore] Failed to save onboarding status:', error);
@@ -354,7 +350,7 @@ class OnboardingStore {
 			try {
 				const check = await invoke<{ exists: boolean; size: number } | null>(
 					'check_homebrew_database',
-					{ path: homebrewDbPath }
+					{ path: homebrewDbPath },
 				);
 				if (check?.exists) {
 					await invoke('import_and_initialize_database', { legacyDbPath: homebrewDbPath });
@@ -398,7 +394,7 @@ class OnboardingStore {
 					m.status !== undefined &&
 					(typeof m.status === 'object'
 						? m.status !== null && 'Downloading' in m.status
-						: m.status === 'Downloading')
+						: m.status === 'Downloading'),
 			);
 			if (isDownloading) {
 				this.isBackgroundDownloading = true;

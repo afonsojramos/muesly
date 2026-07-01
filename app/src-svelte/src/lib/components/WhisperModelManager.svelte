@@ -6,7 +6,7 @@
 		'medium-q5_0': 'Medium',
 		'large-v3-q5_0': 'Large V3 Compressed',
 		'large-v3-turbo': 'Large V3 Turbo',
-		'large-v3': 'Large V3'
+		'large-v3': 'Large V3',
 	};
 
 	export function whisperDisplayName(modelName: string): string {
@@ -49,7 +49,7 @@
 	const basicModels = $derived(
 		models
 			.filter((m) => BASIC_MODEL_NAMES.includes(m.name))
-			.sort((a, b) => BASIC_MODEL_NAMES.indexOf(a.name) - BASIC_MODEL_NAMES.indexOf(b.name))
+			.sort((a, b) => BASIC_MODEL_NAMES.indexOf(a.name) - BASIC_MODEL_NAMES.indexOf(b.name)),
 	);
 	const advancedModels = $derived(models.filter((m) => !BASIC_MODEL_NAMES.includes(m.name)));
 
@@ -62,7 +62,7 @@
 			await invoke('api_save_transcript_config', {
 				provider: 'localWhisper',
 				model: modelName,
-				apiKey: null
+				apiKey: null,
 			});
 		} catch (err) {
 			console.error('Failed to save model selection:', err);
@@ -77,7 +77,7 @@
 			setModelStatus(modelName, { Downloading: 0 });
 			toast.info(`Downloading ${displayName}...`, {
 				description: 'This may take a few minutes',
-				duration: 5000
+				duration: 5000,
 			});
 			await WhisperAPI.downloadModel(modelName);
 		} catch (err) {
@@ -97,7 +97,7 @@
 		} catch (err) {
 			console.error('Failed to cancel download:', err);
 			toast.error('Failed to cancel download', {
-				description: err instanceof Error ? err.message : 'Unknown error'
+				description: err instanceof Error ? err.message : 'Unknown error',
 			});
 		}
 	}
@@ -115,13 +115,13 @@
 			models = await WhisperAPI.getAvailableModels();
 			toast.success(`${displayName} deleted`, {
 				description: 'Model removed to free up space',
-				duration: 3000
+				duration: 3000,
 			});
 			if (selectedModel === modelName) onModelSelect?.('');
 		} catch (err) {
 			console.error('Failed to delete model:', err);
 			toast.error(`Failed to delete ${displayName}`, {
-				description: err instanceof Error ? err.message : 'Delete failed'
+				description: err instanceof Error ? err.message : 'Delete failed',
 			});
 		}
 	}
@@ -136,7 +136,7 @@
 				console.error('Failed to initialize Whisper:', err);
 				error = err instanceof Error ? err.message : 'Failed to load models';
 				toast.error('Failed to load transcription models', {
-					description: err instanceof Error ? err.message : 'Unknown error'
+					description: err instanceof Error ? err.message : 'Unknown error',
 				});
 			} finally {
 				loading = false;
@@ -161,8 +161,8 @@
 							progressThrottle.set(modelName, { progress, timestamp: now });
 							setModelStatus(modelName, { Downloading: progress });
 						}
-					}
-				)
+					},
+				),
 			);
 			push(
 				await listen<{ modelName: string }>('model-download-complete', (event) => {
@@ -171,13 +171,16 @@
 					setModelStatus(modelName, 'Available');
 					downloadingModels.delete(modelName);
 					progressThrottle.delete(modelName);
-					toast.success(`${getModelIcon(model?.accuracy ?? 'Good')} ${whisperDisplayName(modelName)} ready!`, {
-						description: 'Model downloaded and ready to use',
-						duration: 4000
-					});
+					toast.success(
+						`${getModelIcon(model?.accuracy ?? 'Good')} ${whisperDisplayName(modelName)} ready!`,
+						{
+							description: 'Model downloaded and ready to use',
+							duration: 4000,
+						},
+					);
 					onModelSelect?.(modelName);
 					if (autoSave) void saveModelSelection(modelName);
-				})
+				}),
 			);
 			push(
 				await listen<{ modelName: string; error: string }>('model-download-error', (event) => {
@@ -187,9 +190,9 @@
 					progressThrottle.delete(modelName);
 					toast.error(`Failed to download ${whisperDisplayName(modelName)}`, {
 						description: errMsg,
-						duration: 6000
+						duration: 6000,
 					});
-				})
+				}),
 			);
 		})();
 

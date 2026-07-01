@@ -18,7 +18,10 @@
 			const current = words[i] ?? '';
 			const currentLower = current.toLowerCase();
 			let repeatCount = 1;
-			while (i + repeatCount < words.length && words[i + repeatCount]?.toLowerCase() === currentLower) {
+			while (
+				i + repeatCount < words.length &&
+				words[i + repeatCount]?.toLowerCase() === currentLower
+			) {
 				repeatCount++;
 			}
 			if (current.length <= 2) {
@@ -72,7 +75,7 @@
 		isPaused = false,
 		isProcessing = false,
 		isStopping = false,
-		enableStreaming = false
+		enableStreaming = false,
 	}: Props = $props();
 
 	const showConfidence = $derived(config.showConfidenceIndicator);
@@ -120,7 +123,7 @@
 		streamingTranscript = {
 			id: latest.id,
 			visibleText: fullText.substring(0, initialChars),
-			fullText
+			fullText,
 		};
 
 		streamingInterval = setInterval(() => {
@@ -169,13 +172,15 @@
 
 	{#each transcripts as transcript, index (transcript.id ? `${transcript.id}-${index}` : `transcript-${index}`)}
 		{@const isStreaming = streamingTranscript?.id === transcript.id}
-		{@const textToShow = isStreaming && streamingTranscript ? streamingTranscript.visibleText : transcript.text}
+		{@const textToShow =
+			isStreaming && streamingTranscript ? streamingTranscript.visibleText : transcript.text}
 		{@const filteredText = cleanStopWords(textToShow)}
 		{@const originalWasEmpty = transcript.text.trim() === ''}
 		{@const displayText = originalWasEmpty && !isStreaming ? '[Silence]' : filteredText}
 		{@const sizerText =
-			cleanStopWords(isStreaming && streamingTranscript ? streamingTranscript.fullText : transcript.text) ||
-			(originalWasEmpty && !isStreaming ? '[Silence]' : '')}
+			cleanStopWords(
+				isStreaming && streamingTranscript ? streamingTranscript.fullText : transcript.text,
+			) || (originalWasEmpty && !isStreaming ? '[Silence]' : '')}
 		<div in:fly={{ y: 5, duration: 150 }} class="mb-3">
 			<div class="flex items-start gap-2">
 				<Tooltip.Provider delayDuration={300}>
@@ -197,7 +202,10 @@
 								<span class="text-xs text-muted-foreground/70">
 									{transcript.duration.toFixed(1)}s
 									{#if transcript.confidence !== undefined}
-										<ConfidenceIndicator confidence={transcript.confidence} showIndicator={showConfidence} />
+										<ConfidenceIndicator
+											confidence={transcript.confidence}
+											showIndicator={showConfidence}
+										/>
 									{/if}
 								</span>
 							{:else}
@@ -244,7 +252,9 @@
 		<div in:fade class="mt-8 text-center text-muted-foreground">
 			{#if isRecording}
 				<div class="mb-3 flex items-center justify-center">
-					<div class={cn('size-3 rounded-full', isPaused ? 'bg-warning' : 'animate-pulse bg-accent')}></div>
+					<div
+						class={cn('size-3 rounded-full', isPaused ? 'bg-warning' : 'animate-pulse bg-accent')}
+					></div>
 				</div>
 				<p class="text-sm text-muted-foreground">
 					{isPaused ? 'Recording paused' : 'Listening for speech...'}

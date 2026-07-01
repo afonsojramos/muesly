@@ -16,7 +16,7 @@
 		isActive,
 		deviceName,
 		class: className = '',
-		size = 'medium'
+		size = 'medium',
 	}: Props = $props();
 
 	const logScale = (v: number): number => {
@@ -35,7 +35,7 @@
 	const sizeClasses = {
 		small: { container: 'h-2', text: 'text-xs', meter: 'h-1.5' },
 		medium: { container: 'h-3', text: 'text-sm', meter: 'h-2' },
-		large: { container: 'h-4', text: 'text-base', meter: 'h-3' }
+		large: { container: 'h-4', text: 'text-base', meter: 'h-3' },
 	};
 	const sizes = $derived(sizeClasses[size]);
 </script>
@@ -44,7 +44,7 @@
 	<div
 		class={cn(
 			'size-2 rounded-full',
-			isActive ? 'animate-pulse bg-success' : 'bg-muted-foreground/30'
+			isActive ? 'animate-pulse bg-success' : 'bg-muted-foreground/30',
 		)}
 		title={`${deviceName} - ${isActive ? 'Active' : 'Inactive'}`}
 	></div>
@@ -52,12 +52,19 @@
 	<div class={cn('relative flex-1', sizes.container)}>
 		<div class="size-full overflow-hidden rounded-sm bg-secondary">
 			<div
-				class={cn(sizes.meter, levelColor(logRms), 'rounded-sm transition-all duration-150 ease-out')}
+				class={cn(
+					sizes.meter,
+					levelColor(logRms),
+					'rounded-sm transition-all duration-150 ease-out',
+				)}
 				style={`width: ${rmsPercent}%`}
 			></div>
 			{#if peakPercent > rmsPercent}
 				<div
-					class={cn('absolute bottom-0 top-0 w-0.5 transition-all duration-75', levelColor(logPeak))}
+					class={cn(
+						'absolute bottom-0 top-0 w-0.5 transition-all duration-75',
+						levelColor(logPeak),
+					)}
 					style={`left: ${peakPercent}%`}
 				></div>
 			{/if}

@@ -68,7 +68,7 @@ function recencyLabel(iso: string | undefined, now: Date): string {
 export function groupByRecency<T>(
 	items: T[],
 	getDate: (item: T) => string | undefined,
-	now: Date = new Date()
+	now: Date = new Date(),
 ): DateGroup<T>[] {
 	const sorted = [...items].sort((a, b) => compareByDateDesc(getDate(a), getDate(b)));
 	const byLabel = new Map<string, T[]>();

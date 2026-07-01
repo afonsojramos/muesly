@@ -30,7 +30,7 @@ export function isOllamaNotInstalledError(errorMessage: string): boolean {
 		'not found or not in path',
 		'please check if the server is running',
 		'please check if the ollama server is running',
-		'econnrefused'
+		'econnrefused',
 	];
 
 	return patterns.some((pattern) => lower.includes(pattern));

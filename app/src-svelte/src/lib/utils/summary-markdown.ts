@@ -13,11 +13,7 @@ import type { Block, Section, Summary, SummaryDataResponse } from '$lib/types';
 const RESERVED_KEYS = new Set(['markdown', 'summary_json', 'MeetingName', '_section_order']);
 
 function isSection(value: unknown): value is Section {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		Array.isArray((value as Section).blocks)
-	);
+	return typeof value === 'object' && value !== null && Array.isArray((value as Section).blocks);
 }
 
 function blockToMarkdown(block: Block): string {
@@ -63,7 +59,7 @@ export function summaryToMarkdown(data: SummaryDataResponse | Summary | null): s
 
 	// Back-compat: convert legacy section/block JSON to markdown.
 	const sections = Object.entries(data).filter(
-		(entry): entry is [string, Section] => !RESERVED_KEYS.has(entry[0]) && isSection(entry[1])
+		(entry): entry is [string, Section] => !RESERVED_KEYS.has(entry[0]) && isSection(entry[1]),
 	);
 
 	return sections.length > 0 ? legacySectionsToMarkdown(sections) : '';

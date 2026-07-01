@@ -34,6 +34,6 @@ export function triggerUpdateDialog(onUpdateClick?: () => void): void {
 export function showUpdateNotification(updateInfo: UpdateInfo): void {
 	toast.info('Update Available', {
 		description: `Version ${updateInfo.version} is now available`,
-		duration: 10000
+		duration: 10000,
 	});
 }

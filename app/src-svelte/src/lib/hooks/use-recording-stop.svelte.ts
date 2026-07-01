@@ -39,7 +39,7 @@ export interface UseRecordingStop {
 
 export function useRecordingStop(
 	setIsRecording: (value: boolean) => void,
-	setIsRecordingDisabled: (value: boolean) => void
+	setIsRecordingDisabled: (value: boolean) => void,
 ): UseRecordingStop {
 	// Guard against duplicate/concurrent stop calls (UI + tray).
 	let stopInProgress = false;
@@ -60,7 +60,10 @@ export function useRecordingStop(
 		setIsRecordingDisabled(true);
 
 		try {
-			recordingState.setStatus(RecordingStatus.PROCESSING_TRANSCRIPTS, 'Waiting for transcription...');
+			recordingState.setStatus(
+				RecordingStatus.PROCESSING_TRANSCRIPTS,
+				'Waiting for transcription...',
+			);
 
 			const MAX_WAIT_TIME = 60000;
 			const POLL_INTERVAL = 500;
@@ -88,7 +91,7 @@ export function useRecordingStop(
 					if (status.chunks_in_queue > 0) {
 						recordingState.setStatus(
 							RecordingStatus.PROCESSING_TRANSCRIPTS,
-							`Processing ${status.chunks_in_queue} remaining chunks...`
+							`Processing ${status.chunks_in_queue} remaining chunks...`,
 						);
 					}
 
@@ -109,7 +112,10 @@ export function useRecordingStop(
 				await new Promise((resolve) => setTimeout(resolve, 4000));
 			}
 
-			recordingState.setStatus(RecordingStatus.PROCESSING_TRANSCRIPTS, 'Flushing transcript buffer...');
+			recordingState.setStatus(
+				RecordingStatus.PROCESSING_TRANSCRIPTS,
+				'Flushing transcript buffer...',
+			);
 			transcripts.flushBuffer();
 
 			await new Promise((resolve) => setTimeout(resolve, 500));
@@ -119,9 +125,7 @@ export function useRecordingStop(
 
 				const freshTranscripts = [...transcripts.transcripts];
 
-				const folderPath = isBrowser
-					? sessionStorage.getItem('last_recording_folder_path')
-					: null;
+				const folderPath = isBrowser ? sessionStorage.getItem('last_recording_folder_path') : null;
 				const savedMeetingName = isBrowser
 					? sessionStorage.getItem('last_recording_meeting_name')
 					: null;
@@ -130,7 +134,7 @@ export function useRecordingStop(
 					const responseData = await storageService.saveMeeting(
 						savedMeetingName || transcripts.meetingTitle || 'New Meeting',
 						freshTranscripts,
-						folderPath
+						folderPath,
 					);
 
 					const meetingId = responseData.meeting_id;
@@ -148,8 +152,7 @@ export function useRecordingStop(
 						} catch (notesError) {
 							console.error('Failed to save meeting notes:', notesError);
 							toast.error('Failed to save meeting notes', {
-								description:
-									notesError instanceof Error ? notesError.message : 'Unknown error'
+								description: notesError instanceof Error ? notesError.message : 'Unknown error',
 							});
 						}
 					}
@@ -196,7 +199,7 @@ export function useRecordingStop(
 								meetingId,
 								text: titleText,
 								model: provider,
-								modelName: model
+								modelName: model,
 							})
 								.then(() => sidebar.refetchMeetings())
 								.catch((err) => console.error('Auto title generation failed:', err));
@@ -212,7 +215,7 @@ export function useRecordingStop(
 						console.warn('Could not fetch meeting details, using ID only:', error);
 						sidebar.setCurrentMeeting({
 							id: meetingId,
-							title: savedMeetingName || transcripts.meetingTitle || 'New Meeting'
+							title: savedMeetingName || transcripts.meetingTitle || 'New Meeting',
 						});
 					}
 
@@ -225,9 +228,9 @@ export function useRecordingStop(
 							onClick: () => {
 								void goto(`/meeting-details?id=${meetingId}`);
 								void Analytics.trackButtonClick('view_meeting_from_toast', 'recording_complete');
-							}
+							},
 						},
-						duration: 10000
+						duration: 10000,
 					});
 
 					setTimeout(() => {
@@ -244,9 +247,7 @@ export function useRecordingStop(
 						if (firstTranscript && firstTranscript.audio_start_time !== undefined) {
 							const lastTranscript = freshTranscripts[freshTranscripts.length - 1];
 							durationSeconds =
-								lastTranscript?.audio_end_time ??
-								lastTranscript?.audio_start_time ??
-								0;
+								lastTranscript?.audio_end_time ?? lastTranscript?.audio_start_time ?? 0;
 						}
 
 						const transcriptWordCount = freshTranscripts
@@ -263,7 +264,7 @@ export function useRecordingStop(
 							transcript_segments: freshTranscripts.length,
 							transcript_word_count: transcriptWordCount,
 							words_per_minute: wordsPerMinute,
-							meetings_today: meetingsToday
+							meetings_today: meetingsToday,
 						});
 
 						await Analytics.updateMeetingCount();
@@ -277,7 +278,7 @@ export function useRecordingStop(
 							await Analytics.track('user_activated', {
 								meetings_count: '1',
 								days_since_install: daysSinceInstall?.toString() || 'null',
-								first_meeting_duration_seconds: durationSeconds.toString()
+								first_meeting_duration_seconds: durationSeconds.toString(),
 							});
 						}
 					} catch (analyticsError) {
@@ -287,10 +288,10 @@ export function useRecordingStop(
 					console.error('Failed to save meeting to database:', saveError);
 					recordingState.setStatus(
 						RecordingStatus.ERROR,
-						saveError instanceof Error ? saveError.message : 'Unknown error'
+						saveError instanceof Error ? saveError.message : 'Unknown error',
 					);
 					toast.error('Failed to save meeting', {
-						description: saveError instanceof Error ? saveError.message : 'Unknown error'
+						description: saveError instanceof Error ? saveError.message : 'Unknown error',
 					});
 					throw saveError;
 				}
@@ -304,7 +305,7 @@ export function useRecordingStop(
 			console.error('Error in handleRecordingStop:', error);
 			recordingState.setStatus(
 				RecordingStatus.ERROR,
-				error instanceof Error ? error.message : 'Unknown error'
+				error instanceof Error ? error.message : 'Unknown error',
 			);
 			setIsRecordingDisabled(false);
 		} finally {
@@ -360,6 +361,6 @@ export function useRecordingStop(
 		handleRecordingStop,
 		setIsStopping: (value: boolean) => {
 			recordingState.setStatus(value ? RecordingStatus.STOPPING : RecordingStatus.IDLE);
-		}
+		},
 	};
 }

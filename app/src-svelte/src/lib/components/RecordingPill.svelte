@@ -13,7 +13,7 @@
 	// Elapsed time mirrors the in-app status bar: backend-reported active duration,
 	// floored to whole seconds, formatted mm:ss.
 	const displaySeconds = $derived(
-		recordingState.activeDuration !== null ? Math.floor(recordingState.activeDuration) : 0
+		recordingState.activeDuration !== null ? Math.floor(recordingState.activeDuration) : 0,
 	);
 
 	function formatDuration(seconds: number): string {
@@ -38,7 +38,7 @@
 		return {
 			duration: 200,
 			easing: cubicOut,
-			css: (t, u) => `opacity: ${t}; transform: translateY(${u * 12}px)`
+			css: (t, u) => `opacity: ${t}; transform: translateY(${u * 12}px)`,
 		};
 	}
 
@@ -130,7 +130,7 @@
 			barHeights = [
 				`${Math.random() * 14 + 6}px`,
 				`${Math.random() * 14 + 6}px`,
-				`${Math.random() * 14 + 6}px`
+				`${Math.random() * 14 + 6}px`,
 			];
 		}, 300);
 
@@ -169,7 +169,7 @@
 					'relative flex size-11 items-center justify-center rounded-full border-2 transition-colors',
 					isPausing || isResuming || isStopping
 						? 'border-border bg-secondary text-muted-foreground'
-						: 'border-border bg-card text-muted-foreground hover:bg-secondary'
+						: 'border-border bg-card text-muted-foreground hover:bg-secondary',
 				)}
 			>
 				{#if isPaused}<Play size={18} />{:else}<Pause size={18} />{/if}
@@ -183,7 +183,7 @@
 					'relative flex size-11 items-center justify-center rounded-full text-white transition-colors',
 					isStopping || isPausing || isResuming
 						? 'bg-muted-foreground/50'
-						: 'bg-destructive hover:opacity-90'
+						: 'bg-destructive hover:opacity-90',
 				)}
 			>
 				<Square size={18} />
@@ -194,7 +194,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent'
+							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
 						)}
 						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>

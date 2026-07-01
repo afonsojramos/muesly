@@ -7,7 +7,8 @@
 
 	let { totalModels, downloadedModels, totalSizeMb }: Props = $props();
 
-	const formatSize = (mb: number): string => (mb >= 1000 ? `${(mb / 1000).toFixed(1)}GB` : `${mb}MB`);
+	const formatSize = (mb: number): string =>
+		mb >= 1000 ? `${(mb / 1000).toFixed(1)}GB` : `${mb}MB`;
 </script>
 
 <div class="rounded-lg bg-secondary p-3 text-sm">

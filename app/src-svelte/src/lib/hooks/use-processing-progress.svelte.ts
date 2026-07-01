@@ -43,7 +43,7 @@ const emptyProgress = (): ProcessingProgress => ({
 	completed_chunks: 0,
 	processing_chunks: 0,
 	failed_chunks: 0,
-	chunks: []
+	chunks: [],
 });
 
 export interface UseProcessingProgress {
@@ -56,7 +56,7 @@ export interface UseProcessingProgress {
 	initializeSession: (
 		totalAudioDurationMs: number,
 		chunkDurationMs?: number,
-		modelName?: string
+		modelName?: string,
 	) => void;
 	startChunkProcessing: (chunkId: number) => void;
 	completeChunk: (chunkId: number, transcribedText: string) => void;
@@ -78,14 +78,14 @@ export function useProcessingProgress(): UseProcessingProgress {
 	const processingTimes: Record<number, number> = {};
 
 	const isComplete = $derived(
-		progress.total_chunks > 0 && progress.completed_chunks === progress.total_chunks
+		progress.total_chunks > 0 && progress.completed_chunks === progress.total_chunks,
 	);
 	const hasFailures = $derived(progress.failed_chunks > 0);
 
 	const initializeSession = (
 		totalAudioDurationMs: number,
 		chunkDurationMs = 30000,
-		modelName = 'unknown'
+		modelName = 'unknown',
 	): void => {
 		const totalChunks = Math.ceil(totalAudioDurationMs / chunkDurationMs);
 		session = {
@@ -94,7 +94,7 @@ export function useProcessingProgress(): UseProcessingProgress {
 			chunk_duration_ms: chunkDurationMs,
 			start_time: Date.now(),
 			is_paused: false,
-			model_name: modelName
+			model_name: modelName,
 		};
 		progress = {
 			total_chunks: totalChunks,
@@ -103,8 +103,8 @@ export function useProcessingProgress(): UseProcessingProgress {
 			failed_chunks: 0,
 			chunks: Array.from({ length: totalChunks }, (_, i) => ({
 				chunk_id: i,
-				status: 'pending' as const
-			}))
+				status: 'pending' as const,
+			})),
 		};
 		isActive = true;
 	};
@@ -115,8 +115,8 @@ export function useProcessingProgress(): UseProcessingProgress {
 			...progress,
 			processing_chunks: progress.processing_chunks + 1,
 			chunks: progress.chunks.map((c) =>
-				c.chunk_id === chunkId ? { ...c, status: 'processing', start_time: Date.now() } : c
-			)
+				c.chunk_id === chunkId ? { ...c, status: 'processing', start_time: Date.now() } : c,
+			),
 		};
 	};
 
@@ -135,10 +135,10 @@ export function useProcessingProgress(): UseProcessingProgress {
 							status: 'completed',
 							end_time: end,
 							duration_ms: duration,
-							text_preview: transcribedText.slice(0, 100)
+							text_preview: transcribedText.slice(0, 100),
 						}
-					: c
-			)
+					: c,
+			),
 		};
 		delete processingTimes[chunkId];
 		updateEstimate();
@@ -152,8 +152,8 @@ export function useProcessingProgress(): UseProcessingProgress {
 			chunks: progress.chunks.map((c) =>
 				c.chunk_id === chunkId
 					? { ...c, status: 'failed', error_message: errorMessage, end_time: Date.now() }
-					: c
-			)
+					: c,
+			),
 		};
 		delete processingTimes[chunkId];
 	};
@@ -186,7 +186,7 @@ export function useProcessingProgress(): UseProcessingProgress {
 		if (!session) return;
 		localStorage.setItem(
 			'transcription_progress',
-			JSON.stringify({ session, progress, processing_times: processingTimes, is_active: isActive })
+			JSON.stringify({ session, progress, processing_times: processingTimes, is_active: isActive }),
 		);
 	};
 
@@ -239,6 +239,6 @@ export function useProcessingProgress(): UseProcessingProgress {
 		reset,
 		saveProgressState,
 		loadProgressState,
-		clearSavedState
+		clearSavedState,
 	};
 }

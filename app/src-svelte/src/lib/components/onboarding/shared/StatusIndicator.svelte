@@ -17,14 +17,14 @@
 	const sizeClasses: Record<StatusIndicatorSize, string> = {
 		sm: 'size-2',
 		md: 'size-3',
-		lg: 'size-4'
+		lg: 'size-4',
 	};
 
 	const statusColors: Record<StatusIndicatorStatus, string> = {
 		idle: 'bg-muted-foreground/40',
 		checking: 'bg-warning animate-pulse',
 		success: 'bg-success',
-		error: 'bg-destructive'
+		error: 'bg-destructive',
 	};
 </script>
 

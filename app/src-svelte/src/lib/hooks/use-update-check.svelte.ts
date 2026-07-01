@@ -56,6 +56,6 @@ export function useUpdateCheck(options: UseUpdateCheckOptions = {}): UseUpdateCh
 		get isChecking() {
 			return isChecking;
 		},
-		checkForUpdates
+		checkForUpdates,
 	};
 }

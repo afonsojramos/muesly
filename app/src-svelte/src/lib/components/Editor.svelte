@@ -50,7 +50,7 @@
 			contentType: 'markdown',
 			onUpdate: ({ editor: ed }) => {
 				if (!isProgrammatic) onChange?.(ed.getMarkdown());
-			}
+			},
 		});
 		lastValueProp = value;
 		ready = true;

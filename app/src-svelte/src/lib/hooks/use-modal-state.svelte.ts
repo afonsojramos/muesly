@@ -34,11 +34,7 @@ interface ModalMessages {
 	modelSelector: string;
 }
 
-const MESSAGE_MODAL_KEYS = new Set<ModalType>([
-	'errorAlert',
-	'chunkDropWarning',
-	'modelSelector'
-]);
+const MESSAGE_MODAL_KEYS = new Set<ModalType>(['errorAlert', 'chunkDropWarning', 'modelSelector']);
 
 const initialModals = (): ModalState => ({
 	modelSettings: false,
@@ -46,13 +42,13 @@ const initialModals = (): ModalState => ({
 	languageSettings: false,
 	modelSelector: false,
 	errorAlert: false,
-	chunkDropWarning: false
+	chunkDropWarning: false,
 });
 
 const initialMessages = (): ModalMessages => ({
 	errorAlert: '',
 	chunkDropWarning: '',
-	modelSelector: ''
+	modelSelector: '',
 });
 
 export interface UseModalState {
@@ -63,9 +59,7 @@ export interface UseModalState {
 	hideAllModals: () => void;
 }
 
-export function useModalState(
-	transcriptModelConfig?: TranscriptModelProps
-): UseModalState {
+export function useModalState(transcriptModelConfig?: TranscriptModelProps): UseModalState {
 	let modals = $state<ModalState>(initialModals());
 	let messages = $state<ModalMessages>(initialMessages());
 
@@ -126,7 +120,7 @@ export function useModalState(
 							toast.success('Model ready! Closing window...', { duration: 1500 });
 							setTimeout(() => hideModal('modelSelector'), 1500);
 						}
-					}
+					},
 				);
 				if (cancelled) unlistenWhisper();
 				else unsubscribers.push(unlistenWhisper);
@@ -150,6 +144,6 @@ export function useModalState(
 		},
 		showModal,
 		hideModal,
-		hideAllModals
+		hideAllModals,
 	};
 }

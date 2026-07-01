@@ -12,7 +12,7 @@
 		commands,
 		type CalendarAccount,
 		type CalendarAuthStatus,
-		type CalendarInfo
+		type CalendarInfo,
 	} from '$lib/bindings';
 
 	let loading = $state(true);
@@ -101,7 +101,7 @@
 	async function toggleAccountCalendar(
 		accountId: string,
 		calId: string,
-		include: boolean
+		include: boolean,
 	): Promise<void> {
 		const next = new Set(accountExcluded[accountId] ?? new Set<string>());
 		if (include) next.delete(calId);
@@ -158,15 +158,15 @@
 		if (next && !granted) {
 			requesting = true;
 			try {
-				authStatus = await commands.calendarRequestAccess().then((r) =>
-					r.status === 'ok' ? r.data : authStatus
-				);
+				authStatus = await commands
+					.calendarRequestAccess()
+					.then((r) => (r.status === 'ok' ? r.data : authStatus));
 			} finally {
 				requesting = false;
 			}
 			if (!granted) {
 				toast.error('Calendar access not granted', {
-					description: 'muesly needs read access to your calendar to add meeting context.'
+					description: 'muesly needs read access to your calendar to add meeting context.',
 				});
 				return;
 			}
@@ -279,10 +279,7 @@
 							{/if}
 						</div>
 						{#each accounts.filter((a) => a.source === 'eventkit') as local (local.id)}
-							<Switch
-								checked={local.enabled}
-								onCheckedChange={(v) => toggleAccount(local.id, v)}
-							/>
+							<Switch checked={local.enabled} onCheckedChange={(v) => toggleAccount(local.id, v)} />
 						{/each}
 					</div>
 
@@ -299,14 +296,13 @@
 									{/if}
 								</div>
 								<div class="flex items-center gap-3">
-									<Button
-										variant="ghost"
-										size="sm"
-										onclick={() => toggleAccountCalendars(acct)}
-									>
+									<Button variant="ghost" size="sm" onclick={() => toggleAccountCalendars(acct)}>
 										{expandedAccountId === acct.id ? 'Hide calendars' : 'Calendars'}
 									</Button>
-									<Switch checked={acct.enabled} onCheckedChange={(v) => toggleAccount(acct.id, v)} />
+									<Switch
+										checked={acct.enabled}
+										onCheckedChange={(v) => toggleAccount(acct.id, v)}
+									/>
 									<Button
 										variant="ghost"
 										size="sm"
@@ -465,7 +461,7 @@
 											month: 'short',
 											day: 'numeric',
 											hour: '2-digit',
-											minute: '2-digit'
+											minute: '2-digit',
 										})}
 									</span>
 								</div>

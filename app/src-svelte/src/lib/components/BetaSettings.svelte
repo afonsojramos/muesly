@@ -8,7 +8,7 @@
 	import {
 		BETA_FEATURE_NAMES,
 		BETA_FEATURE_DESCRIPTIONS,
-		type BetaFeatureKey
+		type BetaFeatureKey,
 	} from '$lib/beta-features';
 
 	const featureOrder: BetaFeatureKey[] = ['importAndRetranscribe'];

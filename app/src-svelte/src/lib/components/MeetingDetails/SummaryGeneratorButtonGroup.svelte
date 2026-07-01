@@ -54,7 +54,7 @@
 		onTemplateSelect,
 		hasTranscripts = true,
 		isModelConfigLoading = false,
-		onOpenModelSettings
+		onOpenModelSettings,
 	}: Props = $props();
 
 	let isCheckingModels = $state(false);
@@ -72,7 +72,7 @@
 	const isGenerating = $derived(
 		summaryStatus === 'processing' ||
 			summaryStatus === 'summarizing' ||
-			summaryStatus === 'regenerating'
+			summaryStatus === 'regenerating',
 	);
 
 	async function checkBuiltInAIModelsAndGenerate(): Promise<void> {
@@ -82,7 +82,7 @@
 			if (!selectedModel) {
 				toast.error('No built-in AI model selected', {
 					description: 'Please select a model in settings',
-					duration: 5000
+					duration: 5000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -90,7 +90,7 @@
 
 			const isReady = await invoke<boolean>('builtin_ai_is_model_ready', {
 				modelName: selectedModel,
-				refresh: true
+				refresh: true,
 			});
 
 			if (isReady) {
@@ -99,13 +99,13 @@
 			}
 
 			const modelInfo = await invoke<BuiltInModelInfo | null>('builtin_ai_get_model_info', {
-				modelName: selectedModel
+				modelName: selectedModel,
 			});
 
 			if (!modelInfo) {
 				toast.error('Model not found', {
 					description: `Could not find information for model: ${selectedModel}`,
-					duration: 5000
+					duration: 5000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -115,14 +115,14 @@
 			if (status.type === 'downloading') {
 				toast.info('Model download in progress', {
 					description: `${selectedModel} is downloading (${status.progress}%). Please wait until download completes.`,
-					duration: 5000
+					duration: 5000,
 				});
 				return;
 			}
 			if (status.type === 'not_downloaded') {
 				toast.error('Model not downloaded', {
 					description: `${selectedModel} needs to be downloaded before use. Opening model settings...`,
-					duration: 5000
+					duration: 5000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -130,7 +130,7 @@
 			if (status.type === 'corrupted') {
 				toast.error('Model file corrupted', {
 					description: `${selectedModel} file is corrupted. Please delete and re-download.`,
-					duration: 7000
+					duration: 7000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -138,7 +138,7 @@
 			if (status.type === 'error') {
 				toast.error('Model error', {
 					description: status.Error || 'An error occurred with the model',
-					duration: 5000
+					duration: 5000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -146,14 +146,14 @@
 
 			toast.error('Model not available', {
 				description: 'The selected model is not ready for use',
-				duration: 5000
+				duration: 5000,
 			});
 			settingsDialogOpen = true;
 		} catch (error) {
 			console.error('Error checking built-in AI models:', error);
 			toast.error('Failed to check model status', {
 				description: error instanceof Error ? error.message : String(error),
-				duration: 5000
+				duration: 5000,
 			});
 		} finally {
 			isCheckingModels = false;
@@ -178,7 +178,7 @@
 
 			if (!models || models.length === 0) {
 				toast.error('No Ollama models found. Please download gemma2:2b from Model Settings.', {
-					duration: 5000
+					duration: 5000,
 				});
 				settingsDialogOpen = true;
 				return;
@@ -195,13 +195,13 @@
 					action: {
 						label: 'Download',
 						onClick: () =>
-							invoke('open_external_url', { url: 'https://ollama.com/download' }).catch(() => {})
-					}
+							invoke('open_external_url', { url: 'https://ollama.com/download' }).catch(() => {}),
+					},
 				});
 			} else {
 				toast.error(
 					'Failed to check Ollama models. Please check if Ollama is running and download a model.',
-					{ duration: 5000 }
+					{ duration: 5000 },
 				);
 			}
 			settingsDialogOpen = true;
@@ -214,8 +214,8 @@
 		availableTemplates.map((t) => ({
 			value: t.id,
 			label: t.name,
-			checked: t.id === selectedTemplate
-		}))
+			checked: t.id === selectedTemplate,
+		})),
 	);
 
 	function handleTemplateSelect(value: string): void {
@@ -228,9 +228,9 @@
 			(l) => ({
 				value: l.code,
 				label: l.name,
-				checked: l.code === summaryLanguage.preferred
-			})
-		)
+				checked: l.code === summaryLanguage.preferred,
+			}),
+		),
 	);
 
 	function handleLanguageSelect(value: string): void {
@@ -242,7 +242,7 @@
 	const showTranslateFidelityNote = $derived(
 		config.selectedLanguage === 'auto-translate' &&
 			summaryLanguage.preferred !== AUTO_SUMMARY_LANGUAGE &&
-			summaryLanguage.preferred !== 'en'
+			summaryLanguage.preferred !== 'en',
 	);
 </script>
 
@@ -415,8 +415,8 @@
 					<Tooltip.Content class="max-w-xs">
 						Transcription is set to translate audio to English, so the transcript is stored in
 						English. A non-English summary is translated from that English text and may lose
-						original-language nuance. For best fidelity, set the transcription language to a specific
-						language or Auto Detect (Original Language).
+						original-language nuance. For best fidelity, set the transcription language to a
+						specific language or Auto Detect (Original Language).
 					</Tooltip.Content>
 				</Tooltip.Root>
 			</Tooltip.Provider>

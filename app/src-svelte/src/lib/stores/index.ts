@@ -34,7 +34,7 @@ export async function bootStores(): Promise<() => void> {
 		onboarding.start(),
 		recordingState.start(),
 		sidebar.start(),
-		transcripts.start()
+		transcripts.start(),
 	]);
 
 	return () => {

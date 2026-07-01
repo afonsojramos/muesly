@@ -16,9 +16,7 @@ export const SIDE_PANEL_MAX_WIDTH = 640;
 export const SIDE_PANEL_SUMMARY_MIN_WIDTH = 400;
 
 class SidePanelState {
-	open = $state(
-		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches
-	);
+	open = $state(typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
 	activeTab = $state<SidePanelTab>('transcript');
 	width = $state(360);
 

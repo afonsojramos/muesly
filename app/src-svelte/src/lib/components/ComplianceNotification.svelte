@@ -42,13 +42,7 @@
 					<AlertTriangle class="size-3 shrink-0 text-warning" />
 					<h3 class="text-xs font-semibold">Recording Notice</h3>
 				</div>
-				<Button
-					variant="ghost"
-					size="icon"
-					class="size-5"
-					onclick={onClose}
-					aria-label="Close"
-				>
+				<Button variant="ghost" size="icon" class="size-5" onclick={onClose} aria-label="Close">
 					<X class="size-3" />
 				</Button>
 			</div>
@@ -61,10 +55,20 @@
 			</div>
 
 			<div class="flex gap-1">
-				<Button variant="outline" size="sm" class="h-6 flex-1 px-2 py-0.5 text-xs" onclick={onClose}>
+				<Button
+					variant="outline"
+					size="sm"
+					class="h-6 flex-1 px-2 py-0.5 text-xs"
+					onclick={onClose}
+				>
 					Later
 				</Button>
-				<Button variant="accent" size="sm" class="h-6 flex-1 px-2 py-0.5 text-xs" onclick={acknowledge}>
+				<Button
+					variant="accent"
+					size="sm"
+					class="h-6 flex-1 px-2 py-0.5 text-xs"
+					onclick={acknowledge}
+				>
 					<CheckCircle class="mr-1 size-2" /> Done
 				</Button>
 			</div>

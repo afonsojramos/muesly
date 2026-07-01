@@ -16,7 +16,7 @@ export interface Debounced<A extends unknown[]> {
 
 export function debounce<A extends unknown[]>(
 	fn: (...args: A) => unknown,
-	wait = 800
+	wait = 800,
 ): Debounced<A> {
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let lastArgs: A | null = null;

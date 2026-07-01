@@ -6,10 +6,10 @@ export default defineConfig({
 	plugins: [svelte()],
 	resolve: {
 		alias: {
-			$lib: path.resolve('./src/lib')
-		}
+			$lib: path.resolve('./src/lib'),
+		},
 	},
 	test: {
-		include: ['src/**/*.test.ts']
-	}
+		include: ['src/**/*.test.ts'],
+	},
 });

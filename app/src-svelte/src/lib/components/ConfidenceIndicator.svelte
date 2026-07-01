@@ -15,7 +15,7 @@
 				? 'bg-warning'
 				: confidence >= 0.4
 					? 'bg-warning'
-					: 'bg-destructive'
+					: 'bg-destructive',
 	);
 
 	const label = $derived(
@@ -25,7 +25,7 @@
 				? 'Good confidence'
 				: confidence >= 0.4
 					? 'Medium confidence'
-					: 'Low confidence'
+					: 'Low confidence',
 	);
 
 	const percent = $derived((confidence * 100).toFixed(0));

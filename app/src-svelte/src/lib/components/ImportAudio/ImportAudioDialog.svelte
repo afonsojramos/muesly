@@ -30,7 +30,7 @@
 		HardDrive,
 		Loader2,
 		Upload,
-		X
+		X,
 	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
@@ -43,13 +43,10 @@
 	import { LANGUAGES } from '$lib/constants/languages';
 	import { config } from '$lib/stores/config.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
-	import {
-		useImportAudio,
-		type ImportResult
-	} from '$lib/hooks/use-import-audio.svelte';
+	import { useImportAudio, type ImportResult } from '$lib/hooks/use-import-audio.svelte';
 	import {
 		useTranscriptionModels,
-		type ModelOption
+		type ModelOption,
 	} from '$lib/hooks/use-transcription-models.svelte';
 
 	interface Props {
@@ -83,7 +80,7 @@
 
 	const importer = useImportAudio({
 		onComplete: handleImportComplete,
-		onError: handleImportError
+		onError: handleImportError,
 	});
 
 	const selectedModel = $derived.by((): ModelOption | undefined => {
@@ -102,16 +99,16 @@
 	const modelItems = $derived(
 		models.availableModels.map((m) => ({
 			label: `${m.displayName} (${Math.round(m.size_mb)} MB)`,
-			value: `${m.provider}:${m.name}`
-		}))
+			value: `${m.provider}:${m.name}`,
+		})),
 	);
 
 	const selectedLangLabel = $derived(
-		languageItems.find((i) => i.value === selectedLang)?.label ?? 'Select language'
+		languageItems.find((i) => i.value === selectedLang)?.label ?? 'Select language',
 	);
 	const selectedModelLabel = $derived(
 		modelItems.find((i) => i.value === models.selectedModelKey)?.label ??
-			(models.loadingModels ? 'Loading models...' : 'Select model')
+			(models.loadingModels ? 'Loading models...' : 'Select model'),
 	);
 
 	// Initialise only when transitioning from closed to open.
@@ -163,7 +160,7 @@
 			title || fileInfo.filename,
 			isParakeetModel ? null : selectedLang === 'auto' ? null : selectedLang,
 			selectedModel?.name || null,
-			selectedModel?.provider || null
+			selectedModel?.provider || null,
 		);
 	}
 
@@ -212,164 +209,168 @@
 		</Dialog.Header>
 
 		<div class="flex flex-col gap-4 py-4">
-		{#if !importer.isProcessing && !importer.error}
-			{#if importer.fileInfo}
-				<div class="flex flex-col gap-3 rounded-lg bg-secondary p-4">
-					<div class="flex items-start gap-3">
-						<FileAudio class="size-8 shrink-0 text-accent" />
-						<div class="min-w-0 flex-1">
-							<p class="truncate font-medium text-foreground">{importer.fileInfo.filename}</p>
-							<div class="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
-								<span class="flex items-center gap-1">
-									<Clock class="size-3.5" />
-									{formatDuration(importer.fileInfo.duration_seconds)}
-								</span>
-								<span class="flex items-center gap-1">
-									<HardDrive class="size-3.5" />
-									{formatFileSize(importer.fileInfo.size_bytes)}
-								</span>
-								<span class="font-medium text-accent">{importer.fileInfo.format}</span>
+			{#if !importer.isProcessing && !importer.error}
+				{#if importer.fileInfo}
+					<div class="flex flex-col gap-3 rounded-lg bg-secondary p-4">
+						<div class="flex items-start gap-3">
+							<FileAudio class="size-8 shrink-0 text-accent" />
+							<div class="min-w-0 flex-1">
+								<p class="truncate font-medium text-foreground">{importer.fileInfo.filename}</p>
+								<div class="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
+									<span class="flex items-center gap-1">
+										<Clock class="size-3.5" />
+										{formatDuration(importer.fileInfo.duration_seconds)}
+									</span>
+									<span class="flex items-center gap-1">
+										<HardDrive class="size-3.5" />
+										{formatFileSize(importer.fileInfo.size_bytes)}
+									</span>
+									<span class="font-medium text-accent">{importer.fileInfo.format}</span>
+								</div>
 							</div>
 						</div>
-					</div>
 
-					<div class="flex flex-col gap-1">
-						<label for="import-title" class="text-sm font-medium text-foreground">
-							Meeting Title
-						</label>
-						<Input
-							id="import-title"
-							value={title}
-							oninput={(e) => {
-								title = e.currentTarget.value;
-								titleModifiedByUser = true;
-							}}
-							placeholder="Enter meeting title"
-						/>
-					</div>
-
-					<Button variant="outline" size="sm" onclick={handleSelectFile} class="w-full">
-						Choose Different File
-					</Button>
-				</div>
-			{:else}
-				<div class="rounded-lg border-2 border-dashed border-border p-8 text-center">
-					<FileAudio class="mx-auto mb-4 size-12 text-muted-foreground" />
-					<Button onclick={handleSelectFile} disabled={importer.status === 'validating'}>
-						{#if importer.status === 'validating'}
-							<Loader2 data-icon="inline-start" class="animate-spin" />
-							Validating...
-						{:else}
-							<Upload data-icon="inline-start" />
-							Select Audio File
-						{/if}
-					</Button>
-					<p class="mt-2 text-sm text-muted-foreground">
-						MP4, WAV, MP3, FLAC, OGG, MKV, WebM, WMA
-					</p>
-				</div>
-			{/if}
-
-			{#if importer.fileInfo}
-				<div class="rounded-lg border border-border">
-					<Button
-						variant="ghost"
-						onclick={() => (showAdvanced = !showAdvanced)}
-						class="h-auto w-full justify-between p-3 text-sm font-medium text-foreground"
-					>
-						<span>Advanced Options</span>
-						{#if showAdvanced}<ChevronUp data-icon="inline-end" />{:else}<ChevronDown
-								data-icon="inline-end"
-							/>{/if}
-					</Button>
-
-					{#if showAdvanced}
-						<div class="flex flex-col gap-4 border-t border-border p-3 pt-0">
-							{#if !isParakeetModel}
-								<div class="flex flex-col gap-2">
-									<div class="flex items-center gap-2">
-										<Globe class="size-4 text-muted-foreground" />
-										<span class="text-sm font-medium">Language</span>
-									</div>
-									<Select.Root
-										type="single"
-										value={selectedLang}
-										onValueChange={(v) => {
-											if (v) selectedLang = v;
-										}}
-									>
-										<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
-										<Select.Content>
-											<Select.Group>
-												{#each languageItems as item (item.value)}
-													<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-												{/each}
-											</Select.Group>
-										</Select.Content>
-									</Select.Root>
-								</div>
-							{:else}
-								<div class="flex flex-col gap-2">
-									<div class="flex items-center gap-2">
-										<Globe class="size-4 text-muted-foreground" />
-										<span class="text-sm font-medium">Language</span>
-									</div>
-									<p class="text-xs text-muted-foreground">
-										Language selection isn't supported for Parakeet. It always uses automatic
-										detection.
-									</p>
-								</div>
-							{/if}
-
-							{#if models.availableModels.length > 0}
-								<div class="flex flex-col gap-2">
-									<div class="flex items-center gap-2">
-										<Cpu class="size-4 text-muted-foreground" />
-										<span class="text-sm font-medium">Model</span>
-									</div>
-									<Select.Root
-										type="single"
-										value={models.selectedModelKey ?? ''}
-										disabled={models.loadingModels}
-										onValueChange={(v) => {
-											if (v) models.setSelectedModelKey(v);
-										}}
-									>
-										<Select.Trigger class="w-full">{selectedModelLabel}</Select.Trigger>
-										<Select.Content>
-											<Select.Group>
-												{#each modelItems as item (item.value)}
-													<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-												{/each}
-											</Select.Group>
-										</Select.Content>
-									</Select.Root>
-								</div>
-							{/if}
+						<div class="flex flex-col gap-1">
+							<label for="import-title" class="text-sm font-medium text-foreground">
+								Meeting Title
+							</label>
+							<Input
+								id="import-title"
+								value={title}
+								oninput={(e) => {
+									title = e.currentTarget.value;
+									titleModifiedByUser = true;
+								}}
+								placeholder="Enter meeting title"
+							/>
 						</div>
-					{/if}
+
+						<Button variant="outline" size="sm" onclick={handleSelectFile} class="w-full">
+							Choose Different File
+						</Button>
+					</div>
+				{:else}
+					<div class="rounded-lg border-2 border-dashed border-border p-8 text-center">
+						<FileAudio class="mx-auto mb-4 size-12 text-muted-foreground" />
+						<Button onclick={handleSelectFile} disabled={importer.status === 'validating'}>
+							{#if importer.status === 'validating'}
+								<Loader2 data-icon="inline-start" class="animate-spin" />
+								Validating...
+							{:else}
+								<Upload data-icon="inline-start" />
+								Select Audio File
+							{/if}
+						</Button>
+						<p class="mt-2 text-sm text-muted-foreground">
+							MP4, WAV, MP3, FLAC, OGG, MKV, WebM, WMA
+						</p>
+					</div>
+				{/if}
+
+				{#if importer.fileInfo}
+					<div class="rounded-lg border border-border">
+						<Button
+							variant="ghost"
+							onclick={() => (showAdvanced = !showAdvanced)}
+							class="h-auto w-full justify-between p-3 text-sm font-medium text-foreground"
+						>
+							<span>Advanced Options</span>
+							{#if showAdvanced}<ChevronUp data-icon="inline-end" />{:else}<ChevronDown
+									data-icon="inline-end"
+								/>{/if}
+						</Button>
+
+						{#if showAdvanced}
+							<div class="flex flex-col gap-4 border-t border-border p-3 pt-0">
+								{#if !isParakeetModel}
+									<div class="flex flex-col gap-2">
+										<div class="flex items-center gap-2">
+											<Globe class="size-4 text-muted-foreground" />
+											<span class="text-sm font-medium">Language</span>
+										</div>
+										<Select.Root
+											type="single"
+											value={selectedLang}
+											onValueChange={(v) => {
+												if (v) selectedLang = v;
+											}}
+										>
+											<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
+											<Select.Content>
+												<Select.Group>
+													{#each languageItems as item (item.value)}
+														<Select.Item value={item.value} label={item.label}
+															>{item.label}</Select.Item
+														>
+													{/each}
+												</Select.Group>
+											</Select.Content>
+										</Select.Root>
+									</div>
+								{:else}
+									<div class="flex flex-col gap-2">
+										<div class="flex items-center gap-2">
+											<Globe class="size-4 text-muted-foreground" />
+											<span class="text-sm font-medium">Language</span>
+										</div>
+										<p class="text-xs text-muted-foreground">
+											Language selection isn't supported for Parakeet. It always uses automatic
+											detection.
+										</p>
+									</div>
+								{/if}
+
+								{#if models.availableModels.length > 0}
+									<div class="flex flex-col gap-2">
+										<div class="flex items-center gap-2">
+											<Cpu class="size-4 text-muted-foreground" />
+											<span class="text-sm font-medium">Model</span>
+										</div>
+										<Select.Root
+											type="single"
+											value={models.selectedModelKey ?? ''}
+											disabled={models.loadingModels}
+											onValueChange={(v) => {
+												if (v) models.setSelectedModelKey(v);
+											}}
+										>
+											<Select.Trigger class="w-full">{selectedModelLabel}</Select.Trigger>
+											<Select.Content>
+												<Select.Group>
+													{#each modelItems as item (item.value)}
+														<Select.Item value={item.value} label={item.label}
+															>{item.label}</Select.Item
+														>
+													{/each}
+												</Select.Group>
+											</Select.Content>
+										</Select.Root>
+									</div>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				{/if}
+			{/if}
+
+			{#if importer.isProcessing && importer.progress}
+				<div class="flex flex-col gap-2">
+					<div>
+						<Progress value={Math.min(importer.progress.progress_percentage, 100)} />
+						<div class="mt-1 flex justify-between text-xs text-muted-foreground">
+							<span>{importer.progress.stage}</span>
+							<span>{Math.round(importer.progress.progress_percentage)}%</span>
+						</div>
+					</div>
+					<p class="text-center text-sm text-muted-foreground">{importer.progress.message}</p>
 				</div>
 			{/if}
-		{/if}
 
-		{#if importer.isProcessing && importer.progress}
-			<div class="flex flex-col gap-2">
-				<div>
-					<Progress value={Math.min(importer.progress.progress_percentage, 100)} />
-					<div class="mt-1 flex justify-between text-xs text-muted-foreground">
-						<span>{importer.progress.stage}</span>
-						<span>{Math.round(importer.progress.progress_percentage)}%</span>
-					</div>
+			{#if importer.error}
+				<div class="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+					<p class="text-sm text-destructive">{importer.error}</p>
 				</div>
-				<p class="text-center text-sm text-muted-foreground">{importer.progress.message}</p>
-			</div>
-		{/if}
-
-		{#if importer.error}
-			<div class="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
-				<p class="text-sm text-destructive">{importer.error}</p>
-			</div>
-		{/if}
+			{/if}
 		</div>
 
 		<Dialog.Footer>

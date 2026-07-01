@@ -72,7 +72,7 @@
 	async function handlePrivacyPolicyClick(): Promise<void> {
 		try {
 			await invoke('open_external_url', {
-				url: 'https://github.com/afonsojramos/muesly/blob/main/PRIVACY_POLICY.md'
+				url: 'https://github.com/afonsojramos/muesly/blob/main/PRIVACY_POLICY.md',
 			});
 		} catch (error) {
 			console.error('Failed to open privacy policy link:', error);
@@ -89,7 +89,9 @@
 		</p>
 	</div>
 
-	<div class="flex items-center justify-between rounded-lg border border-border bg-secondary/40 p-3">
+	<div
+		class="flex items-center justify-between rounded-lg border border-border bg-secondary/40 p-3"
+	>
 		<div>
 			<h4 class="font-semibold">Enable Analytics</h4>
 			<p class="text-sm text-muted-foreground">
@@ -100,7 +102,11 @@
 			{#if isProcessing}
 				<Loader2 class="size-4 animate-spin text-muted-foreground" />
 			{/if}
-			<Switch checked={analyticsConsent.optedIn} disabled={isProcessing} onCheckedChange={handleToggle} />
+			<Switch
+				checked={analyticsConsent.optedIn}
+				disabled={isProcessing}
+				onCheckedChange={handleToggle}
+			/>
 		</div>
 	</div>
 

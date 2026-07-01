@@ -58,7 +58,7 @@ export interface UseImportAudio {
 		title: string,
 		language?: string | null,
 		model?: string | null,
-		provider?: string | null
+		provider?: string | null,
 	) => Promise<void>;
 	cancelImport: () => Promise<void>;
 	reset: () => void;
@@ -98,7 +98,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 					await Analytics.track('import_audio_completed', {
 						success: 'true',
 						duration_seconds: event.payload.duration_seconds.toString(),
-						segments_count: event.payload.segments_count.toString()
+						segments_count: event.payload.segments_count.toString(),
 					});
 					status = 'complete';
 					progress = null;
@@ -170,7 +170,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 		title: string,
 		language?: string | null,
 		model?: string | null,
-		provider?: string | null
+		provider?: string | null,
 	): Promise<void> => {
 		isCancelled = false;
 		status = 'processing';
@@ -184,7 +184,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 					duration_seconds: fileInfo.duration_seconds.toString(),
 					language: language || 'auto',
 					model_provider: provider || '',
-					model_name: model || ''
+					model_name: model || '',
 				});
 			}
 
@@ -193,7 +193,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 				title,
 				language: language || null,
 				model: model || null,
-				provider: provider || null
+				provider: provider || null,
 			});
 		} catch (err) {
 			status = 'error';
@@ -246,6 +246,6 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 		validateFile,
 		startImport,
 		cancelImport,
-		reset
+		reset,
 	};
 }

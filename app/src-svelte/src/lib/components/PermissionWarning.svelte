@@ -22,7 +22,7 @@
 			? 'Permissions Required'
 			: !hasMicrophone
 				? 'Microphone Permission Required'
-				: 'System Audio Permission Required'
+				: 'System Audio Permission Required',
 	);
 
 	async function openSettings(pane: 'Privacy_Microphone' | 'Privacy_ScreenCapture'): Promise<void> {

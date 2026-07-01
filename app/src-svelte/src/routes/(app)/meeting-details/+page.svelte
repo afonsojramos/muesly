@@ -29,14 +29,42 @@
 	const isDevPreview =
 		import.meta.env.DEV && typeof window !== 'undefined' && !('__TAURI_INTERNALS__' in window);
 	const devTranscripts: Transcript[] = [
-		{ id: 'dt-1', text: "Morning everyone, let's get started with the standup.", timestamp: '09:30:02', audio_start_time: 2, confidence: 0.96, speaker: 'system' },
-		{ id: 'dt-2', text: 'Yesterday I finished the audio pipeline refactor and started on the mixer tests.', timestamp: '09:30:18', audio_start_time: 18, confidence: 0.93, speaker: 'mic' },
-		{ id: 'dt-3', text: 'The VAD changes are looking good, latency dropped by about thirty percent.', timestamp: '09:30:41', audio_start_time: 41, confidence: 0.91, speaker: 'system' },
-		{ id: 'dt-4', text: "I'll pick up the transcript search task next, should land by Thursday.", timestamp: '09:31:05', audio_start_time: 65, confidence: 0.95, speaker: 'mic' }
+		{
+			id: 'dt-1',
+			text: "Morning everyone, let's get started with the standup.",
+			timestamp: '09:30:02',
+			audio_start_time: 2,
+			confidence: 0.96,
+			speaker: 'system',
+		},
+		{
+			id: 'dt-2',
+			text: 'Yesterday I finished the audio pipeline refactor and started on the mixer tests.',
+			timestamp: '09:30:18',
+			audio_start_time: 18,
+			confidence: 0.93,
+			speaker: 'mic',
+		},
+		{
+			id: 'dt-3',
+			text: 'The VAD changes are looking good, latency dropped by about thirty percent.',
+			timestamp: '09:30:41',
+			audio_start_time: 41,
+			confidence: 0.91,
+			speaker: 'system',
+		},
+		{
+			id: 'dt-4',
+			text: "I'll pick up the transcript search task next, should land by Thursday.",
+			timestamp: '09:31:05',
+			audio_start_time: 65,
+			confidence: 0.95,
+			speaker: 'mic',
+		},
 	];
 	const devSummary = {
 		markdown:
-			'## Key points\n\n- Audio pipeline refactor finished, mixer tests in progress\n- VAD changes reduced latency by ~30%\n\n## Action items\n\n- Land transcript search by Thursday\n- Review mixer test coverage\n'
+			'## Key points\n\n- Audio pipeline refactor finished, mixer tests in progress\n- VAD changes reduced latency by ~30%\n\n## Action items\n\n- Land transcript search by Thursday\n- Review mixer test coverage\n',
 	} as unknown as Summary;
 	const devSegments = devTranscripts.map((t) => ({
 		id: t.id,
@@ -44,7 +72,7 @@
 		endTime: t.audio_end_time,
 		text: t.text,
 		confidence: t.confidence,
-		speaker: t.speaker
+		speaker: t.speaker,
 	}));
 
 	const paginated = usePaginatedTranscripts(() => (isDevPreview ? null : meetingId));
@@ -60,15 +88,14 @@
 	// Build the meeting object from pagination metadata + loaded transcripts.
 	const meetingDetails = $derived.by((): MeetingDetailsResponse | null => {
 		if (isDevPreview && meetingId) {
-			const title =
-				sidebar.meetings.find((m) => m.id === meetingId)?.title ?? 'Team standup';
+			const title = sidebar.meetings.find((m) => m.id === meetingId)?.title ?? 'Team standup';
 			return {
 				id: meetingId,
 				title,
 				created_at: new Date().toISOString(),
 				updated_at: new Date().toISOString(),
 				transcripts: devTranscripts,
-				folder_path: null
+				folder_path: null,
 			};
 		}
 		const metadata = paginated.metadata;
@@ -80,7 +107,7 @@
 			created_at: metadata.created_at,
 			updated_at: metadata.updated_at,
 			transcripts: paginated.transcripts,
-			folder_path: metadata.folder_path ?? null
+			folder_path: metadata.folder_path ?? null,
 		};
 	});
 
@@ -136,7 +163,7 @@
 					model: '',
 					whisperModel: 'large-v3',
 					apiKey: null,
-					ollamaEndpoint: null
+					ollamaEndpoint: null,
 				});
 				shouldAutoGenerate = true;
 			}
@@ -286,19 +313,19 @@
 	{#key meetingDetails.id}
 		<MeetingDetailsView
 			meeting={meetingDetails}
-		summaryData={meetingSummary}
-		notesMarkdown={meetingNotes}
-		summaryContext={meetingSummaryContext}
-		{shouldAutoGenerate}
-		onAutoGenerateComplete={() => (shouldAutoGenerate = false)}
-		onMeetingUpdated={handleMeetingUpdated}
-		onRefetchTranscripts={paginated.refetch}
-		segments={isDevPreview ? devSegments : paginated.segments}
-		hasMore={paginated.hasMore}
-		isLoadingMore={paginated.isLoadingMore}
-		totalCount={paginated.totalCount}
-		loadedCount={paginated.loadedCount}
-		onLoadMore={paginated.loadMore}
-	/>
+			summaryData={meetingSummary}
+			notesMarkdown={meetingNotes}
+			summaryContext={meetingSummaryContext}
+			{shouldAutoGenerate}
+			onAutoGenerateComplete={() => (shouldAutoGenerate = false)}
+			onMeetingUpdated={handleMeetingUpdated}
+			onRefetchTranscripts={paginated.refetch}
+			segments={isDevPreview ? devSegments : paginated.segments}
+			hasMore={paginated.hasMore}
+			isLoadingMore={paginated.isLoadingMore}
+			totalCount={paginated.totalCount}
+			loadedCount={paginated.loadedCount}
+			onLoadMore={paginated.loadMore}
+		/>
 	{/key}
 {/if}

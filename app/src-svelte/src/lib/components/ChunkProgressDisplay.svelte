@@ -85,20 +85,20 @@
 		onResume,
 		onCancel,
 		isPaused = false,
-		class: className = ''
+		class: className = '',
 	}: Props = $props();
 
 	const completionPercentage = $derived(
 		progress.total_chunks > 0
 			? Math.round((progress.completed_chunks / progress.total_chunks) * 100)
-			: 0
+			: 0,
 	);
 
 	const pendingChunks = $derived(
 		progress.total_chunks -
 			progress.completed_chunks -
 			progress.processing_chunks -
-			progress.failed_chunks
+			progress.failed_chunks,
 	);
 
 	const recentChunks = $derived([...progress.chunks].slice(-10).reverse());

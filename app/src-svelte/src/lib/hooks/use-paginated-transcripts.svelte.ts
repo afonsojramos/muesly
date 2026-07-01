@@ -14,7 +14,7 @@ import type {
 	MeetingMetadata,
 	PaginatedTranscriptsResponse,
 	Transcript,
-	TranscriptSegmentData
+	TranscriptSegmentData,
 } from '$lib/types';
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -26,7 +26,7 @@ function toSegments(transcripts: Transcript[]): TranscriptSegmentData[] {
 		endTime: t.audio_end_time,
 		text: t.text,
 		confidence: t.confidence,
-		speaker: t.speaker
+		speaker: t.speaker,
 	}));
 }
 
@@ -45,7 +45,9 @@ export interface UsePaginatedTranscripts {
 	refetch: () => Promise<void>;
 }
 
-export function usePaginatedTranscripts(getMeetingId: () => string | null): UsePaginatedTranscripts {
+export function usePaginatedTranscripts(
+	getMeetingId: () => string | null,
+): UsePaginatedTranscripts {
 	let metadata = $state<MeetingMetadata | null>(null);
 	let transcripts = $state<Transcript[]>([]);
 	let totalCount = $state(0);
@@ -81,16 +83,12 @@ export function usePaginatedTranscripts(getMeetingId: () => string | null): UseP
 		}
 	};
 
-	const loadAtOffset = async (
-		meetingId: string,
-		at: number,
-		append: boolean
-	): Promise<void> => {
+	const loadAtOffset = async (meetingId: string, at: number, append: boolean): Promise<void> => {
 		try {
 			const response = await invoke<PaginatedTranscriptsResponse>('api_get_meeting_transcripts', {
 				meetingId,
 				limit: DEFAULT_PAGE_SIZE,
-				offset: at
+				offset: at,
 			});
 			const incoming = response.transcripts;
 
@@ -98,7 +96,7 @@ export function usePaginatedTranscripts(getMeetingId: () => string | null): UseP
 				const existing = new Set(transcripts.map((t) => t.id));
 				const uniqueNew = incoming.filter((t) => !existing.has(t.id));
 				transcripts = [...transcripts, ...uniqueNew].sort(
-					(a, b) => (a.audio_start_time ?? 0) - (b.audio_start_time ?? 0)
+					(a, b) => (a.audio_start_time ?? 0) - (b.audio_start_time ?? 0),
 				);
 			} else {
 				transcripts = incoming;
@@ -196,6 +194,6 @@ export function usePaginatedTranscripts(getMeetingId: () => string | null): UseP
 		},
 		loadMore,
 		reset,
-		refetch
+		refetch,
 	};
 }

@@ -9,7 +9,7 @@
 		getModelDisplayName,
 		ParakeetAPI,
 		type ParakeetModelInfo,
-		type ModelStatus
+		type ModelStatus,
 	} from '$lib/ai/parakeet';
 	import ParakeetModelCard from './ParakeetModelCard.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -45,7 +45,7 @@
 			await invoke('api_save_transcript_config', {
 				provider: 'parakeet',
 				model: modelName,
-				apiKey: null
+				apiKey: null,
 			});
 		} catch (err) {
 			console.error('Failed to save model selection:', err);
@@ -59,7 +59,7 @@
 			setModelStatus(modelName, { Downloading: 0 });
 			toast.info(`Downloading ${getModelDisplayName(modelName)}...`, {
 				description: 'This may take a few minutes',
-				duration: 5000
+				duration: 5000,
 			});
 			await ParakeetAPI.downloadModel(modelName);
 		} catch (err) {
@@ -78,7 +78,7 @@
 		} catch (err) {
 			console.error('Failed to cancel download:', err);
 			toast.error('Failed to cancel download', {
-				description: err instanceof Error ? err.message : 'Unknown error'
+				description: err instanceof Error ? err.message : 'Unknown error',
 			});
 		}
 	}
@@ -95,13 +95,13 @@
 			models = await ParakeetAPI.getAvailableModels();
 			toast.success(`${getModelDisplayName(modelName)} deleted`, {
 				description: 'Model removed to free up space',
-				duration: 3000
+				duration: 3000,
 			});
 			if (selectedModel === modelName) onModelSelect?.('');
 		} catch (err) {
 			console.error('Failed to delete model:', err);
 			toast.error(`Failed to delete ${getModelDisplayName(modelName)}`, {
-				description: err instanceof Error ? err.message : 'Delete failed'
+				description: err instanceof Error ? err.message : 'Delete failed',
 			});
 		}
 	}
@@ -116,7 +116,7 @@
 				console.error('Failed to initialize Parakeet:', err);
 				error = err instanceof Error ? err.message : 'Failed to load models';
 				toast.error('Failed to load transcription models', {
-					description: err instanceof Error ? err.message : 'Unknown error'
+					description: err instanceof Error ? err.message : 'Unknown error',
 				});
 			} finally {
 				loading = false;
@@ -131,8 +131,9 @@
 			push(
 				await listen<{ modelName: string; progress: number }>(
 					'parakeet-model-download-progress',
-					(event) => setModelStatus(event.payload.modelName, { Downloading: event.payload.progress })
-				)
+					(event) =>
+						setModelStatus(event.payload.modelName, { Downloading: event.payload.progress }),
+				),
 			);
 			push(
 				await listen<{ modelName: string }>('parakeet-model-download-complete', (event) => {
@@ -141,11 +142,11 @@
 					downloadingModels.delete(modelName);
 					toast.success(`${getModelDisplayName(modelName)} ready!`, {
 						description: 'Model downloaded and ready to use',
-						duration: 4000
+						duration: 4000,
 					});
 					onModelSelect?.(modelName);
 					if (autoSave) void saveModelSelection(modelName);
-				})
+				}),
 			);
 			push(
 				await listen<{ modelName: string; error: string }>(
@@ -156,10 +157,10 @@
 						downloadingModels.delete(modelName);
 						toast.error(`Failed to download ${getModelDisplayName(modelName)}`, {
 							description: errMsg,
-							duration: 6000
+							duration: 6000,
 						});
-					}
-				)
+					},
+				),
 			);
 		})();
 
@@ -188,7 +189,8 @@
 				isSelected={selectedModel === recommendedModel.name}
 				isRecommended={true}
 				isDownloading={downloadingModels.has(recommendedModel.name)}
-				onSelect={() => recommendedModel.status === 'Available' && selectModel(recommendedModel.name)}
+				onSelect={() =>
+					recommendedModel.status === 'Available' && selectModel(recommendedModel.name)}
 				onDownload={() => downloadModel(recommendedModel.name)}
 				onCancel={() => cancelDownload(recommendedModel.name)}
 				onDelete={() => deleteModel(recommendedModel.name)}

@@ -9,7 +9,7 @@
 		Download,
 		ExternalLink,
 		RefreshCw,
-		XCircle
+		XCircle,
 	} from '@lucide/svelte';
 	import { tick } from 'svelte';
 
@@ -47,7 +47,7 @@
 		'claude',
 		'groq',
 		'grok',
-		'openrouter'
+		'openrouter',
 	] as const;
 	type AvailableProvider = (typeof AVAILABLE_PROVIDERS)[number];
 
@@ -62,7 +62,7 @@
 		{ value: 'claude', label: 'Claude — Anthropic (Cloud)' },
 		{ value: 'groq', label: 'Groq (Cloud)' },
 		{ value: 'grok', label: 'xAI (Grok)' },
-		{ value: 'openrouter', label: 'OpenRouter (Cloud)' }
+		{ value: 'openrouter', label: 'OpenRouter (Cloud)' },
 	];
 
 	// Cloud (BYOK) provider metadata for the key + model inputs and privacy notice.
@@ -73,29 +73,29 @@
 		claude: {
 			name: 'Claude (Anthropic)',
 			modelPlaceholder: 'e.g. claude-sonnet-4-5',
-			keyUrl: 'https://console.anthropic.com/settings/keys'
+			keyUrl: 'https://console.anthropic.com/settings/keys',
 		},
 		groq: {
 			name: 'Groq',
 			modelPlaceholder: 'e.g. llama-3.3-70b-versatile',
-			keyUrl: 'https://console.groq.com/keys'
+			keyUrl: 'https://console.groq.com/keys',
 		},
 		grok: {
 			name: 'xAI (Grok)',
 			modelPlaceholder: 'e.g. grok-3-mini',
-			keyUrl: 'https://console.x.ai'
+			keyUrl: 'https://console.x.ai',
 		},
 		openrouter: {
 			name: 'OpenRouter',
 			modelPlaceholder: 'e.g. anthropic/claude-3.5-sonnet',
-			keyUrl: 'https://openrouter.ai/keys'
-		}
+			keyUrl: 'https://openrouter.ai/keys',
+		},
 	};
 
 	const cloudProvider = $derived(CLOUD_PROVIDERS[modelConfig.provider]);
 
 	const providerLabel = $derived(
-		providerItems.find((item) => item.value === modelConfig.provider)?.label ?? 'Select provider'
+		providerItems.find((item) => item.value === modelConfig.provider)?.label ?? 'Select provider',
 	);
 
 	const RECOMMENDED_MODEL = 'gemma3:1b';
@@ -160,23 +160,23 @@
 	}
 
 	const ollamaEndpointChanged = $derived(
-		modelConfig.provider === 'ollama' && ollamaEndpoint.trim() !== lastFetchedEndpoint.trim()
+		modelConfig.provider === 'ollama' && ollamaEndpoint.trim() !== lastFetchedEndpoint.trim(),
 	);
 
 	const isCustomOpenAIInvalid = $derived(
 		modelConfig.provider === 'custom-openai' &&
-			(!customOpenAIEndpoint.trim() || !customOpenAIModel.trim())
+			(!customOpenAIEndpoint.trim() || !customOpenAIModel.trim()),
 	);
 
 	// Cloud providers need both an API key and a model name before saving.
 	const isCloudInvalid = $derived(
-		!!cloudProvider && (!modelConfig.apiKey?.trim() || !modelConfig.model.trim())
+		!!cloudProvider && (!modelConfig.apiKey?.trim() || !modelConfig.model.trim()),
 	);
 
 	const isDoneDisabled = $derived(
 		(modelConfig.provider === 'ollama' && ollamaEndpointChanged) ||
 			isCustomOpenAIInvalid ||
-			isCloudInvalid
+			isCloudInvalid,
 	);
 
 	const filteredModels = $derived(
@@ -189,7 +189,7 @@
 				model.size.toLowerCase().includes(query) ||
 				loadedText.includes(query)
 			);
-		})
+		}),
 	);
 
 	const ollamaComboItems = $derived(models.map((m) => ({ label: m.name, value: m.name })));
@@ -198,7 +198,7 @@
 	let ollamaModelPickerOpen = $state(false);
 	let ollamaModelPickerTriggerRef = $state<HTMLButtonElement>(null!);
 	const selectedOllamaModelLabel = $derived(
-		ollamaComboItems.find((item) => item.value === modelConfig.model)?.label
+		ollamaComboItems.find((item) => item.value === modelConfig.model)?.label,
 	);
 
 	// Debounced endpoint URL validation with visual feedback.
@@ -252,7 +252,7 @@
 			modelConfig.customOpenAIApiKey,
 			modelConfig.maxTokens,
 			modelConfig.temperature,
-			modelConfig.topP
+			modelConfig.topP,
 		]);
 		if (snapshot === lastCustomSnapshot) return;
 		lastCustomSnapshot = snapshot;
@@ -390,7 +390,7 @@
 	async function downloadRecommendedModel(): Promise<void> {
 		if (ollamaDownload.isDownloading(RECOMMENDED_MODEL)) {
 			toast.info(`${RECOMMENDED_MODEL} is already downloading`, {
-				description: `Progress: ${Math.round(ollamaDownload.getProgress(RECOMMENDED_MODEL) ?? 0)}%`
+				description: `Progress: ${Math.round(ollamaDownload.getProgress(RECOMMENDED_MODEL) ?? 0)}%`,
 			});
 			return;
 		}
@@ -405,7 +405,7 @@
 			if (isOllamaNotInstalledError(errorMsg)) {
 				toast.error('Ollama is not installed', {
 					description: 'Please download and install Ollama before downloading models.',
-					duration: 7000
+					duration: 7000,
 				});
 				ollamaNotInstalled = true;
 			}
@@ -423,7 +423,7 @@
 			const result = await configService.testCustomOpenAIConnection(
 				customOpenAIEndpoint.trim(),
 				customOpenAIApiKey.trim() || null,
-				customOpenAIModel.trim()
+				customOpenAIModel.trim(),
 			);
 			toast.success(result.message || 'Connection successful!');
 		} catch (err) {
@@ -442,7 +442,7 @@
 					model: customOpenAIModel.trim(),
 					maxTokens: customMaxTokens ? parseInt(customMaxTokens, 10) : null,
 					temperature: customTemperature ? parseFloat(customTemperature) : null,
-					topP: customTopP ? parseFloat(customTopP) : null
+					topP: customTopP ? parseFloat(customTopP) : null,
 				});
 			} catch (err) {
 				console.error('Failed to save custom OpenAI config:', err);
@@ -464,7 +464,7 @@
 			maxTokens: isCustom && customMaxTokens ? parseInt(customMaxTokens, 10) : null,
 			temperature: isCustom && customTemperature ? parseFloat(customTemperature) : null,
 			topP: isCustom && customTopP ? parseFloat(customTopP) : null,
-			model: isCustom ? customOpenAIModel.trim() : modelConfig.model
+			model: isCustom ? customOpenAIModel.trim() : modelConfig.model,
 		};
 
 		setModelConfig(updated);
@@ -514,7 +514,9 @@
 									aria-expanded={ollamaModelPickerOpen}
 									class="max-w-[240px] flex-1 justify-between font-normal"
 								>
-									<span class={cn('truncate', !selectedOllamaModelLabel && 'text-muted-foreground')}>
+									<span
+										class={cn('truncate', !selectedOllamaModelLabel && 'text-muted-foreground')}
+									>
 										{selectedOllamaModelLabel ?? 'Select model…'}
 									</span>
 									<ChevronsUpDown class="size-4 shrink-0 opacity-50" />
@@ -534,7 +536,8 @@
 												onSelect={() => selectOllamaModel(item.value)}
 											>
 												<Check class={cn('text-accent', !isSelected && 'text-transparent')} />
-												<span class={cn('truncate', isSelected && 'font-medium')}>{item.label}</span>
+												<span class={cn('truncate', isSelected && 'font-medium')}>{item.label}</span
+												>
 											</Command.Item>
 										{/each}
 									</Command.Group>
@@ -642,7 +645,9 @@
 					variant="outline"
 					size="sm"
 					class="w-full"
-					disabled={isTestingConnection || !customOpenAIEndpoint.trim() || !customOpenAIModel.trim()}
+					disabled={isTestingConnection ||
+						!customOpenAIEndpoint.trim() ||
+						!customOpenAIModel.trim()}
 					onclick={testCustomOpenAIConnection}
 				>
 					{#if isTestingConnection}
@@ -735,7 +740,9 @@
 									class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-success"
 								/>
 							{:else if endpointValidationState === 'invalid'}
-								<XCircle class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-destructive" />
+								<XCircle
+									class="absolute right-3 top-1/2 size-5 -translate-y-1/2 text-destructive"
+								/>
 							{/if}
 						</div>
 						<Button
@@ -797,8 +804,8 @@
 							<div class="flex flex-col gap-4">
 								<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
 									<Alert.Description class="text-warning">
-										Ollama is not installed or not running. Please download and install Ollama to use
-										local models.
+										Ollama is not installed or not running. Please download and install Ollama to
+										use local models.
 									</Alert.Description>
 								</Alert.Root>
 								<Button
@@ -837,7 +844,8 @@
 										{#if downloading}
 											<RefreshCw class="animate-spin" data-icon="inline-start" /> Downloading {RECOMMENDED_MODEL}…
 										{:else}
-											<Download data-icon="inline-start" /> Download {RECOMMENDED_MODEL} (Recommended, ~800MB)
+											<Download data-icon="inline-start" /> Download {RECOMMENDED_MODEL} (Recommended,
+											~800MB)
 										{/if}
 									</Button>
 
@@ -881,7 +889,7 @@
 											modelConfig.model === model.name
 												? 'border-accent ring-1 ring-inset ring-accent'
 												: 'border-border hover:bg-secondary/50',
-											!modelIsDownloading && 'cursor-pointer'
+											!modelIsDownloading && 'cursor-pointer',
 										)}
 									>
 										<div>

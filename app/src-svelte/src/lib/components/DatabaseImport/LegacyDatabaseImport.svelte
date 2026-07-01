@@ -21,7 +21,7 @@
 	let errorMessage = $state('');
 
 	const isLoading = $derived(
-		importState === 'selecting' || importState === 'detecting' || importState === 'importing'
+		importState === 'selecting' || importState === 'detecting' || importState === 'importing',
 	);
 	const canImport = $derived(!!detectedPath && importState === 'idle');
 
@@ -116,9 +116,7 @@
 	<Dialog.Content class="sm:max-w-[600px]" showCloseButton={false}>
 		<Dialog.Header>
 			<Dialog.Title>Welcome to muesly!</Dialog.Title>
-			<Dialog.Description>
-				Do you have data from a previous muesly installation?
-			</Dialog.Description>
+			<Dialog.Description>Do you have data from a previous muesly installation?</Dialog.Description>
 		</Dialog.Header>
 
 		<div class="flex flex-col gap-6 py-4">
@@ -194,7 +192,12 @@
 					</div>
 				</div>
 
-				<Button variant="outline" class="w-full py-3" onclick={handleStartFresh} disabled={isLoading}>
+				<Button
+					variant="outline"
+					class="w-full py-3"
+					onclick={handleStartFresh}
+					disabled={isLoading}
+				>
 					Start Fresh (No Import)
 				</Button>
 			</div>

@@ -29,7 +29,7 @@ interface CustomOpenAIBlob {
 const DEFAULT_CONFIG: ModelConfig = {
 	provider: 'ollama',
 	model: '',
-	whisperModel: 'large-v3'
+	whisperModel: 'large-v3',
 };
 
 export interface UseModelConfiguration {
@@ -62,7 +62,7 @@ export function useModelConfiguration(): UseModelConfiguration {
 			if (data.provider === 'custom-openai') {
 				try {
 					const customConfig = (await invoke(
-						'api_get_custom_openai_config'
+						'api_get_custom_openai_config',
 					)) as CustomOpenAIBlob | null;
 					if (customConfig) {
 						data.customOpenAIEndpoint = customConfig.endpoint ?? null;
@@ -112,7 +112,7 @@ export function useModelConfiguration(): UseModelConfiguration {
 				model: configToSave.model,
 				whisperModel: configToSave.whisperModel,
 				apiKey: configToSave.apiKey ?? null,
-				ollamaEndpoint: configToSave.ollamaEndpoint ?? null
+				ollamaEndpoint: configToSave.ollamaEndpoint ?? null,
 			};
 
 			if (
@@ -124,7 +124,7 @@ export function useModelConfiguration(): UseModelConfiguration {
 					from_provider: modelConfig.provider,
 					from_model: modelConfig.model,
 					to_provider: updatedConfig.provider,
-					to_model: updatedConfig.model
+					to_model: updatedConfig.model,
 				});
 			}
 
@@ -135,7 +135,7 @@ export function useModelConfiguration(): UseModelConfiguration {
 			toast.success('Summary settings saved successfully');
 			await Analytics.track('settings_changed', {
 				setting: 'model_config',
-				value: `${payload.provider}_${payload.model}`
+				value: `${payload.provider}_${payload.model}`,
 			});
 		} catch (error) {
 			console.error('Failed to save model config:', error);
@@ -153,6 +153,6 @@ export function useModelConfiguration(): UseModelConfiguration {
 		setModelConfig: (config: ModelConfig) => {
 			modelConfig = config;
 		},
-		handleSaveModelConfig
+		handleSaveModelConfig,
 	};
 }
