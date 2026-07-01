@@ -3,8 +3,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
-		ChevronDown,
-		ChevronRight,
 		Folder,
 		FolderInput,
 		FolderPlus,
@@ -19,7 +17,6 @@
 		Upload,
 		X
 	} from '@lucide/svelte';
-	import { SvelteSet } from 'svelte/reactivity';
 
 	import { Analytics } from '$lib/analytics';
 	import { cn } from '$lib/utils';
@@ -125,13 +122,6 @@
 	});
 
 	const hasAnyNotes = $derived(filteredMeetings.length > 0 || sidebar.folders.length > 0);
-
-	// Folder expand/collapse (folders start expanded; collapsed ids tracked here).
-	const collapsedFolders = new SvelteSet<string>();
-	function toggleFolder(id: string): void {
-		if (collapsedFolders.has(id)) collapsedFolders.delete(id);
-		else collapsedFolders.add(id);
-	}
 
 	// Folder + move-to-folder modals.
 	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
@@ -726,7 +716,6 @@
 				</div>
 
 				{#each folderSections as section (section.id)}
-					{@const collapsed = collapsedFolders.has(section.id)}
 					<!-- Whole section is a drop target; highlight while a note is dragged over. -->
 					<div
 						class={cn(
@@ -742,18 +731,12 @@
 						>
 							<button
 								type="button"
-								onclick={() => toggleFolder(section.id)}
+								onclick={() => goto(`/folder?id=${section.id}`)}
 								onkeydown={handleRovingKeydown}
 								data-roving
 								class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								aria-label={collapsed ? `Expand ${section.name}` : `Collapse ${section.name}`}
-								aria-expanded={!collapsed}
+								aria-label={`Open folder ${section.name}`}
 							>
-								{#if collapsed}
-									<ChevronRight class="size-3.5 flex-shrink-0 text-muted-foreground" />
-								{:else}
-									<ChevronDown class="size-3.5 flex-shrink-0 text-muted-foreground" />
-								{/if}
 								<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
 								<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
 							</button>
@@ -810,20 +793,7 @@
 									</Tooltip.Root>
 								</Tooltip.Provider>
 							</div>
-							{#if !collapsed && section.meetings.length === 0}
-								<span
-									class="flex-shrink-0 text-xs text-muted-foreground/50 group-hover/folder:hidden group-focus-within/folder:hidden"
-									>empty</span
-								>
-							{/if}
 						</div>
-						{#if !collapsed}
-							<div class="ml-3 border-l border-border pl-1">
-								{#each section.meetings as child (child.id)}
-									{@render meetingRow(child)}
-								{/each}
-							</div>
-						{/if}
 					</div>
 				{/each}
 
