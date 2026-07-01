@@ -407,6 +407,30 @@
 			</Tooltip.Content>
 		</Tooltip.Root>
 	</Tooltip.Provider>
+	<Tooltip.Provider delayDuration={300}>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="ghost"
+						size="icon-sm"
+						onclick={openSearch}
+						class="text-muted-foreground/70"
+						aria-label="Search notes"
+					>
+						<Search />
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<span class="flex items-center">
+					Search
+					<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
+				</span>
+			</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
 </div>
 
 <div class="fixed left-0 top-0 z-40 h-screen">
@@ -437,47 +461,22 @@
 		{#if !sidebar.isCollapsed}
 			<!-- Header -->
 			<div class="shrink-0 px-3 pb-1 pt-1">
-				<div class="flex items-center gap-2">
-					<Tooltip.Provider delayDuration={300}>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										variant="ghost"
-										size="icon-sm"
-										onclick={openSearch}
-										class="shrink-0 text-muted-foreground hover:text-foreground"
-										aria-label="Search notes"
-									>
-										<Search />
-									</Button>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>
-								Search
-								<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
-							</Tooltip.Content>
-						</Tooltip.Root>
-					</Tooltip.Provider>
-
-					{#if recordingState.isRecording}
-						<Button disabled variant="destructive" size="sm" class="h-7 flex-1 cursor-not-allowed">
-							<span class="relative flex size-2">
-								<span
-									class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
-								></span>
-								<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
-							</span>
-							<span>Recording...</span>
-						</Button>
-					{:else}
-						<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="h-7 flex-1">
-							<Plus />
-							<span>New note</span>
-						</Button>
-					{/if}
-				</div>
+				{#if recordingState.isRecording}
+					<Button disabled variant="destructive" size="sm" class="w-full cursor-not-allowed">
+						<span class="relative flex size-2">
+							<span
+								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
+							></span>
+							<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
+						</span>
+						<span>Recording...</span>
+					</Button>
+				{:else}
+					<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="h-7 w-full">
+						<Plus />
+						<span>New note</span>
+					</Button>
+				{/if}
 			</div>
 
 			<!-- Nav -->
