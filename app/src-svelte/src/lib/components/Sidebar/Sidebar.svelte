@@ -410,8 +410,10 @@
 </script>
 
 <!-- The toggle lives outside the (zero-width when closed) sidebar so it stays
-     anchored next to the traffic lights and only changes state. -->
-<div class="fixed left-[4.55rem] top-[5px] z-50">
+     anchored next to the traffic lights and only changes state. It sits in a
+     top-anchored h-9 row and is vertically centered, matching the page back
+     buttons (also an icon-sm centered in an h-9 header) so the two align. -->
+<div class="fixed left-[4.55rem] top-0 z-50 flex h-9 items-center">
 	<Tooltip.Provider delayDuration={300}>
 		<Tooltip.Root>
 			<Tooltip.Trigger>

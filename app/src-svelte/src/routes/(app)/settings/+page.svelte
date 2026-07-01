@@ -55,8 +55,9 @@
 	<!-- Slim Granola-style title bar: icon-only back, small centered title.
 	     When the sidebar is collapsed this bar reaches the window's left edge, so
 	     pad past the traffic lights and the (fixed) sidebar toggle and sit the back
-	     button on the same row. h-9 keeps it vertically aligned with that toggle
-	     (top-[5px]); the padding animates with the 300ms collapse so it slides. -->
+	     button on the same row. Both this h-9 header and the sidebar toggle center
+	     an icon-sm in a top-anchored h-9 row, so they align; the padding animates
+	     with the 300ms collapse so it slides. -->
 	<div class="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
 		<div
 			data-tauri-drag-region="deep"
