@@ -1,25 +1,34 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowLeft, ChevronRight, Folder } from '@lucide/svelte';
+	import { ArrowLeft, ChevronRight, Folder, Search } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import { cn } from '$lib/utils';
+	import { groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
+	import { clock } from '$lib/now.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 
 	const folderId = $derived(page.url.searchParams.get('id'));
 	const folder = $derived(sidebar.folders.find((f) => f.id === folderId) ?? null);
 
-	// Newest first; ISO strings sort chronologically, so a lexical compare is enough.
 	const meetings = $derived(
-		folderId
-			? sidebar.meetings
-					.filter((m) => m.folderId === folderId)
-					.toSorted((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))
-			: []
+		folderId ? sidebar.meetings.filter((m) => m.folderId === folderId) : []
 	);
+
+	let query = $state('');
+
+	const filtered = $derived(
+		query.trim()
+			? meetings.filter((m) => m.title.toLowerCase().includes(query.trim().toLowerCase()))
+			: meetings
+	);
+
+	// Recency buckets, newest first; the current week lists freely (no header).
+	const groups = $derived(groupByRecency(filtered, (m) => m.createdAt, clock.now));
 
 	function goBack(): void {
 		history.back();
@@ -105,7 +114,7 @@
 					<Button variant="outline" size="sm" onclick={() => goto('/')}>Go home</Button>
 				</div>
 			{:else}
-				<header class="mb-6 flex items-center gap-3">
+				<header class="mb-5 flex items-center gap-3">
 					<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
 						<Folder class="size-5 text-muted-foreground" />
 					</div>
@@ -118,6 +127,21 @@
 					</div>
 				</header>
 
+				{#if meetings.length > 0}
+					<div class="relative mb-5">
+						<Search
+							class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+						/>
+						<Input
+							class="pl-9"
+							placeholder="Search notes in this folder"
+							aria-label="Search notes in this folder"
+							value={query}
+							oninput={(e) => (query = e.currentTarget.value)}
+						/>
+					</div>
+				{/if}
+
 				{#if meetings.length === 0}
 					<div class="flex flex-col items-center gap-2 py-20 text-center">
 						<p class="text-sm text-muted-foreground">No notes in this folder yet.</p>
@@ -125,26 +149,37 @@
 							Drag a note onto this folder in the sidebar to add it here.
 						</p>
 					</div>
+				{:else if filtered.length === 0}
+					<div class="py-16 text-center text-sm text-muted-foreground">
+						No notes match “{query.trim()}”.
+					</div>
 				{:else}
-					<div class="flex flex-col gap-2">
-						{#each meetings as meeting (meeting.id)}
-							<button
-								type="button"
-								onclick={() => openMeeting(meeting.id)}
-								class="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-secondary"
-							>
-								<div class="min-w-0">
-									<div class="truncate font-medium text-foreground">{meeting.title}</div>
-									{#if formatWhen(meeting.createdAt)}
-										<div class="mt-0.5 text-xs text-muted-foreground">
-											{formatWhen(meeting.createdAt)}
+					<div class="flex flex-col gap-5">
+						{#each groups as group (group.label)}
+							<div class="flex flex-col gap-2">
+								{#if group.label !== RECENT_GROUP_LABEL}
+									<h3 class="px-1 text-xs font-medium text-muted-foreground/70">{group.label}</h3>
+								{/if}
+								{#each group.items as meeting (meeting.id)}
+									<button
+										type="button"
+										onclick={() => openMeeting(meeting.id)}
+										class="group flex w-full items-center justify-between gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-secondary"
+									>
+										<div class="min-w-0">
+											<div class="truncate font-medium text-foreground">{meeting.title}</div>
+											{#if formatWhen(meeting.createdAt)}
+												<div class="mt-0.5 text-xs text-muted-foreground">
+													{formatWhen(meeting.createdAt)}
+												</div>
+											{/if}
 										</div>
-									{/if}
-								</div>
-								<ChevronRight
-									class="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
-								/>
-							</button>
+										<ChevronRight
+											class="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-muted-foreground"
+										/>
+									</button>
+								{/each}
+							</div>
 						{/each}
 					</div>
 				{/if}
