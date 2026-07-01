@@ -45,9 +45,7 @@ export default defineConfig({
 	// runs as an Oxlint JS plugin. Tailwind v4 is CSS-first (no tailwind.config.js),
 	// so point it at the CSS entry that imports tailwindcss.
 	lint: {
-		// Skip generated output and the shadcn-svelte primitives (verbatim registry
-		// source; their `cn-*` marker classes and arbitrary variants are intentional).
-		ignorePatterns: ['.svelte-kit/**', 'build/**', 'src/lib/components/ui/**'],
+		ignorePatterns: ['.svelte-kit/**', 'build/**'],
 		plugins: ['typescript', 'import', 'unicorn', 'oxc'],
 		jsPlugins: ['eslint-plugin-better-tailwindcss'],
 		settings: {
@@ -56,12 +54,26 @@ export default defineConfig({
 			}
 		},
 		rules: {
-			'better-tailwindcss/no-unknown-classes': 'warn',
+			// `cn-*` are shadcn-svelte "nova" component marker classes, not Tailwind
+			// utilities — accept the convention (genuine typos are still flagged).
+			'better-tailwindcss/no-unknown-classes': ['warn', { ignore: ['^cn-'] }],
 			'better-tailwindcss/no-duplicate-classes': 'warn',
 			'better-tailwindcss/no-unnecessary-whitespace': 'warn',
 			'better-tailwindcss/enforce-canonical-classes': ['warn', { collapse: false }],
 			'better-tailwindcss/enforce-shorthand-classes': 'off'
-		}
+		},
+		overrides: [
+			{
+				// The shadcn-svelte "nova" primitives are verbatim registry source. Their
+				// arbitrary variants ([&>*]:…) are intentional; leave them byte-parity with
+				// the registry so `shadcn-svelte update` stays clean. Everything else
+				// (unused vars, duplicate/unknown classes, …) still lints here.
+				files: ['src/lib/components/ui/**'],
+				rules: {
+					'better-tailwindcss/enforce-canonical-classes': 'off'
+				}
+			}
+		]
 	},
 
 	// Formatting via `vp fmt` (Oxfmt, Prettier-compatible) — match the existing
