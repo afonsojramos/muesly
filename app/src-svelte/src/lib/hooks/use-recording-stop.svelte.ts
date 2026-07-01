@@ -58,7 +58,6 @@ export function useRecordingStop(
 		recordingState.setStatus(RecordingStatus.STOPPING);
 		setIsRecording(false);
 		setIsRecordingDisabled(true);
-		const stopStartTime = Date.now();
 
 		try {
 			recordingState.setStatus(RecordingStatus.PROCESSING_TRANSCRIPTS, 'Waiting for transcription...');
