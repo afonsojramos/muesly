@@ -20,6 +20,8 @@
 
 	import { Analytics } from '$lib/analytics';
 	import { cn } from '$lib/utils';
+	import { compareByDateDesc, groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
+	import { clock } from '$lib/now.svelte';
 	import { toast } from '$lib/toast';
 	import { config } from '$lib/stores/config.svelte';
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
@@ -65,61 +67,27 @@
 		);
 	});
 
-	// Granola-style relative date headings: Today, Yesterday, weekday, then dates.
-	function dateGroupLabel(iso?: string): string {
-		if (!iso) return 'Earlier';
-		const d = new Date(iso);
-		if (isNaN(d.getTime())) return 'Earlier';
-		const now = new Date();
-		const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-		const diffDays = Math.round((startOfToday.getTime() - startOfDay.getTime()) / 86400000);
-		if (diffDays <= 0) return 'Today';
-		if (diffDays === 1) return 'Yesterday';
-		if (d.getFullYear() === now.getFullYear())
-			return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-		return d.toLocaleDateString(undefined, {
-			weekday: 'short',
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric'
-		});
-	}
+	// O(1) folder-name lookup for the search-result folder chips — rebuilt only
+	// when folders change, instead of scanning sidebar.folders per rendered row.
+	const folderNames = $derived(new Map(sidebar.folders.map((f) => [f.id, f.name])));
 
-	interface NoteGroup {
-		label: string;
-		items: CurrentMeeting[];
-	}
-
-	interface FolderSection {
-		id: string;
-		name: string;
-		meetings: CurrentMeeting[];
-	}
-
-	// Folder sections (above the date groups). When searching, hide folders with no
-	// matching meetings; otherwise show every folder so users can move notes into them.
-	const folderSections = $derived.by((): FolderSection[] =>
-		sidebar.folders
-			.map((f) => ({
-				id: f.id,
-				name: f.name,
-				meetings: filteredMeetings.filter((m) => m.folderId === f.id)
-			}))
-			.filter((s) => (searchQuery.trim() ? s.meetings.length > 0 : true))
+	// Flat, recency-sorted results while searching — spans folders and uncategorized
+	// notes so a note tucked inside a folder is still reachable from the search box.
+	const searchResults = $derived(
+		searchQuery.trim()
+			? [...filteredMeetings].sort((a, b) => compareByDateDesc(a.createdAt, b.createdAt))
+			: []
 	);
 
-	// Uncategorized meetings, date-grouped (Today / Yesterday / …).
-	const uncategorizedGroups = $derived.by((): NoteGroup[] => {
-		const groups: NoteGroup[] = [];
-		for (const item of filteredMeetings.filter((m) => !m.folderId)) {
-			const label = dateGroupLabel(item.createdAt);
-			const last = groups[groups.length - 1];
-			if (last && last.label === label) last.items.push(item);
-			else groups.push({ label, items: [item] });
-		}
-		return groups;
-	});
+	// Uncategorized notes, bucketed by recency. The current week is one free-flowing
+	// list (rendered without a header); older notes fall into wider, headed buckets.
+	const uncategorizedGroups = $derived(
+		groupByRecency(
+			filteredMeetings.filter((m) => !m.folderId),
+			(m) => m.createdAt,
+			clock.now
+		)
+	);
 
 	const hasAnyNotes = $derived(filteredMeetings.length > 0 || sidebar.folders.length > 0);
 
@@ -510,6 +478,7 @@
 						id="sidebar-search"
 						class="h-7 border-transparent bg-foreground/[0.04] pl-8 pr-8 shadow-none focus:bg-background"
 						placeholder="Search"
+						aria-label="Search notes"
 						value={searchQuery}
 						oninput={(e) => handleSearchChange(e.currentTarget.value)}
 					/>
@@ -581,6 +550,7 @@
 					{@const isActive = sidebar.currentMeeting?.id === meeting.id}
 					{@const isMeeting = isMeetingItem(meeting.id)}
 					{@const matchingResult = isMeeting ? findMatchingSnippet(meeting.id) : null}
+					{@const folderName = meeting.folderId ? (folderNames.get(meeting.folderId) ?? null) : null}
 					<div
 						class={cn(
 							'group my-px flex flex-col rounded-md px-2 py-1 text-[13px] transition-colors duration-150',
@@ -604,6 +574,14 @@
 							>
 								{meeting.title}
 							</button>
+							{#if folderName}
+								<span
+									class="flex min-w-0 max-w-[45%] flex-shrink-0 items-center gap-1 text-xs text-muted-foreground/60 group-hover:hidden group-focus-within:hidden"
+								>
+									<Folder class="size-3 shrink-0" />
+									<span class="truncate">{folderName}</span>
+								</span>
+							{/if}
 							{#if isMeeting}
 								<div
 									data-no-drag
@@ -692,7 +670,12 @@
 				{/snippet}
 
 				<!-- Folders header + create -->
-				<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
+				<div
+					class={cn(
+						'flex items-center justify-between px-2 pb-0.5 pt-2',
+						searchQuery.trim() && 'hidden'
+					)}
+				>
 					<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
 					<Tooltip.Provider delayDuration={300}>
 						<Tooltip.Root>
@@ -715,7 +698,7 @@
 					</Tooltip.Provider>
 				</div>
 
-				{#each folderSections as section (section.id)}
+				{#each searchQuery.trim() ? [] : sidebar.folders as section (section.id)}
 					<!-- Whole section is a drop target; highlight while a note is dragged over. -->
 					<div
 						class={cn(
@@ -806,20 +789,30 @@
 						dragOverTarget === 'uncategorized' && 'bg-accent/10 ring-1 ring-accent/40'
 					)}
 				>
-					{#each uncategorizedGroups as group (group.label)}
-						<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
-							{group.label}
-						</div>
-						{#each group.items as child (child.id)}
-							{@render meetingRow(child)}
+					{#if searchQuery.trim()}
+						{#if searchResults.length === 0 && !sidebar.isSearching}
+							<div class="px-2 py-3 text-sm text-muted-foreground">No notes found</div>
+						{:else}
+							{#each searchResults as child (child.id)}
+								{@render meetingRow(child)}
+							{/each}
+						{/if}
+					{:else}
+						{#each uncategorizedGroups as group (group.label)}
+							{#if group.label !== RECENT_GROUP_LABEL}
+								<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
+									{group.label}
+								</div>
+							{/if}
+							{#each group.items as child (child.id)}
+								{@render meetingRow(child)}
+							{/each}
 						{/each}
-					{/each}
+					{/if}
 				</div>
 
-				{#if !hasAnyNotes && !sidebar.isSearching}
-					<div class="px-2 py-3 text-sm text-muted-foreground">
-						{searchQuery ? 'No notes found' : 'No notes yet'}
-					</div>
+				{#if !hasAnyNotes && !searchQuery.trim()}
+					<div class="px-2 py-3 text-sm text-muted-foreground">No notes yet</div>
 				{/if}
 			</div>
 
