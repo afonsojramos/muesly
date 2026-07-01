@@ -89,13 +89,6 @@
 		});
 	}
 
-	function timeLabel(iso?: string): string | null {
-		if (!iso) return null;
-		const d = new Date(iso);
-		if (isNaN(d.getTime())) return null;
-		return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-	}
-
 	interface NoteGroup {
 		label: string;
 		items: CurrentMeeting[];
@@ -598,7 +591,6 @@
 					{@const isActive = sidebar.currentMeeting?.id === meeting.id}
 					{@const isMeeting = isMeetingItem(meeting.id)}
 					{@const matchingResult = isMeeting ? findMatchingSnippet(meeting.id) : null}
-					{@const time = timeLabel(meeting.createdAt)}
 					<div
 						class={cn(
 							'group my-px flex flex-col rounded-md px-2 py-1 text-[13px] transition-colors duration-150',
@@ -694,13 +686,6 @@
 										</Tooltip.Root>
 									</Tooltip.Provider>
 								</div>
-							{/if}
-							{#if time}
-								<span
-									class="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60 group-hover:hidden group-focus-within:hidden"
-								>
-									{time}
-								</span>
 							{/if}
 						</div>
 
