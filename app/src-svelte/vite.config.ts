@@ -77,12 +77,14 @@ export default defineConfig({
 	},
 
 	// Formatting via `vp fmt` (Oxfmt, Prettier-compatible) — match the existing
-	// code style (tabs, single quotes, semicolons, 100 cols).
+	// code style (tabs, single quotes, semicolons, 100 cols). `svelte: true`
+	// enables .svelte formatting; Oxfmt uses the project's own svelte compiler.
 	fmt: {
 		ignorePatterns: ['.svelte-kit/**', 'build/**'],
 		useTabs: true,
 		singleQuote: true,
 		semi: true,
-		printWidth: 100
+		printWidth: 100,
+		svelte: true
 	}
 });
