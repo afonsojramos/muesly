@@ -30,6 +30,8 @@ pnpm -C src-svelte lint   # Oxlint + eslint-plugin-better-tailwindcss (via Vite+
 pnpm -C src-svelte format # Oxfmt (via Vite+ `vp`); `format:check` verifies without writing
 ```
 
+The root `package.json` is script-delegation only (no workspace — lockfiles stay separate): `pnpm dev` / `build` / `check` / `lint` / `format` / `test` from the repo root forward to the commands above.
+
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 
 Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in `app/src-svelte/vite.config.ts` under the `lint` / `fmt` keys (Tailwind linting via `eslint-plugin-better-tailwindcss` as an Oxlint JS plugin, pointed at `src/app.css`). Requires the `vp` CLI on PATH. The shadcn-svelte primitives in `src/lib/components/ui/**` are excluded from lint (verbatim registry source).

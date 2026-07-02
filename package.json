@@ -1,0 +1,15 @@
+{
+	"name": "muesly-root",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "pnpm -C app tauri:dev",
+		"build": "pnpm -C app tauri:build",
+		"check": "pnpm -C app/src-svelte check",
+		"lint": "pnpm -C app/src-svelte lint",
+		"lint:fix": "pnpm -C app/src-svelte lint:fix",
+		"format": "pnpm -C app/src-svelte format",
+		"format:check": "pnpm -C app/src-svelte format:check",
+		"test": "pnpm -C app/src-svelte test"
+	}
+}
