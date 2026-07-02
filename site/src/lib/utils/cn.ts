@@ -1,7 +1,4 @@
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-
-/** Merge class lists, resolving Tailwind conflicts so the last wins. */
-export function cn(...inputs: ClassValue[]): string {
-	return twMerge(clsx(inputs));
-}
+// Tailwind class merger with conflict resolution. cnfast is a drop-in for the
+// clsx + tailwind-merge `cn` pattern (byte-identical output, ~3.8x faster) —
+// same convention as the app (app/src-svelte/src/lib/utils.ts).
+export { cn } from 'cnfast';
