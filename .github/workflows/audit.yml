@@ -16,6 +16,12 @@ on:
   schedule:
     - cron: "0 6 * * 1" # Mondays: catch advisories filed after a PR merged
 
+# audit-check reports results by creating a Check Run, which needs an explicit
+# grant when the default GITHUB_TOKEN is read-only.
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   cargo-audit:
     runs-on: ubuntu-22.04
