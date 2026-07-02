@@ -45,7 +45,7 @@ If you wire deploys through GitHub Actions instead, trigger the workflow `on: pu
 ## Stack
 
 - Astro (static output) + TypeScript
-- Tailwind CSS 4 via `@tailwindcss/postcss`
+- Tailwind CSS 4 via `@tailwindcss/vite`
 - `astro-icon` with the Lucide icon set
 - Inter + Lora via `@fontsource-variable/*`
 - Brand tokens lifted from the desktop app (`app/src-svelte/src/app.css`)
