@@ -1,0 +1,11 @@
+# cargo-audit configuration (read by the Security Audit workflow).
+
+[advisories]
+# quick-xml DoS advisories (quadratic attribute check / unbounded NsReader
+# allocation), fixed in quick-xml >= 0.41.0. Both copies in our tree are
+# transitive via Tauri — plist (macOS bundle metadata) and
+# tauri-winrt-notification (Windows toast XML we generate ourselves) — so no
+# attacker-controlled XML reaches them in this desktop app. Remove these once
+# plist / tauri-winrt-notification release with quick-xml >= 0.41 and
+# `cargo update plist tauri-winrt-notification` picks them up.
+ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
