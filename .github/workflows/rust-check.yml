@@ -38,6 +38,18 @@ jobs:
         with:
           workspaces: ". -> target"
 
+      # tauri-build only verifies that the externalBin files exist; unit tests
+      # never spawn them, and building the real sidecars would compile llama.cpp
+      # here. The release workflow builds the real ones. FFmpeg is not stubbed:
+      # the app's build script downloads it itself.
+      - name: Stub Tauri sidecar binaries
+        run: |
+          mkdir -p app/src-tauri/binaries
+          triple=$(rustc -vV | sed -n 's/host: //p')
+          for bin in llama-helper diarization-helper; do
+            install -m 755 /dev/null "app/src-tauri/binaries/$bin-$triple"
+          done
+
       # Blocking gate: the suite must pass.
       # --lib excludes doctests: two doc examples in fallback.rs and templates/mod.rs
       # fail to compile (pre-existing, unrelated to this workflow). Unit tests are the
