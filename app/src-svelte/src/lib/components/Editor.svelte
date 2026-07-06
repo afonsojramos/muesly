@@ -124,16 +124,38 @@
 	}
 	.tiptap-prose :global(.ProseMirror ul),
 	.tiptap-prose :global(.ProseMirror ol) {
+		list-style: none;
 		padding-left: 1.5rem;
 	}
-	.tiptap-prose :global(.ProseMirror ul) {
-		list-style: disc;
-	}
-	.tiptap-prose :global(.ProseMirror ol) {
-		list-style: decimal;
+	/* Render list items as plain blocks with a pseudo-element marker rather than a
+	   native `display: list-item` box. A list-item <li> makes Blink draw the text
+	   caret at the FULL (multi-line) height of the item, so a wrapped bullet shows a
+	   caret several lines tall. Dropping list-item removes that caret geometry — the
+	   cursor then anchors to the paragraph text like any other block. Same fix used
+	   by the Skiff and CZI ProseMirror editors. */
+	.tiptap-prose :global(.ProseMirror li) {
+		display: block;
+		list-style: none;
+		position: relative;
 	}
 	.tiptap-prose :global(.ProseMirror li > p) {
 		margin: 0;
+	}
+	.tiptap-prose :global(.ProseMirror ul > li::before) {
+		content: '•';
+		position: absolute;
+		left: -1.1rem;
+	}
+	.tiptap-prose :global(.ProseMirror ol) {
+		counter-reset: ol-counter;
+	}
+	.tiptap-prose :global(.ProseMirror ol > li) {
+		counter-increment: ol-counter;
+	}
+	.tiptap-prose :global(.ProseMirror ol > li::before) {
+		content: counter(ol-counter) '.';
+		position: absolute;
+		left: -1.4rem;
 	}
 	.tiptap-prose :global(.ProseMirror a) {
 		color: var(--color-accent);
