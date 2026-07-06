@@ -314,6 +314,9 @@ class TranscriptStore {
 	async #syncFromBackend(): Promise<void> {
 		try {
 			const history = await transcriptService.getTranscriptHistory();
+			// Defensive: a webview reload can orphan the invoke callback so the promise
+			// resolves undefined instead of the segment array. Skip rather than crash.
+			if (!Array.isArray(history)) return;
 			const formatted: Transcript[] = history.map((segment) => {
 				const s = segment as unknown as Transcript & { display_time?: string };
 				return {
