@@ -3,6 +3,7 @@
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
@@ -255,11 +256,15 @@
 		// Clear any lingering "Saved" flash from the previously viewed meeting.
 		saveStatus.reset();
 
-		// ⌘T toggles the side panel, matching the tooltip hint.
+		// ⌘T toggles the side panel; ⌘[ navigates back, matching the tooltip hints.
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 't') {
 				e.preventDefault();
 				sidePanelState.toggle();
+			}
+			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === '[') {
+				e.preventDefault();
+				history.back();
 			}
 		};
 		window.addEventListener('keydown', handleKeydown);
@@ -306,6 +311,28 @@
 			     toggle button block dragging on themselves. -->
 			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-7">
 				<div class="flex items-start gap-2">
+					<Tooltip.Provider delayDuration={300}>
+						<Tooltip.Root>
+							<Tooltip.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...props}
+										onclick={() => history.back()}
+										variant="ghost"
+										size="icon-sm"
+										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
+										aria-label="Back"
+									>
+										<ArrowLeftIcon />
+									</Button>
+								{/snippet}
+							</Tooltip.Trigger>
+							<Tooltip.Content>
+								Back
+								<span class="ml-1.5 tracking-wide opacity-60">⌘[</span>
+							</Tooltip.Content>
+						</Tooltip.Root>
+					</Tooltip.Provider>
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
