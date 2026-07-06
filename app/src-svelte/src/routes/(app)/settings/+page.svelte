@@ -1,17 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { ArrowLeft } from '@lucide/svelte';
 
-	import * as Tabs from '$lib/components/ui/tabs';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 
 	import { config } from '$lib/stores/config.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
+	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import About from '$lib/components/About.svelte';
-	// Beta section disabled: Import Audio & Retranscribe graduated to a standard feature.
-	// import BetaSettings from '$lib/components/BetaSettings.svelte';
 	import CalendarSettings from '$lib/components/CalendarSettings.svelte';
 	import PreferenceSettings from '$lib/components/PreferenceSettings.svelte';
 	import RecordingSettings from '$lib/components/RecordingSettings.svelte';
@@ -22,17 +21,15 @@
 
 	const platform = usePlatform();
 
-	// Calendar context relies on macOS EventKit, so the tab is macOS-only.
-	const tabs: { value: string; label: string }[] = $derived([
-		{ value: 'general', label: 'General' },
-		{ value: 'recording', label: 'Recordings' },
-		...(platform.isMac ? [{ value: 'calendar', label: 'Calendar' }] : []),
-		{ value: 'transcription', label: 'Transcription' },
-		{ value: 'summary', label: 'Summary' },
-		{ value: 'trash', label: 'Trash' },
-		// { value: 'beta', label: 'Beta' },
-		{ value: 'about', label: 'About' },
-	]);
+	// The active section is driven by the URL (?tab=…); the sidebar provides the
+	// navigation. Calendar is macOS-only, so fall back to General off it.
+	const activeTab = $derived.by(() => {
+		const tab = resolveSettingsTab(page.url.searchParams.get('tab'));
+		return tab === 'calendar' && !platform.isMac ? 'general' : tab;
+	});
+	const activeLabel = $derived(
+		[...SETTINGS_TABS, SETTINGS_TRASH].find((t) => t.value === activeTab)?.label ?? 'General',
+	);
 
 	function goBack(): void {
 		history.back();
@@ -52,12 +49,11 @@
 </script>
 
 <div class="flex h-screen flex-col bg-background">
-	<!-- Slim Granola-style title bar: icon-only back, small centered title.
-	     When the sidebar is collapsed this bar reaches the window's left edge, so
-	     pad past the traffic lights and the (fixed) sidebar toggle and sit the back
-	     button on the same row. Both this h-9 header and the sidebar toggle center
-	     an icon-sm in a top-anchored h-9 row, so they align; the padding animates
-	     with the 300ms collapse so it slides. -->
+	<!-- Slim title bar: icon-only back, small centered title. When the sidebar is
+	     collapsed this bar reaches the window's left edge, so pad past the traffic
+	     lights and the (fixed) sidebar toggle and sit the back button on the same
+	     row. Both this h-9 header and the sidebar toggle center an icon-sm in a
+	     top-anchored h-9 row, so they align; padding animates with the collapse. -->
 	<div class="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
 		<div
 			data-tauri-drag-region="deep"
@@ -97,41 +93,26 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
-		<div class="mx-auto max-w-6xl p-8 pt-6">
-			<Tabs.Root value={tabs[0]?.value ?? 'general'} class="w-full">
-				<Tabs.List variant="line" class="w-full justify-start border-b border-border">
-					{#each tabs as tab (tab.value)}
-						<Tabs.Trigger value={tab.value}>{tab.label}</Tabs.Trigger>
-					{/each}
-				</Tabs.List>
-				<Tabs.Content value="general" class="mt-4">
-					<PreferenceSettings />
-				</Tabs.Content>
-				<Tabs.Content value="recording" class="mt-4">
-					<RecordingSettings />
-				</Tabs.Content>
-				{#if platform.isMac}
-					<Tabs.Content value="calendar" class="mt-4">
-						<CalendarSettings />
-					</Tabs.Content>
-				{/if}
-				<Tabs.Content value="transcription" class="mt-4">
-					<TranscriptSettings
-						transcriptModelConfig={config.transcriptModelConfig}
-						setTranscriptModelConfig={config.setTranscriptModelConfig}
-					/>
-				</Tabs.Content>
-				<Tabs.Content value="summary" class="mt-4">
-					<SummaryModelSettings />
-				</Tabs.Content>
-				<Tabs.Content value="trash" class="mt-4">
-					<TrashSettings />
-				</Tabs.Content>
-				<!-- Beta tab disabled; Import & Retranscribe is now a standard feature. -->
-				<Tabs.Content value="about" class="mt-4">
-					<About />
-				</Tabs.Content>
-			</Tabs.Root>
+		<div class="mx-auto max-w-4xl p-8 pt-6">
+			<h2 class="mb-4 text-lg font-semibold">{activeLabel}</h2>
+			{#if activeTab === 'general'}
+				<PreferenceSettings />
+			{:else if activeTab === 'recording'}
+				<RecordingSettings />
+			{:else if activeTab === 'calendar' && platform.isMac}
+				<CalendarSettings />
+			{:else if activeTab === 'transcription'}
+				<TranscriptSettings
+					transcriptModelConfig={config.transcriptModelConfig}
+					setTranscriptModelConfig={config.setTranscriptModelConfig}
+				/>
+			{:else if activeTab === 'summary'}
+				<SummaryModelSettings />
+			{:else if activeTab === 'trash'}
+				<TrashSettings />
+			{:else if activeTab === 'about'}
+				<About />
+			{/if}
 		</div>
 	</div>
 </div>

@@ -27,6 +27,8 @@
 	import { sidebar, type CurrentMeeting } from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
+	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
@@ -42,6 +44,12 @@
 
 	const pathname = $derived(page.url.pathname);
 
+	// While in Settings, the sidebar shows the settings sections instead of folders
+	// (Trash pinned to the bottom). Navigation is URL-driven (/settings?tab=…).
+	const platform = usePlatform();
+	const isSettings = $derived(pathname.startsWith('/settings'));
+	const settingsTabs = $derived(SETTINGS_TABS.filter((t) => !t.macOnly || platform.isMac));
+	const activeSettingsTab = $derived(resolveSettingsTab(page.url.searchParams.get('tab')));
 
 	// Folder + move-to-folder modals.
 	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
@@ -77,8 +85,7 @@
 		const emoji = folderEmojiInput.trim() || null;
 		try {
 			if (folderModal.mode === 'create') await sidebar.createFolder(name, emoji);
-			else if (folderModal.folderId)
-				await sidebar.updateFolder(folderModal.folderId, name, emoji);
+			else if (folderModal.folderId) await sidebar.updateFolder(folderModal.folderId, name, emoji);
 			folderModal = { open: false, mode: 'create', folderId: null };
 			folderNameInput = '';
 			folderEmojiInput = '';
@@ -597,120 +604,155 @@
 					</div>
 				{/snippet}
 
-				<!-- Folders header + create -->
-				<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
-					<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
-					<Tooltip.Provider delayDuration={300}>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										variant="ghost"
-										size="icon-xs"
-										onclick={openCreateFolder}
-										class="text-muted-foreground"
-										aria-label="New folder"
-									>
-										<FolderPlus />
-									</Button>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>New folder</Tooltip.Content>
-						</Tooltip.Root>
-					</Tooltip.Provider>
-				</div>
-
-				{#each sidebar.folders as section (section.id)}
-					<!-- Whole section is a drop target; highlight while a note is dragged over. -->
-					<div
-						class={cn(
-							'rounded-md transition-colors',
-							dragOverTarget === section.id && 'bg-accent/10 ring-1 ring-accent/40',
-						)}
-						role="group"
-						data-drop-target={section.id}
-					>
-						<div
-							class="group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
-							data-roving-row
+				{#if isSettings}
+					<!-- Settings sections (replaces folders while in Settings) -->
+					<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">Settings</div>
+					{#each settingsTabs as tab (tab.value)}
+						<button
+							type="button"
+							onclick={() => goto(`/settings?tab=${tab.value}`)}
+							class={cn(
+								'my-px flex w-full items-center rounded-md px-2 py-1.5 text-[13px] transition-colors',
+								activeSettingsTab === tab.value
+									? 'bg-secondary font-medium text-foreground'
+									: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
+							)}
 						>
-							<button
-								type="button"
-								onclick={() => goto(`/folder?id=${section.id}`)}
-								onkeydown={handleRovingKeydown}
-								data-roving
-								class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								aria-label={`Open folder ${section.name}`}
-							>
-								{#if section.emoji}
-									<span class="flex-shrink-0 text-[13px] leading-none">{section.emoji}</span>
-								{:else}
-									<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
-								{/if}
-								<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
-							</button>
+							{tab.label}
+						</button>
+					{/each}
+				{:else}
+					<!-- Folders header + create -->
+					<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
+						<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon-xs"
+											onclick={openCreateFolder}
+											class="text-muted-foreground"
+											aria-label="New folder"
+										>
+											<FolderPlus />
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>New folder</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+					</div>
+
+					{#each sidebar.folders as section (section.id)}
+						<!-- Whole section is a drop target; highlight while a note is dragged over. -->
+						<div
+							class={cn(
+								'rounded-md transition-colors',
+								dragOverTarget === section.id && 'bg-accent/10 ring-1 ring-accent/40',
+							)}
+							role="group"
+							data-drop-target={section.id}
+						>
 							<div
-								class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-secondary pl-2 group-hover/folder:flex group-focus-within/folder:flex"
+								class="group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
+								data-roving-row
 							>
-								<Tooltip.Provider delayDuration={300}>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon-xs"
-													onclick={() => openRenameFolder(section.id, section.name, section.emoji ?? null)}
-													onkeydown={handleRovingKeydown}
-													data-roving
-													tabindex={-1}
-													class="text-muted-foreground hover:bg-border"
-													aria-label="Rename folder"
-												>
-													<Pencil />
-												</Button>
-											{/snippet}
-										</Tooltip.Trigger>
-										<Tooltip.Content>Rename folder</Tooltip.Content>
-									</Tooltip.Root>
-								</Tooltip.Provider>
-								<Tooltip.Provider delayDuration={300}>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon-xs"
-													onclick={() =>
-														(deleteFolderModal = {
-															open: true,
-															folderId: section.id,
-															name: section.name,
-														})}
-													onkeydown={handleRovingKeydown}
-													data-roving
-													tabindex={-1}
-													class="text-muted-foreground hover:bg-border hover:text-destructive"
-													aria-label="Delete folder"
-												>
-													<Trash2 />
-												</Button>
-											{/snippet}
-										</Tooltip.Trigger>
-										<Tooltip.Content>Delete folder</Tooltip.Content>
-									</Tooltip.Root>
-								</Tooltip.Provider>
+								<button
+									type="button"
+									onclick={() => goto(`/folder?id=${section.id}`)}
+									onkeydown={handleRovingKeydown}
+									data-roving
+									class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+									aria-label={`Open folder ${section.name}`}
+								>
+									{#if section.emoji}
+										<span class="flex-shrink-0 text-[13px] leading-none">{section.emoji}</span>
+									{:else}
+										<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
+									{/if}
+									<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
+								</button>
+								<div
+									class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-secondary pl-2 group-hover/folder:flex group-focus-within/folder:flex"
+								>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onclick={() =>
+															openRenameFolder(section.id, section.name, section.emoji ?? null)}
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border"
+														aria-label="Rename folder"
+													>
+														<Pencil />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Rename folder</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onclick={() =>
+															(deleteFolderModal = {
+																open: true,
+																folderId: section.id,
+																name: section.name,
+															})}
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border hover:text-destructive"
+														aria-label="Delete folder"
+													>
+														<Trash2 />
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Delete folder</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
+								</div>
 							</div>
 						</div>
-					</div>
-				{/each}
-
+					{/each}
+				{/if}
 			</div>
 
 			<!-- Footer -->
 			<div class="flex-shrink-0 border-t border-border px-3 py-2">
+				{#if isSettings}
+					<!-- Trash pinned to the bottom of the settings nav. -->
+					<button
+						type="button"
+						onclick={() => goto(`/settings?tab=${SETTINGS_TRASH.value}`)}
+						class={cn(
+							'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+							activeSettingsTab === SETTINGS_TRASH.value
+								? 'bg-secondary font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+						)}
+					>
+						<Trash2 class="size-4" />
+						<span>{SETTINGS_TRASH.label}</span>
+					</button>
+				{/if}
 				<button
 					onclick={() => importDialog.openImportDialog()}
 					class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"

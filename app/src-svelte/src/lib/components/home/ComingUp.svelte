@@ -35,7 +35,7 @@
 								variant="ghost"
 								size="icon-sm"
 								class="text-muted-foreground"
-								onclick={() => goto('/settings')}
+								onclick={() => goto('/settings?tab=calendar')}
 								aria-label="Calendar settings"
 							>
 								<SlidersHorizontal />
