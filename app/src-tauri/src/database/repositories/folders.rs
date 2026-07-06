@@ -8,40 +8,50 @@ impl FoldersRepository {
     /// All folders, alphabetical.
     pub async fn list_folders(pool: &SqlitePool) -> Result<Vec<FolderModel>, sqlx::Error> {
         sqlx::query_as::<_, FolderModel>(
-            "SELECT id, name, created_at, updated_at FROM folders ORDER BY name COLLATE NOCASE ASC",
+            "SELECT id, name, emoji, created_at, updated_at FROM folders ORDER BY name COLLATE NOCASE ASC",
         )
         .fetch_all(pool)
         .await
     }
 
     /// Create a folder and return it. Generates a `folder-{uuid}` id.
-    pub async fn create_folder(pool: &SqlitePool, name: &str) -> Result<FolderModel, sqlx::Error> {
+    pub async fn create_folder(
+        pool: &SqlitePool,
+        name: &str,
+        emoji: Option<&str>,
+    ) -> Result<FolderModel, sqlx::Error> {
         let id = format!("folder-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
-        sqlx::query("INSERT INTO folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)")
-            .bind(&id)
-            .bind(name)
-            .bind(now)
-            .bind(now)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "INSERT INTO folders (id, name, emoji, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(name)
+        .bind(emoji)
+        .bind(now)
+        .bind(now)
+        .execute(pool)
+        .await?;
         Ok(FolderModel {
             id,
             name: name.to_string(),
+            emoji: emoji.map(str::to_string),
             created_at: crate::database::models::DateTimeUtc(now),
             updated_at: crate::database::models::DateTimeUtc(now),
         })
     }
 
-    /// Rename a folder. False if it doesn't exist.
-    pub async fn rename_folder(
+    /// Update a folder's name and emoji. False if it doesn't exist.
+    pub async fn update_folder(
         pool: &SqlitePool,
         folder_id: &str,
         name: &str,
+        emoji: Option<&str>,
     ) -> Result<bool, sqlx::Error> {
         let now = Utc::now();
-        let result = sqlx::query("UPDATE folders SET name = ?, updated_at = ? WHERE id = ?")
+        let result = sqlx::query("UPDATE folders SET name = ?, emoji = ?, updated_at = ? WHERE id = ?")
             .bind(name)
+            .bind(emoji)
             .bind(now)
             .bind(folder_id)
             .execute(pool)
@@ -117,25 +127,30 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn create_list_rename_folder() {
+    async fn create_list_update_folder() {
         let pool = test_pool().await;
-        let folder = FoldersRepository::create_folder(&pool, "Work").await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", Some("💼")).await.unwrap();
         assert!(folder.id.starts_with("folder-"));
+        assert_eq!(folder.emoji.as_deref(), Some("💼"));
 
         let folders = FoldersRepository::list_folders(&pool).await.unwrap();
         assert_eq!(folders.len(), 1);
         assert_eq!(folders[0].name, "Work");
+        assert_eq!(folders[0].emoji.as_deref(), Some("💼"));
 
-        assert!(FoldersRepository::rename_folder(&pool, &folder.id, "Projects").await.unwrap());
+        assert!(FoldersRepository::update_folder(&pool, &folder.id, "Projects", Some("📁"))
+            .await
+            .unwrap());
         let folders = FoldersRepository::list_folders(&pool).await.unwrap();
         assert_eq!(folders[0].name, "Projects");
+        assert_eq!(folders[0].emoji.as_deref(), Some("📁"));
     }
 
     #[tokio::test]
     async fn move_meeting_in_and_out_of_folder() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work").await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None).await.unwrap();
 
         assert!(FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap());
         let m = MeetingsRepository::get_meeting_metadata(&pool, "m1").await.unwrap().unwrap();
@@ -150,7 +165,7 @@ mod tests {
     async fn delete_folder_detaches_meetings() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work").await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None).await.unwrap();
         FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap();
 
         assert!(FoldersRepository::delete_folder(&pool, &folder.id).await.unwrap());

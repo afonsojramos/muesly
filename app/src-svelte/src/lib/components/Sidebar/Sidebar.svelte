@@ -50,6 +50,7 @@
 		folderId: null,
 	});
 	let folderNameInput = $state('');
+	let folderEmojiInput = $state('');
 	let deleteFolderModal = $state<{ open: boolean; folderId: string | null; name: string }>({
 		open: false,
 		folderId: null,
@@ -63,19 +64,24 @@
 	function openCreateFolder(): void {
 		folderModal = { open: true, mode: 'create', folderId: null };
 		folderNameInput = '';
+		folderEmojiInput = '';
 	}
-	function openRenameFolder(folderId: string, name: string): void {
+	function openRenameFolder(folderId: string, name: string, emoji: string | null): void {
 		folderModal = { open: true, mode: 'rename', folderId };
 		folderNameInput = name;
+		folderEmojiInput = emoji ?? '';
 	}
 	async function submitFolder(): Promise<void> {
 		const name = folderNameInput.trim();
 		if (!name) return;
+		const emoji = folderEmojiInput.trim() || null;
 		try {
-			if (folderModal.mode === 'create') await sidebar.createFolder(name);
-			else if (folderModal.folderId) await sidebar.renameFolder(folderModal.folderId, name);
+			if (folderModal.mode === 'create') await sidebar.createFolder(name, emoji);
+			else if (folderModal.folderId)
+				await sidebar.updateFolder(folderModal.folderId, name, emoji);
 			folderModal = { open: false, mode: 'create', folderId: null };
 			folderNameInput = '';
+			folderEmojiInput = '';
 		} catch (error) {
 			toast.error('Failed to save folder', {
 				description: error instanceof Error ? error.message : String(error),
@@ -637,7 +643,11 @@
 								class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
 								aria-label={`Open folder ${section.name}`}
 							>
-								<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
+								{#if section.emoji}
+									<span class="flex-shrink-0 text-[13px] leading-none">{section.emoji}</span>
+								{:else}
+									<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
+								{/if}
 								<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
 							</button>
 							<div
@@ -651,7 +661,7 @@
 													{...props}
 													variant="ghost"
 													size="icon-xs"
-													onclick={() => openRenameFolder(section.id, section.name)}
+													onclick={() => openRenameFolder(section.id, section.name, section.emoji ?? null)}
 													onkeydown={handleRovingKeydown}
 													data-roving
 													tabindex={-1}
@@ -793,16 +803,29 @@
 >
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Title class="text-lg font-semibold">
-			{folderModal.mode === 'create' ? 'New folder' : 'Rename folder'}
+			{folderModal.mode === 'create' ? 'New folder' : 'Edit folder'}
 		</Dialog.Title>
-		<Input
-			value={folderNameInput}
-			oninput={(e) => (folderNameInput = e.currentTarget.value)}
-			onkeydown={(e) => {
-				if (e.key === 'Enter') void submitFolder();
-			}}
-			placeholder="Folder name"
-		/>
+		<div class="flex items-center gap-2">
+			<Input
+				value={folderEmojiInput}
+				oninput={(e) => (folderEmojiInput = e.currentTarget.value)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') void submitFolder();
+				}}
+				placeholder="🙂"
+				aria-label="Folder emoji"
+				class="w-14 text-center text-lg"
+			/>
+			<Input
+				value={folderNameInput}
+				oninput={(e) => (folderNameInput = e.currentTarget.value)}
+				onkeydown={(e) => {
+					if (e.key === 'Enter') void submitFolder();
+				}}
+				placeholder="Folder name"
+				class="flex-1"
+			/>
+		</div>
 		<Dialog.Footer>
 			<Button
 				variant="outline"
@@ -857,7 +880,11 @@
 					onclick={() => moveTo(folder.id)}
 					class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
 				>
-					<Folder class="size-4 text-muted-foreground" />
+					{#if folder.emoji}
+						<span class="w-4 flex-shrink-0 text-center text-sm leading-none">{folder.emoji}</span>
+					{:else}
+						<Folder class="size-4 text-muted-foreground" />
+					{/if}
 					<span class="truncate">{folder.name}</span>
 				</button>
 			{/each}

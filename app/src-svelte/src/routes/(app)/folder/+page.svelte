@@ -137,8 +137,14 @@
 				</div>
 			{:else}
 				<header class="mb-5 flex items-center gap-3">
-					<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary">
-						<Folder class="size-5 text-muted-foreground" />
+					<div
+						class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary text-xl"
+					>
+						{#if folder?.emoji}
+							{folder.emoji}
+						{:else}
+							<Folder class="size-5 text-muted-foreground" />
+						{/if}
 					</div>
 					<div class="min-w-0">
 						<h2 class="truncate text-xl font-semibold text-foreground">{folder.name}</h2>

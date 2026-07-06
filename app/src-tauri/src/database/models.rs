@@ -17,6 +17,8 @@ pub struct MeetingModel {
 pub struct FolderModel {
     pub id: String,
     pub name: String,
+    /// Optional emoji icon (NULL when unset).
+    pub emoji: Option<String>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

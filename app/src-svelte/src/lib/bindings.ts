@@ -232,8 +232,8 @@ export const commands = {
 	/**  Permanently delete a meeting and all its data (used from the Trash view). */
 	apiPermanentlyDeleteMeeting: (meetingId: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_permanently_delete_meeting", { meetingId, authToken })),
 	apiListFolders: () => typedError<Folder[], string>(__TAURI_INVOKE("api_list_folders")),
-	apiCreateFolder: (name: string) => typedError<Folder, string>(__TAURI_INVOKE("api_create_folder", { name })),
-	apiRenameFolder: (folderId: string, name: string) => typedError<any, string>(__TAURI_INVOKE("api_rename_folder", { folderId, name })),
+	apiCreateFolder: (name: string, emoji: string | null) => typedError<Folder, string>(__TAURI_INVOKE("api_create_folder", { name, emoji })),
+	apiUpdateFolder: (folderId: string, name: string, emoji: string | null) => typedError<any, string>(__TAURI_INVOKE("api_update_folder", { folderId, name, emoji })),
 	apiDeleteFolder: (folderId: string) => typedError<any, string>(__TAURI_INVOKE("api_delete_folder", { folderId })),
 	/**  Move a meeting into a folder, or out of all folders when `folder_id` is None. */
 	apiMoveMeetingToFolder: (meetingId: string, folderId: string | null) => typedError<any, string>(__TAURI_INVOKE("api_move_meeting_to_folder", { meetingId, folderId })),
@@ -812,6 +812,7 @@ export type ExceptionReport = {
 export type Folder = {
 	id: string,
 	name: string,
+	emoji: string | null,
 	created_at: string,
 };
 

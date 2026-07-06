@@ -21,6 +21,7 @@ pub struct Meeting {
 pub struct Folder {
     pub id: String,
     pub name: String,
+    pub emoji: Option<String>,
     pub created_at: String,
 }
 

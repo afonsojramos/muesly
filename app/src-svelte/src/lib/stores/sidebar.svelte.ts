@@ -26,6 +26,7 @@ export interface CurrentMeeting {
 export interface Folder {
 	id: string;
 	name: string;
+	emoji?: string | null;
 	createdAt?: string;
 }
 
@@ -172,9 +173,15 @@ class SidebarStore {
 			const list = (await invoke('api_list_folders')) as Array<{
 				id: string;
 				name: string;
+				emoji?: string | null;
 				created_at?: string;
 			}>;
-			this.folders = list.map((f) => ({ id: f.id, name: f.name, createdAt: f.created_at }));
+			this.folders = list.map((f) => ({
+				id: f.id,
+				name: f.name,
+				emoji: f.emoji ?? null,
+				createdAt: f.created_at,
+			}));
 		} catch (error) {
 			// In browser dev preview the sample folders set by refetchMeetings stand in.
 			if (
@@ -189,13 +196,17 @@ class SidebarStore {
 		}
 	};
 
-	createFolder = async (name: string): Promise<void> => {
-		await invoke('api_create_folder', { name });
+	createFolder = async (name: string, emoji: string | null = null): Promise<void> => {
+		await invoke('api_create_folder', { name, emoji });
 		await this.refetchFolders();
 	};
 
-	renameFolder = async (folderId: string, name: string): Promise<void> => {
-		await invoke('api_rename_folder', { folderId, name });
+	updateFolder = async (
+		folderId: string,
+		name: string,
+		emoji: string | null = null,
+	): Promise<void> => {
+		await invoke('api_update_folder', { folderId, name, emoji });
 		await this.refetchFolders();
 	};
 

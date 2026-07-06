@@ -6,6 +6,16 @@ use crate::{database::repositories::folders::FoldersRepository, state::AppState}
 
 use super::types::Folder;
 
+/// Normalize an optional emoji: trim, treat empty as unset, and cap the length
+/// (in chars) so a stray paste can't store a large blob. 8 chars covers ZWJ
+/// sequences with skin-tone modifiers.
+fn normalize_emoji(emoji: Option<&str>) -> Option<String> {
+    emoji
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(|e| e.chars().take(8).collect::<String>())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn api_list_folders<R: Runtime>(
@@ -19,6 +29,7 @@ pub async fn api_list_folders<R: Runtime>(
             .map(|f| Folder {
                 id: f.id,
                 name: f.name,
+                emoji: f.emoji,
                 created_at: f.created_at.0.to_rfc3339(),
             })
             .collect()),
@@ -35,18 +46,21 @@ pub async fn api_create_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     name: String,
+    emoji: Option<String>,
 ) -> Result<Folder, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("Folder name cannot be empty".to_string());
     }
+    let emoji = normalize_emoji(emoji.as_deref());
     let pool = state.db_manager.pool();
-    match FoldersRepository::create_folder(pool, trimmed).await {
+    match FoldersRepository::create_folder(pool, trimmed, emoji.as_deref()).await {
         Ok(f) => {
             log_info!("Created folder {} ({})", f.name, f.id);
             Ok(Folder {
                 id: f.id,
                 name: f.name,
+                emoji: f.emoji,
                 created_at: f.created_at.0.to_rfc3339(),
             })
         }
@@ -59,23 +73,25 @@ pub async fn api_create_folder<R: Runtime>(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn api_rename_folder<R: Runtime>(
+pub async fn api_update_folder<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     folder_id: String,
     name: String,
+    emoji: Option<String>,
 ) -> Result<crate::json::Json, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return Err("Folder name cannot be empty".to_string());
     }
+    let emoji = normalize_emoji(emoji.as_deref());
     let pool = state.db_manager.pool();
-    match FoldersRepository::rename_folder(pool, &folder_id, trimmed).await {
+    match FoldersRepository::update_folder(pool, &folder_id, trimmed, emoji.as_deref()).await {
         Ok(true) => Ok(serde_json::json!({ "status": "success" }).into()),
         Ok(false) => Err(format!("Folder not found: {}", folder_id)),
         Err(e) => {
-            log_error!("Error renaming folder {}: {}", folder_id, e);
-            Err(format!("Failed to rename folder: {}", e))
+            log_error!("Error updating folder {}: {}", folder_id, e);
+            Err(format!("Failed to update folder: {}", e))
         }
     }
 }

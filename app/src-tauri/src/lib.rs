@@ -883,7 +883,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         api::api_permanently_delete_meeting::<tauri::Wry>,
         api::api_list_folders::<tauri::Wry>,
         api::api_create_folder::<tauri::Wry>,
-        api::api_rename_folder::<tauri::Wry>,
+        api::api_update_folder::<tauri::Wry>,
         api::api_delete_folder::<tauri::Wry>,
         api::api_move_meeting_to_folder::<tauri::Wry>,
         api::api_get_meeting::<tauri::Wry>,
