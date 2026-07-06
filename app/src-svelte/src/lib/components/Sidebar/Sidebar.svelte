@@ -4,7 +4,6 @@
 	import { page } from '$app/state';
 	import {
 		Folder,
-		FolderInput,
 		FolderPlus,
 		Home,
 		PanelLeftClose,
@@ -15,7 +14,6 @@
 		Settings,
 		Trash2,
 		Upload,
-		X,
 	} from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
@@ -64,10 +62,6 @@
 		folderId: null,
 		name: '',
 	});
-	let moveModal = $state<{ open: boolean; meetingId: string | null }>({
-		open: false,
-		meetingId: null,
-	});
 
 	function openCreateFolder(): void {
 		folderModal = { open: true, mode: 'create', folderId: null };
@@ -107,80 +101,6 @@
 			deleteFolderModal = { open: false, folderId: null, name: '' };
 		}
 	}
-	async function moveTo(folderId: string | null): Promise<void> {
-		const meetingId = moveModal.meetingId;
-		moveModal = { open: false, meetingId: null };
-		await applyMove(meetingId, folderId);
-	}
-
-	async function applyMove(meetingId: string | null, folderId: string | null): Promise<void> {
-		if (!meetingId) return;
-		try {
-			await sidebar.moveMeetingToFolder(meetingId, folderId);
-		} catch (error) {
-			toast.error('Failed to move note', {
-				description: error instanceof Error ? error.message : String(error),
-			});
-		}
-	}
-
-	// Drag-and-drop: drag a note row onto a folder (or the uncategorized area).
-	// Pointer-based, not HTML5 DnD: inside the Tauri webview the native file-drop
-	// handler swallows HTML5 `drop` events, and disabling it would break audio
-	// import (which needs real OS paths). Pointer events bypass the OS drag layer
-	// entirely, so meeting drags and file import coexist.
-	let draggingMeetingId = $state<string | null>(null);
-	// Highlight target: a folder id, or 'uncategorized', or null.
-	let dragOverTarget = $state<string | null>(null);
-	// Floating label that follows the cursor while dragging.
-	let dragGhost = $state<{ title: string; x: number; y: number } | null>(null);
-	// True once a pointer-down turns into a drag; lets the title button's click
-	// handler ignore the click that fires when the pointer is released.
-	let didDrag = false;
-	const DRAG_THRESHOLD = 5;
-
-	function handleRowPointerDown(e: PointerEvent, meeting: CurrentMeeting): void {
-		if (e.button !== 0 || !isMeetingItem(meeting.id)) return;
-		// Leave the hover controls (move/edit/delete) to their own click handlers.
-		if ((e.target as HTMLElement).closest('[data-no-drag]')) return;
-
-		const startX = e.clientX;
-		const startY = e.clientY;
-		didDrag = false;
-
-		function onMove(ev: PointerEvent): void {
-			if (!draggingMeetingId) {
-				if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < DRAG_THRESHOLD) return;
-				draggingMeetingId = meeting.id;
-				didDrag = true;
-				document.body.style.userSelect = 'none';
-			}
-			dragGhost = { title: meeting.title, x: ev.clientX, y: ev.clientY };
-			const target = document
-				.elementFromPoint(ev.clientX, ev.clientY)
-				?.closest<HTMLElement>('[data-drop-target]');
-			dragOverTarget = target?.dataset.dropTarget ?? null;
-		}
-
-		async function onUp(): Promise<void> {
-			window.removeEventListener('pointermove', onMove);
-			window.removeEventListener('pointerup', onUp);
-			window.removeEventListener('pointercancel', onUp);
-			document.body.style.userSelect = '';
-			const target = dragOverTarget;
-			const dragged = draggingMeetingId;
-			draggingMeetingId = null;
-			dragOverTarget = null;
-			dragGhost = null;
-			if (dragged && target !== null) {
-				await applyMove(dragged, target === 'uncategorized' ? null : target);
-			}
-		}
-
-		window.addEventListener('pointermove', onMove);
-		window.addEventListener('pointerup', onUp);
-		window.addEventListener('pointercancel', onUp);
-	}
 
 	// Search lives in the main-area /search view; this just opens it, pre-scoped to
 	// the current folder when one is being viewed.
@@ -194,17 +114,6 @@
 		if (intent === 'navigate-editor') {
 			void goto('/note');
 		}
-	}
-
-	function selectMeeting(item: { id: string; title: string }): void {
-		// Ignore the click that follows a drag (pointer-up synthesises a click).
-		if (didDrag) {
-			didDrag = false;
-			return;
-		}
-		sidebar.setCurrentMeeting({ id: item.id, title: item.title });
-		const basePath = isMeetingItem(item.id) ? `/meeting-details?id=${item.id}` : '/';
-		void goto(basePath);
 	}
 
 	// Roving keyboard nav within a row: the title/toggle is the only Tab stop; the
@@ -346,10 +255,6 @@
 			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
-
-	function isMeetingItem(id: string): boolean {
-		return id.includes('-') && !id.startsWith('intro-call');
-	}
 
 	function startResize(e: PointerEvent): void {
 		e.preventDefault();
@@ -497,113 +402,6 @@
 
 			<!-- Notes list -->
 			<div class="custom-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-				<!-- Meeting row, reused in folder sections and date groups. The title is a
-				 real <button> (flex-1) for navigation; the hover controls are siblings,
-				 so nothing interactive is nested in another control. The whole row is
-				 draggable onto a folder. -->
-				{#snippet meetingRow(meeting: CurrentMeeting)}
-					{@const isActive = sidebar.currentMeeting?.id === meeting.id}
-					{@const isMeeting = isMeetingItem(meeting.id)}
-					<div
-						class={cn(
-							'group my-px flex flex-col rounded-md px-2 py-1 text-[13px] transition-colors duration-150',
-							isActive
-								? 'bg-secondary font-medium text-foreground'
-								: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
-							draggingMeetingId === meeting.id && 'opacity-50',
-						)}
-						role="listitem"
-						data-roving-row
-						onpointerdown={(e) => handleRowPointerDown(e, meeting)}
-					>
-						<div class="flex h-5 w-full items-center gap-2">
-							<button
-								type="button"
-								onclick={() => selectMeeting(meeting)}
-								onkeydown={handleRovingKeydown}
-								data-roving
-								class="min-w-0 flex-1 truncate rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-								aria-label={isMeeting ? `Open meeting: ${meeting.title}` : meeting.title}
-							>
-								{meeting.title}
-							</button>
-							{#if isMeeting}
-								<div
-									data-no-drag
-									class="hidden flex-shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex"
-								>
-									<Tooltip.Provider delayDuration={300}>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon-xs"
-														onclick={() => (moveModal = { open: true, meetingId: meeting.id })}
-														onkeydown={handleRovingKeydown}
-														data-roving
-														tabindex={-1}
-														class="text-muted-foreground hover:bg-border"
-														aria-label="Move to folder"
-													>
-														<FolderInput />
-													</Button>
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content>Move to folder</Tooltip.Content>
-										</Tooltip.Root>
-									</Tooltip.Provider>
-									<Tooltip.Provider delayDuration={300}>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon-xs"
-														onclick={() => handleEditStart(meeting.id, meeting.title)}
-														onkeydown={handleRovingKeydown}
-														data-roving
-														tabindex={-1}
-														class="text-muted-foreground hover:bg-border"
-														aria-label="Edit meeting title"
-													>
-														<Pencil />
-													</Button>
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content>Edit title</Tooltip.Content>
-										</Tooltip.Root>
-									</Tooltip.Provider>
-									<Tooltip.Provider delayDuration={300}>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon-xs"
-														onclick={() => (deleteModal = { open: true, itemId: meeting.id })}
-														onkeydown={handleRovingKeydown}
-														data-roving
-														tabindex={-1}
-														class="text-muted-foreground hover:bg-border hover:text-destructive"
-														aria-label="Delete meeting"
-													>
-														<Trash2 />
-													</Button>
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content>Delete meeting</Tooltip.Content>
-										</Tooltip.Root>
-									</Tooltip.Provider>
-								</div>
-							{/if}
-						</div>
-					</div>
-				{/snippet}
-
 				{#if isSettings}
 					<!-- Settings sections (replaces folders while in Settings) -->
 					<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">Settings</div>
@@ -647,15 +445,7 @@
 					</div>
 
 					{#each sidebar.folders as section (section.id)}
-						<!-- Whole section is a drop target; highlight while a note is dragged over. -->
-						<div
-							class={cn(
-								'rounded-md transition-colors',
-								dragOverTarget === section.id && 'bg-accent/10 ring-1 ring-accent/40',
-							)}
-							role="group"
-							data-drop-target={section.id}
-						>
+						<div class="rounded-md">
 							<div
 								class="group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
 								data-roving-row
@@ -779,16 +569,6 @@
 	</div>
 </div>
 
-<!-- Floating label that tracks the cursor while dragging a note onto a folder. -->
-{#if dragGhost}
-	<div
-		class="pointer-events-none fixed z-50 max-w-48 truncate rounded-md bg-secondary px-2 py-1 text-[13px] font-medium text-foreground shadow-md ring-1 ring-border"
-		style="left: {dragGhost.x + 12}px; top: {dragGhost.y + 12}px;"
-	>
-		{dragGhost.title}
-	</div>
-{/if}
-
 <!-- Delete confirmation -->
 <Dialog.Root
 	open={deleteModal.open}
@@ -905,44 +685,5 @@
 			</Button>
 			<Button variant="destructive" onclick={confirmDeleteFolder}>Delete folder</Button>
 		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
-
-<!-- Move meeting to folder -->
-<Dialog.Root
-	open={moveModal.open}
-	onOpenChange={(next) => {
-		if (!next) moveModal = { open: false, meetingId: null };
-	}}
->
-	<Dialog.Content class="sm:max-w-[425px]">
-		<Dialog.Title class="text-lg font-semibold">Move to folder</Dialog.Title>
-		<div class="flex flex-col gap-1">
-			{#each sidebar.folders as folder (folder.id)}
-				<button
-					onclick={() => moveTo(folder.id)}
-					class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
-				>
-					{#if folder.emoji}
-						<span class="w-4 flex-shrink-0 text-center text-sm leading-none">{folder.emoji}</span>
-					{:else}
-						<Folder class="size-4 text-muted-foreground" />
-					{/if}
-					<span class="truncate">{folder.name}</span>
-				</button>
-			{/each}
-			<button
-				onclick={() => moveTo(null)}
-				class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-secondary"
-			>
-				<X class="size-4" />
-				<span>No folder (uncategorized)</span>
-			</button>
-			{#if sidebar.folders.length === 0}
-				<p class="px-3 py-2 text-sm text-muted-foreground">
-					No folders yet. Create one with the + next to “Folders”.
-				</p>
-			{/if}
-		</div>
 	</Dialog.Content>
 </Dialog.Root>
