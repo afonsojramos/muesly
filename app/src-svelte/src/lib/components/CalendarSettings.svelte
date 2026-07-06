@@ -248,7 +248,6 @@
 {:else}
 	<div class="flex flex-col gap-6">
 		<div>
-			<h3 class="mb-4 text-lg font-semibold">Calendar</h3>
 			<p class="mb-6 text-sm text-muted-foreground">
 				muesly attaches the meeting happening at record time to your recordings and summaries. Use
 				your Mac's local calendars (read entirely on-device, no account) and/or connect Google

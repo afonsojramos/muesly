@@ -67,7 +67,6 @@
 <div class="flex flex-col gap-6">
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Trash</Card.Title>
 			<Card.Description>
 				Deleted meetings are kept here so you can restore them. Permanently deleting removes the
 				meeting, its transcript, and summary for good.

@@ -182,7 +182,6 @@
 {:else}
 	<div class="flex flex-col gap-6">
 		<div>
-			<h3 class="mb-4 text-lg font-semibold">Recording Settings</h3>
 			<p class="mb-6 text-sm text-muted-foreground">
 				Configure how your audio recordings are saved during meetings.
 			</p>

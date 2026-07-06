@@ -9,7 +9,7 @@
 
 	import { config } from '$lib/stores/config.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
-	import { resolveSettingsTab } from '$lib/settings-tabs';
+	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import About from '$lib/components/About.svelte';
 	import CalendarSettings from '$lib/components/CalendarSettings.svelte';
 	import PreferenceSettings from '$lib/components/PreferenceSettings.svelte';
@@ -27,6 +27,9 @@
 		const tab = resolveSettingsTab(page.url.searchParams.get('tab'));
 		return tab === 'calendar' && !platform.isMac ? 'general' : tab;
 	});
+	const activeLabel = $derived(
+		[...SETTINGS_TABS, SETTINGS_TRASH].find((t) => t.value === activeTab)?.label ?? 'General',
+	);
 
 	function goBack(): void {
 		history.back();
@@ -91,6 +94,7 @@
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
 		<div class="mx-auto max-w-4xl p-8 pt-6">
+			<h2 class="mb-6 text-2xl font-semibold">{activeLabel}</h2>
 			{#if activeTab === 'general'}
 				<PreferenceSettings />
 			{:else if activeTab === 'recording'}
