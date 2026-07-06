@@ -535,8 +535,8 @@
 						class={cn(
 							'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 							activeSettingsTab === SETTINGS_TRASH.value
-								? 'bg-secondary font-medium text-foreground'
-								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+								? 'bg-destructive/10 font-medium text-destructive'
+								: 'text-destructive/70 hover:bg-destructive/10 hover:text-destructive',
 						)}
 					>
 						<Trash2 class="size-4" />
