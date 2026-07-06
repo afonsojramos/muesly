@@ -1,10 +1,49 @@
 <script lang="ts">
-	import { Editor } from '@tiptap/core';
+	import { Editor, Extension } from '@tiptap/core';
 	import { Markdown } from '@tiptap/markdown';
 	import { StarterKit } from '@tiptap/starter-kit';
+	import { Plugin, PluginKey } from '@tiptap/pm/state';
+	import { Decoration, DecorationSet } from '@tiptap/pm/view';
 	import { onDestroy, onMount } from 'svelte';
 
 	import { cn } from '$lib/utils';
+
+	// Fixed-size caret. A native contenteditable caret is always drawn at the line's
+	// full line-height, so it looks oversized next to the glyphs and, depending on
+	// the block, could span multiple lines. There's no CSS to size the native caret,
+	// so we hide it (`caret-color: transparent`, in the styles below) and render our
+	// own consistent, text-sized bar via a ProseMirror widget decoration at the
+	// cursor. Keyed by position so it only re-renders (restarting the blink) when the
+	// cursor actually moves.
+	const FixedCaret = Extension.create({
+		name: 'fixedCaret',
+		addProseMirrorPlugins() {
+			return [
+				new Plugin({
+					key: new PluginKey('fixedCaret'),
+					props: {
+						decorations(state) {
+							const { selection } = state;
+							// Only a collapsed cursor gets a caret; a range uses the native highlight.
+							if (!selection.empty) return null;
+							const { head } = selection;
+							return DecorationSet.create(state.doc, [
+								Decoration.widget(
+									head,
+									() => {
+										const el = document.createElement('span');
+										el.className = 'fixed-caret';
+										return el;
+									},
+									{ side: 0, key: `fixed-caret-${head}`, ignoreSelection: true },
+								),
+							]);
+						},
+					},
+				}),
+			];
+		},
+	});
 
 	interface Props {
 		/** Initial / external content as a markdown string. */
@@ -45,7 +84,7 @@
 		editor = new Editor({
 			element,
 			editable,
-			extensions: [StarterKit, Markdown],
+			extensions: [StarterKit, Markdown, FixedCaret],
 			content: value,
 			contentType: 'markdown',
 			onUpdate: ({ editor: ed }) => {
@@ -96,11 +135,43 @@
 	.tiptap-prose :global(.ProseMirror) {
 		outline: none;
 		min-height: 8rem;
-		/* The text caret in a contenteditable is drawn at the line's line-height, so
-		   a generous value makes the cursor look oversized next to the glyphs. 1.5
-		   keeps prose readable while keeping the caret proportionate. */
-		line-height: 1.5;
+		line-height: 1.6;
 		color: var(--color-foreground);
+		/* Hide the native caret; the FixedCaret extension draws a text-sized one. */
+		caret-color: transparent;
+	}
+
+	/* Custom caret: a thin bar sized to the text (1.15em) and vertically centred on
+	   the line, so it stays the same modest height regardless of line-height or block
+	   type. Only shown while the editor is focused. */
+	.tiptap-prose :global(.ProseMirror .fixed-caret) {
+		position: relative;
+	}
+	.tiptap-prose :global(.ProseMirror .fixed-caret::after) {
+		content: '';
+		position: absolute;
+		left: 0;
+		top: 50%;
+		height: 1.15em;
+		width: 1.5px;
+		transform: translateY(-50%);
+		background: var(--color-foreground);
+		animation: fixed-caret-blink 1.1s steps(1, end) infinite;
+	}
+	.tiptap-prose :global(.ProseMirror:not(:focus) .fixed-caret::after) {
+		display: none;
+	}
+	:global {
+		@keyframes fixed-caret-blink {
+			0%,
+			50% {
+				opacity: 1;
+			}
+			50.01%,
+			100% {
+				opacity: 0;
+			}
+		}
 	}
 	.tiptap-prose :global(.ProseMirror > * + *) {
 		margin-top: 0.75em;
