@@ -47,6 +47,14 @@
 	const downloadProgressInfo = new SvelteMap<string, DownloadProgressInfo>();
 	const downloadingModels = new SvelteSet<string>();
 
+	// Context window as "K" (the LLM convention: K = 1024, so 32768 → "32K").
+	// Falls back to a decimal for the rare non-power-of-two size.
+	function formatContext(tokens: number): string {
+		if (tokens < 1024) return `${tokens}`;
+		const k = tokens / 1024;
+		return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
+	}
+
 	async function fetchModels(): Promise<void> {
 		try {
 			isLoading = true;
@@ -219,7 +227,7 @@
 							<div class="text-sm text-muted-foreground">
 								{#if model.description}<p class="mb-1">{model.description}</p>{/if}
 								<div class="text-xs text-muted-foreground/80">
-									{model.size_mb}MB • {model.context_size} tokens context
+									{model.size_mb}MB • {formatContext(model.context_size)} context
 								</div>
 							</div>
 						</div>
