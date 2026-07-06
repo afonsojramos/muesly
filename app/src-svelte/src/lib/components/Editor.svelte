@@ -150,7 +150,7 @@
 	.tiptap-prose :global(.ProseMirror .fixed-caret::after) {
 		content: '';
 		position: absolute;
-		left: 0;
+		left: -0.5px;
 		top: 50%;
 		height: 1.15em;
 		width: 1.5px;
