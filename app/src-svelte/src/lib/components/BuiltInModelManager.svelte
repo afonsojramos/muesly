@@ -219,7 +219,7 @@
 							<div class="text-sm text-muted-foreground">
 								{#if model.description}<p class="mb-1">{model.description}</p>{/if}
 								<div class="text-xs text-muted-foreground/80">
-									{model.size_mb}MB • {model.context_size} tokens
+									{model.size_mb}MB • {model.context_size} tokens context
 								</div>
 							</div>
 						</div>
