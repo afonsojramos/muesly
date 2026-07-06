@@ -96,7 +96,10 @@
 	.tiptap-prose :global(.ProseMirror) {
 		outline: none;
 		min-height: 8rem;
-		line-height: 1.7;
+		/* The text caret in a contenteditable is drawn at the line's line-height, so
+		   a generous value makes the cursor look oversized next to the glyphs. 1.5
+		   keeps prose readable while keeping the caret proportionate. */
+		line-height: 1.5;
 		color: var(--color-foreground);
 	}
 	.tiptap-prose :global(.ProseMirror > * + *) {

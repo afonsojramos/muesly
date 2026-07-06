@@ -74,7 +74,7 @@
 <div class="relative">
 	{#if !currentMarkdown.trim()}
 		<p
-			class="pointer-events-none absolute left-0 top-0 select-none text-base leading-[1.7] text-muted-foreground/40"
+			class="pointer-events-none absolute left-0 top-0 select-none text-base leading-[1.5] text-muted-foreground/40"
 		>
 			No notes for this meeting yet. Type to add some.
 		</p>
