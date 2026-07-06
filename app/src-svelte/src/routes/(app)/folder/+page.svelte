@@ -21,8 +21,11 @@
 	// Recency buckets, newest first; the current week lists freely (no header).
 	const groups = $derived(groupByRecency(meetings, (m) => m.createdAt, clock.now));
 
+	// Folders are flat (no nesting), so "back" moves up to the root rather than
+	// retracing sibling-folder history (e.g. Test -> Test 2 -> Test would otherwise
+	// step back through each visited folder instead of returning home).
 	function goBack(): void {
-		history.back();
+		void goto('/');
 	}
 
 	// Search scoped to this folder opens the shared main-area search view.
