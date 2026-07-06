@@ -892,10 +892,19 @@
 											!modelIsDownloading && 'cursor-pointer',
 										)}
 									>
-										<div>
-											<b class="font-bold">{model.name}&nbsp;</b>
-											<span class="text-muted-foreground">with a size of </span>
-											<span class="font-mono text-sm font-bold">{model.size}</span>
+										<div class="flex items-center gap-2">
+											<span class="text-2xl">📦</span>
+											<h3 class="min-w-0 flex-1 truncate font-semibold">{model.name}</h3>
+											{#if modelConfig.model === model.name}
+												<span
+													class="rounded bg-accent px-1.5 py-0.5 text-xs font-medium text-accent-foreground"
+												>
+													✓
+												</span>
+											{/if}
+										</div>
+										<div class="ml-9 mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
+											<span>📦 {model.size}</span>
 										</div>
 
 										{#if modelIsDownloading && progress !== undefined}
