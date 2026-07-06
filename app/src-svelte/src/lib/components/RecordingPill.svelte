@@ -6,6 +6,7 @@
 	import { Pause, Play, Square } from '@lucide/svelte';
 
 	import { recordingState } from '$lib/stores/recording-state.svelte';
+	import { levelMeterBars } from '$lib/audio-meter';
 	import { cn } from '$lib/utils';
 
 	const isPaused = $derived(recordingState.isPaused);
@@ -120,19 +121,16 @@
 		};
 		document.addEventListener('visibilitychange', onVisibility);
 
-		// Decorative level animation. The pill webview is pre-warmed and never
-		// unmounts (it is hidden, not destroyed, between recordings) and has
-		// backgroundThrottling disabled, so gate the loop on an actually-visible
-		// active recording instead of letting it churn reactive state forever.
+		// Live level meter driven by the backend `recording-level` event (via the
+		// store's audioLevel). The pill webview is pre-warmed and never unmounts (it
+		// is hidden, not destroyed, between recordings) and has backgroundThrottling
+		// disabled, so gate the loop on an actually-visible active recording instead
+		// of letting it churn reactive state forever.
 		const interval = setInterval(() => {
 			if (reducedMotion || !recordingState.isRecording || document.visibilityState !== 'visible')
 				return;
-			barHeights = [
-				`${Math.random() * 14 + 6}px`,
-				`${Math.random() * 14 + 6}px`,
-				`${Math.random() * 14 + 6}px`,
-			];
-		}, 300);
+			barHeights = levelMeterBars(recordingState.audioLevel, 4, 18);
+		}, 80);
 
 		return () => {
 			cancelled = true;

@@ -154,6 +154,24 @@ fn spawn_silent_mic_check<R: Runtime>(
     });
 }
 
+/// Emit the live audio level (`recording-level`, an f32 in 0.0..1.0) to the
+/// frontend every ~66ms while recording, so the pill and in-app bar can animate a
+/// real level meter instead of a random one. Reads and resets the peak-hold in
+/// `RecordingState` each frame (VU-meter behaviour). The loop ends on its own when
+/// recording stops, so no explicit handle/cleanup is needed.
+fn spawn_level_emitter<R: Runtime>(app: AppHandle<R>, state: Arc<RecordingState>) {
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_millis(66));
+        loop {
+            ticker.tick().await;
+            if !state.is_recording() {
+                break;
+            }
+            let _ = app.emit("recording-level", state.take_live_peak());
+        }
+    });
+}
+
 // ============================================================================
 // PUBLIC TYPES
 // ============================================================================
@@ -383,6 +401,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         .map_err(|e| format!("Failed to start recording: {}", e))?;
 
     let recording_state_for_check = manager.get_state().clone();
+    let recording_state_for_level = manager.get_state().clone();
 
     // Store the manager globally to keep it alive
     {
@@ -401,6 +420,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
     spawn_silent_mic_check(app.clone(), recording_state_for_check, mic_name_for_check);
+    spawn_level_emitter(app.clone(), recording_state_for_level);
 
     // Start optimized parallel transcription task and store handle
     let task_handle = transcription::start_transcription_task(app.clone(), transcription_receiver);
@@ -583,6 +603,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         .map_err(|e| format!("Failed to start recording: {}", e))?;
 
     let recording_state_for_check = manager.get_state().clone();
+    let recording_state_for_level = manager.get_state().clone();
 
     // Store the manager globally to keep it alive
     {
@@ -601,6 +622,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
     // Warn if the mic stays silent for the first ~10s (dead/muted/wrong device).
     spawn_silent_mic_check(app.clone(), recording_state_for_check, mic_name_for_check);
+    spawn_level_emitter(app.clone(), recording_state_for_level);
 
     // Start optimized parallel transcription task and store handle
     let task_handle = transcription::start_transcription_task(app.clone(), transcription_receiver);

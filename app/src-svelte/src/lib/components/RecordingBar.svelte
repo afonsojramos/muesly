@@ -4,6 +4,7 @@
 	import { Pause, Play, Square } from '@lucide/svelte';
 
 	import { recordingState } from '$lib/stores/recording-state.svelte';
+	import { levelMeterBars } from '$lib/audio-meter';
 	import { cn } from '$lib/utils';
 
 	// In-app recording control, shown at the bottom of the main window while the
@@ -73,14 +74,12 @@
 		};
 		motionQuery.addEventListener('change', onMotionChange);
 
+		// Live level meter driven by the backend `recording-level` event (via the
+		// store's audioLevel), so the bars react to real voice instead of at random.
 		const interval = setInterval(() => {
 			if (reducedMotion || !recordingState.isRecording || recordingState.isPaused) return;
-			barHeights = [
-				`${Math.random() * 12 + 5}px`,
-				`${Math.random() * 12 + 5}px`,
-				`${Math.random() * 12 + 5}px`,
-			];
-		}, 300);
+			barHeights = levelMeterBars(recordingState.audioLevel, 4, 18);
+		}, 80);
 
 		return () => {
 			clearInterval(interval);

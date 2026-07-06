@@ -139,6 +139,11 @@ pub struct RecordingState {
     // recording started, stored as f32 bits. Used for silent-mic detection.
     peak_mic_amplitude: AtomicU32,
 
+    // Loudest sample (mic OR system) seen since the last drain, stored as f32
+    // bits. Peak-hold for the live level meter: fed from the audio hot path and
+    // drained (read-and-reset) by the emitter task each frame.
+    live_peak: AtomicU32,
+
     // Recording start time for accurate timestamps
     recording_start: Mutex<Option<Instant>>,
     // Pause time tracking
@@ -159,6 +164,7 @@ impl RecordingState {
         self.recoverable_error_count.store(0, Ordering::SeqCst);
         *self.last_error.lock_recover() = None;
         self.peak_mic_amplitude.store(0, Ordering::Relaxed);
+        self.live_peak.store(0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -187,6 +193,36 @@ impl RecordingState {
     /// Loudest microphone sample seen since recording started (abs, 0.0..1.0).
     pub fn peak_mic_amplitude(&self) -> f32 {
         f32::from_bits(self.peak_mic_amplitude.load(Ordering::Relaxed))
+    }
+
+    /// Feed the live level meter with a chunk's peak amplitude (abs, 0.0..1.0),
+    /// keeping the running maximum until the next drain. Mic + system both feed
+    /// it, so the meter reflects anyone speaking. Lock-free; audio hot path.
+    pub fn note_live_peak(&self, peak: f32) {
+        if !(peak > 0.0) {
+            return;
+        }
+        let new_bits = peak.to_bits();
+        let mut prev = self.live_peak.load(Ordering::Relaxed);
+        // to_bits is monotonic for positive floats, so bit comparison == value
+        // comparison here.
+        while peak > f32::from_bits(prev) {
+            match self.live_peak.compare_exchange_weak(
+                prev,
+                new_bits,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(actual) => prev = actual,
+            }
+        }
+    }
+
+    /// Read the live peak seen since the last call and reset it to zero, so each
+    /// frame reports the loudest sample within that window (VU-meter behaviour).
+    pub fn take_live_peak(&self) -> f32 {
+        f32::from_bits(self.live_peak.swap(0, Ordering::Relaxed))
     }
 
     pub fn stop_recording(&self) {
@@ -459,6 +495,7 @@ impl Default for RecordingState {
             error_callback: Mutex::new(None),
             stats: Mutex::new(RecordingStats::default()),
             peak_mic_amplitude: AtomicU32::new(0),
+            live_peak: AtomicU32::new(0),
             recording_start: Mutex::new(None),
             pause_start: Mutex::new(None),
             total_pause_duration: Mutex::new(std::time::Duration::ZERO),

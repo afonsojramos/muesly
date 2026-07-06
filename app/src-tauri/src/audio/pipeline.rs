@@ -859,12 +859,16 @@ impl AudioPipeline {
                     // Logging in hot paths causes severe performance degradation
                     self.processed_chunks += 1;
 
-                    // Track loudest mic sample for silent-input detection (read by
-                    // the recording orchestration ~10s after start). Cheap: one pass
-                    // over the chunk, lock-free atomic max.
-                    if chunk.device_type == DeviceType::Microphone && !chunk.data.is_empty() {
+                    // One pass over the chunk yields the peak sample, feeding both the
+                    // live level meter (mic + system, so the meter reacts to anyone
+                    // speaking) and the mic-only silent-input detector (read by the
+                    // recording orchestration ~10s after start). Cheap, lock-free.
+                    if !chunk.data.is_empty() {
                         let peak = chunk.data.iter().map(|&x| x.abs()).fold(0.0_f32, f32::max);
-                        self.state.note_mic_amplitude(peak);
+                        self.state.note_live_peak(peak);
+                        if chunk.device_type == DeviceType::Microphone {
+                            self.state.note_mic_amplitude(peak);
+                        }
                     }
 
                     // Smart batching: collect metrics instead of logging every chunk

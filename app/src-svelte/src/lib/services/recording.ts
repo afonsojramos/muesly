@@ -148,6 +148,17 @@ export class RecordingService {
 	}
 
 	/**
+	 * Listen for recording-level event (live audio level, 0..1, ~15/s)
+	 * @param callback - Function to call with the latest level
+	 * @returns Promise that resolves to unlisten function
+	 */
+	async onAudioLevel(callback: (level: number) => void): Promise<UnlistenFn> {
+		return listen<number>('recording-level', (event) => {
+			callback(event.payload);
+		});
+	}
+
+	/**
 	 * Listen for chunk-drop-warning event (audio buffer overflow)
 	 * @param callback - Function to call when chunks are dropped
 	 * @returns Promise that resolves to unlisten function

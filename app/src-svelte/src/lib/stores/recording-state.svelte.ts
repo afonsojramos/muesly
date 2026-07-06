@@ -38,6 +38,11 @@ class RecordingStateStore {
 	status = $state<RecordingStatus>(RecordingStatus.IDLE);
 	statusMessage = $state<string | undefined>(undefined);
 
+	// Live audio level (0..1), pushed by the backend `recording-level` event
+	// (~15/s) while recording. Drives the pill and in-app bar level meters; 0 when
+	// idle or silent.
+	audioLevel = $state(0);
+
 	get isStopping(): boolean {
 		return this.status === RecordingStatus.STOPPING;
 	}
@@ -81,6 +86,7 @@ class RecordingStateStore {
 		this.isActive = false;
 		this.recordingDuration = null;
 		this.activeDuration = null;
+		this.audioLevel = 0;
 		this.#stopPolling();
 		this.status = RecordingStatus.IDLE;
 		this.statusMessage = undefined;
@@ -158,15 +164,20 @@ class RecordingStateStore {
 					this.isActive = false;
 					this.recordingDuration = null;
 					this.activeDuration = null;
+					this.audioLevel = 0;
 					this.#stopPolling();
 				}),
 				await recordingService.onRecordingPaused(() => {
 					this.isPaused = true;
 					this.isActive = false;
+					this.audioLevel = 0;
 				}),
 				await recordingService.onRecordingResumed(() => {
 					this.isPaused = false;
 					this.isActive = true;
+				}),
+				await recordingService.onAudioLevel((level) => {
+					this.audioLevel = level;
 				}),
 			);
 		} catch (error) {
