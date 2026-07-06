@@ -36,7 +36,7 @@
 	}
 </script>
 
-<div class="flex w-full items-center justify-center gap-2">
+<div class="flex w-full items-center justify-center gap-2 px-4">
 	<div class="flex items-center gap-1">
 		<Tooltip.Provider delayDuration={300}>
 			<Tooltip.Root>
