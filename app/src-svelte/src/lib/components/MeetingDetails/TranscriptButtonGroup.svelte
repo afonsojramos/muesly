@@ -36,7 +36,7 @@
 	}
 </script>
 
-<div class="flex w-full items-center justify-center gap-2 px-4">
+<div class="flex w-full items-center justify-center gap-2">
 	<div class="flex items-center gap-1">
 		<Tooltip.Provider delayDuration={300}>
 			<Tooltip.Root>
@@ -55,7 +55,7 @@
 							}}
 						>
 							<CopyIcon data-icon="inline-start" />
-							<span class="hidden @[22rem]:inline">Copy</span>
+							<span class="hidden @[30rem]:inline">Copy</span>
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
@@ -73,7 +73,7 @@
 							{...props}
 							variant="ghost"
 							size="sm"
-							class="text-muted-foreground hover:text-foreground @[28rem]:px-4"
+							class="text-muted-foreground hover:text-foreground @[34rem]:px-4"
 							aria-label="Open recording folder"
 							onclick={() => {
 								Analytics.trackButtonClick('open_recording_folder', 'meeting_details');
@@ -81,7 +81,7 @@
 							}}
 						>
 							<FolderOpenIcon data-icon="inline-start" />
-							<span class="hidden @[22rem]:inline">Recording</span>
+							<span class="hidden @[30rem]:inline">Recording</span>
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
@@ -98,7 +98,7 @@
 								{...props}
 								variant="outline"
 								size="sm"
-								class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
+								class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
 								aria-label="Retranscribe"
 								onclick={() => {
 									Analytics.trackButtonClick('enhance_transcript', 'meeting_details');
@@ -106,7 +106,7 @@
 								}}
 							>
 								<RefreshCwIcon data-icon="inline-start" />
-								<span class="hidden @[22rem]:inline">Enhance</span>
+								<span class="hidden @[30rem]:inline">Enhance</span>
 							</Button>
 						{/snippet}
 					</Tooltip.Trigger>

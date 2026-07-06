@@ -87,13 +87,13 @@
 							{...props}
 							variant="outline"
 							size="sm"
-							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
+							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
 							disabled={diarizing}
 							aria-label="Identify speakers"
 							onclick={identifySpeakers}
 						>
 							<UsersIcon data-icon="inline-start" />
-							<span class="hidden @[22rem]:inline">{diarizing ? 'Identifying…' : 'Speakers'}</span>
+							<span class="hidden @[30rem]:inline">{diarizing ? 'Identifying…' : 'Speakers'}</span>
 						</Button>
 					{/snippet}
 				</Tooltip.Trigger>
@@ -109,13 +109,13 @@
 							{...props}
 							variant="outline"
 							size="sm"
-							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[28rem]:px-4"
+							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
 							disabled={downloading}
 							aria-label="Download speaker models"
 							onclick={downloadModels}
 						>
 							<UsersIcon data-icon="inline-start" />
-							<span class="hidden @[22rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span
+							<span class="hidden @[30rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span
 							>
 						</Button>
 					{/snippet}
