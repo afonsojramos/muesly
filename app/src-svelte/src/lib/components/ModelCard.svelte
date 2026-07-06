@@ -1,14 +1,6 @@
 <script lang="ts">
 	import { fly, slide } from 'svelte/transition';
 	import { Trash2 } from '@lucide/svelte';
-	import {
-		formatFileSize,
-		getModelIcon,
-		getModelPerformanceBadge,
-		getModelTagline,
-		isQuantizedModel,
-		type ModelInfo,
-	} from '$lib/ai/whisper';
 	import { cn } from '$lib/utils';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -17,23 +9,46 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
+	// Shared, data-agnostic model card used by the transcription managers (Whisper,
+	// Parakeet) and the summary/Ollama list. Callers pass already-derived display
+	// fields plus a normalized status; optional fields (accuracy/speed, download/
+	// delete callbacks) simply hide when absent.
+	type Status = 'available' | 'missing' | 'error' | 'corrupted';
+
 	interface Props {
-		model: ModelInfo;
+		title: string;
+		icon?: string;
+		tagline?: string;
+		sizeLabel?: string;
+		accuracyLabel?: string;
+		speedLabel?: string;
+		perfBadge?: { label: string; class: string };
 		isSelected: boolean;
-		isRecommended: boolean;
-		isDownloading: boolean;
-		displayName: string;
+		isRecommended?: boolean;
+		status?: Status;
+		/** 0–100 while downloading, otherwise null. */
+		downloadProgress?: number | null;
+		/** e.g. "1.2 GB / 3 GB", shown under the progress bar. */
+		progressLabel?: string;
 		onSelect: () => void;
-		onDownload: () => void;
-		onCancel: () => void;
-		onDelete: () => void;
+		onDownload?: () => void;
+		onCancel?: () => void;
+		onDelete?: () => void;
 	}
 
 	let {
-		model,
+		title,
+		icon = '📦',
+		tagline,
+		sizeLabel,
+		accuracyLabel,
+		speedLabel,
+		perfBadge,
 		isSelected,
-		isRecommended,
-		displayName,
+		isRecommended = false,
+		status = 'available',
+		downloadProgress = null,
+		progressLabel,
 		onSelect,
 		onDownload,
 		onCancel,
@@ -42,23 +57,8 @@
 
 	let isHovered = $state(false);
 
-	const isAvailable = $derived(model.status === 'Available');
-	const isMissing = $derived(model.status === 'Missing');
-	const isError = $derived(typeof model.status === 'object' && 'Error' in model.status);
-	const isCorrupted = $derived(typeof model.status === 'object' && 'Corrupted' in model.status);
-	const downloadProgress = $derived(
-		typeof model.status === 'object' && 'Downloading' in model.status
-			? model.status.Downloading
-			: null,
-	);
-	const badge = $derived(getModelPerformanceBadge(model.name));
-	const badgeClass = $derived(
-		badge.color === 'green'
-			? 'bg-success/10 text-success'
-			: badge.color === 'orange'
-				? 'bg-warning/10 text-warning'
-				: 'bg-secondary text-muted-foreground',
-	);
+	const isDownloading = $derived(downloadProgress !== null);
+	const isAvailable = $derived(status === 'available' && !isDownloading);
 </script>
 
 <div in:fly={{ y: 5, duration: 200 }}>
@@ -83,150 +83,158 @@
 		{/if}
 
 		<div class="flex items-start justify-between gap-4">
-			<div class="flex-1">
+			<div class="min-w-0 flex-1">
 				<div class="mb-2 flex flex-wrap items-center gap-2">
-					<span class="text-2xl">{getModelIcon(model.accuracy)}</span>
-					<h3 class="font-semibold">{displayName}</h3>
-					<span class="text-sm text-muted-foreground">•</span>
-					<span class="text-sm text-muted-foreground">
-						{getModelTagline(model.name, model.speed, model.accuracy)}
-					</span>
+					<span class="text-2xl">{icon}</span>
+					<h3 class="font-semibold">{title}</h3>
+					{#if tagline}
+						<span class="text-sm text-muted-foreground">•</span>
+						<span class="text-sm text-muted-foreground">{tagline}</span>
+					{/if}
 					{#if isSelected && isAvailable}
 						<Badge class="bg-accent text-accent-foreground">✓</Badge>
 					{/if}
-					{#if isQuantizedModel(model.name)}
-						<Badge class={badgeClass}>{badge.label}</Badge>
+					{#if perfBadge}
+						<Badge class={perfBadge.class}>{perfBadge.label}</Badge>
 					{/if}
 				</div>
-				<div class="ml-9 mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
-					<span>📦 {formatFileSize(model.size_mb)}</span>
-					<span>🎯 {model.accuracy} accuracy</span>
-					<span>⚡ {model.speed} processing</span>
-				</div>
+				{#if sizeLabel || accuracyLabel || speedLabel}
+					<div class="ml-9 mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
+						{#if sizeLabel}<span>📦 {sizeLabel}</span>{/if}
+						{#if accuracyLabel}<span>🎯 {accuracyLabel}</span>{/if}
+						{#if speedLabel}<span>⚡ {speedLabel}</span>{/if}
+					</div>
+				{/if}
 			</div>
 
 			<div class="flex items-center gap-2">
-				{#if isAvailable}
-					<div class="flex items-center gap-1.5 text-success">
-						<div class="size-2 rounded-full bg-success"></div>
-						<span class="text-xs font-medium">Ready</span>
-					</div>
-					{#if isHovered}
-						<div in:fly={{ duration: 150 }}>
-							<Tooltip.Provider delayDuration={300}>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												variant="ghost"
-												size="icon-sm"
-												aria-label="Delete model"
-												onclick={(e) => {
-													e.stopPropagation();
-													onDelete();
-												}}
-												class="text-muted-foreground hover:text-destructive"
-											>
-												<Trash2 />
-											</Button>
-										{/snippet}
-									</Tooltip.Trigger>
-									<Tooltip.Content>Delete model to free up space</Tooltip.Content>
-								</Tooltip.Root>
-							</Tooltip.Provider>
+				{#if isDownloading}
+					<!-- Progress + cancel render below the row. -->
+				{:else if isAvailable}
+					{#if onDelete}
+						<div class="flex items-center gap-1.5 text-success">
+							<div class="size-2 rounded-full bg-success"></div>
+							<span class="text-xs font-medium">Ready</span>
 						</div>
+						{#if isHovered}
+							<div in:fly={{ duration: 150 }}>
+								<Tooltip.Provider delayDuration={300}>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-sm"
+													aria-label="Delete model"
+													onclick={(e) => {
+														e.stopPropagation();
+														onDelete?.();
+													}}
+													class="text-muted-foreground hover:text-destructive"
+												>
+													<Trash2 />
+												</Button>
+											{/snippet}
+										</Tooltip.Trigger>
+										<Tooltip.Content>Delete model to free up space</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
+							</div>
+						{/if}
 					{/if}
-				{:else if isMissing}
+				{:else if status === 'missing' && onDownload}
 					<Button
 						variant="accent"
 						size="sm"
 						onclick={(e) => {
 							e.stopPropagation();
-							onDownload();
+							onDownload?.();
 						}}
 					>
 						Download
 					</Button>
-				{:else if downloadProgress === null && isError}
+				{:else if status === 'error' && onDownload}
 					<Button
 						variant="destructive"
 						size="sm"
 						onclick={(e) => {
 							e.stopPropagation();
-							onDownload();
+							onDownload?.();
 						}}
 					>
 						Retry
 					</Button>
-				{:else if isCorrupted}
+				{:else if status === 'corrupted'}
 					<div class="flex gap-2">
-						<Button
-							variant="outline"
-							size="sm"
-							class="text-warning hover:text-warning"
-							onclick={(e) => {
-								e.stopPropagation();
-								onDelete();
-							}}
-						>
-							Delete
-						</Button>
-						<Button
-							variant="accent"
-							size="sm"
-							onclick={(e) => {
-								e.stopPropagation();
-								onDownload();
-							}}
-						>
-							Re-download
-						</Button>
+						{#if onDelete}
+							<Button
+								variant="outline"
+								size="sm"
+								class="text-warning hover:text-warning"
+								onclick={(e) => {
+									e.stopPropagation();
+									onDelete?.();
+								}}
+							>
+								Delete
+							</Button>
+						{/if}
+						{#if onDownload}
+							<Button
+								variant="accent"
+								size="sm"
+								onclick={(e) => {
+									e.stopPropagation();
+									onDownload?.();
+								}}
+							>
+								Re-download
+							</Button>
+						{/if}
 					</div>
 				{/if}
 			</div>
 		</div>
 
-		{#if downloadProgress !== null}
+		{#if isDownloading}
 			<div transition:slide class="mt-3">
 				<Separator class="mb-3" />
 				<div class="mb-2 flex items-center justify-between">
 					<div class="flex items-center gap-2">
 						<span class="text-sm font-medium text-accent">Downloading...</span>
-						<span class="text-sm font-semibold text-accent">{Math.round(downloadProgress)}%</span>
+						<span class="text-sm font-semibold text-accent">
+							{Math.round(downloadProgress ?? 0)}%
+						</span>
 					</div>
-					<Tooltip.Provider delayDuration={300}>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										variant="ghost"
-										size="xs"
-										class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-										onclick={(e) => {
-											e.stopPropagation();
-											onCancel();
-										}}
-									>
-										Cancel
-									</Button>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>Cancel download</Tooltip.Content>
-						</Tooltip.Root>
-					</Tooltip.Provider>
-				</div>
-				<Progress value={downloadProgress} class="h-2" />
-				<p class="mt-1 text-xs text-muted-foreground">
-					{#if model.size_mb}
-						{formatFileSize((model.size_mb * downloadProgress) / 100)} / {formatFileSize(
-							model.size_mb,
-						)}
-					{:else}
-						Downloading...
+					{#if onCancel}
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="xs"
+											class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+											onclick={(e) => {
+												e.stopPropagation();
+												onCancel?.();
+											}}
+										>
+											Cancel
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>Cancel download</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
 					{/if}
-				</p>
+				</div>
+				<Progress value={downloadProgress ?? 0} class="h-2" />
+				{#if progressLabel}
+					<p class="mt-1 text-xs text-muted-foreground">{progressLabel}</p>
+				{/if}
 			</div>
 		{/if}
 	</Card.Root>

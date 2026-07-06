@@ -23,7 +23,17 @@
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	import { getModelIcon, WhisperAPI, type ModelInfo, type ModelStatus } from '$lib/ai/whisper';
+	import {
+		formatFileSize,
+		getModelIcon,
+		getModelPerformanceBadge,
+		getModelTagline,
+		isQuantizedModel,
+		WhisperAPI,
+		type ModelInfo,
+		type ModelStatus,
+	} from '$lib/ai/whisper';
+	import { normalizeModelStatus } from '$lib/model-status';
 	import * as Accordion from '$lib/components/ui/accordion';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Alert from '$lib/components/ui/alert';
@@ -201,6 +211,38 @@
 			for (const fn of unsubscribers) fn();
 		};
 	});
+
+	function perfBadgeFor(modelName: string): { label: string; class: string } | undefined {
+		if (!isQuantizedModel(modelName)) return undefined;
+		const badge = getModelPerformanceBadge(modelName);
+		const cls =
+			badge.color === 'green'
+				? 'bg-success/10 text-success'
+				: badge.color === 'orange'
+					? 'bg-warning/10 text-warning'
+					: 'bg-secondary text-muted-foreground';
+		return { label: badge.label, class: cls };
+	}
+
+	// Map a Whisper model to the shared ModelCard's display props.
+	function whisperCardDisplay(model: ModelInfo) {
+		const { status, downloadProgress } = normalizeModelStatus(model.status);
+		return {
+			title: whisperDisplayName(model.name),
+			icon: getModelIcon(model.accuracy),
+			tagline: getModelTagline(model.name, model.speed, model.accuracy),
+			sizeLabel: formatFileSize(model.size_mb),
+			accuracyLabel: `${model.accuracy} accuracy`,
+			speedLabel: `${model.speed} processing`,
+			perfBadge: perfBadgeFor(model.name),
+			status,
+			downloadProgress,
+			progressLabel:
+				downloadProgress !== null && model.size_mb
+					? `${formatFileSize((model.size_mb * downloadProgress) / 100)} / ${formatFileSize(model.size_mb)}`
+					: undefined,
+		};
+	}
 </script>
 
 {#if loading}
@@ -219,11 +261,9 @@
 		<div class="flex flex-col gap-3">
 			{#each basicModels as model (model.name)}
 				<ModelCard
-					{model}
+					{...whisperCardDisplay(model)}
 					isSelected={selectedModel === model.name}
 					isRecommended={model.name === 'base'}
-					isDownloading={downloadingModels.has(model.name)}
-					displayName={whisperDisplayName(model.name)}
 					onSelect={() => model.status === 'Available' && selectModel(model.name)}
 					onDownload={() => downloadModel(model.name)}
 					onCancel={() => cancelDownload(model.name)}
@@ -240,11 +280,9 @@
 						<div class="flex flex-col gap-3 pt-4">
 							{#each advancedModels as model (model.name)}
 								<ModelCard
-									{model}
+									{...whisperCardDisplay(model)}
 									isSelected={selectedModel === model.name}
 									isRecommended={false}
-									isDownloading={downloadingModels.has(model.name)}
-									displayName={whisperDisplayName(model.name)}
 									onSelect={() => model.status === 'Available' && selectModel(model.name)}
 									onDownload={() => downloadModel(model.name)}
 									onCancel={() => cancelDownload(model.name)}

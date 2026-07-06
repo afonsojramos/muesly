@@ -6,12 +6,16 @@
 	import { SvelteSet } from 'svelte/reactivity';
 
 	import {
+		formatFileSize,
+		getModelDisplayInfo,
 		getModelDisplayName,
+		getModelPerformanceBadge,
 		ParakeetAPI,
 		type ParakeetModelInfo,
 		type ModelStatus,
 	} from '$lib/ai/parakeet';
-	import ParakeetModelCard from './ParakeetModelCard.svelte';
+	import { normalizeModelStatus } from '$lib/model-status';
+	import ModelCard from './ModelCard.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Alert from '$lib/components/ui/alert';
 	import { toast } from '$lib/toast';
@@ -169,6 +173,34 @@
 			for (const fn of unsubscribers) fn();
 		};
 	});
+
+	// Map a Parakeet model to the shared ModelCard's display props.
+	function parakeetCardDisplay(model: ParakeetModelInfo) {
+		const info = getModelDisplayInfo(model.name);
+		const { status, downloadProgress } = normalizeModelStatus(model.status);
+		const badge = getModelPerformanceBadge(model.quantization);
+		const badgeClass =
+			badge.color === 'green'
+				? 'bg-success/10 text-success'
+				: badge.color === 'orange'
+					? 'bg-warning/10 text-warning'
+					: 'bg-secondary text-muted-foreground';
+		return {
+			title: info?.friendlyName ?? model.name,
+			icon: info?.icon ?? '📦',
+			tagline: info?.tagline ?? model.description ?? undefined,
+			sizeLabel: formatFileSize(model.size_mb),
+			accuracyLabel: `${model.accuracy} accuracy`,
+			speedLabel: model.speed,
+			perfBadge: { label: badge.label, class: badgeClass },
+			status,
+			downloadProgress,
+			progressLabel:
+				downloadProgress !== null && model.size_mb
+					? `${formatFileSize((model.size_mb * downloadProgress) / 100)} / ${formatFileSize(model.size_mb)}`
+					: undefined,
+		};
+	}
 </script>
 
 {#if loading}
@@ -184,11 +216,10 @@
 {:else}
 	<div class={cn('flex flex-col gap-3', className)}>
 		{#if recommendedModel}
-			<ParakeetModelCard
-				model={recommendedModel}
+			<ModelCard
+				{...parakeetCardDisplay(recommendedModel)}
 				isSelected={selectedModel === recommendedModel.name}
 				isRecommended={true}
-				isDownloading={downloadingModels.has(recommendedModel.name)}
 				onSelect={() =>
 					recommendedModel.status === 'Available' && selectModel(recommendedModel.name)}
 				onDownload={() => downloadModel(recommendedModel.name)}
@@ -198,11 +229,10 @@
 		{/if}
 
 		{#each otherModels as model (model.name)}
-			<ParakeetModelCard
-				{model}
+			<ModelCard
+				{...parakeetCardDisplay(model)}
 				isSelected={selectedModel === model.name}
 				isRecommended={false}
-				isDownloading={downloadingModels.has(model.name)}
 				onSelect={() => model.status === 'Available' && selectModel(model.name)}
 				onDownload={() => downloadModel(model.name)}
 				onCancel={() => cancelDownload(model.name)}

@@ -27,6 +27,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Select from '$lib/components/ui/select';
 	import BuiltInModelManager from './BuiltInModelManager.svelte';
+	import ModelCard from './ModelCard.svelte';
 	import { toast } from '$lib/toast';
 	import { cn, isOllamaNotInstalledError } from '$lib/utils';
 
@@ -875,49 +876,13 @@
 								{#each filteredModels as model (model.id)}
 									{@const modelIsDownloading = ollamaDownload.isDownloading(model.name)}
 									{@const progress = ollamaDownload.getProgress(model.name)}
-									<div
-										role="button"
-										tabindex="0"
-										onclick={() =>
-											!modelIsDownloading && setModelConfig({ ...modelConfig, model: model.name })}
-										onkeydown={(e) =>
-											e.key === 'Enter' &&
-											!modelIsDownloading &&
-											setModelConfig({ ...modelConfig, model: model.name })}
-										class={cn(
-											'rounded-xl border-2 bg-card p-3 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-											modelConfig.model === model.name
-												? 'border-accent bg-accent/5'
-												: 'border-border hover:border-muted-foreground/40',
-											!modelIsDownloading && 'cursor-pointer',
-										)}
-									>
-										<div class="flex items-center gap-2">
-											<span class="text-2xl">📦</span>
-											<h3 class="min-w-0 flex-1 truncate font-semibold">{model.name}</h3>
-											{#if modelConfig.model === model.name}
-												<span
-													class="rounded bg-accent px-1.5 py-0.5 text-xs font-medium text-accent-foreground"
-												>
-													✓
-												</span>
-											{/if}
-										</div>
-										<div class="ml-9 mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
-											<span>📦 {model.size}</span>
-										</div>
-
-										{#if modelIsDownloading && progress !== undefined}
-											<div class="mt-3">
-												<Separator class="mb-3" />
-												<div class="mb-2 flex items-center justify-between">
-													<span class="text-sm font-medium">Downloading...</span>
-													<span class="text-sm font-semibold">{Math.round(progress)}%</span>
-												</div>
-												<Progress value={progress} class="h-2" />
-											</div>
-										{/if}
-									</div>
+									<ModelCard
+										title={model.name}
+										sizeLabel={model.size}
+										isSelected={modelConfig.model === model.name}
+										downloadProgress={modelIsDownloading ? (progress ?? 0) : null}
+										onSelect={() => setModelConfig({ ...modelConfig, model: model.name })}
+									/>
 								{/each}
 							</div>
 						{/if}
