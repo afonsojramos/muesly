@@ -20,8 +20,6 @@
 
 	import { Analytics } from '$lib/analytics';
 	import { cn } from '$lib/utils';
-	import { groupByRecency } from '$lib/date-groups';
-	import { clock } from '$lib/now.svelte';
 	import { toast } from '$lib/toast';
 	import { config } from '$lib/stores/config.svelte';
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
@@ -44,17 +42,6 @@
 
 	const pathname = $derived(page.url.pathname);
 
-	// Uncategorized notes, bucketed by recency. The current week is one free-flowing
-	// list (rendered without a header); older notes fall into wider, headed buckets.
-	const uncategorizedGroups = $derived(
-		groupByRecency(
-			sidebar.meetings.filter((m) => !m.folderId),
-			(m) => m.createdAt,
-			clock.now,
-		),
-	);
-
-	const hasAnyNotes = $derived(sidebar.meetings.length > 0 || sidebar.folders.length > 0);
 
 	// Folder + move-to-folder modals.
 	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
@@ -710,30 +697,6 @@
 					</div>
 				{/each}
 
-				<!-- Uncategorized notes; also a drop target to pull a note out of a folder. -->
-				<div
-					role="group"
-					data-drop-target="uncategorized"
-					class={cn(
-						'rounded-md transition-colors',
-						dragOverTarget === 'uncategorized' && 'bg-accent/10 ring-1 ring-accent/40',
-					)}
-				>
-					{#each uncategorizedGroups as group (group.label)}
-						<!-- Every group is headed (including "This Week") so recent notes read as
-						     their own section instead of appearing to belong to Folders above. -->
-						<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
-							{group.label}
-						</div>
-						{#each group.items as child (child.id)}
-							{@render meetingRow(child)}
-						{/each}
-					{/each}
-				</div>
-
-				{#if !hasAnyNotes}
-					<div class="px-2 py-3 text-sm text-muted-foreground">No notes yet</div>
-				{/if}
 			</div>
 
 			<!-- Footer -->
