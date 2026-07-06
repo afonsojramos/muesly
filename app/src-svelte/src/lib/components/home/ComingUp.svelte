@@ -3,22 +3,19 @@
 	import { SlidersHorizontal } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
-	import { commands, type PreviewEvent } from '$lib/bindings';
 	import { cn } from '$lib/utils';
 	import { groupPreviewEventsByDay, formatEventTime } from '$lib/coming-up';
+	import { upcomingEvents } from '$lib/stores/upcoming-events.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
-	let events = $state<PreviewEvent[]>([]);
-	const groups = $derived(groupPreviewEventsByDay(events));
+	// Served from a session cache: instant on revisit, refreshed in the background.
+	// Self-gating: the preview is [] when calendar context is off or no source is
+	// connected, so the whole card stays hidden.
+	const groups = $derived(groupPreviewEventsByDay(upcomingEvents.events));
 
 	onMount(() => {
-		void (async () => {
-			// Self-gating: returns [] when calendar context is off or no source is
-			// connected, so the whole card is hidden.
-			const res = await commands.calendarPreviewUpcoming();
-			if (res.status === 'ok') events = res.data;
-		})();
+		void upcomingEvents.ensure();
 	});
 </script>
 
