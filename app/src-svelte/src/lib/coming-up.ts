@@ -22,7 +22,10 @@ function startOfDay(d: Date): Date {
  * first). Unparseable dates are skipped. First-seen order equals display order
  * because the input is sorted before bucketing.
  */
-export function groupPreviewEventsByDay(events: PreviewEvent[], now: Date = new Date()): DayEvents[] {
+export function groupPreviewEventsByDay(
+	events: PreviewEvent[],
+	now: Date = new Date(),
+): DayEvents[] {
 	const today = startOfDay(now).getTime();
 	const sorted = [...events].sort(
 		(a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
