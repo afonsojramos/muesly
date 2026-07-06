@@ -60,7 +60,9 @@
 		onclick={() => isAvailable && onSelect()}
 		onkeydown={(e) => e.key === 'Enter' && isAvailable && onSelect()}
 		class={cn(
-			'relative gap-0 border-2 p-4 transition-all',
+			// overflow-visible overrides the Card primitive's overflow-hidden so the
+			// outset "Recommended" badge (-top-2 -right-2) isn't clipped by the corner.
+			'relative gap-0 overflow-visible border-2 p-4 transition-all',
 			isSelected && isAvailable
 				? 'border-accent bg-accent/5'
 				: isAvailable

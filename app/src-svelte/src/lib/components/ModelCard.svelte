@@ -70,7 +70,7 @@
 		onclick={() => isAvailable && onSelect()}
 		onkeydown={(e) => e.key === 'Enter' && isAvailable && onSelect()}
 		class={cn(
-			'relative gap-0 border-2 p-3 transition-all',
+			'relative gap-0 overflow-visible border-2 p-3 transition-all',
 			isSelected && isAvailable
 				? 'border-accent bg-accent/5'
 				: isAvailable
