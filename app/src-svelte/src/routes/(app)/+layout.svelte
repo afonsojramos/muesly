@@ -72,6 +72,18 @@
 		};
 	});
 
+	// ⌘, opens Settings from anywhere (the macOS-standard Preferences shortcut).
+	onMount(() => {
+		const handleKeydown = (e: KeyboardEvent): void => {
+			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === ',') {
+				e.preventDefault();
+				void goto('/settings');
+			}
+		};
+		window.addEventListener('keydown', handleKeydown);
+		return () => window.removeEventListener('keydown', handleKeydown);
+	});
+
 	// Import audio overlay/dialog state (shell-level, mirrors the React layout).
 	let showDropOverlay = $state(false);
 	let showImportDialog = $state(false);
