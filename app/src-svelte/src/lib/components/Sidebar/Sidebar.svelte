@@ -406,16 +406,18 @@
 					<!-- Settings sections (replaces folders while in Settings) -->
 					<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">Settings</div>
 					{#each settingsTabs as tab (tab.value)}
+						{@const Icon = tab.icon}
 						<button
 							type="button"
 							onclick={() => goto(`/settings?tab=${tab.value}`)}
 							class={cn(
-								'my-px flex w-full items-center rounded-md px-2 py-1.5 text-[13px] transition-colors',
+								'my-px flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors',
 								activeSettingsTab === tab.value
 									? 'bg-secondary font-medium text-foreground'
 									: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
 							)}
 						>
+							<Icon class="size-4 text-muted-foreground" />
 							{tab.label}
 						</button>
 					{/each}
