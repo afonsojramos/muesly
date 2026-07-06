@@ -155,7 +155,7 @@
 		height: 1.15em;
 		width: 1.5px;
 		transform: translateY(-50%);
-		background: var(--color-foreground);
+		background: var(--color-accent);
 		animation: fixed-caret-blink 1.1s steps(1, end) infinite;
 	}
 	.tiptap-prose :global(.ProseMirror:not(:focus) .fixed-caret::after) {
