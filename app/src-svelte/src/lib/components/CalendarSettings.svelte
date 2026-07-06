@@ -33,6 +33,7 @@
 
 	const granted = $derived(authStatus === 'granted');
 	const googleAccounts = $derived(accounts.filter((a) => a.source === 'google'));
+	const localAccount = $derived(accounts.find((a) => a.source === 'eventkit') ?? null);
 
 	async function loadAccounts(): Promise<void> {
 		const list = await commands.calendarListAccounts();
@@ -274,17 +275,51 @@
 					recordings.
 				</div>
 				<div class="flex flex-col gap-2">
-					<!-- Local macOS source -->
-					<div class="flex items-center justify-between">
-						<div class="text-sm">
-							On this Mac
-							{#if !granted}
-								<span class="ml-2 text-xs text-warning">(calendar access needed)</span>
+					<!-- Local macOS source (calendars always shown, like Google accounts) -->
+					<div class="flex flex-col gap-2">
+						<div class="flex items-center justify-between gap-3">
+							<div class="min-w-0 flex-1 truncate text-sm">
+								On this Mac
+								{#if !granted}
+									<span class="ml-2 text-xs text-warning">(calendar access needed)</span>
+								{/if}
+							</div>
+							{#if localAccount}
+								<Switch
+									checked={localAccount.enabled}
+									onCheckedChange={(v) => toggleAccount(localAccount.id, v)}
+								/>
 							{/if}
 						</div>
-						{#each accounts.filter((a) => a.source === 'eventkit') as local (local.id)}
-							<Switch checked={local.enabled} onCheckedChange={(v) => toggleAccount(local.id, v)} />
-						{/each}
+
+						{#if granted}
+							<div
+								class={cn(
+									'divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-muted/20 transition-opacity',
+									localAccount && !localAccount.enabled && 'opacity-50',
+								)}
+							>
+								{#if calendars.length === 0}
+									<div class="px-3 py-2 text-xs text-muted-foreground">No calendars found.</div>
+								{:else}
+									{#each calendars as cal (cal.id)}
+										<div class="flex items-center justify-between gap-3 px-3 py-2">
+											<span class="min-w-0 flex-1 truncate text-sm">
+												{cal.title}
+												{#if cal.excluded_by_default}
+													<span class="ml-1 text-xs text-muted-foreground">(excluded by default)</span>
+												{/if}
+											</span>
+											<Switch
+												checked={!cal.excluded_by_default && !excludedIds.has(cal.id)}
+												disabled={cal.excluded_by_default}
+												onCheckedChange={(v) => toggleCalendar(cal.id, v)}
+											/>
+										</div>
+									{/each}
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Connected Google accounts (calendars always shown) -->
@@ -391,37 +426,6 @@
 		{/if}
 
 		{#if enabled && granted}
-			<Card.Root class="p-4">
-				<div class="mb-1 font-medium">Calendars</div>
-				<div class="mb-3 text-sm text-muted-foreground">
-					Choose which calendars are used to match meetings. Holiday and subscribed calendars are
-					excluded automatically.
-				</div>
-				{#if calendars.length === 0}
-					<div class="text-sm text-muted-foreground">
-						No calendars found. Add an account in the macOS Calendar app.
-					</div>
-				{:else}
-					<div class="flex flex-col gap-2">
-						{#each calendars as cal (cal.id)}
-							<div class="flex items-center justify-between">
-								<div class="text-sm">
-									{cal.title}
-									{#if cal.excluded_by_default}
-										<span class="ml-2 text-xs text-muted-foreground">(excluded by default)</span>
-									{/if}
-								</div>
-								<Switch
-									checked={!cal.excluded_by_default && !excludedIds.has(cal.id)}
-									disabled={cal.excluded_by_default}
-									onCheckedChange={(v) => toggleCalendar(cal.id, v)}
-								/>
-							</div>
-						{/each}
-					</div>
-				{/if}
-			</Card.Root>
-
 			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Cloud summaries</div>
 				<div class="mb-3 text-sm text-muted-foreground">
