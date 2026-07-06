@@ -155,7 +155,8 @@
 		height: 1.15em;
 		width: 1.5px;
 		transform: translateY(-50%);
-		background: var(--color-accent);
+		/* The brand accent, nudged a bit darker for the caret. */
+		background: color-mix(in oklab, var(--color-accent), black 15%);
 		animation: fixed-caret-blink 1.1s steps(1, end) infinite;
 	}
 	.tiptap-prose :global(.ProseMirror:not(:focus) .fixed-caret::after) {
