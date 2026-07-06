@@ -120,7 +120,13 @@ export function useRecordingStop(
 
 			await new Promise((resolve) => setTimeout(resolve, 500));
 
-			if (isCallApi && transcriptionComplete) {
+			// Save on any normal stop, even if transcription never signalled completion
+			// (a timed-out wait or a status-check error must not silently discard the
+			// recording — the audio and whatever transcripts we have still get saved).
+			if (isCallApi) {
+				if (!transcriptionComplete) {
+					console.warn('[RecordingStop] Saving despite incomplete transcription wait');
+				}
 				recordingState.setStatus(RecordingStatus.SAVING, 'Saving meeting to database...');
 
 				const freshTranscripts = [...transcripts.transcripts];
