@@ -32,8 +32,8 @@ pub const TOGGLE_PAUSE_SHORTCUT: &str = "CmdOrCtrl+Shift+Space";
 /// window declaration (`width: 80`, `height: 220`). Used to compute its
 /// bottom-center anchor; kept in sync with the config by hand (Tauri does not
 /// expose the declared size before the window is shown).
-const PILL_WIDTH: f64 = 80.0;
-const PILL_HEIGHT: f64 = 220.0;
+const PILL_WIDTH: f64 = 72.0;
+const PILL_HEIGHT: f64 = 184.0;
 
 /// Gap in logical pixels between the pill's bottom edge and the monitor work
 /// area's bottom edge, so it does not sit flush against the Dock/taskbar.

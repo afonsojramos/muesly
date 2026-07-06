@@ -147,17 +147,17 @@
 <div class="relative flex h-screen w-screen items-center justify-center bg-transparent">
 	<div transition:pillTransition class="relative">
 		<div
-			class="relative flex flex-col items-center gap-3 rounded-[2rem] border border-border bg-card px-3 py-4 shadow-[0_8px_30px_rgb(0,0,0,0.18)]"
+			class="relative flex flex-col items-center gap-2.5 rounded-3xl border border-border bg-card px-2.5 py-3 shadow-[0_2px_10px_rgb(0,0,0,0.12)]"
 		>
 			<!-- Full-surface drag underlay: the whole pill drags, but the relative
 			     interactive children below sit on top so their clicks win. -->
 			<div
 				data-tauri-drag-region
-				class="absolute inset-0 rounded-[2rem]"
+				class="absolute inset-0 rounded-3xl"
 				style="-webkit-user-select:none"
 			></div>
 
-			<span class="relative text-xs tabular-nums text-muted-foreground" aria-live="polite">
+			<span class="relative text-[11px] tabular-nums text-muted-foreground" aria-live="polite">
 				{elapsed}
 			</span>
 
@@ -166,13 +166,13 @@
 				disabled={isPausing || isResuming || isStopping}
 				aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
 				class={cn(
-					'relative flex size-11 items-center justify-center rounded-full border-2 transition-colors',
+					'relative flex size-9 items-center justify-center rounded-full border-2 transition-colors',
 					isPausing || isResuming || isStopping
 						? 'border-border bg-secondary text-muted-foreground'
 						: 'border-border bg-card text-muted-foreground hover:bg-secondary',
 				)}
 			>
-				{#if isPaused}<Play size={18} />{:else}<Pause size={18} />{/if}
+				{#if isPaused}<Play size={16} />{:else}<Pause size={16} />{/if}
 			</button>
 
 			<button
@@ -180,16 +180,16 @@
 				disabled={isStopping || isPausing || isResuming}
 				aria-label="Stop recording"
 				class={cn(
-					'relative flex size-11 items-center justify-center rounded-full text-white transition-colors',
+					'relative flex size-9 items-center justify-center rounded-full text-white transition-colors',
 					isStopping || isPausing || isResuming
 						? 'bg-muted-foreground/50'
 						: 'bg-destructive hover:opacity-90',
 				)}
 			>
-				<Square size={18} />
+				<Square size={16} />
 			</button>
 
-			<div class="relative flex h-6 items-center justify-center gap-1" aria-hidden="true">
+			<div class="relative flex h-5 items-center justify-center gap-1" aria-hidden="true">
 				{#each barHeights as height, index (index)}
 					<div
 						class={cn(
