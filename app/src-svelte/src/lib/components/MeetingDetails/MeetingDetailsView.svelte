@@ -11,7 +11,9 @@
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
 	import { Analytics } from '$lib/analytics';
+	import { cn } from '$lib/utils';
 	import { config } from '$lib/stores/config.svelte';
+	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { saveStatus } from '$lib/stores/save-status.svelte';
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
@@ -306,11 +308,16 @@
 <div in:fly={{ y: 20, duration: 300 }} class="flex h-screen flex-col bg-background">
 	<div class="flex flex-1 overflow-hidden">
 		<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-			<!-- Note header: large display title + date, Granola-style. Empty
-			     areas drag the window (overlay title bar); the title input and
-			     toggle button block dragging on themselves. -->
-			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-7">
-				<div class="flex items-start gap-2">
+			<!-- Slim top bar: back on the left, note actions on the right, matching the
+			     folder and settings views. -->
+			<div class="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
+				<div
+					data-tauri-drag-region="deep"
+					class={cn(
+						'relative flex h-9 items-center gap-1 pr-3 transition-[padding] duration-300',
+						sidebar.isCollapsed ? 'pl-[6.5rem]' : 'pl-3',
+					)}
+				>
 					<Tooltip.Provider delayDuration={300}>
 						<Tooltip.Root>
 							<Tooltip.Trigger>
@@ -320,7 +327,7 @@
 										onclick={() => history.back()}
 										variant="ghost"
 										size="icon-sm"
-										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
+										class="text-muted-foreground hover:text-foreground"
 										aria-label="Back"
 									>
 										<ArrowLeftIcon />
@@ -329,10 +336,67 @@
 							</Tooltip.Trigger>
 							<Tooltip.Content>
 								Back
-								<span class="ml-1.5 tracking-wide opacity-60">⌘[</span>
+								<span class="tracking-wide opacity-60">⌘[</span>
 							</Tooltip.Content>
 						</Tooltip.Root>
 					</Tooltip.Provider>
+					<div class="ml-auto flex items-center gap-1">
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon-sm"
+											onclick={handleExport}
+											class="text-muted-foreground hover:text-foreground"
+											aria-label="Export note as Markdown"
+										>
+											<DownloadIcon />
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>Export as Markdown</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon-sm"
+											onclick={() => sidePanelState.toggle()}
+											class="text-muted-foreground hover:text-foreground"
+											aria-label={sidePanelState.open
+												? 'Hide transcript & notes'
+												: 'Show transcript & notes'}
+											aria-pressed={sidePanelState.open}
+										>
+											{#if sidePanelState.open}
+												<PanelRightCloseIcon />
+											{:else}
+												<PanelRightOpenIcon />
+											{/if}
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>
+									<span class="flex items-center">
+										{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
+										<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
+									</span>
+								</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+					</div>
+				</div>
+			</div>
+			<!-- Note header: large display title + date, Granola-style. -->
+			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-4">
+				<div class="flex items-start gap-2">
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
@@ -363,56 +427,6 @@
 							{/if}
 						</button>
 					{/if}
-					<Tooltip.Provider delayDuration={300}>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										variant="ghost"
-										size="icon-sm"
-										onclick={handleExport}
-										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
-										aria-label="Export note as Markdown"
-									>
-										<DownloadIcon />
-									</Button>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>Export as Markdown</Tooltip.Content>
-						</Tooltip.Root>
-					</Tooltip.Provider>
-					<Tooltip.Provider delayDuration={300}>
-						<Tooltip.Root>
-							<Tooltip.Trigger>
-								{#snippet child({ props })}
-									<Button
-										{...props}
-										variant="ghost"
-										size="icon-sm"
-										onclick={() => sidePanelState.toggle()}
-										class="mt-1.5 flex-shrink-0 text-muted-foreground hover:text-foreground"
-										aria-label={sidePanelState.open
-											? 'Hide transcript & notes'
-											: 'Show transcript & notes'}
-										aria-pressed={sidePanelState.open}
-									>
-										{#if sidePanelState.open}
-											<PanelRightCloseIcon />
-										{:else}
-											<PanelRightOpenIcon />
-										{/if}
-									</Button>
-								{/snippet}
-							</Tooltip.Trigger>
-							<Tooltip.Content>
-								<span class="flex items-center">
-									{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
-									<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
-								</span>
-							</Tooltip.Content>
-						</Tooltip.Root>
-					</Tooltip.Provider>
 				</div>
 				{#if !isNaN(createdDate.getTime())}
 					<p class="mt-1 text-sm text-muted-foreground">
