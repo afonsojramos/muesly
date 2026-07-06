@@ -752,27 +752,28 @@
 						<Trash2 class="size-4" />
 						<span>{SETTINGS_TRASH.label}</span>
 					</button>
-				{/if}
-				<button
-					onclick={() => importDialog.openImportDialog()}
-					class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-				>
-					<Upload class="size-4" />
-					<span>Import audio</span>
-				</button>
+				{:else}
+					<button
+						onclick={() => importDialog.openImportDialog()}
+						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+					>
+						<Upload class="size-4" />
+						<span>Import audio</span>
+					</button>
 
-				<button
-					onclick={() => goto('/settings')}
-					class={cn(
-						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-						pathname === '/settings'
-							? 'bg-secondary font-medium text-foreground'
-							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-					)}
-				>
-					<Settings class="size-4" />
-					<span>Settings</span>
-				</button>
+					<button
+						onclick={() => goto('/settings')}
+						class={cn(
+							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+							pathname === '/settings'
+								? 'bg-secondary font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+						)}
+					>
+						<Settings class="size-4" />
+						<span>Settings</span>
+					</button>
+				{/if}
 			</div>
 		{/if}
 	</div>
