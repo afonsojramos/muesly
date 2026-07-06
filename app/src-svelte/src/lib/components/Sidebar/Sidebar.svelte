@@ -255,28 +255,6 @@
 			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
-
-	function startResize(e: PointerEvent): void {
-		e.preventDefault();
-		sidebar.isResizing = true;
-		document.body.style.cursor = 'col-resize';
-		document.body.style.userSelect = 'none';
-
-		const onMove = (ev: PointerEvent): void => {
-			// The sidebar is flush with the window's left edge.
-			sidebar.setWidth(ev.clientX);
-		};
-		const onUp = (): void => {
-			sidebar.isResizing = false;
-			document.body.style.cursor = '';
-			document.body.style.userSelect = '';
-			sidebar.persistWidth();
-			window.removeEventListener('pointermove', onMove);
-			window.removeEventListener('pointerup', onUp);
-		};
-		window.addEventListener('pointermove', onMove);
-		window.addEventListener('pointerup', onUp);
-	}
 </script>
 
 <!-- The toggle lives outside the (zero-width when closed) sidebar so it stays
@@ -342,24 +320,11 @@
 	<div
 		class={cn(
 			'relative flex h-screen flex-col overflow-hidden border-r border-border bg-sidebar',
-			!sidebar.isResizing && 'transition-[width] duration-300',
+			'transition-[width] duration-300',
 			sidebar.isCollapsed && 'border-r-0',
 		)}
 		style={`width: ${sidebar.effectiveWidth}px`}
 	>
-		{#if !sidebar.isCollapsed}
-			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-			<div
-				role="separator"
-				aria-orientation="vertical"
-				aria-label="Resize sidebar"
-				class={cn(
-					'absolute inset-y-0 -right-px z-50 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
-					sidebar.isResizing && 'bg-accent/50',
-				)}
-				onpointerdown={startResize}
-			></div>
-		{/if}
 		<!-- Overlay title bar: reserve space for the macOS traffic lights and
 		     let the empty strip drag the window. -->
 		<div data-tauri-drag-region="deep" class="h-8 shrink-0"></div>

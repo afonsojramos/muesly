@@ -15,7 +15,7 @@
      Without this it refuses to shrink below that, overflowing the window on
      narrow sizes and dragging the side panel past the right edge. -->
 <main
-	class={cn('min-w-0 flex-1', !sidebar.isResizing && 'transition-[margin] duration-300')}
+	class={cn('min-w-0 flex-1', 'transition-[margin] duration-300')}
 	style={`margin-left: ${sidebar.effectiveWidth}px`}
 >
 	{@render children()}

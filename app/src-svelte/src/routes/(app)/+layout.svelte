@@ -419,10 +419,7 @@
      (offset past the sidebar), so it tracks the sidebar collapse. -->
 {#if recordingState.isRecording && windowFocused}
 	<div
-		class={cn(
-			'fixed bottom-6 z-40 -translate-x-1/2',
-			!sidebar.isResizing && 'transition-[left] duration-300',
-		)}
+		class={cn('fixed bottom-6 z-40 -translate-x-1/2', 'transition-[left] duration-300')}
 		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
 	>
 		<RecordingBar />

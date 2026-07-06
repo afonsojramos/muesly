@@ -54,25 +54,13 @@ interface SummaryPollResult {
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLLS = 200; // ~16.5 minutes
 
-// User-adjustable sidebar width (persisted), and the fixed collapsed rail width.
-export const SIDEBAR_MIN_WIDTH = 200;
-export const SIDEBAR_MAX_WIDTH = 400;
+// The sidebar is either open (fixed width) or closed (zero-width rail).
+export const SIDEBAR_WIDTH = 256;
 export const SIDEBAR_COLLAPSED_WIDTH = 0;
-const SIDEBAR_WIDTH_KEY = 'muesly-sidebar-width';
-
-function loadSidebarWidth(): number {
-	if (typeof window === 'undefined') return 256;
-	const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-	return saved >= SIDEBAR_MIN_WIDTH && saved <= SIDEBAR_MAX_WIDTH ? saved : 256;
-}
 
 class SidebarStore {
 	currentMeeting = $state<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
 	isCollapsed = $state<boolean>(false);
-	/** Expanded-state width in px, user-adjustable via the resize handle. */
-	width = $state<number>(loadSidebarWidth());
-	/** True while the user is dragging the resize handle (disables transitions). */
-	isResizing = $state<boolean>(false);
 	meetings = $state<CurrentMeeting[]>([]);
 	folders = $state<Folder[]>([]);
 	isMeetingActive = $state<boolean>(false);
@@ -103,20 +91,10 @@ class SidebarStore {
 		this.isCollapsed = !this.isCollapsed;
 	};
 
-	/** Current rendered width: 0 when closed, else the user-set width. */
+	/** Current rendered width: 0 when closed, else the fixed open width. */
 	get effectiveWidth(): number {
-		return this.isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : this.width;
+		return this.isCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 	}
-
-	setWidth = (w: number): void => {
-		this.width = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(w)));
-	};
-
-	persistWidth = (): void => {
-		if (typeof window !== 'undefined') {
-			localStorage.setItem(SIDEBAR_WIDTH_KEY, String(this.width));
-		}
-	};
 
 	setCurrentMeeting = (meeting: CurrentMeeting | null): void => {
 		this.currentMeeting = meeting;
