@@ -885,10 +885,10 @@
 											!modelIsDownloading &&
 											setModelConfig({ ...modelConfig, model: model.name })}
 										class={cn(
-											'rounded-md border bg-card p-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+											'rounded-xl border-2 bg-card p-3 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 											modelConfig.model === model.name
-												? 'border-accent ring-1 ring-inset ring-accent'
-												: 'border-border hover:bg-secondary/50',
+												? 'border-accent bg-accent/5'
+												: 'border-border hover:border-muted-foreground/40',
 											!modelIsDownloading && 'cursor-pointer',
 										)}
 									>
