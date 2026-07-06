@@ -7,7 +7,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
-	import { groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
+	import { groupByRecency } from '$lib/date-groups';
 	import { clock } from '$lib/now.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 
@@ -160,9 +160,7 @@
 					<div class="flex flex-col gap-5">
 						{#each groups as group (group.label)}
 							<div class="flex flex-col gap-2">
-								{#if group.label !== RECENT_GROUP_LABEL}
-									<h3 class="px-1 text-xs font-medium text-muted-foreground/70">{group.label}</h3>
-								{/if}
+								<h3 class="px-1 text-xs font-medium text-muted-foreground/70">{group.label}</h3>
 								{#each group.items as meeting (meeting.id)}
 									<button
 										type="button"

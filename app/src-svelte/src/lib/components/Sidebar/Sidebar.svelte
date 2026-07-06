@@ -20,7 +20,7 @@
 
 	import { Analytics } from '$lib/analytics';
 	import { cn } from '$lib/utils';
-	import { groupByRecency, RECENT_GROUP_LABEL } from '$lib/date-groups';
+	import { groupByRecency } from '$lib/date-groups';
 	import { clock } from '$lib/now.svelte';
 	import { toast } from '$lib/toast';
 	import { config } from '$lib/stores/config.svelte';
@@ -720,11 +720,11 @@
 					)}
 				>
 					{#each uncategorizedGroups as group (group.label)}
-						{#if group.label !== RECENT_GROUP_LABEL}
-							<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
-								{group.label}
-							</div>
-						{/if}
+						<!-- Every group is headed (including "This Week") so recent notes read as
+						     their own section instead of appearing to belong to Folders above. -->
+						<div class="px-2 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/70">
+							{group.label}
+						</div>
 						{#each group.items as child (child.id)}
 							{@render meetingRow(child)}
 						{/each}

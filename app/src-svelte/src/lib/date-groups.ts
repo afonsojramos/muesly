@@ -1,13 +1,13 @@
 // Recency-first date bucketing shared by the sidebar note list and the folder
-// page. Recent notes (the current week) are meant to be listed "freely" without
-// a header; everything older falls into progressively wider, headed buckets.
+// page. Notes are grouped into a current-week bucket ("This Week") and then
+// progressively wider buckets; every bucket is rendered with a header.
 
 export interface DateGroup<T> {
 	label: string;
 	items: T[];
 }
 
-/** Label for the current-week bucket; UIs render this group without a header. */
+/** Label for the current-week bucket. */
 export const RECENT_GROUP_LABEL = 'This Week';
 
 // Epoch millis for an ISO string; undated / unparseable sort oldest.
