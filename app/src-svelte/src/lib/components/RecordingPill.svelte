@@ -157,7 +157,10 @@
 				style="-webkit-user-select:none"
 			></div>
 
-			<span class="relative text-[11px] tabular-nums text-muted-foreground" aria-live="polite">
+			<span
+				class="pointer-events-none relative select-none text-[11px] tabular-nums text-muted-foreground"
+				aria-live="polite"
+			>
 				{elapsed}
 			</span>
 
@@ -189,7 +192,10 @@
 				<Square size={16} />
 			</button>
 
-			<div class="relative flex h-5 items-center justify-center gap-1" aria-hidden="true">
+			<div
+				class="pointer-events-none relative flex h-5 items-center justify-center gap-1"
+				aria-hidden="true"
+			>
 				{#each barHeights as height, index (index)}
 					<div
 						class={cn(
@@ -202,7 +208,7 @@
 			</div>
 
 			{#if reducedMotion}
-				<span class="relative text-[10px] text-muted-foreground">
+				<span class="pointer-events-none relative select-none text-[10px] text-muted-foreground">
 					{isPaused ? 'Paused' : 'Recording'}
 				</span>
 			{/if}
