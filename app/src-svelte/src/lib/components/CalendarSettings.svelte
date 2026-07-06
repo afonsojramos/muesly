@@ -8,6 +8,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { toast } from '$lib/toast';
+	import { cn } from '$lib/utils';
 	import {
 		commands,
 		type CalendarAccount,
@@ -37,6 +38,7 @@
 		const list = await commands.calendarListAccounts();
 		if (list.status === 'ok') accounts = list.data;
 		googleConfigured = await commands.calendarGoogleConfigured();
+		await loadAllAccountCalendars();
 	}
 
 	async function addGoogleAccount(): Promise<void> {
@@ -67,8 +69,8 @@
 		await loadAccounts();
 	}
 
-	// Per-account calendar selection (expand a Google account to choose calendars).
-	let expandedAccountId = $state<string | null>(null);
+	// Per-account calendar selection. Every Google account's calendars are always
+	// shown; `accountCalendars[id] === undefined` means "not loaded yet".
 	let accountCalendars = $state<Record<string, CalendarInfo[]>>({});
 	let accountExcluded = $state<Record<string, Set<string>>>({});
 
@@ -81,20 +83,22 @@
 		}
 	}
 
-	async function toggleAccountCalendars(acct: CalendarAccount): Promise<void> {
-		if (expandedAccountId === acct.id) {
-			expandedAccountId = null;
-			return;
-		}
-		expandedAccountId = acct.id;
-		accountExcluded = { ...accountExcluded, [acct.id]: parseExcluded(acct.excluded_calendar_ids) };
-		if (!accountCalendars[acct.id]) {
+	// Load calendars for every connected Google account (skipping already-cached
+	// ones), and keep each account's exclusion set in sync with the latest data.
+	async function loadAllAccountCalendars(): Promise<void> {
+		for (const acct of googleAccounts) {
+			accountExcluded = {
+				...accountExcluded,
+				[acct.id]: parseExcluded(acct.excluded_calendar_ids),
+			};
+			if (accountCalendars[acct.id] !== undefined) continue;
 			const res = await commands.calendarListAccountCalendars(acct.id);
-			if (res.status === 'ok') {
-				accountCalendars = { ...accountCalendars, [acct.id]: res.data };
-			} else {
-				toast.error('Could not load calendars', { description: res.error });
-			}
+			// On failure (e.g. a reauth-required account) fall back to an empty list;
+			// the account row already surfaces the reconnect prompt.
+			accountCalendars = {
+				...accountCalendars,
+				[acct.id]: res.status === 'ok' ? res.data : [],
+			};
 		}
 	}
 
@@ -283,11 +287,12 @@
 						{/each}
 					</div>
 
-					<!-- Connected Google accounts -->
+					<!-- Connected Google accounts (calendars always shown) -->
 					{#each googleAccounts as acct (acct.id)}
-						<div>
-							<div class="flex items-center justify-between">
-								<div class="text-sm">
+						{@const cals = accountCalendars[acct.id]}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center justify-between gap-3">
+								<div class="min-w-0 flex-1 truncate text-sm">
 									{acct.email ?? 'Google account'}
 									{#if acct.status === 'reauth_required'}
 										<span class="ml-2 text-xs text-warning"
@@ -295,10 +300,7 @@
 										>
 									{/if}
 								</div>
-								<div class="flex items-center gap-3">
-									<Button variant="ghost" size="sm" onclick={() => toggleAccountCalendars(acct)}>
-										{expandedAccountId === acct.id ? 'Hide calendars' : 'Calendars'}
-									</Button>
+								<div class="flex flex-shrink-0 items-center gap-3">
 									<Switch
 										checked={acct.enabled}
 										onCheckedChange={(v) => toggleAccount(acct.id, v)}
@@ -314,23 +316,30 @@
 									</Button>
 								</div>
 							</div>
-							{#if expandedAccountId === acct.id}
-								<div class="mt-2 flex flex-col gap-1 border-l border-border pl-4">
-									{#if (accountCalendars[acct.id] ?? []).length === 0}
-										<div class="text-xs text-muted-foreground">No calendars found.</div>
-									{:else}
-										{#each accountCalendars[acct.id] as cal (cal.id)}
-											<div class="flex items-center justify-between">
-												<div class="text-sm">{cal.title}</div>
-												<Switch
-													checked={!accountExcluded[acct.id]?.has(cal.id)}
-													onCheckedChange={(v) => toggleAccountCalendar(acct.id, cal.id, v)}
-												/>
-											</div>
-										{/each}
-									{/if}
-								</div>
-							{/if}
+
+							<!-- Calendar list: always visible, one toggle per calendar -->
+							<div
+								class={cn(
+									'divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-muted/20 transition-opacity',
+									!acct.enabled && 'opacity-50',
+								)}
+							>
+								{#if cals === undefined}
+									<div class="px-3 py-2 text-xs text-muted-foreground">Loading calendars…</div>
+								{:else if cals.length === 0}
+									<div class="px-3 py-2 text-xs text-muted-foreground">No calendars found.</div>
+								{:else}
+									{#each cals as cal (cal.id)}
+										<div class="flex items-center justify-between gap-3 px-3 py-2">
+											<span class="min-w-0 flex-1 truncate text-sm">{cal.title}</span>
+											<Switch
+												checked={!accountExcluded[acct.id]?.has(cal.id)}
+												onCheckedChange={(v) => toggleAccountCalendar(acct.id, cal.id, v)}
+											/>
+										</div>
+									{/each}
+								{/if}
+							</div>
 						</div>
 					{/each}
 				</div>
