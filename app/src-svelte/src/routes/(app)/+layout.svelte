@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -312,7 +313,11 @@
 							description: 'You need to finish onboarding before you can start recording.',
 						});
 					} else if (isBrowser) {
-						window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+						// The note editor lives at /note. Route through the shared toggle so
+						// this works from any page: start in place if already on the editor,
+						// otherwise flag an auto-start and navigate there.
+						const intent = sidebar.requestRecordingToggle(window.location.pathname);
+						if (intent === 'navigate-editor') void goto('/note');
 					}
 				});
 				if (cancelled) unlistenTray();

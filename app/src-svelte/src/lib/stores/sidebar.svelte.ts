@@ -297,24 +297,26 @@ class SidebarStore {
 	 * intent so the caller (a component with SvelteKit's `goto`) can execute
 	 * it — this keeps router calls out of the store layer.
 	 */
-	requestRecordingToggle = (currentPath: string): 'on-home' | 'navigate-home' | 'noop' => {
+	requestRecordingToggle = (currentPath: string): 'on-editor' | 'navigate-editor' | 'noop' => {
 		if (recordingState.isRecording) return 'noop';
 
 		Analytics.track('button_click', { name: 'start_recording', location: 'sidebar' }).catch((err) =>
 			console.error('Analytics track failed:', err),
 		);
 
-		if (currentPath === '/') {
+		// The note editor lives at /note; recording happens there. If already on it,
+		// start in place; otherwise flag an auto-start and let the caller navigate.
+		if (currentPath === '/note') {
 			if (typeof window !== 'undefined') {
 				window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
 			}
-			return 'on-home';
+			return 'on-editor';
 		}
 
 		if (typeof window !== 'undefined') {
 			sessionStorage.setItem('autoStartRecording', 'true');
 		}
-		return 'navigate-home';
+		return 'navigate-editor';
 	};
 
 	#cleanup(): void {

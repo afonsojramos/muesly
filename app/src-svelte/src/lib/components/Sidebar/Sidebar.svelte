@@ -191,8 +191,8 @@
 
 	function handleRecordingToggle(): void {
 		const intent = sidebar.requestRecordingToggle(pathname);
-		if (intent === 'navigate-home') {
-			void goto('/');
+		if (intent === 'navigate-editor') {
+			void goto('/note');
 		}
 	}
 
