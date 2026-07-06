@@ -22,6 +22,7 @@
 	import Editor from '$lib/components/Editor.svelte';
 	import PermissionWarning from '$lib/components/PermissionWarning.svelte';
 	import TranscriptPanel from '$lib/components/home/TranscriptPanel.svelte';
+	import ComingUp from '$lib/components/home/ComingUp.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
 	import TranscriptRecovery from '$lib/components/TranscriptRecovery/TranscriptRecovery.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -234,6 +235,12 @@
 								isRechecking={permissions.isChecking}
 							/>
 						</div>
+					{/if}
+
+					<!-- Idle-home dashboard: show upcoming meetings above the fresh editor.
+					     Hidden once recording starts or the user begins a note. -->
+					{#if !recordingState.isRecording && !notes.markdown.trim()}
+						<ComingUp />
 					{/if}
 
 					<div class="relative">
