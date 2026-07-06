@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 
 	import { bootStores } from '$lib/stores';
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
@@ -21,6 +22,9 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
 	import MainContent from '$lib/components/MainContent.svelte';
+	import RecordingBar from '$lib/components/RecordingBar.svelte';
+	import { sidebar } from '$lib/stores/sidebar.svelte';
+	import { cn } from '$lib/utils';
 	import DownloadProgressToast from '$lib/components/shared/DownloadProgressToast.svelte';
 	import ImportDropOverlay from '$lib/components/ImportAudio/ImportDropOverlay.svelte';
 	import ImportAudioDialog from '$lib/components/ImportAudio/ImportAudioDialog.svelte';
@@ -39,6 +43,33 @@
 	const showOnboarding = $derived(
 		(isTauriRuntime || !import.meta.env.DEV) && onboarding.statusLoaded && !onboarding.completed,
 	);
+
+	// The in-app recording bar shows only while the main window is focused; the
+	// floating pill (Rust) covers the backgrounded case. Both read the SAME native
+	// window focus — the pill off WindowEvent::Focused, the bar off onFocusChanged —
+	// so they stay mutually exclusive (never two stop controls at once).
+	let windowFocused = $state(true);
+	onMount(() => {
+		if (!isTauriRuntime) return;
+		const win = getCurrentWindow();
+		let unlisten: (() => void) | undefined;
+		let cancelled = false;
+		void win.isFocused().then((focused) => {
+			if (!cancelled) windowFocused = focused;
+		});
+		void win
+			.onFocusChanged(({ payload }) => {
+				windowFocused = payload;
+			})
+			.then((fn) => {
+				if (cancelled) fn();
+				else unlisten = fn;
+			});
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
+	});
 
 	// Import audio overlay/dialog state (shell-level, mirrors the React layout).
 	let showDropOverlay = $state(false);
@@ -203,6 +234,15 @@
 	// Recording post-processing listener (ports RecordingPostProcessingProvider):
 	// run the full post-stop flow whenever Rust reports a completed stop, no matter
 	// which page the user is on.
+	//
+	// Guard against a duplicate `recording-stop-complete`: the pill, the in-app bar
+	// and the tray can each emit it, and the pipeline (flush → SQLite save →
+	// navigate) is not itself idempotent. Re-armed when a new recording begins, so
+	// exactly the first completion per recording runs.
+	let stopHandled = false;
+	$effect(() => {
+		if (recordingState.isRecording) stopHandled = false;
+	});
 	$effect(() => {
 		let unlisten: UnlistenFn | undefined;
 		let cancelled = false;
@@ -211,6 +251,8 @@
 			try {
 				const fn = await listen<boolean>('recording-stop-complete', (event) => {
 					// event.payload is the callApi boolean (true for normal stops).
+					if (stopHandled) return;
+					stopHandled = true;
 					void handleRecordingStop(event.payload);
 				});
 				if (cancelled) fn();
@@ -363,6 +405,22 @@
 		<MainContent>
 			{@render children()}
 		</MainContent>
+	</div>
+{/if}
+
+<!-- In-app recording control, rendered regardless of the onboarding branch so an
+     active recording always has a stop button while the window is focused (the
+     floating pill covers the unfocused case). Centered in the main content area
+     (offset past the sidebar), so it tracks the sidebar collapse. -->
+{#if recordingState.isRecording && windowFocused}
+	<div
+		class={cn(
+			'fixed bottom-6 z-40 -translate-x-1/2',
+			!sidebar.isResizing && 'transition-[left] duration-300',
+		)}
+		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
+	>
+		<RecordingBar />
 	</div>
 {/if}
 

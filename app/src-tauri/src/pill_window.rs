@@ -78,6 +78,43 @@ pub fn show<R: Runtime>(app: &AppHandle<R>) {
     log::debug!("pill window shown");
 }
 
+/// Reconcile the pill's visibility with the current state: it should be visible
+/// only while a recording is active AND the main window is not focused. When the
+/// main window is focused the in-app recording bar takes over, so the pill hides
+/// to avoid duplicate stop controls. Called on recording start and whenever the
+/// main window's focus changes.
+pub fn sync_visibility<R: Runtime>(app: &AppHandle<R>) {
+    let main_focused = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    sync_visibility_with_main_focus(app, main_focused);
+}
+
+/// Reconcile the pill using an already-known main-window focus state (e.g. the
+/// `WindowEvent::Focused` payload), avoiding a redundant `is_focused()` re-query
+/// that could observe a stale value on focus-lagging window managers. Acts only
+/// on a real visibility transition, so repeated focus toggles don't re-anchor
+/// the pill to the cursor's monitor or churn global-shortcut registration.
+pub fn sync_visibility_with_main_focus<R: Runtime>(app: &AppHandle<R>, main_focused: bool) {
+    let want_visible =
+        crate::audio::recording_commands::is_recording_active() && !main_focused;
+
+    let currently_visible = app
+        .get_webview_window(PILL_LABEL)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false);
+    if want_visible == currently_visible {
+        return;
+    }
+
+    if want_visible {
+        show(app);
+    } else {
+        hide(app);
+    }
+}
+
 /// Hide the pill window. No-op if the window does not exist. Hiding (rather than
 /// closing) keeps the pre-warmed webview alive for the next recording.
 pub fn hide<R: Runtime>(app: &AppHandle<R>) {

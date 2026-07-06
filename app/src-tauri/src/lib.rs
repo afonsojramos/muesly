@@ -1132,10 +1132,10 @@ pub fn run() {
             }
 
             // If the app was relaunched while a recording is already active,
-            // reveal the floating pill now that the windows exist. Best-effort:
-            // `show` no-ops if the pill window is missing.
+            // reconcile the pill now that the windows exist: it shows only if the
+            // main window is not focused. Best-effort and no-ops if missing.
             if audio::recording_commands::is_recording_active() {
-                pill_window::show(&_app.handle());
+                pill_window::sync_visibility(&_app.handle());
             }
 
             // Initialize notification system with proper defaults
@@ -1298,6 +1298,18 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            // The floating pill is only for the backgrounded case: hide it when the
+            // main window gains focus (the in-app recording bar takes over), and
+            // show it again when focus leaves. sync_visibility itself gates on
+            // whether a recording is active.
+            if let tauri::WindowEvent::Focused(focused) = event {
+                if window.label() == "main" {
+                    // Use the event's authoritative focus state rather than
+                    // re-querying, which can lag on some window managers.
+                    pill_window::sync_visibility_with_main_focus(window.app_handle(), *focused);
+                }
+            }
+
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {
                     "main" => {

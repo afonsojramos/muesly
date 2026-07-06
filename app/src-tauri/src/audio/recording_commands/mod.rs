@@ -393,9 +393,9 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Set recording flag and reset speech detection flag
     info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
     IS_RECORDING.store(true, Ordering::SeqCst);
-    // Reveal the floating recording pill in lockstep with the recording flag,
-    // covering both start paths so the pill can never desync from the state.
-    crate::pill_window::show(&app);
+    // Reconcile the pill in lockstep with the recording flag (both start paths):
+    // it appears only if the main window is not focused, else the in-app bar shows.
+    crate::pill_window::sync_visibility(&app);
     reset_speech_detected_flag(); // Reset for new recording session
     crate::whisper_engine::reset_session_detected_language(); // Clear stale auto-detected language lock
 
@@ -593,9 +593,9 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Set recording flag and reset speech detection flag
     info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
     IS_RECORDING.store(true, Ordering::SeqCst);
-    // Reveal the floating recording pill in lockstep with the recording flag,
-    // covering both start paths so the pill can never desync from the state.
-    crate::pill_window::show(&app);
+    // Reconcile the pill in lockstep with the recording flag (both start paths):
+    // it appears only if the main window is not focused, else the in-app bar shows.
+    crate::pill_window::sync_visibility(&app);
     reset_speech_detected_flag(); // Reset for new recording session
     crate::whisper_engine::reset_session_detected_language(); // Clear stale auto-detected language lock
 
