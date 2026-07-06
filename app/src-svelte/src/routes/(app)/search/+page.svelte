@@ -138,7 +138,9 @@
 				<Input
 					id="search-input"
 					class="h-11 pl-9 text-base"
-					placeholder={scopeFolder ? `Search notes in ${scopeFolder.name}` : 'Search all notes'}
+					placeholder={scope === 'folder' && scopeFolder
+						? `Search notes in ${scopeFolder.name}`
+						: 'Search all notes'}
 					aria-label="Search notes"
 					value={query}
 					oninput={(e) => onInput(e.currentTarget.value)}
