@@ -137,7 +137,7 @@
 	}
 </script>
 
-<div class="flex items-start gap-3">
+<div class="group flex items-start gap-3">
 	<div class="mt-0.5 h-8 w-0.5 flex-shrink-0 rounded-full bg-success/60"></div>
 	<div class="min-w-0 flex-1">
 		<div class="truncate text-sm font-medium">{ev.title}</div>
@@ -162,7 +162,12 @@
 							{...props}
 							size="sm"
 							variant="outline"
-							class="max-w-[11rem] text-muted-foreground"
+							class={cn(
+								'max-w-[11rem] text-muted-foreground transition-opacity',
+								!assignedFolder &&
+									!pickerOpen &&
+									'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+							)}
 							aria-label="Add to folder"
 						>
 							{#if assignedFolder}
