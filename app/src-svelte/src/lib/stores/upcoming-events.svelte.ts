@@ -1,28 +1,28 @@
+import { listen } from '@tauri-apps/api/event';
 import { commands, type PreviewEvent } from '$lib/bindings';
 
 /**
- * Session cache for the home "Coming up" preview. Fetching upcoming events hits
- * the calendar sources (and the Google network), which is slow, so the list is
- * cached at module scope and served instantly on every revisit. `ensure()` does
- * stale-while-revalidate: it returns immediately when the cache is fresh, and
- * otherwise kicks off a single background refresh (in-flight requests coalesce).
+ * Home "Coming up" preview. The backend persists the preview and serves it
+ * instantly (so the dashboard paints without a live fetch), refreshing it in the
+ * background when stale and emitting `upcoming-events-updated` when fresh data
+ * lands. This store mirrors that: read the cache on demand and re-read on the
+ * event. In-flight reads coalesce.
  */
 class UpcomingEventsStore {
 	events = $state<PreviewEvent[]>([]);
 	loaded = $state(false);
 
-	#lastFetch = 0;
 	#inFlight: Promise<void> | null = null;
-	/** Serve the cache without refetching for this long after a successful load. */
-	readonly #ttlMs = 60_000;
+	#listening = false;
 
-	/** Refresh only when the cache is empty or older than the TTL. */
+	/** Load the preview once, and keep it fresh via the backend refresh event. */
 	async ensure(): Promise<void> {
-		if (this.loaded && Date.now() - this.#lastFetch < this.#ttlMs) return;
+		this.#listenForUpdates();
+		if (this.loaded) return;
 		return this.refresh();
 	}
 
-	/** Force a refresh, coalescing concurrent callers onto one request. */
+	/** (Re)read the preview from the backend cache; coalesces concurrent callers. */
 	async refresh(): Promise<void> {
 		if (this.#inFlight) return this.#inFlight;
 		this.#inFlight = (async () => {
@@ -31,13 +31,20 @@ class UpcomingEventsStore {
 				if (res.status === 'ok') {
 					this.events = res.data;
 					this.loaded = true;
-					this.#lastFetch = Date.now();
 				}
 			} finally {
 				this.#inFlight = null;
 			}
 		})();
 		return this.#inFlight;
+	}
+
+	// Re-read when the backend's background refresh lands. Registered once for the
+	// app's lifetime (the store is a module singleton).
+	#listenForUpdates(): void {
+		if (this.#listening || typeof window === 'undefined') return;
+		this.#listening = true;
+		void listen('upcoming-events-updated', () => void this.refresh());
 	}
 }
 

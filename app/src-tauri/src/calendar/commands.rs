@@ -9,6 +9,7 @@ use crate::database::repositories::setting::SettingsRepository;
 use crate::state::AppState;
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
+use tauri::Emitter;
 
 #[tauri::command]
 #[specta::specta]
@@ -387,8 +388,56 @@ pub async fn calendar_set_account_excluded_ids(
 #[specta::specta]
 pub async fn calendar_preview_upcoming(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<service::PreviewEvent>, String> {
-    Ok(service::preview_upcoming(state.db_manager.pool(), chrono::Utc::now()).await)
+    let pool = state.db_manager.pool();
+    let cached: Option<CachedUpcoming> = SettingsRepository::get_calendar_upcoming_cache(pool)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|json| serde_json::from_str(&json).ok());
+
+    let (events, stale) = match &cached {
+        Some(c) => (
+            c.events.clone(),
+            (Utc::now() - c.fetched_at).num_seconds() > UPCOMING_CACHE_TTL_SECS,
+        ),
+        None => (Vec::new(), true),
+    };
+
+    // Refresh in the background when missing/stale so the caller returns instantly;
+    // the frontend re-fetches on the `upcoming-events-updated` event.
+    if stale {
+        let pool = pool.clone();
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            refresh_upcoming_cache(pool, app).await;
+        });
+    }
+
+    Ok(events)
+}
+
+/// The persisted "Coming up" preview: the events plus when they were fetched.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct CachedUpcoming {
+    events: Vec<service::PreviewEvent>,
+    fetched_at: DateTime<Utc>,
+}
+
+/// Serve the cache without refetching for this long (5 minutes).
+const UPCOMING_CACHE_TTL_SECS: i64 = 300;
+
+/// Fetch upcoming events, persist them with a timestamp, and notify the frontend.
+async fn refresh_upcoming_cache(pool: sqlx::SqlitePool, app: tauri::AppHandle) {
+    let cached = CachedUpcoming {
+        events: service::preview_upcoming(&pool, Utc::now()).await,
+        fetched_at: Utc::now(),
+    };
+    if let Ok(json) = serde_json::to_string(&cached) {
+        let _ = SettingsRepository::set_calendar_upcoming_cache(&pool, &json).await;
+    }
+    let _ = app.emit("upcoming-events-updated", ());
 }
 
 /// One-click, secret-free diagnostic for a calendar source (where it fails).

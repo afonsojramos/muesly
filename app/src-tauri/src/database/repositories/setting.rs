@@ -160,6 +160,30 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Cached "Coming up" preview (JSON blob: events + fetched_at). NULL until the
+    /// first fetch. Serves the home dashboard instantly; refreshed in the background.
+    pub async fn get_calendar_upcoming_cache(
+        pool: &SqlitePool,
+    ) -> std::result::Result<Option<String>, sqlx::Error> {
+        let value: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT calendar_upcoming_cache FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.flatten())
+    }
+
+    pub async fn set_calendar_upcoming_cache(
+        pool: &SqlitePool,
+        json: &str,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET calendar_upcoming_cache = ? WHERE id = '1'")
+            .bind(json)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Whether local-AI cleanup of dictated text is enabled (single-row settings, id='1').
     pub async fn get_dictation_cleanup_enabled(
         pool: &SqlitePool,
