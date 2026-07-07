@@ -25,6 +25,7 @@
 	import { sidebar, type CurrentMeeting } from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import EmojiPicker from '$lib/components/EmojiPicker.svelte';
 	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -596,15 +597,9 @@
 			{folderModal.mode === 'create' ? 'New folder' : 'Edit folder'}
 		</Dialog.Title>
 		<div class="flex items-center gap-2">
-			<Input
-				value={folderEmojiInput}
-				oninput={(e) => (folderEmojiInput = e.currentTarget.value)}
-				onkeydown={(e) => {
-					if (e.key === 'Enter') void submitFolder();
-				}}
-				placeholder="🙂"
-				aria-label="Folder emoji"
-				class="w-14 text-center text-lg"
+			<EmojiPicker
+				value={folderEmojiInput || null}
+				onSelect={(emoji) => (folderEmojiInput = emoji ?? '')}
 			/>
 			<Input
 				value={folderNameInput}
