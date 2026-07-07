@@ -16,6 +16,7 @@
 	import { isAudioExtension, getAudioFormatsDisplayList } from '$lib/constants/audio-formats';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
+	import { FOLDER_PIN_KEY } from '$lib/hooks/use-recording-start.svelte';
 	import {
 		setUpdateDialogCallback,
 		showUpdateNotification,
@@ -275,6 +276,34 @@
 			}
 		})();
 
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
+	});
+
+	// The meeting-start scheduler starts recordings in the backend; it emits the
+	// event's identity here so the stop hook can file the note into its pre-assigned
+	// folder (even when calendar context is off).
+	$effect(() => {
+		let unlisten: UnlistenFn | undefined;
+		let cancelled = false;
+		(async () => {
+			try {
+				const fn = await listen<{ icalUid: string; occurrenceMinute: number }>(
+					'recording-folder-pin',
+					(event) => {
+						if (typeof sessionStorage !== 'undefined') {
+							sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(event.payload));
+						}
+					},
+				);
+				if (cancelled) fn();
+				else unlisten = fn;
+			} catch (error) {
+				console.error('[RecordingFolderPin] Failed to set up listener:', error);
+			}
+		})();
 		return () => {
 			cancelled = true;
 			unlisten?.();

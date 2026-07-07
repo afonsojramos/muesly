@@ -15,6 +15,7 @@ import { onMount } from 'svelte';
 
 import { Analytics } from '$lib/analytics';
 import { commands } from '$lib/bindings';
+import { FOLDER_PIN_KEY } from '$lib/hooks/use-recording-start.svelte';
 import { storageService } from '$lib/services/storage';
 import { transcriptService } from '$lib/services/transcript';
 import { toast } from '$lib/toast';
@@ -173,6 +174,24 @@ export function useRecordingStop(
 						}
 					} catch (calendarError) {
 						console.error('Failed to attach calendar event:', calendarError);
+					}
+
+					// If this recording was started from a specific calendar event (the
+					// "Coming up" Start button pins its identity), file the note into the
+					// folder pre-assigned to that event. Runs regardless of the context
+					// toggle, and uses the exact event rather than re-matching.
+					const pinned = isBrowser ? sessionStorage.getItem(FOLDER_PIN_KEY) : null;
+					if (pinned) {
+						sessionStorage.removeItem(FOLDER_PIN_KEY);
+						try {
+							const { icalUid, occurrenceMinute } = JSON.parse(pinned) as {
+								icalUid: string;
+								occurrenceMinute: number;
+							};
+							await commands.calendarApplyFolderRule(meetingId, icalUid, occurrenceMinute);
+						} catch (pinError) {
+							console.error('Failed to apply pre-assigned folder:', pinError);
+						}
 					}
 
 					await transcripts.markMeetingAsSaved();

@@ -68,15 +68,26 @@ async function checkIfModelDownloading(): Promise<boolean> {
 	}
 }
 
+/** A calendar event whose pre-assigned folder should be applied to this recording. */
+export interface FolderPin {
+	icalUid: string;
+	occurrenceMinute: number;
+}
+/** sessionStorage key the stop hook reads to apply a pinned folder rule. */
+export const FOLDER_PIN_KEY = 'pending_folder_rule';
+
 /**
  * Start a recording with an explicit title (e.g. a calendar event name), from
  * anywhere. Mirrors `startBackendRecording` + the readiness check, without the
  * hook's local UI callbacks. Surfaces a toast instead of throwing so callers
- * (like the "Coming up" Start button) can fire-and-forget.
+ * (like the "Coming up" Start button) can fire-and-forget. When `pin` is set, the
+ * event's identity is stashed so the stop hook files the note into the folder the
+ * user pre-assigned to that event (independent of the calendar-context toggle).
  */
 export async function startRecordingWithTitle(
 	title: string,
 	location = 'coming_up',
+	pin?: FolderPin,
 ): Promise<void> {
 	if (recordingState.isRecording) return;
 	const parakeetReady = await checkParakeetReady();
@@ -98,6 +109,9 @@ export async function startRecordingWithTitle(
 		recordingState.markStarted();
 		transcripts.clearTranscripts();
 		sidebar.setIsMeetingActive(true);
+		if (pin && typeof sessionStorage !== 'undefined') {
+			sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(pin));
+		}
 		await showRecordingNotification();
 		void Analytics.trackButtonClick('start_recording', location);
 	} catch (error) {

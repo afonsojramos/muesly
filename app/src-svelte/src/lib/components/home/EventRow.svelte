@@ -51,15 +51,26 @@
 		return sidebar.meetings.filter((m) => m.folderId === id).length;
 	}
 
+	// True once the user has touched the assignment, so a slow hydration response
+	// can't clobber a fresh pick (TOCTOU).
+	let touched = false;
+
 	onMount(() => {
 		if (!ev.ical_uid) return;
 		void commands.calendarGetEventFolder(ev.ical_uid, ev.occurrence_minute).then((res) => {
-			if (res.status === 'ok') assignedFolderId = res.data;
+			if (!touched && res.status === 'ok') assignedFolderId = res.data;
 		});
 	});
 
 	async function assign(folderId: string, autoAddSeries = false): Promise<void> {
 		if (!ev.ical_uid) return;
+		touched = true;
+		// Re-selecting the already-assigned folder is a no-op — otherwise it would
+		// write a per-occurrence rule (overriding a series rule) and re-prompt.
+		if (!autoAddSeries && folderId === assignedFolderId) {
+			pickerOpen = false;
+			return;
+		}
 		const res = await commands.calendarSetEventFolder(
 			ev.ical_uid,
 			null,
@@ -83,6 +94,7 @@
 
 	async function unassign(): Promise<void> {
 		if (!ev.ical_uid) return;
+		touched = true;
 		const res = await commands.calendarClearEventFolder(ev.ical_uid, ev.occurrence_minute);
 		if (res.status === 'error') {
 			toast.error('Failed to clear folder', { description: res.error });
@@ -95,9 +107,15 @@
 	async function createAndAssign(): Promise<void> {
 		const name = query.trim();
 		if (!name) return;
+		touched = true;
 		await sidebar.createFolder(name);
 		const created = sidebar.folders.find((f) => f.name === name);
-		if (created) await assign(created.id);
+		if (created) {
+			await assign(created.id);
+		} else {
+			toast.error('Folder created', { description: 'Pick it from the list to assign it.' });
+			pickerOpen = false;
+		}
 	}
 
 	async function confirmAutoAdd(): Promise<void> {
@@ -111,7 +129,10 @@
 	}
 
 	async function onStart(): Promise<void> {
-		await startRecordingWithTitle(ev.title);
+		const pin = ev.ical_uid
+			? { icalUid: ev.ical_uid, occurrenceMinute: ev.occurrence_minute }
+			: undefined;
+		await startRecordingWithTitle(ev.title, 'coming_up', pin);
 		void goto('/note');
 	}
 </script>
