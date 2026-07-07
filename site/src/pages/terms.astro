@@ -1,0 +1,25 @@
+---
+import { marked } from 'marked';
+import sanitizeHtml from 'sanitize-html';
+// Generated at build time from the repo-root TERMS_OF_SERVICE.md (single source of
+// truth). See site/scripts/copy-legal-docs.mjs.
+import terms from '$lib/content/terms-of-service.md?raw';
+import Section from '../components/ui/Section.astro';
+import Base from '../layouts/Base.astro';
+
+// First-party content, but sanitize defensively before injecting so a stray
+// HTML tag a future editor adds to the markdown can't inject into the page.
+const rendered = sanitizeHtml(marked.parse(terms, { async: false }) as string, {
+	allowedTags: sanitizeHtml.defaults.allowedTags.concat(['h1', 'h2']),
+	allowedAttributes: { a: ['href', 'target', 'rel'] }
+});
+---
+
+<Base
+	title="Terms of Service — muesly"
+	description="The terms for using muesly: free and open source under the MIT License, provided as is, and used at your own responsibility."
+>
+	<Section class="py-16 md:py-24">
+		<article class="prose-muesly mx-auto max-w-2xl" set:html={rendered} />
+	</Section>
+</Base>

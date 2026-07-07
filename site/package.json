@@ -8,13 +8,13 @@
 		"node": "24"
 	},
 	"scripts": {
-		"dev": "node scripts/copy-privacy-policy.mjs && astro dev",
-		"build": "node scripts/copy-privacy-policy.mjs && astro build",
+		"dev": "node scripts/copy-legal-docs.mjs && astro dev",
+		"build": "node scripts/copy-legal-docs.mjs && astro build",
 		"preview": "astro preview",
-		"sync": "node scripts/copy-privacy-policy.mjs && astro sync",
-		"check": "node scripts/copy-privacy-policy.mjs && astro check",
+		"sync": "node scripts/copy-legal-docs.mjs && astro sync",
+		"check": "node scripts/copy-legal-docs.mjs && astro check",
 		"test": "vitest run",
-		"deploy": "node scripts/copy-privacy-policy.mjs && astro build && wrangler deploy"
+		"deploy": "node scripts/copy-legal-docs.mjs && astro build && wrangler deploy"
 	},
 	"dependencies": {
 		"@astrojs/sitemap": "^3.7.3",

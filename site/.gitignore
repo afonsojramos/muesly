@@ -22,5 +22,6 @@ pnpm-debug.log*
 # macOS
 .DS_Store
 
-# Generated at build time from the repo-root PRIVACY_POLICY.md (single source of truth)
+# Generated at build time from the repo-root legal docs (single source of truth)
 /src/lib/content/privacy-policy.md
+/src/lib/content/terms-of-service.md
