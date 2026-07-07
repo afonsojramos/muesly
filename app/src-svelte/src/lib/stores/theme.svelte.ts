@@ -65,12 +65,32 @@ class ThemeStore {
 	private apply(animate = false): void {
 		if (typeof document === 'undefined') return;
 		const root = document.documentElement;
-		if (animate) {
-			root.classList.add('theme-transition');
-			clearTimeout(this.#transitionTimer);
-			this.#transitionTimer = setTimeout(() => root.classList.remove('theme-transition'), 400);
+		const commit = (): void => {
+			root.classList.toggle('dark', this.resolved === 'dark');
+		};
+
+		const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+		if (!animate || reduce) {
+			commit();
+			return;
 		}
-		root.classList.toggle('dark', this.resolved === 'dark');
+
+		// Prefer the View Transitions API: it cross-fades a snapshot of the whole
+		// page, so every element switches in lockstep. Per-element CSS colour
+		// transitions can't match that — nested inherited-colour transitions
+		// compound and lag, so text that inherits its colour (e.g. section titles)
+		// finishes noticeably late. Fall back to the CSS colour cross-fade
+		// (`.theme-transition` in app.css) where the API is unavailable.
+		const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+		if (typeof doc.startViewTransition === 'function') {
+			doc.startViewTransition(commit);
+			return;
+		}
+
+		root.classList.add('theme-transition');
+		clearTimeout(this.#transitionTimer);
+		this.#transitionTimer = setTimeout(() => root.classList.remove('theme-transition'), 400);
+		commit();
 	}
 }
 

@@ -171,6 +171,14 @@
 	}
 }
 
+/* When supported, the theme store switches via the View Transitions API instead
+   of the class above — a whole-page snapshot cross-fade, so text and surfaces
+   change in lockstep (no inherited-colour lag). Match the fallback's timing. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 0.3s;
+}
+
 /* Visually-hidden helper (Ark UI doesn't ship one). */
 .sr-only {
 	position: absolute;
