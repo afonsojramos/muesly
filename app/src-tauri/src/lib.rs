@@ -1009,6 +1009,9 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         calendar::commands::calendar_set_account_excluded_ids,
         calendar::commands::calendar_preview_upcoming,
         calendar::commands::calendar_diagnose,
+        calendar::commands::calendar_set_event_folder,
+        calendar::commands::calendar_get_event_folder,
+        calendar::commands::calendar_clear_event_folder,
     ])
 }
 

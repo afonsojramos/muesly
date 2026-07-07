@@ -5,6 +5,7 @@ use crate::calendar::{eventkit, google, permissions, service, CalendarAuthStatus
 use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
+use crate::database::repositories::calendar_event_rules::CalendarEventRulesRepository;
 use crate::database::repositories::setting::SettingsRepository;
 use crate::state::AppState;
 use chrono::{DateTime, Utc};
@@ -459,4 +460,60 @@ pub async fn calendar_diagnose(
         ));
     }
     Ok(google::diagnose(&account).await)
+}
+
+/// Pre-assign a calendar event (or, when `auto_add_series`, its whole recurring
+/// series) to a folder, ahead of any recording. Applied at record time by
+/// [`crate::database::repositories::calendar_event_rules`].
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_set_event_folder(
+    state: tauri::State<'_, AppState>,
+    ical_uid: String,
+    event_identifier: Option<String>,
+    occurrence_minute: i64,
+    folder_id: String,
+    auto_add_series: bool,
+) -> Result<(), String> {
+    let uid = crate::calendar::dedup::norm_uid(&ical_uid);
+    CalendarEventRulesRepository::upsert_rule(
+        state.db_manager.pool(),
+        &uid,
+        event_identifier.as_deref(),
+        occurrence_minute,
+        &folder_id,
+        auto_add_series,
+    )
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// The folder currently pre-assigned to an occurrence (per-occurrence rule wins
+/// over a series rule), or None. Hydrates the "Add to folder" picker.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_get_event_folder(
+    state: tauri::State<'_, AppState>,
+    ical_uid: String,
+    occurrence_minute: i64,
+) -> Result<Option<String>, String> {
+    let uid = crate::calendar::dedup::norm_uid(&ical_uid);
+    CalendarEventRulesRepository::folder_for(state.db_manager.pool(), &uid, occurrence_minute)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove the per-occurrence folder pre-assignment (unassign / "My notes"). A
+/// series rule for the same event is left intact.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_clear_event_folder(
+    state: tauri::State<'_, AppState>,
+    ical_uid: String,
+    occurrence_minute: i64,
+) -> Result<(), String> {
+    let uid = crate::calendar::dedup::norm_uid(&ical_uid);
+    CalendarEventRulesRepository::clear_rule(state.db_manager.pool(), &uid, occurrence_minute)
+        .await
+        .map_err(|e| e.to_string())
 }

@@ -635,6 +635,22 @@ export const commands = {
 	calendarPreviewUpcoming: () => typedError<PreviewEvent[], string>(__TAURI_INVOKE("calendar_preview_upcoming")),
 	/**  One-click, secret-free diagnostic for a calendar source (where it fails). */
 	calendarDiagnose: (accountId: string) => typedError<string, string>(__TAURI_INVOKE("calendar_diagnose", { accountId })),
+	/**
+	 *  Pre-assign a calendar event (or, when `auto_add_series`, its whole recurring
+	 *  series) to a folder, ahead of any recording. Applied at record time by
+	 *  [`crate::database::repositories::calendar_event_rules`].
+	 */
+	calendarSetEventFolder: (icalUid: string, eventIdentifier: string | null, occurrenceMinute: number, folderId: string, autoAddSeries: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_event_folder", { icalUid, eventIdentifier, occurrenceMinute, folderId, autoAddSeries })),
+	/**
+	 *  The folder currently pre-assigned to an occurrence (per-occurrence rule wins
+	 *  over a series rule), or None. Hydrates the "Add to folder" picker.
+	 */
+	calendarGetEventFolder: (icalUid: string, occurrenceMinute: number) => typedError<string | null, string>(__TAURI_INVOKE("calendar_get_event_folder", { icalUid, occurrenceMinute })),
+	/**
+	 *  Remove the per-occurrence folder pre-assignment (unassign / "My notes"). A
+	 *  series rule for the same event is left intact.
+	 */
+	calendarClearEventFolder: (icalUid: string, occurrenceMinute: number) => typedError<null, string>(__TAURI_INVOKE("calendar_clear_event_folder", { icalUid, occurrenceMinute })),
 };
 
 /* Types */

@@ -106,6 +106,11 @@ pub async fn api_delete_folder<R: Runtime>(
     let pool = state.db_manager.pool();
     match FoldersRepository::delete_folder(pool, &folder_id).await {
         Ok(true) => {
+            // FK cascade is inert (app-wide foreign_keys are off), so drop any
+            // event→folder pre-assign rules for this folder explicitly.
+            if let Err(e) = crate::database::repositories::calendar_event_rules::CalendarEventRulesRepository::clear_rules_for_folder(pool, &folder_id).await {
+                log_error!("Failed clearing event rules for deleted folder {}: {}", folder_id, e);
+            }
             log_info!("Deleted folder {} (meetings detached)", folder_id);
             Ok(serde_json::json!({ "status": "success" }).into())
         }
