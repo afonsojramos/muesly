@@ -17,9 +17,9 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import { Separator } from '$lib/components/ui/separator';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from '$lib/toast';
+	import Loadable from '$lib/components/Loadable.svelte';
 	import DeviceSelection, { type SelectedDevices } from './DeviceSelection.svelte';
 	import DictationCleanupSettings from './DictationCleanupSettings.svelte';
 	import { config } from '$lib/stores/config.svelte';
@@ -180,12 +180,7 @@
 			Configure how your audio recordings are saved during meetings.
 		</p>
 	</div>
-	{#if loading}
-		<div class="flex flex-col gap-4">
-			<Skeleton class="h-4 w-1/4" />
-			<Skeleton class="h-8 w-full" />
-		</div>
-	{:else}
+	<Loadable {loading}>
 		<div class="flex items-center justify-between rounded-lg border border-border p-4">
 			<div class="flex-1">
 				<div class="font-medium">Save Audio Recordings</div>
@@ -308,5 +303,5 @@
 				</div>
 			</div>
 		</div>
-	{/if}
+	</Loadable>
 </div>

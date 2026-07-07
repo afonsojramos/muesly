@@ -6,8 +6,8 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import Loadable from '$lib/components/Loadable.svelte';
 	import { toast } from '$lib/toast';
 	import { cn } from '$lib/utils';
 	import {
@@ -288,12 +288,7 @@
 			controlled separately below.
 		</p>
 	</div>
-	{#if loading}
-		<div class="flex flex-col gap-4">
-			<Skeleton class="h-8 w-full" />
-			<Skeleton class="h-8 w-full" />
-		</div>
-	{:else}
+	<Loadable {loading}>
 		<Card.Root class="flex flex-row items-center justify-between p-4">
 			<div class="flex-1">
 				<div class="font-medium">Use calendar context</div>
@@ -559,5 +554,5 @@
 				<Trash2 data-icon="inline-start" /> Delete
 			</Button>
 		</Card.Root>
-	{/if}
+	</Loadable>
 </div>
