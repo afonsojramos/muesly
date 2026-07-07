@@ -37,34 +37,39 @@
 	--radius: 0.625rem;
 }
 
-@layer base {
-	:root.dark {
-		/* Warm dark — keeps the paper metaphor, never pure black */
-		--background: oklch(0.225 0.008 80);
-		--foreground: oklch(0.94 0.006 90);
-		--card: oklch(0.255 0.009 80);
-		--card-foreground: oklch(0.94 0.006 90);
-		--popover: oklch(0.255 0.009 80);
-		--popover-foreground: oklch(0.94 0.006 90);
-		--primary: oklch(0.94 0.006 90);
-		--primary-foreground: oklch(0.255 0.009 80);
-		--secondary: oklch(0.3 0.01 80);
-		--secondary-foreground: oklch(0.94 0.006 90);
-		--muted: oklch(0.3 0.01 80);
-		--muted-foreground: oklch(0.68 0.01 85);
-		--accent: oklch(0.65 0.18 35);
-		--accent-foreground: oklch(0.985 0 0);
-		/* Status hues brightened for the dark canvas — the light-mode values are
-		   tuned for paper and read muddy on dark. Foregrounds inherit the
-		   near-white from :root, matching the solid bg-success / bg-warning uses. */
-		--success: oklch(0.7 0.13 150);
-		--warning: oklch(0.72 0.13 70);
-		--border: oklch(0.315 0.01 80);
-		--input: oklch(0.315 0.01 80);
-		--ring: oklch(0.65 0.18 35);
-		--sidebar: oklch(0.2 0.008 80);
-	}
+/* Dark tokens must live unlayered, exactly like the light `:root` above: an
+   unlayered rule always beats a layered one regardless of specificity, so a
+   `@layer base` dark block would lose the cascade to the unlayered light block
+   and dark mode would silently do nothing. Keeping both unlayered lets normal
+   specificity decide — `:root.dark` (0,2,0) wins over `:root` (0,1,0). */
+:root.dark {
+	/* Warm dark — keeps the paper metaphor, never pure black */
+	--background: oklch(0.225 0.008 80);
+	--foreground: oklch(0.94 0.006 90);
+	--card: oklch(0.255 0.009 80);
+	--card-foreground: oklch(0.94 0.006 90);
+	--popover: oklch(0.255 0.009 80);
+	--popover-foreground: oklch(0.94 0.006 90);
+	--primary: oklch(0.94 0.006 90);
+	--primary-foreground: oklch(0.255 0.009 80);
+	--secondary: oklch(0.3 0.01 80);
+	--secondary-foreground: oklch(0.94 0.006 90);
+	--muted: oklch(0.3 0.01 80);
+	--muted-foreground: oklch(0.68 0.01 85);
+	--accent: oklch(0.65 0.18 35);
+	--accent-foreground: oklch(0.985 0 0);
+	/* Status hues brightened for the dark canvas — the light-mode values are
+	   tuned for paper and read muddy on dark. Foregrounds inherit the
+	   near-white from :root, matching the solid bg-success / bg-warning uses. */
+	--success: oklch(0.7 0.13 150);
+	--warning: oklch(0.72 0.13 70);
+	--border: oklch(0.315 0.01 80);
+	--input: oklch(0.315 0.01 80);
+	--ring: oklch(0.65 0.18 35);
+	--sidebar: oklch(0.2 0.008 80);
+}
 
+@layer base {
 	* {
 		border-color: var(--border);
 	}
