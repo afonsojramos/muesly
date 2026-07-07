@@ -174,19 +174,18 @@
 	}
 </script>
 
-{#if loading}
-	<div class="flex flex-col gap-4">
-		<Skeleton class="h-4 w-1/4" />
-		<Skeleton class="h-8 w-full" />
+<div class="flex flex-col gap-6">
+	<div>
+		<p class="mb-6 text-sm text-muted-foreground">
+			Configure how your audio recordings are saved during meetings.
+		</p>
 	</div>
-{:else}
-	<div class="flex flex-col gap-6">
-		<div>
-			<p class="mb-6 text-sm text-muted-foreground">
-				Configure how your audio recordings are saved during meetings.
-			</p>
+	{#if loading}
+		<div class="flex flex-col gap-4">
+			<Skeleton class="h-4 w-1/4" />
+			<Skeleton class="h-8 w-full" />
 		</div>
-
+	{:else}
 		<div class="flex items-center justify-between rounded-lg border border-border p-4">
 			<div class="flex-1">
 				<div class="font-medium">Save Audio Recordings</div>
@@ -309,5 +308,5 @@
 				</div>
 			</div>
 		</div>
-	</div>
-{/if}
+	{/if}
+</div>

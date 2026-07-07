@@ -274,22 +274,21 @@
 	}
 </script>
 
-{#if loading}
-	<div class="flex flex-col gap-4">
-		<Skeleton class="h-8 w-full" />
-		<Skeleton class="h-8 w-full" />
+<div class="flex flex-col gap-6">
+	<div>
+		<p class="mb-6 text-sm text-muted-foreground">
+			muesly attaches the meeting happening at record time to your recordings and summaries. Use
+			your Mac's local calendars (read entirely on-device, no account) and/or connect Google
+			accounts (read-only). Everything is off by default; what reaches a cloud summary provider is
+			controlled separately below.
+		</p>
 	</div>
-{:else}
-	<div class="flex flex-col gap-6">
-		<div>
-			<p class="mb-6 text-sm text-muted-foreground">
-				muesly attaches the meeting happening at record time to your recordings and summaries. Use
-				your Mac's local calendars (read entirely on-device, no account) and/or connect Google
-				accounts (read-only). Everything is off by default; what reaches a cloud summary provider is
-				controlled separately below.
-			</p>
+	{#if loading}
+		<div class="flex flex-col gap-4">
+			<Skeleton class="h-8 w-full" />
+			<Skeleton class="h-8 w-full" />
 		</div>
-
+	{:else}
 		<Card.Root class="flex flex-row items-center justify-between p-4">
 			<div class="flex-1">
 				<div class="font-medium">Use calendar context</div>
@@ -553,5 +552,5 @@
 				<Trash2 data-icon="inline-start" /> Delete
 			</Button>
 		</Card.Root>
-	</div>
-{/if}
+	{/if}
+</div>
