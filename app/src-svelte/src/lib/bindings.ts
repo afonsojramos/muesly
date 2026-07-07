@@ -651,6 +651,12 @@ export const commands = {
 	 *  series rule for the same event is left intact.
 	 */
 	calendarClearEventFolder: (icalUid: string, occurrenceMinute: number) => typedError<null, string>(__TAURI_INVOKE("calendar_clear_event_folder", { icalUid, occurrenceMinute })),
+	/**
+	 *  Apply a pre-assigned folder to a just-saved recording using the exact event the
+	 *  user recorded (pinned by the home "Start" button), rather than re-matching. Works
+	 *  even when calendar context is disabled. Best-effort; never errors on a missing rule.
+	 */
+	calendarApplyFolderRule: (meetingId: string, icalUid: string, occurrenceMinute: number) => typedError<null, string>(__TAURI_INVOKE("calendar_apply_folder_rule", { meetingId, icalUid, occurrenceMinute })),
 };
 
 /* Types */

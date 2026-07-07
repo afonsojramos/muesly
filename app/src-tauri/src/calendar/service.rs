@@ -8,6 +8,8 @@ use crate::calendar::{context, dedup, eventkit, google, CalendarAuthStatus, Sour
 use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;
+use crate::database::repositories::calendar_event_rules::CalendarEventRulesRepository;
+use crate::database::repositories::folders::FoldersRepository;
 use crate::database::repositories::setting::SettingsRepository;
 use crate::summary::llm_client::LLMProvider;
 use chrono::{DateTime, Utc};
@@ -208,10 +210,40 @@ pub async fn attach_event_for_meeting(
         Some(m) => m,
         None => return Ok(false),
     };
-    let snapshot = build_snapshot(meeting_id, &candidates[m.index], m.confidence);
+    let cand = &candidates[m.index];
+    let snapshot = build_snapshot(meeting_id, cand, m.confidence);
     CalendarEventsRepository::upsert(pool, &snapshot)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Apply any folder the user pre-assigned to this event (or its series).
+    if let Some(uid) = cand.ical_uid.as_deref() {
+        apply_folder_rule(pool, meeting_id, uid, dedup::minute_bucket(cand.start)).await;
+    }
+    Ok(true)
+}
+
+/// Move a freshly-recorded meeting into the folder the user pre-assigned to its
+/// calendar event (or the event's series), if any. Best-effort and independent of
+/// the calendar-context toggle: a missing/errored rule must never block or fail a
+/// recording. `ical_uid` is normalized here, so callers may pass it raw.
+pub async fn apply_folder_rule(
+    pool: &SqlitePool,
+    meeting_id: &str,
+    ical_uid: &str,
+    occurrence_minute: i64,
+) {
+    let uid = dedup::norm_uid(ical_uid);
+    match CalendarEventRulesRepository::folder_for(pool, &uid, occurrence_minute).await {
+        Ok(Some(folder_id)) => {
+            if let Err(e) =
+                FoldersRepository::set_meeting_folder(pool, meeting_id, Some(&folder_id)).await
+            {
+                log::warn!("apply_folder_rule: set_meeting_folder failed: {e}");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => log::warn!("apply_folder_rule: rule lookup failed: {e}"),
+    }
 }
 
 /// Build the redacted `<meeting_context>` block for a meeting, honouring the

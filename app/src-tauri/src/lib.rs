@@ -1012,6 +1012,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         calendar::commands::calendar_set_event_folder,
         calendar::commands::calendar_get_event_folder,
         calendar::commands::calendar_clear_event_folder,
+        calendar::commands::calendar_apply_folder_rule,
     ])
 }
 

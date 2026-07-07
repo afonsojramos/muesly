@@ -517,3 +517,19 @@ pub async fn calendar_clear_event_folder(
         .await
         .map_err(|e| e.to_string())
 }
+
+/// Apply a pre-assigned folder to a just-saved recording using the exact event the
+/// user recorded (pinned by the home "Start" button), rather than re-matching. Works
+/// even when calendar context is disabled. Best-effort; never errors on a missing rule.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_apply_folder_rule(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    ical_uid: String,
+    occurrence_minute: i64,
+) -> Result<(), String> {
+    service::apply_folder_rule(state.db_manager.pool(), &meeting_id, &ical_uid, occurrence_minute)
+        .await;
+    Ok(())
+}
