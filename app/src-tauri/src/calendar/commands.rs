@@ -533,3 +533,47 @@ pub async fn calendar_apply_folder_rule(
         .await;
     Ok(())
 }
+
+/// Whether to auto-start recording when a calendar meeting begins.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_get_auto_start_on_event(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    SettingsRepository::get_auto_start_on_event(state.db_manager.pool())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_set_auto_start_on_event(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    SettingsRepository::set_auto_start_on_event(state.db_manager.pool(), enabled)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Whether to also open the meeting's conference link on auto-start.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_get_auto_join_meeting(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    SettingsRepository::get_auto_join_meeting(state.db_manager.pool())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_set_auto_join_meeting(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    SettingsRepository::set_auto_join_meeting(state.db_manager.pool(), enabled)
+        .await
+        .map_err(|e| e.to_string())
+}

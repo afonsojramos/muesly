@@ -61,6 +61,48 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Whether to auto-start recording when a calendar meeting begins (default off).
+    pub async fn get_auto_start_on_event(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> =
+            sqlx::query_scalar("SELECT auto_start_on_event FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub async fn set_auto_start_on_event(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET auto_start_on_event = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Whether to also open the meeting's conference link on auto-start (default off).
+    pub async fn get_auto_join_meeting(pool: &SqlitePool) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> =
+            sqlx::query_scalar("SELECT auto_join_meeting FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub async fn set_auto_join_meeting(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET auto_join_meeting = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Whether calendar meeting-context is enabled (single-row settings, id='1').
     pub async fn get_calendar_context_enabled(
         pool: &SqlitePool,

@@ -36,6 +36,8 @@
 	let saving = $state(false);
 	let showRecordingNotification = $state(true);
 	let autoDetectMeetings = $state(false);
+	let autoStartOnEvent = $state(false);
+	let autoJoinMeeting = $state(false);
 	let dictationEnabled = $state(false);
 	// macOS Accessibility permission, needed to paste dictated text into other apps.
 	let accessibilityTrusted = $state(true);
@@ -74,6 +76,13 @@
 		})();
 
 		void (async () => {
+			const start = await commands.calendarGetAutoStartOnEvent();
+			if (start.status === 'ok') autoStartOnEvent = start.data;
+			const join = await commands.calendarGetAutoJoinMeeting();
+			if (join.status === 'ok') autoJoinMeeting = join.data;
+		})();
+
+		void (async () => {
 			const enabled = await commands.getDictationEnabled();
 			if (enabled.status === 'ok') dictationEnabled = enabled.data;
 			const trusted = await commands.dictationAccessibilityTrusted();
@@ -105,6 +114,34 @@
 		if (res.status === 'error') {
 			autoDetectMeetings = !enabled;
 			toast.error('Failed to update meeting auto-detection', { description: res.error });
+		}
+	}
+
+	async function handleAutoStartToggle(enabled: boolean): Promise<void> {
+		autoStartOnEvent = enabled;
+		const res = await commands.calendarSetAutoStartOnEvent(enabled);
+		if (res.status === 'error') {
+			autoStartOnEvent = !enabled;
+			toast.error('Failed to update auto-start', { description: res.error });
+			return;
+		}
+		// A denied Calendar permission would leave this silently never firing.
+		if (enabled) {
+			const perm = await commands.calendarPermissionStatus();
+			if (perm !== 'granted') {
+				toast.info('Calendar access needed', {
+					description: 'Grant Calendar access so muesly can detect when your meetings start.',
+				});
+			}
+		}
+	}
+
+	async function handleAutoJoinToggle(enabled: boolean): Promise<void> {
+		autoJoinMeeting = enabled;
+		const res = await commands.calendarSetAutoJoinMeeting(enabled);
+		if (res.status === 'error') {
+			autoJoinMeeting = !enabled;
+			toast.error('Failed to update auto-join', { description: res.error });
 		}
 	}
 
@@ -258,6 +295,33 @@
 				</div>
 			</div>
 			<Switch checked={autoDetectMeetings} onCheckedChange={handleAutoDetectToggle} />
+		</div>
+
+		<div class="flex items-center justify-between rounded-lg border border-border p-4">
+			<div class="flex-1">
+				<div class="font-medium">Start recording when a meeting begins</div>
+				<div class="text-sm text-muted-foreground">
+					When a calendar meeting with attendees starts, automatically record it. Off by default.
+				</div>
+			</div>
+			<Switch checked={autoStartOnEvent} onCheckedChange={handleAutoStartToggle} />
+		</div>
+
+		<div
+			class="flex items-center justify-between rounded-lg border border-border p-4"
+			class:opacity-60={!autoStartOnEvent}
+		>
+			<div class="flex-1">
+				<div class="font-medium">Open the meeting link too</div>
+				<div class="text-sm text-muted-foreground">
+					On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your browser.
+				</div>
+			</div>
+			<Switch
+				checked={autoJoinMeeting}
+				onCheckedChange={handleAutoJoinToggle}
+				disabled={!autoStartOnEvent}
+			/>
 		</div>
 
 		<div class="flex items-center justify-between rounded-lg border border-border p-4">

@@ -1013,6 +1013,10 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         calendar::commands::calendar_get_event_folder,
         calendar::commands::calendar_clear_event_folder,
         calendar::commands::calendar_apply_folder_rule,
+        calendar::commands::calendar_get_auto_start_on_event,
+        calendar::commands::calendar_set_auto_start_on_event,
+        calendar::commands::calendar_get_auto_join_meeting,
+        calendar::commands::calendar_set_auto_join_meeting,
     ])
 }
 
