@@ -81,9 +81,20 @@ class ThemeStore {
 		// compound and lag, so text that inherits its colour (e.g. section titles)
 		// finishes noticeably late. Fall back to the CSS colour cross-fade
 		// (`.theme-transition` in app.css) where the API is unavailable.
-		const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+		const doc = document as Document & {
+			startViewTransition?: (cb: () => void) => { finished: Promise<void> };
+		};
 		if (typeof doc.startViewTransition === 'function') {
-			doc.startViewTransition(commit);
+			// Suppress per-element CSS transitions during the capture. Otherwise an
+			// element with its own `transition-colors` gets snapshotted mid-transition
+			// (still the old colour) and only reaches the new colour once the overlay
+			// lifts, so it appears to switch late. With transitions off, the new
+			// snapshot holds final colours and the whole page cross-fades in lockstep.
+			const vt = doc.startViewTransition(() => {
+				root.classList.add('theme-no-transition');
+				commit();
+			});
+			void vt.finished.finally(() => root.classList.remove('theme-no-transition'));
 			return;
 		}
 

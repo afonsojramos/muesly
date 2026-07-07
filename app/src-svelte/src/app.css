@@ -179,6 +179,19 @@
 	animation-duration: 0.3s;
 }
 
+/* Applied by the theme store only while the View Transition captures the page:
+   hard-disable element transitions so the new snapshot holds final colours. An
+   element mid its own `transition-colors` would otherwise be captured at the old
+   colour and switch only when the overlay lifts, looking late. The cross-fade
+   itself is unaffected — it animates the ::view-transition pseudo-elements, not
+   `transition`. */
+.theme-no-transition,
+.theme-no-transition *,
+.theme-no-transition *::before,
+.theme-no-transition *::after {
+	transition: none !important;
+}
+
 /* Visually-hidden helper (Ark UI doesn't ship one). */
 .sr-only {
 	position: absolute;
