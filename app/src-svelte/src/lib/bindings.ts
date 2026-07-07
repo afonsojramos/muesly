@@ -1101,8 +1101,21 @@ export type ParakeetModelInfo = {
 export type PreviewEvent = {
 	title: string,
 	start: string,
+	/**  RFC3339 end, when known — bounds the home "Start" button's actionable window. */
+	end: string | null,
 	source: string,
 	calendar_name: string | null,
+	/**  Series/occurrence identity for pre-assign-to-folder and the scheduler. */
+	ical_uid: string | null,
+	/**
+	 *  `minute_bucket(start)` — the stable per-occurrence key shared with the rules
+	 *  table and the scheduler.
+	 */
+	occurrence_minute: number,
+	/**  Part of a recurring series — gates the "Auto-add future meetings?" prompt. */
+	is_recurring: boolean,
+	/**  Parsed conference/meeting URL (Zoom/Meet/Teams/…), when present. */
+	conference_url: string | null,
 };
 
 /**

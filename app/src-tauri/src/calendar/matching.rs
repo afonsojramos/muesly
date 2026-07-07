@@ -50,6 +50,9 @@ pub struct CalendarEventCandidate {
     pub start: DateTime<Utc>,
     pub end: DateTime<Utc>,
     pub is_all_day: bool,
+    /// Part of a recurring series (any occurrence). Drives the "Auto-add future
+    /// meetings?" prompt. Carried through, not used for scoring.
+    pub is_recurring: bool,
     pub event_status: EventStatus,
     /// The current user's participation status, or None when the event has no
     /// attendees (a solo block) - resolvable only inside EventKit.
@@ -220,6 +223,7 @@ mod tests {
             start,
             end,
             is_all_day: false,
+            is_recurring: false,
             event_status: EventStatus::Confirmed,
             my_participation: Some(ParticipantStatus::Accepted),
             i_am_organizer: false,

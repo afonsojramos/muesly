@@ -3,7 +3,17 @@ import { groupPreviewEventsByDay, formatEventTime } from './coming-up';
 import type { PreviewEvent } from './bindings';
 
 function ev(start: string, title = 'Event'): PreviewEvent {
-	return { title, start, source: 'eventkit', calendar_name: null };
+	return {
+		title,
+		start,
+		end: null,
+		source: 'eventkit',
+		calendar_name: null,
+		ical_uid: null,
+		occurrence_minute: 0,
+		is_recurring: false,
+		conference_url: null,
+	};
 }
 
 describe('groupPreviewEventsByDay', () => {

@@ -45,6 +45,10 @@ pub struct GoogleEvent {
     pub end: Option<GoogleDateTime>,
     #[serde(rename = "iCalUID")]
     pub ical_uid: Option<String>,
+    /// Present on every expanded instance of a recurring event (`singleEvents=true`);
+    /// its presence is our recurrence signal.
+    #[serde(rename = "recurringEventId")]
+    pub recurring_event_id: Option<String>,
     pub status: Option<String>,
     pub attendees: Option<Vec<GoogleAttendee>>,
     pub organizer: Option<GoogleOrganizer>,
@@ -194,6 +198,7 @@ pub fn map_event(ev: GoogleEvent, account_id: &str) -> Option<CalendarEventCandi
         start,
         end,
         is_all_day,
+        is_recurring: ev.recurring_event_id.is_some(),
         event_status,
         my_participation,
         i_am_organizer,

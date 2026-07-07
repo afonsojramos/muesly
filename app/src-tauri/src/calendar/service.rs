@@ -244,8 +244,19 @@ pub async fn meeting_context_block(
 pub struct PreviewEvent {
     pub title: String,
     pub start: String,
+    /// RFC3339 end, when known — bounds the home "Start" button's actionable window.
+    pub end: Option<String>,
     pub source: String,
     pub calendar_name: Option<String>,
+    /// Series/occurrence identity for pre-assign-to-folder and the scheduler.
+    pub ical_uid: Option<String>,
+    /// `minute_bucket(start)` — the stable per-occurrence key shared with the rules
+    /// table and the scheduler.
+    pub occurrence_minute: i64,
+    /// Part of a recurring series — gates the "Auto-add future meetings?" prompt.
+    pub is_recurring: bool,
+    /// Parsed conference/meeting URL (Zoom/Meet/Teams/…), when present.
+    pub conference_url: Option<String>,
 }
 
 /// Fetch upcoming events (roughly the next day) from all enabled sources,
@@ -288,14 +299,19 @@ pub async fn preview_upcoming(pool: &SqlitePool, now: DateTime<Utc>) -> Vec<Prev
     deduped
         .into_iter()
         .map(|c| PreviewEvent {
+            occurrence_minute: dedup::minute_bucket(c.start),
             title: c.title.unwrap_or_else(|| "(no title)".to_string()),
             start: c.start.to_rfc3339(),
+            end: Some(c.end.to_rfc3339()),
             source: match c.source {
                 SourceKind::EventKit => "eventkit",
                 SourceKind::Google => "google",
             }
             .to_string(),
             calendar_name: c.calendar_name,
+            ical_uid: c.ical_uid,
+            is_recurring: c.is_recurring,
+            conference_url: c.conference_url,
         })
         .collect()
 }

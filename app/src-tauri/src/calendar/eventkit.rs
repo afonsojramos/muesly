@@ -212,12 +212,15 @@ mod imp {
         // event (EventKit syncs Google over CalDAV, preserving the iCalUID).
         let ical_uid = unsafe { event.calendarItemExternalIdentifier() }.map(|s| s.to_string());
 
+        let is_recurring = unsafe { event.hasRecurrenceRules() };
+
         Some(CalendarEventCandidate {
             identifier,
             title,
             start,
             end,
             is_all_day,
+            is_recurring,
             event_status,
             my_participation,
             i_am_organizer,

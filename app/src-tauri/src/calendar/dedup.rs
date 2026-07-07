@@ -15,13 +15,14 @@ use crate::calendar::SourceKind;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
-fn norm_uid(s: &str) -> String {
+pub(crate) fn norm_uid(s: &str) -> String {
     s.trim().to_lowercase()
 }
 
 /// Round to the minute so a Google `dateTime` (with offset) and an EventKit
-/// instant (reconstructed from a float) for the same occurrence collapse.
-fn minute_bucket(dt: DateTime<Utc>) -> i64 {
+/// instant (reconstructed from a float) for the same occurrence collapse. Also the
+/// stable per-occurrence key used by the event→folder rules and the scheduler.
+pub(crate) fn minute_bucket(dt: DateTime<Utc>) -> i64 {
     dt.timestamp().div_euclid(60)
 }
 
@@ -87,6 +88,8 @@ fn merge(
     fill_if_empty(&mut winner.notes, loser.notes);
     fill_if_empty(&mut winner.calendar_name, loser.calendar_name);
     fill_if_empty(&mut winner.ical_uid, loser.ical_uid);
+    // Recurrence from either source survives the merge (one source may omit it).
+    winner.is_recurring = winner.is_recurring || loser.is_recurring;
     winner
 }
 
@@ -126,6 +129,7 @@ mod tests {
             start,
             end: start + chrono::Duration::hours(1),
             is_all_day: false,
+            is_recurring: false,
             event_status: EventStatus::Confirmed,
             my_participation: Some(ParticipantStatus::Accepted),
             i_am_organizer: false,
