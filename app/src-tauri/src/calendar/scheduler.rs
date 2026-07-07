@@ -12,10 +12,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, Utc};
-use tauri::{AppHandle, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::audio::recording_commands;
-use crate::calendar::matching::CalendarEventCandidate;
+use crate::calendar::matching::{CalendarEventCandidate, ParticipantStatus};
 use crate::calendar::{conference, dedup, matching, service};
 use crate::database::repositories::setting::SettingsRepository;
 use crate::notifications::commands::{show_recording_started_notification, NotificationManagerState};
@@ -46,7 +46,7 @@ pub fn should_fire(
 /// `(uid, minute)`: the INSERT succeeds for the first caller and conflicts for the
 /// rest, so no tick (or restart) can double-fire.
 async fn claim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) -> bool {
-    sqlx::query(
+    match sqlx::query(
         "INSERT INTO scheduler_fired (ical_uid, occurrence_minute, fired_at) \
          VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
     )
@@ -55,8 +55,24 @@ async fn claim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) -> boo
     .bind(Utc::now())
     .execute(pool)
     .await
-    .map(|r| r.rows_affected() == 1)
-    .unwrap_or(false)
+    {
+        Ok(r) => r.rows_affected() == 1,
+        Err(e) => {
+            // Safe direction (skip + retry next tick), but a persistent fault would
+            // silently disable all firing, so surface it.
+            log::warn!("scheduler claim_fire failed: {e}");
+            false
+        }
+    }
+}
+
+/// Drop fire markers older than ~30 days so the table doesn't grow unbounded.
+async fn prune_old_fired(pool: &sqlx::SqlitePool) {
+    let cutoff = Utc::now() - Duration::days(30);
+    let _ = sqlx::query("DELETE FROM scheduler_fired WHERE fired_at < ?")
+        .bind(cutoff)
+        .execute(pool)
+        .await;
 }
 
 /// Host only, for redacted logging (a conference URL can embed a passcode).
@@ -71,6 +87,9 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
         return;
     }
     tauri::async_runtime::spawn(async move {
+        if let Some(state) = app.try_state::<crate::state::AppState>() {
+            prune_old_fired(state.db_manager.pool()).await;
+        }
         let mut cache: Vec<CalendarEventCandidate> = Vec::new();
         let mut last_fetch: Option<Instant> = None;
         loop {
@@ -105,6 +124,13 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
                 if !matching::is_eligible(c, now) || c.attendee_count == 0 {
                     continue;
                 }
+                // Only meetings the user actually accepted (or organizes) — never
+                // auto-record a pending/tentative invite.
+                let accepted = c.i_am_organizer
+                    || matches!(c.my_participation, Some(ParticipantStatus::Accepted));
+                if !accepted {
+                    continue;
+                }
                 if !should_fire(now, c.start, c.end, max_stale) {
                     continue;
                 }
@@ -117,40 +143,48 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
                     continue;
                 }
 
+                // If any capture is already live, don't start a second one (or open a
+                // link for a meeting we aren't recording); the fire is still marked.
+                if recording_commands::is_recording_active()
+                    || recording_commands::is_dictation_active()
+                {
+                    continue;
+                }
+
                 let title = c.title.clone().unwrap_or_else(|| "Meeting".to_string());
                 log::info!("Meeting scheduler firing for '{title}'");
 
-                // Auto-start, unless a recording or dictation is already active
-                // (also suppresses the notification, so it never claims a start the
-                // user made themselves). The folder pre-assign applies at save time.
-                if !recording_commands::is_recording_active()
-                    && !recording_commands::is_dictation_active()
+                match recording_commands::start_recording_with_meeting_name(
+                    app.clone(),
+                    Some(title.clone()),
+                )
+                .await
                 {
-                    match recording_commands::start_recording_with_meeting_name(
-                        app.clone(),
-                        Some(title.clone()),
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            let nstate = app.state::<NotificationManagerState<R>>();
-                            let _ =
-                                show_recording_started_notification(&app, &nstate, Some(title))
-                                    .await;
-                        }
-                        Err(e) => log::warn!("scheduler auto-start failed: {e}"),
-                    }
-                }
-
-                // Auto-join the conference link (allowlisted https hosts only).
-                if auto_join {
-                    if let Some(u) = c.conference_url.as_deref() {
-                        if conference::is_allowed_conference_url(u) {
-                            if open::that_detached(u).is_err() {
-                                log::warn!("scheduler auto-join failed for host {:?}", host_of(u));
+                    Ok(()) => {
+                        let nstate = app.state::<NotificationManagerState<R>>();
+                        let _ =
+                            show_recording_started_notification(&app, &nstate, Some(title)).await;
+                        // Pin the event so its pre-assigned folder is applied at save
+                        // time even when calendar context is off (frontend consumes it).
+                        let _ = app.emit(
+                            "recording-folder-pin",
+                            serde_json::json!({ "icalUid": uid, "occurrenceMinute": minute }),
+                        );
+                        // Auto-join only the meeting we actually started recording.
+                        if auto_join {
+                            if let Some(u) = c.conference_url.as_deref() {
+                                if conference::is_allowed_conference_url(u)
+                                    && open::that_detached(u).is_err()
+                                {
+                                    log::warn!(
+                                        "scheduler auto-join failed for host {:?}",
+                                        host_of(u)
+                                    );
+                                }
                             }
                         }
                     }
+                    Err(e) => log::warn!("scheduler auto-start failed: {e}"),
                 }
             }
         }

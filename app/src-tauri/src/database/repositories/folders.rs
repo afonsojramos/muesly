@@ -69,6 +69,13 @@ impl FoldersRepository {
             .execute(&mut *tx)
             .await?;
 
+        // Drop event→folder pre-assign rules for this folder in the same transaction
+        // (the ON DELETE CASCADE is inert — SQLite foreign keys are off app-wide).
+        sqlx::query("DELETE FROM calendar_event_rules WHERE folder_id = ?")
+            .bind(folder_id)
+            .execute(&mut *tx)
+            .await?;
+
         let result = sqlx::query("DELETE FROM folders WHERE id = ?")
             .bind(folder_id)
             .execute(&mut *tx)

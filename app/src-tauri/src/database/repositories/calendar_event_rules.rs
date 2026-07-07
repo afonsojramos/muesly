@@ -115,19 +115,6 @@ impl CalendarEventRulesRepository {
         Ok(())
     }
 
-    /// Remove every rule pointing at a folder. Called when a folder is deleted, since
-    /// the `ON DELETE CASCADE` only fires when SQLite foreign keys are enabled (they
-    /// are not, app-wide), so we clean up explicitly.
-    pub async fn clear_rules_for_folder(
-        pool: &SqlitePool,
-        folder_id: &str,
-    ) -> Result<(), sqlx::Error> {
-        sqlx::query("DELETE FROM calendar_event_rules WHERE folder_id = ?")
-            .bind(folder_id)
-            .execute(pool)
-            .await?;
-        Ok(())
-    }
 }
 
 #[cfg(test)]
