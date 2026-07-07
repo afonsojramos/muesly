@@ -23,17 +23,14 @@
 	let { ev, nowMs }: Props = $props();
 
 	const startMs = $derived(new Date(ev.start).getTime());
+	const endMs = $derived(ev.end ? new Date(ev.end).getTime() : startMs + 60 * 60000);
 	const minutesUntilStart = $derived((startMs - nowMs) / 60000);
 	// Exclude all-day (~24h) blocks from the Start affordance; those aren't meetings.
-	const isTimed = $derived.by(() => {
-		if (!ev.end) return true;
-		const durationMin = (new Date(ev.end).getTime() - startMs) / 60000;
-		return durationMin > 0 && durationMin <= 12 * 60;
-	});
-	// Already-started events are dropped from the card upstream, so this is the
-	// "starts within 15 minutes" window.
+	const isTimed = $derived((endMs - startMs) / 60000 > 0 && (endMs - startMs) / 60000 <= 12 * 60);
+	// Actionable when the meeting is starting soon (≤15 min) or already in progress,
+	// and hasn't ended. In-progress events are kept in the card upstream.
 	const showStart = $derived(
-		isTimed && minutesUntilStart <= 15 && minutesUntilStart >= -1 && !recordingState.isRecording,
+		isTimed && minutesUntilStart <= 15 && nowMs < endMs && !recordingState.isRecording,
 	);
 
 	const canAssign = $derived(!!ev.ical_uid);
