@@ -19,6 +19,7 @@ class ThemeStore {
 	mode = $state<ThemeMode>('system');
 	#mediaQuery: MediaQueryList | null = null;
 	#initialized = false;
+	#transitionTimer: ReturnType<typeof setTimeout> | undefined;
 
 	/** Read the saved preference, start following the OS, and apply the theme. */
 	init(): void {
@@ -39,7 +40,7 @@ class ThemeStore {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem(STORAGE_KEY, mode);
 		}
-		this.apply();
+		this.apply(true);
 	}
 
 	/** The concrete theme after resolving 'system' against the OS setting. */
@@ -51,12 +52,25 @@ class ThemeStore {
 	}
 
 	#onSystemChange = (): void => {
-		if (this.mode === 'system') this.apply();
+		if (this.mode === 'system') this.apply(true);
 	};
 
-	private apply(): void {
+	/**
+	 * Toggle the `dark` class on <html>. When `animate` is set (an explicit user
+	 * switch or an OS change), briefly add `theme-transition` so the palette
+	 * cross-fades instead of snapping; the class is removed once the transition
+	 * finishes. The initial apply() runs without it — the page paints straight into
+	 * its final theme (the FOUC script already set the class).
+	 */
+	private apply(animate = false): void {
 		if (typeof document === 'undefined') return;
-		document.documentElement.classList.toggle('dark', this.resolved === 'dark');
+		const root = document.documentElement;
+		if (animate) {
+			root.classList.add('theme-transition');
+			clearTimeout(this.#transitionTimer);
+			this.#transitionTimer = setTimeout(() => root.classList.remove('theme-transition'), 400);
+		}
+		root.classList.toggle('dark', this.resolved === 'dark');
 	}
 }
 

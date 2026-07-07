@@ -145,6 +145,32 @@
 	--radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Ease the palette between light and dark on an explicit theme switch. The theme
+   store adds this class to <html> for ~400ms around the toggle and then removes
+   it, so the cross-fade only affects the switch itself and never slows normal
+   interactions (hover, focus). Not applied on the initial load, which paints
+   straight into its final theme. */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+	transition:
+		background-color 0.3s ease,
+		color 0.3s ease,
+		border-color 0.3s ease,
+		fill 0.3s ease,
+		stroke 0.3s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.theme-transition,
+	.theme-transition *,
+	.theme-transition *::before,
+	.theme-transition *::after {
+		transition: none !important;
+	}
+}
+
 /* Visually-hidden helper (Ark UI doesn't ship one). */
 .sr-only {
 	position: absolute;
