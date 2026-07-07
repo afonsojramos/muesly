@@ -68,6 +68,50 @@ async function checkIfModelDownloading(): Promise<boolean> {
 	}
 }
 
+/**
+ * Start a recording with an explicit title (e.g. a calendar event name), from
+ * anywhere. Mirrors `startBackendRecording` + the readiness check, without the
+ * hook's local UI callbacks. Surfaces a toast instead of throwing so callers
+ * (like the "Coming up" Start button) can fire-and-forget.
+ */
+export async function startRecordingWithTitle(
+	title: string,
+	location = 'coming_up',
+): Promise<void> {
+	if (recordingState.isRecording) return;
+	const parakeetReady = await checkParakeetReady();
+	if (!parakeetReady) {
+		toast.error('Transcription model not ready', {
+			description: 'Please download a transcription model before recording.',
+		});
+		recordingState.setStatus(RecordingStatus.IDLE);
+		return;
+	}
+	try {
+		recordingState.setStatus(RecordingStatus.STARTING, 'Initializing recording...');
+		await recordingService.startRecordingWithDevices(
+			config.selectedDevices.micDevice || null,
+			config.selectedDevices.systemDevice || null,
+			title,
+		);
+		transcripts.setMeetingTitle(title);
+		recordingState.markStarted();
+		transcripts.clearTranscripts();
+		sidebar.setIsMeetingActive(true);
+		await showRecordingNotification();
+		void Analytics.trackButtonClick('start_recording', location);
+	} catch (error) {
+		console.error('Failed to start recording:', error);
+		recordingState.setStatus(
+			RecordingStatus.ERROR,
+			error instanceof Error ? error.message : 'Failed to start recording',
+		);
+		toast.error('Failed to start recording', {
+			description: error instanceof Error ? error.message : String(error),
+		});
+	}
+}
+
 export function useRecordingStart(
 	setIsRecording: (value: boolean) => void,
 	showModal?: (name: 'modelSelector', message?: string) => void,

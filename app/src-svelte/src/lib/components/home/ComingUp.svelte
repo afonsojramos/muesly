@@ -4,18 +4,29 @@
 	import { goto } from '$app/navigation';
 
 	import { cn } from '$lib/utils';
-	import { groupPreviewEventsByDay, formatEventTime } from '$lib/coming-up';
+	import { groupPreviewEventsByDay } from '$lib/coming-up';
 	import { upcomingEvents } from '$lib/stores/upcoming-events.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import EventRow from './EventRow.svelte';
 
 	// Served from a session cache: instant on revisit, refreshed in the background.
 	// Self-gating: the preview is [] when calendar context is off or no source is
 	// connected, so the whole card stays hidden.
 	const groups = $derived(groupPreviewEventsByDay(upcomingEvents.events));
 
+	// A coarse clock so each row's "Start" button appears/hides as a meeting nears,
+	// even while the dashboard sits open and focused (the app otherwise avoids
+	// timers). Also nudges the event list so started meetings drop off.
+	let nowMs = $state(Date.now());
+
 	onMount(() => {
 		void upcomingEvents.ensure();
+		const interval = setInterval(() => {
+			nowMs = Date.now();
+			void upcomingEvents.refresh();
+		}, 30_000);
+		return () => clearInterval(interval);
 	});
 </script>
 
@@ -56,18 +67,7 @@
 					</div>
 					<div class="flex min-w-0 flex-1 flex-col gap-3">
 						{#each group.items as ev (ev.start + ev.title)}
-							<div class="flex items-start gap-3">
-								<div class="mt-0.5 h-8 w-0.5 flex-shrink-0 rounded-full bg-success/60"></div>
-								<div class="min-w-0 flex-1">
-									<div class="truncate text-sm font-medium">{ev.title}</div>
-									<div class="truncate text-xs text-muted-foreground">
-										{formatEventTime(ev.start)}
-										{#if ev.calendar_name}
-											· {ev.calendar_name}
-										{/if}
-									</div>
-								</div>
-							</div>
+							<EventRow {ev} {nowMs} />
 						{/each}
 					</div>
 				</div>
