@@ -39,6 +39,14 @@ describe('groupPreviewEventsByDay', () => {
 		expect(groupPreviewEventsByDay([ev('not-a-date')], now)).toEqual([]);
 		expect(groupPreviewEventsByDay([], now)).toEqual([]);
 	});
+
+	it('drops events that have already started', () => {
+		const groups = groupPreviewEventsByDay(
+			[ev('2026-07-06T08:00:00', 'Past'), ev('2026-07-06T12:00:00', 'Future')],
+			now,
+		);
+		expect(groups.flatMap((g) => g.items.map((e) => e.title))).toEqual(['Future']);
+	});
 });
 
 describe('formatEventTime', () => {

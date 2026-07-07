@@ -34,6 +34,9 @@ export function groupPreviewEventsByDay(
 	for (const ev of sorted) {
 		const d = new Date(ev.start);
 		if (isNaN(d.getTime())) continue;
+		// Drop events that have already started — a stale cache can still hold them,
+		// and "coming up" should only show what's still ahead.
+		if (d.getTime() < now.getTime()) continue;
 		const sod = startOfDay(d);
 		const key = `${sod.getFullYear()}-${sod.getMonth()}-${sod.getDate()}`;
 		let group = byKey.get(key);
