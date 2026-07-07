@@ -617,8 +617,18 @@ export const commands = {
 	calendarRemoveAccount: (accountId: string) => typedError<null, string>(__TAURI_INVOKE("calendar_remove_account", { accountId })),
 	/**  Enable or disable a single source. */
 	calendarSetAccountEnabled: (accountId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_enabled", { accountId, enabled })),
-	/**  List one account's calendars (for the per-account selection UI). */
+	/**
+	 *  One account's calendars for the per-account selection UI. Served from the list
+	 *  cached on the account (no network) so opening settings is instant; refreshing
+	 *  from Google is an explicit action (`calendar_refresh_account_calendars`). The
+	 *  local EventKit source is always read live since it is an on-device call.
+	 */
 	calendarListAccountCalendars: (accountId: string) => typedError<CalendarInfo[], string>(__TAURI_INVOKE("calendar_list_account_calendars", { accountId })),
+	/**
+	 *  Pull a fresh calendar list from Google and cache it on the account. This is the
+	 *  only path that hits the network for calendars, triggered by the manual refresh.
+	 */
+	calendarRefreshAccountCalendars: (accountId: string) => typedError<CalendarInfo[], string>(__TAURI_INVOKE("calendar_refresh_account_calendars", { accountId })),
 	/**  Set the excluded calendar ids for one account. */
 	calendarSetAccountExcludedIds: (accountId: string, ids: string[]) => typedError<null, string>(__TAURI_INVOKE("calendar_set_account_excluded_ids", { accountId, ids })),
 	/**  Preview upcoming events across all enabled sources (settings verification). */
@@ -689,6 +699,12 @@ export type CalendarAccount = {
 	/**  "reauth_required" when the token is dead; NULL means healthy. */
 	status: string | null,
 	created_at: string,
+	/**
+	 *  Cached JSON array of the account's calendars (`Vec<CalendarInfo>`), so the
+	 *  settings page renders without a live Google call. NULL until first fetched;
+	 *  refreshed on connect and on an explicit manual refresh.
+	 */
+	calendars_json: string | null,
 };
 
 /**

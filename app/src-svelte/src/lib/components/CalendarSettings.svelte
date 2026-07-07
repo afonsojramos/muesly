@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Calendar, ExternalLink, ShieldAlert, Trash2 } from '@lucide/svelte';
+	import { Calendar, ExternalLink, RefreshCw, ShieldAlert, Trash2 } from '@lucide/svelte';
 
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { toast } from '$lib/toast';
 	import { cn } from '$lib/utils';
 	import {
@@ -103,6 +104,26 @@
 				};
 			}),
 		);
+	}
+
+	// Refreshing an account's calendar list is a manual action: it is the only path
+	// that hits Google's API (the page otherwise renders the cached list).
+	let refreshingAccounts = $state<Set<string>>(new Set());
+
+	async function refreshAccountCalendars(accountId: string): Promise<void> {
+		refreshingAccounts = new Set(refreshingAccounts).add(accountId);
+		try {
+			const res = await commands.calendarRefreshAccountCalendars(accountId);
+			if (res.status === 'ok') {
+				accountCalendars = { ...accountCalendars, [accountId]: res.data };
+			} else {
+				toast.error('Could not refresh calendars', { description: res.error });
+			}
+		} finally {
+			const next = new Set(refreshingAccounts);
+			next.delete(accountId);
+			refreshingAccounts = next;
+		}
 	}
 
 	async function toggleAccountCalendar(
@@ -354,6 +375,28 @@
 										checked={acct.enabled}
 										onCheckedChange={(v) => toggleAccount(acct.id, v)}
 									/>
+									<Tooltip.Provider delayDuration={300}>
+										<Tooltip.Root>
+											<Tooltip.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-sm"
+														class="text-muted-foreground hover:text-foreground"
+														onclick={() => refreshAccountCalendars(acct.id)}
+														disabled={refreshingAccounts.has(acct.id)}
+														aria-label="Refresh calendars"
+													>
+														<RefreshCw
+															class={cn(refreshingAccounts.has(acct.id) && 'animate-spin')}
+														/>
+													</Button>
+												{/snippet}
+											</Tooltip.Trigger>
+											<Tooltip.Content>Refresh calendars from Google</Tooltip.Content>
+										</Tooltip.Root>
+									</Tooltip.Provider>
 									<Button
 										variant="ghost"
 										size="sm"

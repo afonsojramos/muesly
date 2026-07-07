@@ -132,6 +132,10 @@ pub struct CalendarAccount {
     /// "reauth_required" when the token is dead; NULL means healthy.
     pub status: Option<String>,
     pub created_at: String,
+    /// Cached JSON array of the account's calendars (`Vec<CalendarInfo>`), so the
+    /// settings page renders without a live Google call. NULL until first fetched;
+    /// refreshed on connect and on an explicit manual refresh.
+    pub calendars_json: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]

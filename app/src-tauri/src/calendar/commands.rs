@@ -222,6 +222,12 @@ pub async fn calendar_add_google_account(
 ) -> Result<CalendarAccount, String> {
     let pool = state.db_manager.pool();
     let (sub, email) = google::connect_account().await.map_err(|e| e.to_string())?;
+    // Cache the calendar list once on connect so the settings page has an initial
+    // list without a live call; later refreshes are a manual action.
+    let calendars_json = fetch_google_calendars(&sub)
+        .await
+        .ok()
+        .and_then(|c| serde_json::to_string(&c).ok());
     let account = CalendarAccount {
         id: sub,
         source: "google".to_string(),
@@ -230,6 +236,7 @@ pub async fn calendar_add_google_account(
         excluded_calendar_ids: Some("[]".to_string()),
         status: None,
         created_at: chrono::Utc::now().to_rfc3339(),
+        calendars_json,
     };
     CalendarAccountsRepository::upsert(pool, &account)
         .await
@@ -286,18 +293,9 @@ pub async fn calendar_set_account_enabled(
     Ok(())
 }
 
-/// List one account's calendars (for the per-account selection UI).
-#[tauri::command]
-#[specta::specta]
-pub async fn calendar_list_account_calendars(
-    account_id: String,
-) -> Result<Vec<CalendarInfo>, String> {
-    if account_id == "eventkit-local" {
-        return tokio::task::spawn_blocking(|| eventkit::list_calendars(&HashSet::new()))
-            .await
-            .map_err(|e| e.to_string());
-    }
-    let cals = google::list_calendars(&account_id)
+/// Fetch a Google account's calendars from the API and map them to `CalendarInfo`.
+async fn fetch_google_calendars(account_id: &str) -> Result<Vec<CalendarInfo>, String> {
+    let cals = google::list_calendars(account_id)
         .await
         .map_err(|e| e.to_string())?;
     Ok(cals
@@ -308,6 +306,58 @@ pub async fn calendar_list_account_calendars(
             excluded_by_default: false,
         })
         .collect())
+}
+
+/// One account's calendars for the per-account selection UI. Served from the list
+/// cached on the account (no network) so opening settings is instant; refreshing
+/// from Google is an explicit action (`calendar_refresh_account_calendars`). The
+/// local EventKit source is always read live since it is an on-device call.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_list_account_calendars(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> Result<Vec<CalendarInfo>, String> {
+    if account_id == "eventkit-local" {
+        return tokio::task::spawn_blocking(|| eventkit::list_calendars(&HashSet::new()))
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let account = CalendarAccountsRepository::get(state.db_manager.pool(), &account_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    match account.and_then(|a| a.calendars_json) {
+        Some(json) => serde_json::from_str(&json).map_err(|e| e.to_string()),
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Pull a fresh calendar list from Google and cache it on the account. This is the
+/// only path that hits the network for calendars, triggered by the manual refresh.
+#[tauri::command]
+#[specta::specta]
+pub async fn calendar_refresh_account_calendars(
+    state: tauri::State<'_, AppState>,
+    account_id: String,
+) -> Result<Vec<CalendarInfo>, String> {
+    if account_id == "eventkit-local" {
+        return tokio::task::spawn_blocking(|| eventkit::list_calendars(&HashSet::new()))
+            .await
+            .map_err(|e| e.to_string());
+    }
+    let pool = state.db_manager.pool();
+    let calendars = fetch_google_calendars(&account_id).await?;
+    if let Some(mut account) = CalendarAccountsRepository::get(pool, &account_id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        account.calendars_json =
+            Some(serde_json::to_string(&calendars).map_err(|e| e.to_string())?);
+        CalendarAccountsRepository::upsert(pool, &account)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(calendars)
 }
 
 /// Set the excluded calendar ids for one account.

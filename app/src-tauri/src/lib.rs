@@ -1005,6 +1005,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         calendar::commands::calendar_remove_account,
         calendar::commands::calendar_set_account_enabled,
         calendar::commands::calendar_list_account_calendars,
+        calendar::commands::calendar_refresh_account_calendars,
         calendar::commands::calendar_set_account_excluded_ids,
         calendar::commands::calendar_preview_upcoming,
         calendar::commands::calendar_diagnose,

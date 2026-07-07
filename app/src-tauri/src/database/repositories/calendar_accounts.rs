@@ -25,14 +25,15 @@ impl CalendarAccountsRepository {
         sqlx::query(
             r#"
             INSERT INTO calendar_accounts
-                (id, source, email, enabled, excluded_calendar_ids, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, source, email, enabled, excluded_calendar_ids, status, created_at, calendars_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 source = excluded.source,
                 email = excluded.email,
                 enabled = excluded.enabled,
                 excluded_calendar_ids = excluded.excluded_calendar_ids,
-                status = excluded.status
+                status = excluded.status,
+                calendars_json = excluded.calendars_json
             "#,
         )
         .bind(&account.id)
@@ -42,6 +43,7 @@ impl CalendarAccountsRepository {
         .bind(&account.excluded_calendar_ids)
         .bind(&account.status)
         .bind(&account.created_at)
+        .bind(&account.calendars_json)
         .execute(pool)
         .await?;
         Ok(())
@@ -83,6 +85,7 @@ mod tests {
             excluded_calendar_ids: Some("[]".to_string()),
             status: None,
             created_at: "2026-06-29T12:00:00Z".to_string(),
+            calendars_json: None,
         }
     }
 
