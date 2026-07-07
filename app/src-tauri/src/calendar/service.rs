@@ -48,7 +48,7 @@ fn excluded_set(account: &CalendarAccount) -> HashSet<String> {
 /// a failure yields an empty `Vec` for that source and never affects others or
 /// blocks a recording. (Chunk A: EventKit only; Google accounts are added in
 /// the OAuth chunk, where the loop also parallelizes via per-source timeouts.)
-async fn fetch_all_candidates(
+pub(crate) async fn fetch_all_candidates(
     pool: &SqlitePool,
     now: DateTime<Utc>,
 ) -> Vec<CalendarEventCandidate> {

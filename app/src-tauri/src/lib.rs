@@ -1212,6 +1212,9 @@ pub fn run() {
             // Free model RAM after periods of inactivity (never during recording).
             crate::model_idle::spawn_idle_unload_watcher();
 
+            // Auto-start recording (opt-in) when a calendar meeting begins.
+            calendar::scheduler::spawn_meeting_scheduler(_app.handle().clone());
+
             // Initialize ModelManager for summary engine (async, non-blocking)
             let app_handle_for_model_manager = _app.handle().clone();
             tauri::async_runtime::spawn(async move {

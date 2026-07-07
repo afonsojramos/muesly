@@ -5,12 +5,14 @@
 //! the native pieces to no-ops. Nothing leaves the device on this path.
 
 pub mod commands;
+pub mod conference;
 pub mod context;
 pub mod dedup;
 pub mod eventkit;
 pub mod google;
 pub mod matching;
 pub mod permissions;
+pub mod scheduler;
 pub mod service;
 
 use serde::{Deserialize, Serialize};

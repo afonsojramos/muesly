@@ -117,7 +117,7 @@ fn is_multi_day(c: &CalendarEventCandidate) -> bool {
 }
 
 /// Whether a candidate could be "the meeting happening now".
-fn is_eligible(c: &CalendarEventCandidate, now: DateTime<Utc>) -> bool {
+pub(crate) fn is_eligible(c: &CalendarEventCandidate, now: DateTime<Utc>) -> bool {
     if c.is_all_day || c.calendar_excluded || is_multi_day(c) {
         return false;
     }
