@@ -12,6 +12,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as ToggleGroup from '$lib/components/ui/toggle-group';
 	import { Button } from '$lib/components/ui/button';
+	import Loadable from '$lib/components/Loadable.svelte';
 	import { Switch } from '$lib/components/ui/switch';
 	import AnalyticsConsentSwitch from './AnalyticsConsentSwitch.svelte';
 
@@ -81,10 +82,8 @@
 	}
 </script>
 
-{#if config.isLoadingPreferences && !config.notificationSettings && !config.storageLocations}
-	<div class="mx-auto max-w-2xl p-6">Loading Preferences...</div>
-{:else}
-	<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-6">
+	<Loadable loading={config.isLoadingPreferences}>
 		<Card.Root>
 			<Card.Header>
 				<div class="flex items-center justify-between gap-4">
@@ -159,5 +158,5 @@
 				<AnalyticsConsentSwitch />
 			</Card.Content>
 		</Card.Root>
-	</div>
-{/if}
+	</Loadable>
+</div>
