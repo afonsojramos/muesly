@@ -87,20 +87,22 @@
 	// Load calendars for every connected Google account (skipping already-cached
 	// ones), and keep each account's exclusion set in sync with the latest data.
 	async function loadAllAccountCalendars(): Promise<void> {
-		for (const acct of googleAccounts) {
-			accountExcluded = {
-				...accountExcluded,
-				[acct.id]: parseExcluded(acct.excluded_calendar_ids),
-			};
-			if (accountCalendars[acct.id] !== undefined) continue;
-			const res = await commands.calendarListAccountCalendars(acct.id);
-			// On failure (e.g. a reauth-required account) fall back to an empty list;
-			// the account row already surfaces the reconnect prompt.
-			accountCalendars = {
-				...accountCalendars,
-				[acct.id]: res.status === 'ok' ? res.data : [],
-			};
-		}
+		await Promise.all(
+			googleAccounts.map(async (acct) => {
+				accountExcluded = {
+					...accountExcluded,
+					[acct.id]: parseExcluded(acct.excluded_calendar_ids),
+				};
+				if (accountCalendars[acct.id] !== undefined) return;
+				const res = await commands.calendarListAccountCalendars(acct.id);
+				// On failure (e.g. a reauth-required account) fall back to an empty list;
+				// the account row already surfaces the reconnect prompt.
+				accountCalendars = {
+					...accountCalendars,
+					[acct.id]: res.status === 'ok' ? res.data : [],
+				};
+			}),
+		);
 	}
 
 	async function toggleAccountCalendar(
@@ -143,18 +145,29 @@
 	onMount(() => {
 		void (async () => {
 			try {
-				authStatus = await commands.calendarPermissionStatus();
-				const en = await commands.calendarGetContextEnabled();
+				// Fetch the quick core state concurrently so the page reveals fast,
+				// instead of blocking on six sequential round-trips.
+				const [perm, en, names, notes, accountsList, googleCfg] = await Promise.all([
+					commands.calendarPermissionStatus(),
+					commands.calendarGetContextEnabled(),
+					commands.calendarGetSendAttendeeNamesToCloud(),
+					commands.calendarGetSendNotesToCloud(),
+					commands.calendarListAccounts(),
+					commands.calendarGoogleConfigured(),
+				]);
+				authStatus = perm;
 				if (en.status === 'ok') enabled = en.data;
-				const names = await commands.calendarGetSendAttendeeNamesToCloud();
 				if (names.status === 'ok') sendNames = names.data;
-				const notes = await commands.calendarGetSendNotesToCloud();
 				if (notes.status === 'ok') sendNotes = notes.data;
-				await loadAccounts();
+				if (accountsList.status === 'ok') accounts = accountsList.data;
+				googleConfigured = googleCfg;
 				if (granted) await loadCalendars();
 			} finally {
 				loading = false;
 			}
+			// The per-account Google calendar lists hit the network, so load them in
+			// the background; each account row shows "Loading calendars…" until ready.
+			void loadAllAccountCalendars();
 		})();
 	});
 
