@@ -21,6 +21,9 @@
 	let authStatus = $state<CalendarAuthStatus>('notdetermined');
 	let enabled = $state(false);
 	let calendars = $state<CalendarInfo[]>([]);
+	// False until the local (EventKit) calendar list has been fetched, so the
+	// section can show a loading state instead of a premature "No calendars found".
+	let localCalendarsLoaded = $state(false);
 	let excludedIds = $state<Set<string>>(new Set());
 	let sendNames = $state(false);
 	let sendNotes = $state(false);
@@ -161,6 +164,7 @@
 		if (list.status === 'ok') calendars = list.data;
 		const ex = await commands.calendarGetExcludedIds();
 		if (ex.status === 'ok') excludedIds = new Set(ex.data);
+		localCalendarsLoaded = true;
 	}
 
 	onMount(() => {
@@ -182,12 +186,13 @@
 				if (notes.status === 'ok') sendNotes = notes.data;
 				if (accountsList.status === 'ok') accounts = accountsList.data;
 				googleConfigured = googleCfg;
-				if (granted) await loadCalendars();
 			} finally {
 				loading = false;
 			}
-			// The per-account Google calendar lists hit the network, so load them in
-			// the background; each account row shows "Loading calendars…" until ready.
+			// Reveal the toggles immediately; the calendar lists load in the background,
+			// each with its own loading state. The local (EventKit) read can be slow and
+			// the per-account Google lists come from the cache.
+			if (granted) void loadCalendars();
 			void loadAllAccountCalendars();
 		})();
 	});
@@ -331,7 +336,9 @@
 									localAccount && !localAccount.enabled && 'opacity-50',
 								)}
 							>
-								{#if calendars.length === 0}
+								{#if !localCalendarsLoaded}
+									<div class="px-3 py-2 text-xs text-muted-foreground">Loading calendars…</div>
+								{:else if calendars.length === 0}
 									<div class="px-3 py-2 text-xs text-muted-foreground">No calendars found.</div>
 								{:else}
 									{#each calendars as cal (cal.id)}
