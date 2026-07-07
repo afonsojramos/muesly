@@ -34,9 +34,11 @@ export function groupPreviewEventsByDay(
 	for (const ev of sorted) {
 		const d = new Date(ev.start);
 		if (isNaN(d.getTime())) continue;
-		// Drop events that have already started — a stale cache can still hold them,
-		// and "coming up" should only show what's still ahead.
-		if (d.getTime() < now.getTime()) continue;
+		// Drop events that have already ended (a stale cache can still hold them), but
+		// keep in-progress ones. An event with no/invalid end can't be known to be
+		// over, so it's kept.
+		const end = ev.end ? new Date(ev.end) : null;
+		if (end && !isNaN(end.getTime()) && end.getTime() < now.getTime()) continue;
 		const sod = startOfDay(d);
 		const key = `${sod.getFullYear()}-${sod.getMonth()}-${sod.getDate()}`;
 		let group = byKey.get(key);

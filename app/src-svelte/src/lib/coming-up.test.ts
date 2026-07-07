@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { groupPreviewEventsByDay, formatEventTime } from './coming-up';
 import type { PreviewEvent } from './bindings';
 
-function ev(start: string, title = 'Event'): PreviewEvent {
+function ev(start: string, title = 'Event', end: string | null = null): PreviewEvent {
 	return {
 		title,
 		start,
-		end: null,
+		end,
 		source: 'eventkit',
 		calendar_name: null,
 		ical_uid: null,
@@ -40,12 +40,16 @@ describe('groupPreviewEventsByDay', () => {
 		expect(groupPreviewEventsByDay([], now)).toEqual([]);
 	});
 
-	it('drops events that have already started', () => {
+	it('drops ended events but keeps in-progress ones', () => {
 		const groups = groupPreviewEventsByDay(
-			[ev('2026-07-06T08:00:00', 'Past'), ev('2026-07-06T12:00:00', 'Future')],
+			[
+				ev('2026-07-06T07:00:00', 'Ended', '2026-07-06T08:00:00'),
+				ev('2026-07-06T08:30:00', 'InProgress', '2026-07-06T10:00:00'),
+				ev('2026-07-06T12:00:00', 'Future'),
+			],
 			now,
 		);
-		expect(groups.flatMap((g) => g.items.map((e) => e.title))).toEqual(['Future']);
+		expect(groups.flatMap((g) => g.items.map((e) => e.title))).toEqual(['InProgress', 'Future']);
 	});
 });
 
