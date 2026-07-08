@@ -38,18 +38,14 @@
 	// Folder pre-assignment.
 	let assignedFolderId = $state<string | null>(null);
 	let pickerOpen = $state(false);
-	// Pointer hover, JS-tracked so it resets deterministically. CSS `:hover` (and
-	// focus-based reveal) strands when the portalled folder popover opens or returns
-	// focus to the trigger, leaving the pill stuck visible without hovering.
-	let rowActive = $state(false);
 	let mode = $state<'pick' | 'recurring'>('pick');
 	let query = $state('');
 
 	const folders = $derived(sidebar.folders);
 	const assignedFolder = $derived(folders.find((f) => f.id === assignedFolderId) ?? null);
-	// The add-to-folder pill shows on hover, while its picker is open, or once a
-	// folder is assigned.
-	const pillVisible = $derived(rowActive || pickerOpen || !!assignedFolder);
+	// Hide the add-to-folder pill until the row is hovered, unless its picker is open
+	// or a folder is already assigned.
+	const pillHidden = $derived(!pickerOpen && !assignedFolder);
 	const canCreate = $derived(
 		query.trim().length > 0 &&
 			!folders.some((f) => f.name.toLowerCase() === query.trim().toLowerCase()),
@@ -144,12 +140,7 @@
 	}
 </script>
 
-<div
-	role="group"
-	class="flex items-start gap-3"
-	onpointerenter={() => (rowActive = true)}
-	onpointerleave={() => (rowActive = false)}
->
+<div class="group flex items-start gap-3">
 	<div class="mt-0.5 h-8 w-0.5 flex-shrink-0 rounded-full bg-success/60"></div>
 	<div class="min-w-0 flex-1">
 		<div class="truncate text-sm font-medium">{ev.title}</div>
@@ -176,7 +167,8 @@
 							variant="outline"
 							class={cn(
 								'max-w-[11rem] text-muted-foreground transition-opacity',
-								!pillVisible && 'pointer-events-none opacity-0',
+								pillHidden &&
+									'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
 							)}
 							aria-label="Add to folder"
 						>
