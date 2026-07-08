@@ -57,11 +57,14 @@ pub async fn calendar_get_context_enabled(
 #[specta::specta]
 pub async fn calendar_set_context_enabled(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     enabled: bool,
 ) -> Result<(), String> {
     SettingsRepository::set_calendar_context_enabled(state.db_manager.pool(), enabled)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    spawn_upcoming_refresh(state.db_manager.pool(), &app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -83,6 +86,7 @@ pub async fn calendar_get_excluded_ids(
 #[specta::specta]
 pub async fn calendar_set_excluded_ids(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     ids: Vec<String>,
 ) -> Result<(), String> {
     let pool = state.db_manager.pool();
@@ -96,6 +100,7 @@ pub async fn calendar_set_excluded_ids(
             .await
             .map_err(|e| e.to_string())?;
     }
+    spawn_upcoming_refresh(pool, &app);
     Ok(())
 }
 
@@ -221,6 +226,7 @@ pub async fn calendar_list_accounts(
 #[specta::specta]
 pub async fn calendar_add_google_account(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<CalendarAccount, String> {
     let pool = state.db_manager.pool();
     let (sub, email) = google::connect_account().await.map_err(|e| e.to_string())?;
@@ -243,6 +249,7 @@ pub async fn calendar_add_google_account(
     CalendarAccountsRepository::upsert(pool, &account)
         .await
         .map_err(|e| e.to_string())?;
+    spawn_upcoming_refresh(pool, &app);
     Ok(account)
 }
 
@@ -253,6 +260,7 @@ pub async fn calendar_add_google_account(
 #[specta::specta]
 pub async fn calendar_remove_account(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     account_id: String,
 ) -> Result<(), String> {
     let pool = state.db_manager.pool();
@@ -271,7 +279,9 @@ pub async fn calendar_remove_account(
     }
     CalendarAccountsRepository::delete(pool, &account_id)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    spawn_upcoming_refresh(pool, &app);
+    Ok(())
 }
 
 /// Enable or disable a single source.
@@ -279,6 +289,7 @@ pub async fn calendar_remove_account(
 #[specta::specta]
 pub async fn calendar_set_account_enabled(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     account_id: String,
     enabled: bool,
 ) -> Result<(), String> {
@@ -292,6 +303,7 @@ pub async fn calendar_set_account_enabled(
             .await
             .map_err(|e| e.to_string())?;
     }
+    spawn_upcoming_refresh(pool, &app);
     Ok(())
 }
 
@@ -367,6 +379,7 @@ pub async fn calendar_refresh_account_calendars(
 #[specta::specta]
 pub async fn calendar_set_account_excluded_ids(
     state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
     account_id: String,
     ids: Vec<String>,
 ) -> Result<(), String> {
@@ -381,6 +394,7 @@ pub async fn calendar_set_account_excluded_ids(
             .await
             .map_err(|e| e.to_string())?;
     }
+    spawn_upcoming_refresh(pool, &app);
     Ok(())
 }
 
@@ -439,6 +453,18 @@ async fn refresh_upcoming_cache(pool: sqlx::SqlitePool, app: tauri::AppHandle) {
         let _ = SettingsRepository::set_calendar_upcoming_cache(&pool, &json).await;
     }
     let _ = app.emit("upcoming-events-updated", ());
+}
+
+/// Force-refresh the upcoming-events cache in the background after a calendar
+/// change that alters which events appear (toggles, exclusions, account add/
+/// remove), so removed/excluded calendars stop showing without waiting for the
+/// TTL. Fires `upcoming-events-updated` when done for any mounted home view.
+fn spawn_upcoming_refresh(pool: &sqlx::SqlitePool, app: &tauri::AppHandle) {
+    let pool = pool.clone();
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        refresh_upcoming_cache(pool, app).await;
+    });
 }
 
 /// One-click, secret-free diagnostic for a calendar source (where it fails).
