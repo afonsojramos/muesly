@@ -15,10 +15,10 @@ class UpcomingEventsStore {
 	#inFlight: Promise<void> | null = null;
 	#listening = false;
 
-	/** Load the preview once, and keep it fresh via the backend refresh event. */
+	/** Re-read the preview (backend cache read is cheap) and keep it fresh via the
+	 * refresh event. Always reads so a change made while away is reflected on return. */
 	async ensure(): Promise<void> {
 		this.#listenForUpdates();
-		if (this.loaded) return;
 		return this.refresh();
 	}
 

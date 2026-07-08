@@ -455,15 +455,28 @@ async fn refresh_upcoming_cache(pool: sqlx::SqlitePool, app: tauri::AppHandle) {
     let _ = app.emit("upcoming-events-updated", ());
 }
 
+/// Monotonic token so overlapping refresh requests debounce to the latest one.
+static UPCOMING_REFRESH_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Force-refresh the upcoming-events cache in the background after a calendar
 /// change that alters which events appear (toggles, exclusions, account add/
 /// remove), so removed/excluded calendars stop showing without waiting for the
 /// TTL. Fires `upcoming-events-updated` when done for any mounted home view.
+///
+/// Debounced: rapid successive changes (e.g. toggling several calendars) coalesce
+/// into a single refresh that reads the final state. Without this, an earlier
+/// change's slower fetch could land last and overwrite the correct result.
 fn spawn_upcoming_refresh(pool: &sqlx::SqlitePool, app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    let generation = UPCOMING_REFRESH_GEN.fetch_add(1, Ordering::SeqCst) + 1;
     let pool = pool.clone();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        refresh_upcoming_cache(pool, app).await;
+        tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+        // Only the most recent request runs; superseded ones bail.
+        if UPCOMING_REFRESH_GEN.load(Ordering::SeqCst) == generation {
+            refresh_upcoming_cache(pool, app).await;
+        }
     });
 }
 
