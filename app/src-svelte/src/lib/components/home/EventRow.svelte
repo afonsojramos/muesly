@@ -166,9 +166,8 @@
 							size="sm"
 							variant="ghost"
 							class={cn(
-								'max-w-[11rem] text-muted-foreground transition-opacity',
-								pillHidden &&
-									'pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100',
+								'max-w-[11rem] text-muted-foreground',
+								pillHidden && 'invisible group-hover:visible',
 							)}
 							aria-label="Add to folder"
 						>
