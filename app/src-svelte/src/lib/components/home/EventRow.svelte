@@ -157,7 +157,7 @@
 			<Button size="sm" variant="secondary" onclick={onStart}>Start</Button>
 		{/if}
 
-		{#if canAssign}
+		{#if canAssign && !showStart}
 			<Popover.Root bind:open={pickerOpen} onOpenChange={onPickerOpenChange}>
 				<Popover.Trigger>
 					{#snippet child({ props })}
