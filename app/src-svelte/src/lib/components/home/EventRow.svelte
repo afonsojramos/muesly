@@ -50,9 +50,6 @@
 		query.trim().length > 0 &&
 			!folders.some((f) => f.name.toLowerCase() === query.trim().toLowerCase()),
 	);
-	function folderCount(id: string): number {
-		return sidebar.meetings.filter((m) => m.folderId === id).length;
-	}
 
 	// True once the user has touched the assignment, so a slow hydration response
 	// can't clobber a fresh pick (TOCTOU).
@@ -205,10 +202,7 @@
 												<Folder class="size-4 text-muted-foreground" />
 											{/if}
 											<span class="truncate">{f.name}</span>
-											<span class="ml-auto text-xs tabular-nums text-muted-foreground">
-												{folderCount(f.id)}
-											</span>
-											{#if assignedFolderId === f.id}<Check class="size-4" />{/if}
+											{#if assignedFolderId === f.id}<Check class="ml-auto size-4" />{/if}
 										</Command.Item>
 									{/each}
 								</Command.Group>
