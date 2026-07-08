@@ -164,7 +164,7 @@
 						<Button
 							{...props}
 							size="sm"
-							variant="outline"
+							variant="ghost"
 							class={cn(
 								'max-w-[11rem] text-muted-foreground transition-opacity',
 								pillHidden &&
