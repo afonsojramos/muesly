@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Check, Folder, FolderPlus, Lock, RefreshCw } from '@lucide/svelte';
+	import { Folder, FolderPlus, Lock, RefreshCw } from '@lucide/svelte';
 
 	import type { PreviewEvent } from '$lib/bindings';
 	import { commands } from '$lib/bindings';
@@ -189,20 +189,26 @@
 							<Command.List>
 								<Command.Empty>No folders match.</Command.Empty>
 								<Command.Group>
-									<Command.Item value="My notes" onSelect={unassign}>
+									<Command.Item
+										value="My notes"
+										onSelect={unassign}
+										data-checked={!assignedFolderId}
+									>
 										<Lock class="size-4 text-muted-foreground" />
 										<span>My notes</span>
-										{#if !assignedFolderId}<Check class="ml-auto size-4" />{/if}
 									</Command.Item>
 									{#each folders as f (f.id)}
-										<Command.Item value={f.name} onSelect={() => assign(f.id)}>
+										<Command.Item
+											value={f.name}
+											onSelect={() => assign(f.id)}
+											data-checked={assignedFolderId === f.id}
+										>
 											{#if f.emoji}
 												<span>{f.emoji}</span>
 											{:else}
 												<Folder class="size-4 text-muted-foreground" />
 											{/if}
 											<span class="truncate">{f.name}</span>
-											{#if assignedFolderId === f.id}<Check class="ml-auto size-4" />{/if}
 										</Command.Item>
 									{/each}
 								</Command.Group>
