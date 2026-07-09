@@ -53,6 +53,16 @@ pub struct Transcript {
     pub speaker_id: Option<i64>,
 }
 
+/// A human-assigned name for a diarized speaker cluster within one meeting.
+/// `(meeting_id, speaker_id)` is the cluster identity; scoped per meeting, no
+/// cross-meeting voice identity and no email.
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
+pub struct SpeakerName {
+    pub meeting_id: String,
+    pub speaker_id: i64,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]
 pub struct SummaryProcess {
     pub meeting_id: String,
