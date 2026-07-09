@@ -124,16 +124,41 @@ pub async fn diarize_meeting<R: Runtime>(
         .await
         .map_err(|e| format!("load transcript segments: {e}"))?;
 
+    // Only the `system` (remote) side is clustered; the mic side is always the
+    // local user and is cleared so it can never be shown as a remote "Speaker N".
+    let assignments = assign_speaker_ids(&segments, &turns);
     let mut labeled = 0u32;
-    for (id, start, end) in segments {
-        if let Some(speaker) = reconcile::speaker_for_segment(start, end, &turns) {
-            TranscriptsRepository::set_segment_speaker_id(pool, &id, Some(speaker as i64))
-                .await
-                .map_err(|e| format!("persist speaker_id: {e}"))?;
+    for (id, speaker_id) in assignments {
+        TranscriptsRepository::set_segment_speaker_id(pool, &id, speaker_id)
+            .await
+            .map_err(|e| format!("persist speaker_id: {e}"))?;
+        if speaker_id.is_some() {
             labeled += 1;
         }
     }
     Ok(labeled)
+}
+
+/// Decide the `speaker_id` to persist for each segment. Only `system` segments
+/// (remote participants) receive a diarized cluster; every other segment (the
+/// user's `mic`, or an unknown source) is cleared to `None`. This keeps the local
+/// user off the cluster axis entirely, so they are never mislabeled as a remote
+/// speaker, and clears any stale cluster left by an earlier run.
+fn assign_speaker_ids(
+    segments: &[(String, f64, f64, Option<String>)],
+    turns: &[reconcile::SpeakerTurn],
+) -> Vec<(String, Option<i64>)> {
+    segments
+        .iter()
+        .map(|(id, start, end, speaker)| {
+            let speaker_id = if speaker.as_deref() == Some("system") {
+                reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
+            } else {
+                None
+            };
+            (id.clone(), speaker_id)
+        })
+        .collect()
 }
 
 /// Download the diarization models on demand, emitting
@@ -178,5 +203,58 @@ pub async fn download_diarization_models<R: Runtime>(app: AppHandle<R>) -> Resul
             );
             Err(format!("failed to download diarization models: {e}"))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diarization::reconcile::SpeakerTurn;
+
+    fn seg(id: &str, start: f64, end: f64, speaker: Option<&str>) -> (String, f64, f64, Option<String>) {
+        (id.to_string(), start, end, speaker.map(|s| s.to_string()))
+    }
+
+    fn turn(start: f64, end: f64, speaker: i32) -> SpeakerTurn {
+        SpeakerTurn { start, end, speaker }
+    }
+
+    #[test]
+    fn only_system_segments_receive_a_cluster() {
+        let segments = vec![
+            seg("mic-1", 0.0, 1.0, Some("mic")),
+            seg("sys-1", 1.0, 2.0, Some("system")),
+        ];
+        let turns = [turn(0.0, 2.0, 4)];
+        let out = assign_speaker_ids(&segments, &turns);
+        assert_eq!(out[0], ("mic-1".to_string(), None));
+        assert_eq!(out[1], ("sys-1".to_string(), Some(4)));
+    }
+
+    #[test]
+    fn mic_segment_is_cleared_even_when_a_turn_overlaps_it() {
+        // A mic segment overlapping a diarizer turn must still be left None so the
+        // user is never shown as a remote speaker.
+        let segments = vec![seg("mic-1", 0.0, 5.0, Some("mic"))];
+        let turns = [turn(0.0, 5.0, 2)];
+        let out = assign_speaker_ids(&segments, &turns);
+        assert_eq!(out[0], ("mic-1".to_string(), None));
+    }
+
+    #[test]
+    fn unknown_source_segments_are_left_unlabeled() {
+        let segments = vec![seg("x-1", 0.0, 1.0, None)];
+        let turns = [turn(0.0, 1.0, 0)];
+        let out = assign_speaker_ids(&segments, &turns);
+        assert_eq!(out[0], ("x-1".to_string(), None));
+    }
+
+    #[test]
+    fn system_segment_without_overlap_is_cleared() {
+        // Clears a stale cluster from an earlier run when no turn overlaps now.
+        let segments = vec![seg("sys-1", 10.0, 11.0, Some("system"))];
+        let turns = [turn(0.0, 1.0, 0)];
+        let out = assign_speaker_ids(&segments, &turns);
+        assert_eq!(out[0], ("sys-1".to_string(), None));
     }
 }

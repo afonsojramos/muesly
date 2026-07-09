@@ -7,15 +7,16 @@ use uuid::Uuid;
 pub struct TranscriptsRepository;
 
 impl TranscriptsRepository {
-    /// Load each transcript segment's id and audio time span for a meeting,
-    /// ordered by start time. Segments without timing are skipped (they cannot
-    /// be reconciled against speaker turns).
+    /// Load each transcript segment's id, audio time span, and source speaker
+    /// (`"mic"`/`"system"`) for a meeting, ordered by start time. Segments without
+    /// timing are skipped (they cannot be reconciled against speaker turns). The
+    /// `speaker` lets diarization label only the `system` (remote) side.
     pub async fn segments_for_diarization(
         pool: &SqlitePool,
         meeting_id: &str,
-    ) -> Result<Vec<(String, f64, f64)>, SqlxError> {
-        let rows: Vec<(String, Option<f64>, Option<f64>)> = sqlx::query_as(
-            "SELECT id, audio_start_time, audio_end_time FROM transcripts \
+    ) -> Result<Vec<(String, f64, f64, Option<String>)>, SqlxError> {
+        let rows: Vec<(String, Option<f64>, Option<f64>, Option<String>)> = sqlx::query_as(
+            "SELECT id, audio_start_time, audio_end_time, speaker FROM transcripts \
              WHERE meeting_id = ? ORDER BY audio_start_time",
         )
         .bind(meeting_id)
@@ -23,7 +24,7 @@ impl TranscriptsRepository {
         .await?;
         Ok(rows
             .into_iter()
-            .filter_map(|(id, start, end)| Some((id, start?, end?)))
+            .filter_map(|(id, start, end, speaker)| Some((id, start?, end?, speaker)))
             .collect())
     }
 
