@@ -12,11 +12,9 @@
 		shortlist: string[];
 		/** Persist the assignment for this cluster. */
 		onAssign: (speakerId: number, name: string) => void | Promise<void>;
-		/** Align the popover to the label's side (mic is right-aligned). */
-		align?: 'start' | 'end';
 	}
 
-	let { label, speakerId, shortlist, onAssign, align = 'start' }: Props = $props();
+	let { label, speakerId, shortlist, onAssign }: Props = $props();
 
 	let open = $state(false);
 	let query = $state('');
@@ -52,14 +50,16 @@
 			</button>
 		{/snippet}
 	</Popover.Trigger>
-	<Popover.Content {align} class="w-56 p-0">
+	<Popover.Content align="start" class="w-56 p-0">
 		<Command.Root>
 			<Command.Input placeholder="Name this speaker" bind:value={query} />
 			<Command.List>
 				<Command.Empty>No matches.</Command.Empty>
 				{#if shortlist.length > 0}
 					<Command.Group>
-						{#each shortlist as name (name)}
+						<!-- Keyed by index: a duplicate display name (deduped upstream, but
+						     be robust) must never collide on a keyed-each. -->
+						{#each shortlist as name, i (i)}
 							<Command.Item value={name} onSelect={() => assign(name)}>
 								<span class="truncate">{name}</span>
 							</Command.Item>

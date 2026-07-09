@@ -28,10 +28,9 @@
 	import { useAutoScroll } from '$lib/hooks/use-auto-scroll.svelte';
 	import { useTranscriptStreaming } from '$lib/hooks/use-transcript-streaming.svelte';
 	import {
-		buildDisplayIndex,
+		buildSpeakerRows,
 		emptySpeakerContext,
 		isAssignable,
-		speakerLabelFor,
 		type SpeakerContext,
 	} from '$lib/speaker-label';
 	import ConfidenceIndicator from './ConfidenceIndicator.svelte';
@@ -83,18 +82,9 @@
 
 	// Per-segment speaker labels, shown only at a speaker change (turn boundary)
 	// so a run of the same speaker isn't repeated. Off entirely during recording.
-	const speakerLabels = $derived.by((): { label?: string; show: boolean }[] => {
-		if (!showSpeakers) return [];
-		const ctx = speakerContext ?? emptySpeakerContext();
-		const displayIndex = buildDisplayIndex(segments);
-		let prev: string | undefined;
-		return segments.map((s) => {
-			const label = speakerLabelFor(s, ctx, displayIndex);
-			const show = label != null && label !== prev;
-			prev = label;
-			return { label, show };
-		});
-	});
+	const speakerLabels = $derived(
+		showSpeakers ? buildSpeakerRows(segments, speakerContext ?? emptySpeakerContext()) : [],
+	);
 
 	let scrollEl = $state<HTMLDivElement>();
 	let loadMoreTrigger = $state<HTMLDivElement>();
@@ -241,12 +231,13 @@
 								     mic side reads "You" and is not editable. -->
 								{#if speaker?.show && speaker.label}
 									{#if onAssignSpeaker && isAssignable(segment)}
+										<!-- Only reachable for system segments (isAssignable), which are
+										     always left-aligned; the mic side uses the plain span below. -->
 										<SpeakerLabel
 											label={speaker.label}
 											speakerId={segment.speaker_id!}
 											shortlist={(speakerContext ?? emptySpeakerContext()).shortlist}
 											onAssign={onAssignSpeaker}
-											align={isMe ? 'end' : 'start'}
 										/>
 									{:else}
 										<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground"
