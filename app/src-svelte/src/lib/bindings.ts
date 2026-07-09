@@ -20,7 +20,9 @@ export const commands = {
 	/**
 	 *  Diarize a saved meeting: decode its audio, run the sidecar, reconcile speaker
 	 *  turns onto the transcript segments, and persist `speaker_id`. Returns the
-	 *  number of segments that received a speaker label.
+	 *  number of segments that received a speaker label -- these are `system`
+	 *  (remote) segments only; the mic side is always the local user and is never
+	 *  cluster-labeled.
 	 */
 	diarizeMeeting: (meetingId: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId })),
 	/**
