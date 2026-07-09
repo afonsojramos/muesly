@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -25,6 +26,7 @@
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
 	import MainContent from '$lib/components/MainContent.svelte';
 	import RecordingBar from '$lib/components/RecordingBar.svelte';
+	import ChatBar from '$lib/components/ChatBar/ChatBar.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { cn } from '$lib/utils';
 	import DownloadProgressToast from '$lib/components/shared/DownloadProgressToast.svelte';
@@ -464,6 +466,21 @@
 		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
 	>
 		<RecordingBar />
+	</div>
+{/if}
+
+<!-- "Ask anything" chat bar. Shown on the note and meeting-details views (during
+     AND after a recording), independent of the recording/focus state above.
+     Stacks above the RecordingBar when both are visible. -->
+{#if page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
+	<div
+		class={cn(
+			'fixed z-40 -translate-x-1/2 transition-[left,bottom] duration-300',
+			recordingState.isRecording && windowFocused ? 'bottom-24' : 'bottom-6',
+		)}
+		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
+	>
+		<ChatBar />
 	</div>
 {/if}
 
