@@ -13,8 +13,30 @@
 
 	let recipesOpen = $state(false);
 	let panelOpen = $state(true);
+	let viewportRef = $state<HTMLElement | null>(null);
 
 	const hasMessages = $derived(chat.messages.length > 0);
+
+	// Reset the conversation when the meeting changes, so one meeting's chat (and
+	// its history sent as context) never bleeds into another. Plain local, not
+	// $state, so mutating it doesn't retrigger the effect.
+	let lastMeetingId = chat.meetingId;
+	$effect(() => {
+		const id = chat.meetingId;
+		if (id !== lastMeetingId) {
+			lastMeetingId = id;
+			chat.clear();
+		}
+	});
+
+	// Keep the newest content in view as tokens stream / turns are added.
+	const lastContent = $derived(chat.messages.at(-1)?.content ?? '');
+	$effect(() => {
+		// Track both signals.
+		void lastContent;
+		void chat.messages.length;
+		viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
+	});
 
 	function handleKeydown(event: KeyboardEvent): void {
 		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -62,8 +84,8 @@
 					</Button>
 				</div>
 			</div>
-			<ScrollArea class="min-h-0 flex-1">
-				<div class="flex flex-col gap-3 p-4">
+			<ScrollArea bind:viewportRef class="min-h-0 flex-1">
+				<div class="flex flex-col gap-3 p-4" aria-live="polite" aria-atomic="false">
 					{#each chat.messages as message (message.id)}
 						<div class={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
 							<div
@@ -109,6 +131,7 @@
 						{...props}
 						variant="ghost"
 						size="icon"
+						disabled={chat.isStreaming}
 						class="shrink-0 rounded-full text-muted-foreground"
 						aria-label="Prompt recipes"
 					>
@@ -136,6 +159,7 @@
 			bind:value={chat.draft}
 			onkeydown={handleKeydown}
 			placeholder="Ask anything about this meeting…"
+			aria-label="Ask anything about this meeting"
 			rows={1}
 			class="max-h-40 min-h-0 flex-1 resize-none self-center border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
 		/>

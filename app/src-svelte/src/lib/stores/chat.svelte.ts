@@ -67,6 +67,9 @@ class ChatStore {
 					assistant.content += event.data.text;
 					break;
 				case 'done':
+					// Authoritative + idempotent: reconciles any dropped token once
+					// real streaming lands (Phase 1 sends the whole answer as one token).
+					assistant.content = event.data.full;
 					this.#finish(genId);
 					break;
 				case 'error':
@@ -75,6 +78,8 @@ class ChatStore {
 			}
 		};
 
+		// Backend `chat_ask(model, modelName)`: `model` is the provider kind
+		// (e.g. "ollama"/"builtin-ai"), `modelName` the concrete model id.
 		const { provider, model } = config.modelConfig;
 		const res = await commands.chatAsk(
 			meetingId,
