@@ -29,6 +29,13 @@ export const commands = {
 	 *  the Parakeet model-download flow).
 	 */
 	downloadDiarizationModels: () => typedError<null, string>(__TAURI_INVOKE("download_diarization_models")),
+	/**
+	 *  Read a meeting's diarized clusters (with any assigned names) plus the attendee
+	 *  shortlist and the local user's name, for the transcript's speaker UI.
+	 */
+	getMeetingSpeakers: (meetingId: string) => typedError<MeetingSpeakers, string>(__TAURI_INVOKE("get_meeting_speakers", { meetingId })),
+	/**  Assign (or rename) the name for a diarized cluster within a meeting. */
+	setSpeakerName: (meetingId: string, speakerId: number, name: string) => typedError<null, string>(__TAURI_INVOKE("set_speaker_name", { meetingId, speakerId, name })),
 	readAudioFile: (filePath: string) => typedError<number[], string>(__TAURI_INVOKE("read_audio_file", { filePath })),
 	saveTranscript: (filePath: string, content: string) => typedError<null, string>(__TAURI_INVOKE("save_transcript", { filePath, content })),
 	initAnalytics: () => typedError<null, string>(__TAURI_INVOKE("init_analytics")),
@@ -966,6 +973,24 @@ export type MeetingMetadata_Serialize = {
 	created_at: string,
 	updated_at: string,
 	folder_path?: string | null,
+};
+
+/**  A diarized speaker cluster present in a meeting, with any assigned name. */
+export type MeetingSpeaker = {
+	speaker_id: number,
+	name: string | null,
+};
+
+/**
+ *  The speakers of a meeting plus the material to name them: the distinct remote
+ *  clusters, the non-self attendee shortlist, and the local user's name.
+ */
+export type MeetingSpeakers = {
+	speakers: MeetingSpeaker[],
+	/**  Remote (non-self) attendee names offered as a one-tap naming shortlist. */
+	shortlist: string[],
+	/**  The local user's display name, when known (labels the mic/"You" side). */
+	self_name: string | null,
 };
 
 export type MeetingTranscript = MeetingTranscript_Serialize | MeetingTranscript_Deserialize;
