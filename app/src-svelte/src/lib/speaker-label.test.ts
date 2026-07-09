@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	buildDisplayIndex,
+	buildSpeakerRows,
+	clusterSignatureOf,
 	emptySpeakerContext,
 	isAssignable,
 	speakerLabelFor,
@@ -47,6 +49,48 @@ describe('speakerLabelFor', () => {
 
 	it('returns undefined for a system segment without a cluster', () => {
 		expect(speakerLabelFor(seg('a', 'system', null), ctx(), new Map())).toBeUndefined();
+	});
+
+	it('falls back to "Speaker N" when the assigned name is only whitespace', () => {
+		const names = new Map([[0, '   ']]);
+		const s = seg('a', 'system', 0);
+		expect(speakerLabelFor(s, ctx({ names }), buildDisplayIndex([s]))).toBe('Speaker 1');
+	});
+});
+
+describe('buildSpeakerRows', () => {
+	it('shows a label only at a speaker change (collapses runs)', () => {
+		const segs = [
+			seg('a', 'system', 0),
+			seg('b', 'system', 0),
+			seg('c', 'mic'),
+			seg('d', 'system', 0),
+		];
+		const rows = buildSpeakerRows(segs, ctx());
+		expect(rows.map((r) => r.show)).toEqual([true, false, true, true]);
+		expect(rows[0]?.label).toBe('Speaker 1');
+		expect(rows[2]?.label).toBe('You');
+	});
+
+	it('does not emit a label for an undiarized system segment', () => {
+		const rows = buildSpeakerRows([seg('a', 'system', null)], ctx());
+		expect(rows[0]).toEqual({ label: undefined, show: false });
+	});
+});
+
+describe('clusterSignatureOf', () => {
+	it('is a sorted signature of distinct system clusters, ignoring mic', () => {
+		const segs = [
+			seg('a', 'system', 2),
+			seg('b', 'mic'),
+			seg('c', 'system', 0),
+			seg('d', 'system', 2),
+		];
+		expect(clusterSignatureOf(segs)).toBe('0,2');
+	});
+
+	it('is empty when nothing is diarized', () => {
+		expect(clusterSignatureOf([seg('a', 'mic'), seg('b', 'system', null)])).toBe('');
 	});
 });
 

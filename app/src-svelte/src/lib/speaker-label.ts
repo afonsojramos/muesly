@@ -65,3 +65,40 @@ export function speakerLabelFor(
 export function isAssignable(segment: TranscriptSegmentData): boolean {
 	return segment.speaker === 'system' && segment.speaker_id != null;
 }
+
+/**
+ * A stable signature of the distinct system clusters present in the segments,
+ * used to detect when diarization has changed the cluster set so the speaker
+ * context should reload. Ignores mic segments and undiarized system segments.
+ */
+export function clusterSignatureOf(segments: TranscriptSegmentData[]): string {
+	return [
+		...new Set(
+			segments
+				.filter((s) => s.speaker === 'system' && s.speaker_id != null)
+				.map((s) => s.speaker_id as number),
+		),
+	]
+		.sort((a, b) => a - b)
+		.join(',');
+}
+
+/**
+ * Resolve each segment's label plus a `show` flag that is true only at a speaker
+ * change (turn boundary), so a run of the same speaker renders the label once.
+ * Segments with no label (undiarized system) carry `show: false` and do not
+ * break the run detection for the next labelled segment.
+ */
+export function buildSpeakerRows(
+	segments: TranscriptSegmentData[],
+	ctx: SpeakerContext,
+): { label?: string; show: boolean }[] {
+	const displayIndex = buildDisplayIndex(segments);
+	let prev: string | undefined;
+	return segments.map((s) => {
+		const label = speakerLabelFor(s, ctx, displayIndex);
+		const show = label != null && label !== prev;
+		prev = label;
+		return { label, show };
+	});
+}
