@@ -434,7 +434,7 @@
 									<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
 								</button>
 								<div
-									class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md bg-secondary pl-2 group-hover/folder:flex group-focus-within/folder:flex"
+									class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex"
 								>
 									<Tooltip.Provider delayDuration={300}>
 										<Tooltip.Root>
