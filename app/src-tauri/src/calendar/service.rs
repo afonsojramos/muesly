@@ -356,6 +356,7 @@ pub async fn preview_upcoming(pool: &SqlitePool, now: DateTime<Utc>) -> Vec<Prev
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::calendar::matching::{Attendee, EventStatus};
 
     #[test]
     fn attendee_payload_persists_is_self_flag() {
@@ -367,5 +368,51 @@ mod tests {
         let json = serde_json::to_string(&payload).expect("serialize");
         assert!(json.contains(r#""is_self":true"#), "got: {json}");
         assert!(!json.contains("@"), "no email is ever serialized");
+    }
+
+    #[test]
+    fn build_snapshot_threads_is_self_per_attendee() {
+        let now = Utc::now();
+        let candidate = CalendarEventCandidate {
+            identifier: None,
+            title: Some("Sync".to_string()),
+            start: now,
+            end: now,
+            is_all_day: false,
+            is_recurring: false,
+            event_status: EventStatus::Confirmed,
+            my_participation: Some(ParticipantStatus::Accepted),
+            i_am_organizer: false,
+            attendee_count: 2,
+            calendar_excluded: false,
+            ical_uid: None,
+            source: SourceKind::Google,
+            account_id: "acct".to_string(),
+            organizer_name: Some("Ana".to_string()),
+            attendees: vec![
+                Attendee {
+                    name: Some("Ana".to_string()),
+                    status: ParticipantStatus::Accepted,
+                    is_self: true,
+                },
+                Attendee {
+                    name: Some("Bruno".to_string()),
+                    status: ParticipantStatus::Accepted,
+                    is_self: false,
+                },
+            ],
+            location: None,
+            conference_url: None,
+            notes: None,
+            calendar_name: None,
+        };
+
+        let snapshot = build_snapshot("m1", &candidate, MatchConfidence::High);
+        let parsed = context::snapshot_attendees(&snapshot);
+        assert_eq!(parsed.len(), 2);
+        let ana = parsed.iter().find(|a| a.name.as_deref() == Some("Ana")).unwrap();
+        let bruno = parsed.iter().find(|a| a.name.as_deref() == Some("Bruno")).unwrap();
+        assert!(ana.is_self, "the self attendee must round-trip as is_self");
+        assert!(!bruno.is_self, "a remote attendee must not be marked self");
     }
 }
