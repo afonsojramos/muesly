@@ -5,7 +5,9 @@
 //! `diarization-helper` sidecar, and the resulting speaker turns are reconciled
 //! onto the stored transcript segments (persisted as `speaker_id`).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -74,9 +76,37 @@ pub async fn diarization_models_ready<R: Runtime>(app: AppHandle<R>) -> Result<b
     Ok(model::models_ready(&app_data_dir))
 }
 
+/// Meetings currently being diarized, so two concurrent runs on the same meeting
+/// can't interleave cluster/name writes (auto-run on stop + a manual re-run).
+static DIARIZE_IN_FLIGHT: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+/// RAII guard: marks a meeting as in-flight and clears the mark on drop.
+struct DiarizeGuard(String);
+
+impl Drop for DiarizeGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = DIARIZE_IN_FLIGHT.lock() {
+            set.remove(&self.0);
+        }
+    }
+}
+
+/// Reserve a meeting for diarization, or `None` if a run is already in progress.
+fn try_acquire_diarize(meeting_id: &str) -> Option<DiarizeGuard> {
+    let mut set = DIARIZE_IN_FLIGHT.lock().ok()?;
+    if set.contains(meeting_id) {
+        return None;
+    }
+    set.insert(meeting_id.to_string());
+    Some(DiarizeGuard(meeting_id.to_string()))
+}
+
 /// Diarize a saved meeting: decode its audio, run the sidecar, reconcile speaker
 /// turns onto the transcript segments, and persist `speaker_id`. Returns the
-/// number of segments that received a speaker label.
+/// number of segments that received a speaker label -- these are `system`
+/// (remote) segments only; the mic side is always the local user and is never
+/// cluster-labeled.
 #[tauri::command]
 #[specta::specta]
 pub async fn diarize_meeting<R: Runtime>(
@@ -84,6 +114,10 @@ pub async fn diarize_meeting<R: Runtime>(
     state: tauri::State<'_, AppState>,
     meeting_id: String,
 ) -> Result<u32, String> {
+    // Serialize per meeting: held until this function returns.
+    let _guard = try_acquire_diarize(&meeting_id)
+        .ok_or_else(|| "diarization is already in progress for this meeting".to_string())?;
+
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -131,6 +165,14 @@ pub async fn diarize_meeting<R: Runtime>(
     // Only the `system` (remote) side is clustered; the mic side is always the
     // local user and is cleared so it can never be shown as a remote "Speaker N".
     let assignments = assign_speaker_ids(&segments, &turns);
+
+    // Drop prior names FIRST: cluster numbering is not stable across runs, so if
+    // the reassignment loop below fails partway a stale name must never remain
+    // paired with a freshly-numbered cluster (a swapped-identity display).
+    SpeakerNamesRepository::clear_for_meeting(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("clear speaker names: {e}"))?;
+
     let mut labeled = 0u32;
     for (id, speaker_id) in &assignments {
         TranscriptsRepository::set_segment_speaker_id(pool, id, *speaker_id)
@@ -141,11 +183,7 @@ pub async fn diarize_meeting<R: Runtime>(
         }
     }
 
-    // Fresh run: drop any prior names, since cluster numbering is not stable
-    // across runs. Then conservatively auto-name the single unambiguous case.
-    SpeakerNamesRepository::clear_for_meeting(pool, &meeting_id)
-        .await
-        .map_err(|e| format!("clear speaker names: {e}"))?;
+    // Conservatively auto-name the single unambiguous case.
     let mut cluster_ids: Vec<i64> = assignments.iter().filter_map(|(_, s)| *s).collect();
     cluster_ids.sort_unstable();
     cluster_ids.dedup();
@@ -252,12 +290,19 @@ async fn meeting_speakers(
         .iter()
         .find(|a| a.is_self)
         .and_then(|a| a.name.clone());
-    let shortlist = attendees
+    // Dedupe: two attendees can share a display name, and a duplicate would both
+    // clutter the picker and (keyed by name) break the frontend's rename list.
+    let mut shortlist: Vec<String> = Vec::new();
+    for name in attendees
         .iter()
         .filter(|a| !a.is_self)
         .filter_map(|a| a.name.clone())
         .filter(|n| !n.trim().is_empty())
-        .collect();
+    {
+        if !shortlist.contains(&name) {
+            shortlist.push(name);
+        }
+    }
 
     Ok(MeetingSpeakers {
         speakers,
@@ -275,8 +320,14 @@ pub async fn set_speaker_name(
     speaker_id: i64,
     name: String,
 ) -> Result<(), String> {
+    // Validate at the boundary: never persist a blank name (the display would
+    // just fall back to "Speaker N", leaving a junk row).
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("speaker name must not be empty".to_string());
+    }
     let pool = state.db_manager.pool();
-    SpeakerNamesRepository::upsert(pool, &meeting_id, speaker_id, &name)
+    SpeakerNamesRepository::upsert(pool, &meeting_id, speaker_id, trimmed)
         .await
         .map_err(|e| format!("set speaker name: {e}"))
 }
@@ -524,5 +575,69 @@ mod tests {
         assert!(ms.shortlist.is_empty());
         assert_eq!(ms.self_name, None);
         assert_eq!(ms.speakers.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn meeting_speakers_dedupes_duplicate_attendee_names() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        insert_segment(&pool, "m1", "t-sys-0", "system", Some(0)).await;
+        insert_event(
+            &pool,
+            "m1",
+            r#"[{"name":"Guest","status":"accepted","is_self":false},{"name":"Guest","status":"accepted","is_self":false}]"#,
+        )
+        .await;
+
+        let ms = meeting_speakers(&pool, "m1").await.expect("assemble");
+        // A duplicate display name must appear once (keyed rename list would break).
+        assert_eq!(ms.shortlist, vec!["Guest".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn auto_fill_names_the_single_remote_cluster() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        insert_event(
+            &pool,
+            "m1",
+            r#"[{"name":"Ana","status":"accepted","is_self":true},{"name":"Bruno","status":"accepted","is_self":false}]"#,
+        )
+        .await;
+
+        auto_fill_speaker_names(&pool, "m1", &[0]).await.expect("auto-fill");
+
+        let names = SpeakerNamesRepository::get_for_meeting(&pool, "m1")
+            .await
+            .expect("get");
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].speaker_id, 0);
+        assert_eq!(names[0].name, "Bruno");
+    }
+
+    #[tokio::test]
+    async fn auto_fill_declines_ambiguous_and_no_event() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        // Two remote attendees, one cluster -> ambiguous, no name.
+        insert_event(
+            &pool,
+            "m1",
+            r#"[{"name":"Bruno","status":"accepted","is_self":false},{"name":"Carla","status":"accepted","is_self":false}]"#,
+        )
+        .await;
+        auto_fill_speaker_names(&pool, "m1", &[0]).await.expect("auto-fill");
+        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "m1")
+            .await
+            .expect("get")
+            .is_empty());
+
+        // No calendar event -> early return, no name.
+        insert_meeting(&pool, "m2").await;
+        auto_fill_speaker_names(&pool, "m2", &[0]).await.expect("auto-fill");
+        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "m2")
+            .await
+            .expect("get")
+            .is_empty());
     }
 }
