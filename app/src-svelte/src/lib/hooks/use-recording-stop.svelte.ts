@@ -176,6 +176,24 @@ export function useRecordingStop(
 						console.error('Failed to attach calendar event:', calendarError);
 					}
 
+					// Auto-identify speakers for a calendar meeting with attendees, but
+					// only when the model is already present (never trigger a large
+					// download mid-flow). Best-effort and backgrounded: it must never
+					// block or fail the stop. The manual "Speakers" button covers the
+					// rest (no attendees, or model not yet downloaded).
+					try {
+						const speakers = await commands.getMeetingSpeakers(meetingId);
+						const hasAttendees = speakers.status === 'ok' && speakers.data.shortlist.length > 0;
+						if (hasAttendees) {
+							const ready = await commands.diarizationModelsReady();
+							if (ready.status === 'ok' && ready.data) {
+								void commands.diarizeMeeting(meetingId);
+							}
+						}
+					} catch (diarizeError) {
+						console.error('Failed to auto-identify speakers:', diarizeError);
+					}
+
 					// If this recording was started from a specific calendar event (the
 					// "Coming up" Start button pins its identity), file the note into the
 					// folder pre-assigned to that event. Runs regardless of the context
