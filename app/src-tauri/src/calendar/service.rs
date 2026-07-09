@@ -21,6 +21,10 @@ use std::time::Duration;
 struct AttendeePayload {
     name: Option<String>,
     status: String,
+    /// Whether this attendee is the local user. Persisted so the speaker-naming
+    /// layer can exclude "you" and auto-fill the single remote attendee. Boolean
+    /// only - still no email.
+    is_self: bool,
 }
 
 fn participant_status_str(s: ParticipantStatus) -> &'static str {
@@ -163,6 +167,7 @@ pub fn build_snapshot(
         .map(|a| AttendeePayload {
             name: a.name.clone(),
             status: participant_status_str(a.status).to_string(),
+            is_self: a.is_self,
         })
         .collect();
     let attendees_json = serde_json::to_string(&attendees).ok();
@@ -346,4 +351,21 @@ pub async fn preview_upcoming(pool: &SqlitePool, now: DateTime<Utc>) -> Vec<Prev
             conference_url: c.conference_url,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attendee_payload_persists_is_self_flag() {
+        let payload = AttendeePayload {
+            name: Some("Ana".to_string()),
+            status: "accepted".to_string(),
+            is_self: true,
+        };
+        let json = serde_json::to_string(&payload).expect("serialize");
+        assert!(json.contains(r#""is_self":true"#), "got: {json}");
+        assert!(!json.contains("@"), "no email is ever serialized");
+    }
 }

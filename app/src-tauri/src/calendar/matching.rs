@@ -38,6 +38,10 @@ pub enum EventStatus {
 pub struct Attendee {
     pub name: Option<String>,
     pub status: ParticipantStatus,
+    /// Whether this attendee is the local user (the account owner). Lets the
+    /// speaker-naming layer exclude "you" from the shortlist and identify the
+    /// single remote attendee for conservative auto-fill.
+    pub is_self: bool,
 }
 
 /// A platform-free candidate event. Carries both the fields needed to match and
@@ -236,6 +240,7 @@ mod tests {
             attendees: vec![Attendee {
                 name: Some("Ana".to_string()),
                 status: ParticipantStatus::Accepted,
+                is_self: false,
             }],
             location: None,
             conference_url: None,

@@ -142,6 +142,7 @@ mod tests {
             attendees: vec![Attendee {
                 name: Some("Ana".to_string()),
                 status: ParticipantStatus::Accepted,
+                is_self: false,
             }],
             location: None,
             conference_url: None,

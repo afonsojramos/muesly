@@ -178,6 +178,7 @@ pub fn map_event(ev: GoogleEvent, account_id: &str) -> Option<CalendarEventCandi
         attendees.push(Attendee {
             name: a.display_name.clone(),
             status,
+            is_self: a.is_self == Some(true),
         });
     }
 

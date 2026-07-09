@@ -174,10 +174,15 @@ mod imp {
                 let p = arr.objectAtIndex(i);
                 let name = unsafe { p.name() }.map(|n| n.to_string());
                 let status = map_participant_status(unsafe { p.participantStatus() });
-                if unsafe { p.isCurrentUser() } {
+                let is_self = unsafe { p.isCurrentUser() };
+                if is_self {
                     my_participation = Some(status);
                 }
-                attendees.push(Attendee { name, status });
+                attendees.push(Attendee {
+                    name,
+                    status,
+                    is_self,
+                });
             }
         }
 
