@@ -337,6 +337,14 @@ async fn delete_meeting_with_transaction(
         .execute(&mut *transaction)
         .await?;
 
+    // 3b. Delete from speaker_names. The table declares ON DELETE CASCADE, but
+    // SQLite foreign keys are off by default on this pool, so child rows are
+    // cleaned up explicitly here like every other related table.
+    sqlx::query("DELETE FROM speaker_names WHERE meeting_id = ?")
+        .bind(meeting_id)
+        .execute(&mut *transaction)
+        .await?;
+
     // 4. Delete from meeting_notes
     sqlx::query("DELETE FROM meeting_notes WHERE meeting_id = ?")
         .bind(meeting_id)
@@ -387,6 +395,28 @@ mod tests {
             .execute(pool)
             .await
             .expect("insert meeting");
+    }
+
+    #[tokio::test]
+    async fn delete_meeting_removes_speaker_names() {
+        use crate::database::repositories::speaker_names::SpeakerNamesRepository;
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        SpeakerNamesRepository::upsert(&pool, "m1", 0, "Ana")
+            .await
+            .expect("name");
+
+        assert!(MeetingsRepository::delete_meeting(&pool, "m1").await.unwrap());
+
+        // foreign_keys is off on this pool (as in production), so the explicit
+        // delete in delete_meeting_with_transaction is what must clean these up.
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM speaker_names WHERE meeting_id = ?")
+                .bind("m1")
+                .fetch_one(&pool)
+                .await
+                .expect("count");
+        assert_eq!(remaining, 0, "speaker_names must be cleaned up on hard delete");
     }
 
     #[tokio::test]
