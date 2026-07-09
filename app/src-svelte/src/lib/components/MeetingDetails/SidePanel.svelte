@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 
-	import { commands } from '$lib/bindings';
 	import type { Transcript, TranscriptSegmentData } from '$lib/types';
-	import { emptySpeakerContext, type SpeakerContext } from '$lib/speaker-label';
+	import { useSpeakerContext } from '$lib/hooks/use-speaker-context.svelte';
 	import VirtualizedTranscriptView from '$lib/components/VirtualizedTranscriptView.svelte';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { cn } from '$lib/utils';
@@ -96,58 +95,12 @@
 		usePagination ? (totalCount ?? convertedSegments.length) : (transcripts?.length ?? 0),
 	);
 
-	// Named-speaker context (assigned names, self name, attendee shortlist) for
-	// the transcript labels. Loaded per meeting and refreshed when diarization
-	// changes the set of clusters; renames update it locally without a refetch.
-	let speakerCtx = $state<SpeakerContext>(emptySpeakerContext());
-
-	const clusterSignature = $derived(
-		[
-			...new Set(
-				convertedSegments
-					.filter((s) => s.speaker === 'system' && s.speaker_id != null)
-					.map((s) => s.speaker_id),
-			),
-		]
-			.sort((a, b) => (a ?? 0) - (b ?? 0))
-			.join(','),
+	// Named-speaker context (assigned names, self name, attendee shortlist) for the
+	// transcript labels, with its load/rename race handling encapsulated.
+	const speakers = useSpeakerContext(
+		() => meetingId,
+		() => convertedSegments,
 	);
-
-	async function loadSpeakers(id: string): Promise<void> {
-		const res = await commands.getMeetingSpeakers(id);
-		if (res.status !== 'ok') return;
-		speakerCtx = {
-			names: new Map(
-				res.data.speakers
-					.filter((s): s is { speaker_id: number; name: string } => s.name != null)
-					.map((s) => [s.speaker_id, s.name]),
-			),
-			selfName: res.data.self_name ?? undefined,
-			shortlist: res.data.shortlist,
-		};
-	}
-
-	$effect(() => {
-		const id = meetingId;
-		// Re-read when the diarized cluster set changes (e.g. after identify).
-		void clusterSignature;
-		if (!id) {
-			speakerCtx = emptySpeakerContext();
-			return;
-		}
-		void loadSpeakers(id);
-	});
-
-	async function assignSpeaker(speakerId: number, name: string): Promise<void> {
-		const id = meetingId;
-		if (!id) return;
-		const res = await commands.setSpeakerName(id, speakerId, name);
-		if (res.status !== 'ok') return;
-		// Update locally rather than refetching, so the rename can't race the read.
-		const names = new Map(speakerCtx.names);
-		names.set(speakerId, name);
-		speakerCtx = { ...speakerCtx, names };
-	}
 
 	// Width lives in the session store (persists across meetings). The rendered
 	// width is CSS-capped below, so a stale value can never overflow the row.
@@ -299,8 +252,8 @@
 				loadedCount={loadedCount ?? 0}
 				{onLoadMore}
 				showSpeakers={!isRecording && !!meetingId}
-				speakerContext={speakerCtx}
-				onAssignSpeaker={!isRecording && meetingId ? assignSpeaker : undefined}
+				speakerContext={speakers.ctx}
+				onAssignSpeaker={!isRecording && meetingId ? speakers.assign : undefined}
 			/>
 		</div>
 
