@@ -27,8 +27,16 @@
 	import type { TranscriptSegmentData } from '$lib/types';
 	import { useAutoScroll } from '$lib/hooks/use-auto-scroll.svelte';
 	import { useTranscriptStreaming } from '$lib/hooks/use-transcript-streaming.svelte';
+	import {
+		buildDisplayIndex,
+		emptySpeakerContext,
+		isAssignable,
+		speakerLabelFor,
+		type SpeakerContext,
+	} from '$lib/speaker-label';
 	import ConfidenceIndicator from './ConfidenceIndicator.svelte';
 	import RecordingStatusBar from './RecordingStatusBar.svelte';
+	import SpeakerLabel from './SpeakerLabel.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { cn } from '$lib/utils';
 
@@ -46,6 +54,12 @@
 		totalCount?: number;
 		loadedCount?: number;
 		onLoadMore?: () => void;
+		/** Render named speaker labels (meeting details); off during live recording. */
+		showSpeakers?: boolean;
+		/** Assigned names, self name, and attendee shortlist for the labels. */
+		speakerContext?: SpeakerContext;
+		/** Persist a cluster's name; when set, system labels become editable. */
+		onAssignSpeaker?: (speakerId: number, name: string) => void | Promise<void>;
 	}
 
 	let {
@@ -62,7 +76,25 @@
 		totalCount = 0,
 		loadedCount = 0,
 		onLoadMore,
+		showSpeakers = false,
+		speakerContext,
+		onAssignSpeaker,
 	}: Props = $props();
+
+	// Per-segment speaker labels, shown only at a speaker change (turn boundary)
+	// so a run of the same speaker isn't repeated. Off entirely during recording.
+	const speakerLabels = $derived.by((): { label?: string; show: boolean }[] => {
+		if (!showSpeakers) return [];
+		const ctx = speakerContext ?? emptySpeakerContext();
+		const displayIndex = buildDisplayIndex(segments);
+		let prev: string | undefined;
+		return segments.map((s) => {
+			const label = speakerLabelFor(s, ctx, displayIndex);
+			const show = label != null && label !== prev;
+			prev = label;
+			return { label, show };
+		});
+	});
 
 	let scrollEl = $state<HTMLDivElement>();
 	let loadMoreTrigger = $state<HTMLDivElement>();
@@ -173,9 +205,10 @@
 			</div>
 		{:else}
 			<div class="space-y-1">
-				{#each segments as segment (segment.id)}
+				{#each segments as segment, i (segment.id)}
 					{@const isStreaming = streaming.streamingSegmentId === segment.id}
 					{@const isMe = segment.speaker === 'mic'}
+					{@const speaker = speakerLabels[i]}
 					<div in:fly={{ y: 5, duration: 150 }} id={`segment-${segment.id}`} class="mb-3">
 						<div class="flex items-start gap-2">
 							<Tooltip.Provider delayDuration={300}>
@@ -203,10 +236,23 @@
 								</Tooltip.Root>
 							</Tooltip.Provider>
 							<div class={cn('min-w-0 flex-1', isMe && 'text-right')}>
-								{#if isMe && segment.speaker_id != null}
-									<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground"
-										>Speaker {segment.speaker_id + 1}</span
-									>
+								<!-- Speaker label at each turn boundary: the "them" side is
+								     editable (assign/rename from the attendee shortlist); the
+								     mic side reads "You" and is not editable. -->
+								{#if speaker?.show && speaker.label}
+									{#if onAssignSpeaker && isAssignable(segment)}
+										<SpeakerLabel
+											label={speaker.label}
+											speakerId={segment.speaker_id!}
+											shortlist={(speakerContext ?? emptySpeakerContext()).shortlist}
+											onAssign={onAssignSpeaker}
+											align={isMe ? 'end' : 'start'}
+										/>
+									{:else}
+										<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground"
+											>{speaker.label}</span
+										>
+									{/if}
 								{/if}
 								<!-- Granola-style attribution: your mic on the right (accent
 								     tint), other participants on the left (gray). -->

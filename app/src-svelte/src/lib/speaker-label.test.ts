@@ -38,10 +38,11 @@ describe('speakerLabelFor', () => {
 
 	it('falls back to a contiguous "Speaker N" for an unnamed cluster', () => {
 		// Raw cluster ids {1, 2} must render as "Speaker 1" / "Speaker 2".
-		const segs = [seg('a', 'system', 1), seg('b', 'system', 2)];
-		const idx = buildDisplayIndex(segs);
-		expect(speakerLabelFor(segs[0], ctx(), idx)).toBe('Speaker 1');
-		expect(speakerLabelFor(segs[1], ctx(), idx)).toBe('Speaker 2');
+		const first = seg('a', 'system', 1);
+		const second = seg('b', 'system', 2);
+		const idx = buildDisplayIndex([first, second]);
+		expect(speakerLabelFor(first, ctx(), idx)).toBe('Speaker 1');
+		expect(speakerLabelFor(second, ctx(), idx)).toBe('Speaker 2');
 	});
 
 	it('returns undefined for a system segment without a cluster', () => {
