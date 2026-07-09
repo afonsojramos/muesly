@@ -909,6 +909,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         summary::commands::api_get_meeting_detected_summary_language::<tauri::Wry>,
         summary::commands::api_detect_transcript_summary_language,
         summary::commands::api_generate_meeting_title::<tauri::Wry>,
+        summary::chat::chat_ask::<tauri::Wry>,
+        summary::chat::chat_cancel,
         summary::template_commands::api_list_templates::<tauri::Wry>,
         summary::template_commands::api_get_template_details::<tauri::Wry>,
         summary::template_commands::api_validate_template::<tauri::Wry>,

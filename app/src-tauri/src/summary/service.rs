@@ -26,14 +26,14 @@ static CANCELLATION_REGISTRY: Lazy<Arc<Mutex<HashMap<String, CancellationToken>>
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 /// Resolved LLM provider/auth/endpoint configuration for a generation call.
-struct LlmCallSettings {
-    provider: LLMProvider,
-    api_key: String,
-    ollama_endpoint: Option<String>,
-    custom_openai_endpoint: Option<String>,
-    custom_openai_max_tokens: Option<u32>,
-    custom_openai_temperature: Option<f32>,
-    custom_openai_top_p: Option<f32>,
+pub(crate) struct LlmCallSettings {
+    pub(crate) provider: LLMProvider,
+    pub(crate) api_key: String,
+    pub(crate) ollama_endpoint: Option<String>,
+    pub(crate) custom_openai_endpoint: Option<String>,
+    pub(crate) custom_openai_max_tokens: Option<u32>,
+    pub(crate) custom_openai_temperature: Option<f32>,
+    pub(crate) custom_openai_top_p: Option<f32>,
 }
 
 /// Summary service - handles all summary generation logic
@@ -43,7 +43,7 @@ impl SummaryService {
     /// Resolves the LLM provider, API key, and endpoint configuration for a
     /// generation call. Side-effect free so both summary and title generation
     /// can share it; the caller decides how to surface any error.
-    async fn resolve_llm_call_settings(
+    pub(crate) async fn resolve_llm_call_settings(
         pool: &SqlitePool,
         model_provider: &str,
     ) -> Result<LlmCallSettings, String> {
