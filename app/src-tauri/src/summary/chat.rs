@@ -82,6 +82,15 @@ fn clear_cancellation(gen_id: &str) {
     }
 }
 
+/// Removes a generation's cancellation entry on drop, so an early-returning or
+/// dropped `chat_ask` future can never leak a token into the registry.
+struct CancelGuard<'a>(&'a str);
+impl Drop for CancelGuard<'_> {
+    fn drop(&mut self) {
+        clear_cancellation(self.0);
+    }
+}
+
 /// Formats transcript lines with `Me:`/`Them:` speaker labels (mapped from the
 /// stored `mic`/`system` audio source) and keeps the most recent
 /// `MAX_TRANSCRIPT_CHARS` characters.
@@ -206,6 +215,13 @@ pub async fn chat_ask<R: Runtime>(
     }
 
     let pool = state.db_manager.pool().clone();
+
+    // Register the cancel token early and drop-safely, so a cancel arriving
+    // during settings/DB loads is honored and a dropped command future (webview
+    // closed mid-generation) can't leak a registry entry.
+    let token = register_cancellation(&gen_id);
+    let _guard = CancelGuard(&gen_id);
+
     let settings = SummaryService::resolve_llm_call_settings(&pool, &model).await?;
     let app_data_dir = app.path().app_data_dir().ok();
 
@@ -225,8 +241,6 @@ pub async fn chat_ask<R: Runtime>(
 
     let (system_prompt, user_prompt) =
         build_prompts(&title, &transcript, &summary, &history, &question);
-
-    let token = register_cancellation(&gen_id);
 
     let _ = on_event.send(ChatStreamEvent::Started {
         gen_id: gen_id.clone(),
@@ -251,8 +265,7 @@ pub async fn chat_ask<R: Runtime>(
     )
     .await;
 
-    clear_cancellation(&gen_id);
-
+    // `_guard` clears the registry entry on drop (here or on future-drop).
     match result {
         Ok(answer) => {
             let answer = answer.trim().to_string();
@@ -264,6 +277,12 @@ pub async fn chat_ask<R: Runtime>(
                 full: answer,
             });
             info!("✓ chat_ask completed for meeting {}", meeting_id);
+            Ok(())
+        }
+        Err(_) if token.is_cancelled() => {
+            // User cancelled via chat_cancel; the frontend already finalized the
+            // message. Not an error — don't surface the LLM-layer cancel string.
+            info!("chat_ask cancelled for meeting {}", meeting_id);
             Ok(())
         }
         Err(message) => {
