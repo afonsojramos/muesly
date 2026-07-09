@@ -28,6 +28,22 @@ impl TranscriptsRepository {
             .collect())
     }
 
+    /// Distinct diarized cluster indices present for a meeting (non-null
+    /// `speaker_id`s), sorted. These are the "them"-side speakers to name.
+    pub async fn distinct_speaker_ids(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Vec<i64>, SqlxError> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT DISTINCT speaker_id FROM transcripts \
+             WHERE meeting_id = ? AND speaker_id IS NOT NULL ORDER BY speaker_id",
+        )
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows.into_iter().map(|(id,)| id).collect())
+    }
+
     /// Assign (or clear, with `None`) the diarized speaker cluster for a
     /// transcript segment.
     pub async fn set_segment_speaker_id(

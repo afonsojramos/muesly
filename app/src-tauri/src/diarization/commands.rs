@@ -11,10 +11,14 @@ use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::audio::audio_processing::{audio_to_mono, resample};
 use crate::audio::decoder::decode_audio_file;
+use crate::calendar::context;
+use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::meeting::MeetingsRepository;
+use crate::database::repositories::speaker_names::SpeakerNamesRepository;
 use crate::database::repositories::transcript::TranscriptsRepository;
 use crate::diarization::{client, model, reconcile};
 use crate::state::AppState;
+use sqlx::SqlitePool;
 
 /// Sample rate the diarization segmentation model expects.
 const DIARIZATION_SAMPLE_RATE: u32 = 16_000;
@@ -128,15 +132,153 @@ pub async fn diarize_meeting<R: Runtime>(
     // local user and is cleared so it can never be shown as a remote "Speaker N".
     let assignments = assign_speaker_ids(&segments, &turns);
     let mut labeled = 0u32;
-    for (id, speaker_id) in assignments {
-        TranscriptsRepository::set_segment_speaker_id(pool, &id, speaker_id)
+    for (id, speaker_id) in &assignments {
+        TranscriptsRepository::set_segment_speaker_id(pool, id, *speaker_id)
             .await
             .map_err(|e| format!("persist speaker_id: {e}"))?;
         if speaker_id.is_some() {
             labeled += 1;
         }
     }
+
+    // Fresh run: drop any prior names, since cluster numbering is not stable
+    // across runs. Then conservatively auto-name the single unambiguous case.
+    SpeakerNamesRepository::clear_for_meeting(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("clear speaker names: {e}"))?;
+    let mut cluster_ids: Vec<i64> = assignments.iter().filter_map(|(_, s)| *s).collect();
+    cluster_ids.sort_unstable();
+    cluster_ids.dedup();
+    auto_fill_speaker_names(pool, &meeting_id, &cluster_ids).await?;
+
     Ok(labeled)
+}
+
+/// Conservatively name clusters when the mapping is unambiguous: exactly one
+/// remote (non-self) attendee and exactly one diarized cluster. Best-effort; a
+/// missing calendar snapshot simply yields no auto-fill.
+async fn auto_fill_speaker_names(
+    pool: &SqlitePool,
+    meeting_id: &str,
+    cluster_ids: &[i64],
+) -> Result<(), String> {
+    let Some(event) = CalendarEventsRepository::get(pool, meeting_id)
+        .await
+        .map_err(|e| format!("load calendar event: {e}"))?
+    else {
+        return Ok(());
+    };
+    let remote_names: Vec<String> = context::snapshot_attendees(&event)
+        .into_iter()
+        .filter(|a| !a.is_self)
+        .filter_map(|a| a.name)
+        .filter(|n| !n.trim().is_empty())
+        .collect();
+    if let Some((cluster, name)) = auto_fill_assignment(&remote_names, cluster_ids) {
+        SpeakerNamesRepository::upsert(pool, meeting_id, cluster, &name)
+            .await
+            .map_err(|e| format!("auto-fill speaker name: {e}"))?;
+    }
+    Ok(())
+}
+
+/// The single auto-fill assignment, only when the case is unambiguous: exactly
+/// one non-empty remote attendee and exactly one cluster. Never guesses.
+fn auto_fill_assignment(remote_names: &[String], cluster_ids: &[i64]) -> Option<(i64, String)> {
+    match (remote_names, cluster_ids) {
+        ([name], [cluster]) if !name.trim().is_empty() => Some((*cluster, name.clone())),
+        _ => None,
+    }
+}
+
+/// A diarized speaker cluster present in a meeting, with any assigned name.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct MeetingSpeaker {
+    pub speaker_id: i64,
+    pub name: Option<String>,
+}
+
+/// The speakers of a meeting plus the material to name them: the distinct remote
+/// clusters, the non-self attendee shortlist, and the local user's name.
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct MeetingSpeakers {
+    pub speakers: Vec<MeetingSpeaker>,
+    /// Remote (non-self) attendee names offered as a one-tap naming shortlist.
+    pub shortlist: Vec<String>,
+    /// The local user's display name, when known (labels the mic/"You" side).
+    pub self_name: Option<String>,
+}
+
+/// Read a meeting's diarized clusters (with any assigned names) plus the attendee
+/// shortlist and the local user's name, for the transcript's speaker UI.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_meeting_speakers(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<MeetingSpeakers, String> {
+    meeting_speakers(state.db_manager.pool(), &meeting_id).await
+}
+
+/// Assemble a meeting's speakers from the diarized clusters, stored names, and
+/// calendar attendees. Pool-level so it is testable without a Tauri `State`.
+async fn meeting_speakers(
+    pool: &SqlitePool,
+    meeting_id: &str,
+) -> Result<MeetingSpeakers, String> {
+    let clusters = TranscriptsRepository::distinct_speaker_ids(pool, meeting_id)
+        .await
+        .map_err(|e| format!("load speaker clusters: {e}"))?;
+    let names = SpeakerNamesRepository::get_for_meeting(pool, meeting_id)
+        .await
+        .map_err(|e| format!("load speaker names: {e}"))?;
+    let speakers = clusters
+        .into_iter()
+        .map(|speaker_id| MeetingSpeaker {
+            speaker_id,
+            name: names
+                .iter()
+                .find(|n| n.speaker_id == speaker_id)
+                .map(|n| n.name.clone()),
+        })
+        .collect();
+
+    let attendees = CalendarEventsRepository::get(pool, meeting_id)
+        .await
+        .map_err(|e| format!("load calendar event: {e}"))?
+        .map(|e| context::snapshot_attendees(&e))
+        .unwrap_or_default();
+    let self_name = attendees
+        .iter()
+        .find(|a| a.is_self)
+        .and_then(|a| a.name.clone());
+    let shortlist = attendees
+        .iter()
+        .filter(|a| !a.is_self)
+        .filter_map(|a| a.name.clone())
+        .filter(|n| !n.trim().is_empty())
+        .collect();
+
+    Ok(MeetingSpeakers {
+        speakers,
+        shortlist,
+        self_name,
+    })
+}
+
+/// Assign (or rename) the name for a diarized cluster within a meeting.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_speaker_name(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    speaker_id: i64,
+    name: String,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    SpeakerNamesRepository::upsert(pool, &meeting_id, speaker_id, &name)
+        .await
+        .map_err(|e| format!("set speaker name: {e}"))
 }
 
 /// Decide the `speaker_id` to persist for each segment. Only `system` segments
@@ -210,9 +352,62 @@ pub async fn download_diarization_models<R: Runtime>(app: AppHandle<R>) -> Resul
 mod tests {
     use super::*;
     use crate::diarization::reconcile::SpeakerTurn;
+    use chrono::Utc;
+    use sqlx::sqlite::SqlitePoolOptions;
 
     fn seg(id: &str, start: f64, end: f64, speaker: Option<&str>) -> (String, f64, f64, Option<String>) {
         (id.to_string(), start, end, speaker.map(|s| s.to_string()))
+    }
+
+    async fn test_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("run migrations");
+        pool
+    }
+
+    async fn insert_meeting(pool: &SqlitePool, id: &str) {
+        let now = Utc::now();
+        sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(id)
+            .bind("Test meeting")
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await
+            .expect("insert meeting");
+    }
+
+    async fn insert_segment(pool: &SqlitePool, meeting_id: &str, id: &str, speaker: &str, speaker_id: Option<i64>) {
+        sqlx::query(
+            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, speaker, speaker_id) \
+             VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(meeting_id)
+        .bind("hello")
+        .bind("00:00:01")
+        .bind(speaker)
+        .bind(speaker_id)
+        .execute(pool)
+        .await
+        .expect("insert segment");
+    }
+
+    async fn insert_event(pool: &SqlitePool, meeting_id: &str, attendees_json: &str) {
+        sqlx::query("INSERT INTO calendar_events (meeting_id, attendees_json, created_at) VALUES (?, ?, ?)")
+            .bind(meeting_id)
+            .bind(attendees_json)
+            .bind(Utc::now())
+            .execute(pool)
+            .await
+            .expect("insert event");
     }
 
     fn turn(start: f64, end: f64, speaker: i32) -> SpeakerTurn {
@@ -256,5 +451,78 @@ mod tests {
         let turns = [turn(0.0, 1.0, 0)];
         let out = assign_speaker_ids(&segments, &turns);
         assert_eq!(out[0], ("sys-1".to_string(), None));
+    }
+
+    #[test]
+    fn auto_fill_assigns_only_one_remote_to_one_cluster() {
+        // AE3: one non-self attendee + one cluster -> auto-assign.
+        let remote = vec!["Ana".to_string()];
+        assert_eq!(
+            auto_fill_assignment(&remote, &[2]),
+            Some((2, "Ana".to_string()))
+        );
+    }
+
+    #[test]
+    fn auto_fill_declines_when_multiple_attendees_or_clusters() {
+        // AE4: three attendees + three clusters -> no guess.
+        let remote = vec!["Ana".to_string(), "Bruno".to_string(), "Carla".to_string()];
+        assert_eq!(auto_fill_assignment(&remote, &[0, 1, 2]), None);
+        // One attendee but two clusters -> still no guess.
+        assert_eq!(auto_fill_assignment(&["Ana".to_string()], &[0, 1]), None);
+        // One cluster but two attendees -> no guess.
+        assert_eq!(
+            auto_fill_assignment(&["Ana".to_string(), "Bruno".to_string()], &[0]),
+            None
+        );
+    }
+
+    #[test]
+    fn auto_fill_declines_with_no_attendees_or_blank_name() {
+        assert_eq!(auto_fill_assignment(&[], &[0]), None);
+        assert_eq!(auto_fill_assignment(&["   ".to_string()], &[0]), None);
+    }
+
+    #[tokio::test]
+    async fn meeting_speakers_assembles_clusters_shortlist_and_self() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        // Two remote clusters (0 and 1) plus a mic segment with no cluster.
+        insert_segment(&pool, "m1", "t-mic", "mic", None).await;
+        insert_segment(&pool, "m1", "t-sys-0", "system", Some(0)).await;
+        insert_segment(&pool, "m1", "t-sys-1", "system", Some(1)).await;
+        // Ana is the local user; Bruno and Carla are remote.
+        insert_event(
+            &pool,
+            "m1",
+            r#"[{"name":"Ana","status":"accepted","is_self":true},{"name":"Bruno","status":"accepted","is_self":false},{"name":"Carla","status":"accepted","is_self":false}]"#,
+        )
+        .await;
+        // Cluster 0 already named Bruno; cluster 1 unnamed.
+        SpeakerNamesRepository::upsert(&pool, "m1", 0, "Bruno")
+            .await
+            .expect("name cluster 0");
+
+        let ms = meeting_speakers(&pool, "m1").await.expect("assemble");
+
+        assert_eq!(ms.self_name.as_deref(), Some("Ana"));
+        assert_eq!(ms.shortlist, vec!["Bruno".to_string(), "Carla".to_string()]);
+        assert_eq!(ms.speakers.len(), 2);
+        assert_eq!(ms.speakers[0].speaker_id, 0);
+        assert_eq!(ms.speakers[0].name.as_deref(), Some("Bruno"));
+        assert_eq!(ms.speakers[1].speaker_id, 1);
+        assert_eq!(ms.speakers[1].name, None);
+    }
+
+    #[tokio::test]
+    async fn meeting_speakers_without_calendar_event_has_empty_shortlist() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        insert_segment(&pool, "m1", "t-sys-0", "system", Some(0)).await;
+
+        let ms = meeting_speakers(&pool, "m1").await.expect("assemble");
+        assert!(ms.shortlist.is_empty());
+        assert_eq!(ms.self_name, None);
+        assert_eq!(ms.speakers.len(), 1);
     }
 }

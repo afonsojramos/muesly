@@ -25,6 +25,37 @@ struct AttendeeEntry {
     name: Option<String>,
     #[allow(dead_code)]
     status: Option<String>,
+    /// Whether this attendee is the local user. Defaults to false for snapshots
+    /// written before the field existed.
+    #[serde(default)]
+    is_self: bool,
+}
+
+/// An attendee read back from a stored snapshot: display name (if any) and
+/// whether it is the local user. Names only, never an email.
+#[derive(Debug, Clone)]
+pub struct SnapshotAttendee {
+    pub name: Option<String>,
+    pub is_self: bool,
+}
+
+/// Parse the stored attendee list (names + `is_self`) from a snapshot. Returns an
+/// empty list when there is no attendee JSON or it fails to parse.
+pub fn snapshot_attendees(event: &CalendarEvent) -> Vec<SnapshotAttendee> {
+    event
+        .attendees_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<Vec<AttendeeEntry>>(json).ok())
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|e| SnapshotAttendee {
+                    name: e.name,
+                    is_self: e.is_self,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn attendee_names(event: &CalendarEvent) -> Option<String> {
@@ -363,6 +394,38 @@ mod tests {
         let capped = cap_notes(&long, MAX_NOTES_CHARS);
         assert!(capped.chars().count() <= MAX_NOTES_CHARS + 1);
         assert!(capped.ends_with('…'));
+    }
+
+    #[test]
+    fn snapshot_attendees_parses_names_and_is_self() {
+        let mut e = event();
+        e.attendees_json = Some(
+            r#"[{"name":"Ana","status":"accepted","is_self":true},{"name":"Bruno","status":"accepted","is_self":false}]"#
+                .into(),
+        );
+        let attendees = snapshot_attendees(&e);
+        assert_eq!(attendees.len(), 2);
+        assert_eq!(attendees[0].name.as_deref(), Some("Ana"));
+        assert!(attendees[0].is_self);
+        assert_eq!(attendees[1].name.as_deref(), Some("Bruno"));
+        assert!(!attendees[1].is_self);
+    }
+
+    #[test]
+    fn snapshot_attendees_defaults_is_self_false_for_old_rows() {
+        // A snapshot written before the is_self field existed must still parse.
+        let mut e = event();
+        e.attendees_json = Some(r#"[{"name":"Ana","status":"accepted"}]"#.into());
+        let attendees = snapshot_attendees(&e);
+        assert_eq!(attendees.len(), 1);
+        assert!(!attendees[0].is_self);
+    }
+
+    #[test]
+    fn snapshot_attendees_empty_when_no_json() {
+        let mut e = event();
+        e.attendees_json = None;
+        assert!(snapshot_attendees(&e).is_empty());
     }
 
     #[test]
