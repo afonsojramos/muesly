@@ -523,6 +523,43 @@ impl SummaryService {
         // Get app data directory for BuiltInAI provider
         let app_data_dir = _app.path().app_data_dir().ok();
 
+        // Optional pre-summary cleanup (disfluencies/casing). Opt-in via env so
+        // default latency is unchanged; pure prompt builders live in cleanup.rs.
+        let mut text = text;
+        if std::env::var("MUESLY_TRANSCRIPT_CLEANUP")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+            && crate::summary::cleanup::should_cleanup(&text, 200)
+        {
+            info!("Running optional transcript cleanup before summary");
+            let sys = crate::summary::cleanup::cleanup_system_prompt().to_string();
+            let user = crate::summary::cleanup::cleanup_user_prompt(&text);
+            match crate::summary::llm_client::generate_summary(
+                &crate::providers::common::http_client(),
+                &provider,
+                &model_name,
+                &final_api_key,
+                &sys,
+                &user,
+                ollama_endpoint.as_deref(),
+                custom_openai_endpoint.as_deref(),
+                custom_openai_max_tokens,
+                custom_openai_temperature,
+                custom_openai_top_p,
+                app_data_dir.as_ref(),
+                Some(&cancellation_token),
+            )
+            .await
+            {
+                Ok(cleaned) if !cleaned.trim().is_empty() => {
+                    text = cleaned;
+                    info!("Transcript cleanup applied ({} chars)", text.len());
+                }
+                Ok(_) => warn!("Transcript cleanup returned empty; using original"),
+                Err(e) => warn!("Transcript cleanup failed (using original): {}", e),
+            }
+        }
+
         // Resolve output and transcript languages for the two-pass summary
         // pipeline. The explicit request wins; otherwise fall back to any saved
         // per-meeting override. The transcript language is auto-detected (and
