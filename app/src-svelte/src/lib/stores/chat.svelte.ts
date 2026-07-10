@@ -10,9 +10,11 @@
 import { Channel } from '@tauri-apps/api/core';
 
 import { commands, type ChatStreamEvent } from '$lib/bindings';
+import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 
 import { config } from './config.svelte';
+import { recordingState, RecordingStatus } from './recording-state.svelte';
 import { sidebar } from './sidebar.svelte';
 import { transcripts } from './transcript.svelte';
 
@@ -78,6 +80,17 @@ class ChatStore {
 			}
 		};
 
+		// During a live recording the meeting id is ephemeral (IndexedDB only);
+		// pass the on-screen transcript so chat is not empty until save.
+		// Live recording (including paused) uses an ephemeral meeting id that
+		// is not in SQLite yet — send the on-screen transcript instead.
+		const isLive =
+			recordingState.isRecording ||
+			recordingState.status === RecordingStatus.RECORDING;
+		const liveTranscript = isLive
+			? formatTranscriptForLlm(transcripts.transcripts)
+			: null;
+
 		// Backend `chat_ask(model, modelName)`: `model` is the provider kind
 		// (e.g. "ollama"/"builtin-ai"), `modelName` the concrete model id.
 		const { provider, model } = config.modelConfig;
@@ -88,6 +101,7 @@ class ChatStore {
 			provider,
 			model,
 			genId,
+			liveTranscript,
 			channel,
 		);
 		// A command-level rejection (e.g. missing settings) never emits an Error event.

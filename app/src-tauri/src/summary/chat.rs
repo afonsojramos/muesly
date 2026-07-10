@@ -92,24 +92,72 @@ impl Drop for CancelGuard<'_> {
     }
 }
 
-/// Formats transcript lines with `Me:`/`Them:` speaker labels (mapped from the
-/// stored `mic`/`system` audio source) and keeps the most recent
-/// `MAX_TRANSCRIPT_CHARS` characters.
-fn format_transcript(lines: &[crate::api::MeetingTranscript]) -> String {
+/// Pure label for one transcript line for LLM prompts. Prefers assigned
+/// speaker names / self name; falls back to Me/Them/Speaker N.
+pub(crate) fn speaker_label_for_llm(
+    speaker: Option<&str>,
+    speaker_id: Option<i64>,
+    names: &std::collections::HashMap<i64, String>,
+    self_name: Option<&str>,
+) -> String {
+    match speaker {
+        Some("mic") => self_name
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "Me".to_string()),
+        Some("system") => {
+            if let Some(id) = speaker_id {
+                if let Some(name) = names.get(&id) {
+                    let trimmed = name.trim();
+                    if !trimmed.is_empty() {
+                        return trimmed.to_string();
+                    }
+                }
+                return format!("Speaker {id}");
+            }
+            "Them".to_string()
+        }
+        Some(other) if !other.trim().is_empty() => other.trim().to_string(),
+        _ => {
+            // Mixed/unknown (e.g. retranscribed): use assigned name when we have
+            // a cluster id, otherwise leave unlabeled.
+            if let Some(id) = speaker_id {
+                if let Some(name) = names.get(&id) {
+                    let trimmed = name.trim();
+                    if !trimmed.is_empty() {
+                        return trimmed.to_string();
+                    }
+                }
+                return format!("Speaker {id}");
+            }
+            String::new()
+        }
+    }
+}
+
+/// Formats transcript lines with speaker labels for LLM prompts and keeps the
+/// most recent `MAX_TRANSCRIPT_CHARS` characters.
+fn format_transcript(
+    lines: &[crate::api::MeetingTranscript],
+    names: &std::collections::HashMap<i64, String>,
+    self_name: Option<&str>,
+) -> String {
     let mut joined = String::new();
     for line in lines {
         let text = line.text.trim();
         if text.is_empty() {
             continue;
         }
-        match line.speaker.as_deref() {
-            Some("mic") => joined.push_str("Me: "),
-            Some("system") => joined.push_str("Them: "),
-            Some(other) if !other.trim().is_empty() => {
-                joined.push_str(other.trim());
-                joined.push_str(": ");
-            }
-            _ => {}
+        let label = speaker_label_for_llm(
+            line.speaker.as_deref(),
+            line.speaker_id,
+            names,
+            self_name,
+        );
+        if !label.is_empty() {
+            joined.push_str(&label);
+            joined.push_str(": ");
         }
         joined.push_str(text);
         joined.push('\n');
@@ -198,6 +246,10 @@ statements, but never copy the prefixes into your answer. Be concise and direct.
 }
 
 /// Streams an answer to a question about a meeting.
+///
+/// `live_transcript`, when non-empty, is used as the transcript context instead
+/// of loading from SQLite. The frontend passes this during an in-progress
+/// recording (ephemeral meeting ids are not in SQLite yet).
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_ask<R: Runtime>(
@@ -209,6 +261,7 @@ pub async fn chat_ask<R: Runtime>(
     model: String,
     model_name: String,
     gen_id: String,
+    live_transcript: Option<String>,
     on_event: Channel<ChatStreamEvent>,
 ) -> Result<(), String> {
     if question.trim().is_empty() {
@@ -226,11 +279,56 @@ pub async fn chat_ask<R: Runtime>(
     let settings = SummaryService::resolve_llm_call_settings(&pool, &model).await?;
     let app_data_dir = app.path().app_data_dir().ok();
 
-    // Load meeting context. A missing meeting is not fatal — answer from the
-    // question alone rather than erroring (e.g. brand-new recording).
-    let (title, transcript) = match MeetingsRepository::get_meeting(&pool, &meeting_id).await {
-        Ok(Some(details)) => (details.title, format_transcript(&details.transcripts)),
-        Ok(None) | Err(_) => (String::new(), String::new()),
+    // Load meeting context. Prefer an explicit live transcript (in-progress
+    // recording). Otherwise load from SQLite with named-speaker labels.
+    let live = live_transcript
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let (title, transcript) = if let Some(live_text) = live {
+        let title = MeetingsRepository::get_meeting_metadata(&pool, &meeting_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|m| m.title)
+            .unwrap_or_default();
+        (title, live_text)
+    } else {
+        match MeetingsRepository::get_meeting(&pool, &meeting_id).await {
+            Ok(Some(details)) => {
+                let names = crate::database::repositories::speaker_names::SpeakerNamesRepository::get_for_meeting(
+                    &pool, &meeting_id,
+                )
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|n| (n.speaker_id, n.name))
+                .collect::<std::collections::HashMap<_, _>>();
+                let self_name = crate::database::repositories::calendar::CalendarEventsRepository::get(
+                    &pool, &meeting_id,
+                )
+                .await
+                .ok()
+                .flatten()
+                .and_then(|e| {
+                    crate::calendar::context::snapshot_attendees(&e)
+                        .into_iter()
+                        .find(|a| a.is_self)
+                        .and_then(|a| a.name)
+                });
+                (
+                    details.title,
+                    format_transcript(
+                        &details.transcripts,
+                        &names,
+                        self_name.as_deref(),
+                    ),
+                )
+            }
+            Ok(None) | Err(_) => (String::new(), String::new()),
+        }
     };
     let summary = SummaryProcessesRepository::get_summary_data(&pool, &meeting_id)
         .await
@@ -407,5 +505,49 @@ mod tests {
     fn extract_summary_falls_back_to_raw() {
         assert_eq!(extract_summary(Some("plain text")), "plain text");
         assert_eq!(extract_summary(None), "");
+    }
+
+    #[test]
+    fn speaker_label_prefers_names_over_me_them() {
+        let mut names = std::collections::HashMap::new();
+        names.insert(1, "Bruno".to_string());
+        assert_eq!(
+            speaker_label_for_llm(Some("mic"), None, &names, Some("Ana")),
+            "Ana"
+        );
+        assert_eq!(
+            speaker_label_for_llm(Some("system"), Some(1), &names, None),
+            "Bruno"
+        );
+        assert_eq!(
+            speaker_label_for_llm(Some("system"), Some(2), &names, None),
+            "Speaker 2"
+        );
+        assert_eq!(
+            speaker_label_for_llm(Some("system"), None, &names, None),
+            "Them"
+        );
+        assert_eq!(
+            speaker_label_for_llm(None, Some(1), &names, None),
+            "Bruno"
+        );
+    }
+
+    #[test]
+    fn format_transcript_uses_named_labels() {
+        let lines = vec![crate::api::MeetingTranscript {
+            id: "1".into(),
+            text: "hello".into(),
+            timestamp: "".into(),
+            audio_start_time: None,
+            audio_end_time: None,
+            duration: None,
+            speaker: Some("system".into()),
+            speaker_id: Some(1),
+        }];
+        let mut names = std::collections::HashMap::new();
+        names.insert(1, "Bruno".to_string());
+        let out = format_transcript(&lines, &names, None);
+        assert!(out.starts_with("Bruno: hello"), "got: {out}");
     }
 }

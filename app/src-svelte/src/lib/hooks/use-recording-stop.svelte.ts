@@ -228,14 +228,8 @@ export function useRecordingStop(
 					if (!config.isAutoSummary) {
 						const provider = config.modelConfig?.provider;
 						const model = config.modelConfig?.model;
-						const titleText = freshTranscripts
-							.map((t) => {
-								const speaker =
-									t.speaker === 'mic' ? 'Me: ' : t.speaker === 'system' ? 'Them: ' : '';
-								return `${speaker}${t.text}`.trim();
-							})
-							.filter((line) => line.length > 0)
-							.join('\n');
+						const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
+						const titleText = formatTranscriptForLlm(freshTranscripts);
 
 						if (provider && model && titleText) {
 							void invoke('api_generate_meeting_title', {

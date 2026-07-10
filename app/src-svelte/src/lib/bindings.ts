@@ -238,7 +238,12 @@ export const commands = {
 	apiGetTrashedMeetings: (authToken: string | null) => typedError<Meeting_Serialize[], string>(__TAURI_INVOKE("api_get_trashed_meetings", { authToken })),
 	/**  Restore a meeting from the trash back to the active list. */
 	apiRestoreMeeting: (meetingId: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_restore_meeting", { meetingId, authToken })),
-	/**  Permanently delete a meeting and all its data (used from the Trash view). */
+	/**
+	 *  Permanently delete a meeting and all its data (used from the Trash view).
+	 *  After a successful DB hard-delete, removes the recording folder on disk when
+	 *  it lies under an allowed root (recordings folder / app data). Paths outside
+	 *  those roots are left alone (never `remove_dir_all` on untrusted paths).
+	 */
 	apiPermanentlyDeleteMeeting: (meetingId: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_permanently_delete_meeting", { meetingId, authToken })),
 	apiListFolders: () => typedError<Folder[], string>(__TAURI_INVOKE("api_list_folders")),
 	apiCreateFolder: (name: string, emoji: string | null) => typedError<Folder, string>(__TAURI_INVOKE("api_create_folder", { name, emoji })),
@@ -339,8 +344,14 @@ export const commands = {
 	 *  a meeting gets a real title automatically once it ends.
 	 */
 	apiGenerateMeetingTitle: (meetingId: string, text: string, model: string, modelName: string) => typedError<string, string>(__TAURI_INVOKE("api_generate_meeting_title", { meetingId, text, model, modelName })),
-	/**  Streams an answer to a question about a meeting. */
-	chatAsk: (meetingId: string, question: string, history: ChatTurn[], model: string, modelName: string, genId: string, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, onEvent })),
+	/**
+	 *  Streams an answer to a question about a meeting.
+	 * 
+	 *  `live_transcript`, when non-empty, is used as the transcript context instead
+	 *  of loading from SQLite. The frontend passes this during an in-progress
+	 *  recording (ephemeral meeting ids are not in SQLite yet).
+	 */
+	chatAsk: (meetingId: string, question: string, history: ChatTurn[], model: string, modelName: string, genId: string, liveTranscript: string | null, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, liveTranscript, onEvent })),
 	/**  Cancels an in-flight chat generation by `gen_id`. Returns whether one was found. */
 	chatCancel: (genId: string) => __TAURI_INVOKE<boolean>("chat_cancel", { genId }),
 	/**

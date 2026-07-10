@@ -523,13 +523,35 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 			if (!(await validateBuiltInAIModel(modelConfig))) return;
 		}
 
-		const fullTranscript = allTranscripts
-			.map((t) => {
-				// Speaker attribution improves summary quality ("Me" = the user).
-				const speaker = t.speaker === 'mic' ? 'Me: ' : t.speaker === 'system' ? 'Them: ' : '';
-				return `${formatTime(t.audio_start_time, t.timestamp)} ${speaker}${t.text}`;
-			})
-			.join('\n');
+		// Prefer named speakers when the meeting has them (loaded best-effort).
+		let speakerNames: Map<number, string> | undefined;
+		let selfName: string | undefined;
+		try {
+			const { commands } = await import('$lib/bindings');
+			const res = await commands.getMeetingSpeakers(meeting.id);
+			if (res.status === 'ok') {
+				speakerNames = new Map(
+					res.data.speakers
+						.filter((s): s is { speaker_id: number; name: string } => s.name != null)
+						.map((s) => [s.speaker_id, s.name]),
+				);
+				selfName = res.data.self_name ?? undefined;
+			}
+		} catch {
+			// Non-fatal: fall back to Me/Them labels.
+		}
+
+		const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
+		const fullTranscript = formatTranscriptForLlm(allTranscripts, {
+			names: speakerNames,
+			selfName,
+			includeTimestamps: true,
+			formatTime: (start, ts) =>
+				formatTime(
+					typeof start === 'number' ? start : undefined,
+					typeof ts === 'string' ? ts : '',
+				),
+		});
 
 		await processSummary({
 			transcriptText: fullTranscript,
