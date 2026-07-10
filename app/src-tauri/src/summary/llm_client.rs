@@ -460,7 +460,9 @@ fn parse_openai_sse_line(line: &str) -> SseDelta {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
         return SseDelta::Ignore;
     };
-    if value.get("error").is_some() {
+    // Some OpenAI-compatible servers include `"error": null` on normal frames;
+    // only a non-null error object is an actual error.
+    if value.get("error").is_some_and(|e| !e.is_null()) {
         log::debug!("OpenAI-compatible stream error frame: {}", data);
         return SseDelta::Error;
     }
@@ -1007,6 +1009,12 @@ mod tests {
         assert_eq!(
             parse_openai_sse_line(r#"data: {"error":{"message":"secret detail"}}"#),
             SseDelta::Error
+        );
+        // `"error": null` on a normal frame is NOT an error (seen on some
+        // OpenAI-compatible servers).
+        assert_eq!(
+            parse_openai_sse_line(r#"data: {"error":null,"choices":[{"delta":{"content":"x"}}]}"#),
+            SseDelta::Text("x".to_string())
         );
         // Role-only first delta, comments, and blank lines are housekeeping.
         assert_eq!(
