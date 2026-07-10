@@ -26,8 +26,9 @@ use crate::database::repositories::{
     meeting::MeetingsRepository, summary::SummaryProcessesRepository,
 };
 use crate::state::AppState;
-use crate::summary::llm_client::generate_summary;
+use crate::summary::llm_client::{generate_summary, LLMProvider};
 use crate::summary::service::SummaryService;
+use crate::summary::summary_engine;
 
 /// Cancellation tokens for in-flight chat generations, keyed by `gen_id`.
 /// Separate from the summary registry so a chat cancel can never abort a
@@ -246,32 +247,58 @@ pub async fn chat_ask<R: Runtime>(
         gen_id: gen_id.clone(),
     });
 
-    let client = crate::providers::common::http_client();
-    let max_tokens = settings.custom_openai_max_tokens.or(Some(DEFAULT_MAX_TOKENS));
-    let result = generate_summary(
-        &client,
-        &settings.provider,
-        &model_name,
-        &settings.api_key,
-        &system_prompt,
-        &user_prompt,
-        settings.ollama_endpoint.as_deref(),
-        settings.custom_openai_endpoint.as_deref(),
-        max_tokens,
-        settings.custom_openai_temperature,
-        settings.custom_openai_top_p,
-        app_data_dir.as_ref(),
-        Some(&token),
-    )
-    .await;
+    // The local sidecar streams real tokens; every other provider returns the
+    // whole answer, forwarded as a single Token so the Channel contract (and
+    // the frontend) are identical either way.
+    let streamed = settings.provider == LLMProvider::BuiltInAI;
+    let result = if streamed {
+        match app_data_dir.as_ref() {
+            Some(dir) => summary_engine::generate_with_builtin_streaming(
+                dir,
+                &model_name,
+                &system_prompt,
+                &user_prompt,
+                Some(&token),
+                |piece| {
+                    let _ = on_event.send(ChatStreamEvent::Token { text: piece });
+                },
+            )
+            .await
+            .map_err(|e| e.to_string()),
+            None => Err("App data directory not available for built-in AI".to_string()),
+        }
+    } else {
+        let client = crate::providers::common::http_client();
+        let max_tokens = settings.custom_openai_max_tokens.or(Some(DEFAULT_MAX_TOKENS));
+        generate_summary(
+            &client,
+            &settings.provider,
+            &model_name,
+            &settings.api_key,
+            &system_prompt,
+            &user_prompt,
+            settings.ollama_endpoint.as_deref(),
+            settings.custom_openai_endpoint.as_deref(),
+            max_tokens,
+            settings.custom_openai_temperature,
+            settings.custom_openai_top_p,
+            app_data_dir.as_ref(),
+            Some(&token),
+        )
+        .await
+    };
 
     // `_guard` clears the registry entry on drop (here or on future-drop).
     match result {
         Ok(answer) => {
             let answer = answer.trim().to_string();
-            let _ = on_event.send(ChatStreamEvent::Token {
-                text: answer.clone(),
-            });
+            if !streamed {
+                let _ = on_event.send(ChatStreamEvent::Token {
+                    text: answer.clone(),
+                });
+            }
+            // Done.full is authoritative: for the streamed path it reconciles
+            // the trim and any stop-token holdback the tokens didn't carry.
             let _ = on_event.send(ChatStreamEvent::Done {
                 gen_id: gen_id.clone(),
                 full: answer,
