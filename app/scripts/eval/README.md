@@ -24,4 +24,8 @@ node app/scripts/eval/wer.mjs \
 node app/scripts/eval/summary-rubric.mjs path/to/summary.md
 ```
 
-Add more fixtures under `fixtures/` as real meetings are curated. Wire into CI later as an optional job.
+Add more fixtures under `fixtures/` as real meetings are curated.
+
+CI: `.github/workflows/eval-harness.yml` runs WER + rubric dry-run on changes to
+`app/scripts/eval/**`. It checks that the harness scripts execute; it does not
+gate merges on quality scores.

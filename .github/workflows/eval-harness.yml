@@ -1,0 +1,41 @@
+name: Eval Harness
+
+# Optional quality checks — does not block merges on model quality, only that
+# the harness scripts run. Expand fixtures over time.
+on:
+  pull_request:
+    paths:
+      - "app/scripts/eval/**"
+      - ".github/workflows/eval-harness.yml"
+  push:
+    branches: [main]
+    paths:
+      - "app/scripts/eval/**"
+      - ".github/workflows/eval-harness.yml"
+  workflow_dispatch:
+
+jobs:
+  eval:
+    name: WER + rubric dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Word error rate (fixtures)
+        run: |
+          node app/scripts/eval/wer.mjs \
+            app/scripts/eval/fixtures/sample-ref.txt \
+            app/scripts/eval/fixtures/sample-hyp.txt
+      - name: Summary rubric (sample markdown)
+        run: |
+          cat > /tmp/sample-summary.md <<'MD'
+          # Summary
+          Overview of the meeting.
+          ## Decisions
+          We agreed on the launch date.
+          ## Action items
+          - Ship the eval harness
+          MD
+          node app/scripts/eval/summary-rubric.mjs /tmp/sample-summary.md
