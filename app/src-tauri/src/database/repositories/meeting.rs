@@ -337,9 +337,10 @@ async fn delete_meeting_with_transaction(
         .execute(&mut *transaction)
         .await?;
 
-    // 3b. Delete from speaker_names. The table declares ON DELETE CASCADE, but
-    // SQLite foreign keys are off by default on this pool, so child rows are
-    // cleaned up explicitly here like every other related table.
+    // 3b. Delete from speaker_names. The table declares ON DELETE CASCADE and
+    // the pool enforces foreign keys (pinned in manager.rs tests), but child
+    // rows are still deleted explicitly like every other related table so the
+    // cleanup never silently depends on connection pragmas.
     sqlx::query("DELETE FROM speaker_names WHERE meeting_id = ?")
         .bind(meeting_id)
         .execute(&mut *transaction)
@@ -401,6 +402,13 @@ mod tests {
     async fn delete_meeting_removes_speaker_names() {
         use crate::database::repositories::speaker_names::SpeakerNamesRepository;
         let pool = test_pool().await;
+        // Disable FK enforcement so this test proves the EXPLICIT delete in
+        // delete_meeting_with_transaction works on its own, without the CASCADE
+        // (which the pool otherwise enforces) masking a missing cleanup step.
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&pool)
+            .await
+            .expect("disable fk");
         insert_meeting(&pool, "m1").await;
         SpeakerNamesRepository::upsert(&pool, "m1", 0, "Ana")
             .await
@@ -408,8 +416,6 @@ mod tests {
 
         assert!(MeetingsRepository::delete_meeting(&pool, "m1").await.unwrap());
 
-        // foreign_keys is off on this pool (as in production), so the explicit
-        // delete in delete_meeting_with_transaction is what must clean these up.
         let remaining: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM speaker_names WHERE meeting_id = ?")
                 .bind("m1")

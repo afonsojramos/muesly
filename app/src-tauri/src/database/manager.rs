@@ -181,6 +181,16 @@ impl DatabaseManager {
         }
     }
 
+    /// Whether SQLite foreign key enforcement is active on this pool. Used by a
+    /// pinning test: repositories rely on ON DELETE CASCADE semantics being real.
+    #[cfg(test)]
+    pub async fn foreign_keys_enabled(pool: &SqlitePool) -> Result<bool> {
+        let (on,): (i64,) = sqlx::query_as("PRAGMA foreign_keys")
+            .fetch_one(pool)
+            .await?;
+        Ok(on == 1)
+    }
+
     /// Cleanup database connection and checkpoint WAL
     /// This should be called on application shutdown to ensure:
     /// - All WAL changes are written to the main database file
@@ -204,5 +214,34 @@ impl DatabaseManager {
         log::info!("Database connection pool closed");
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Pin the pool's foreign-key behavior: `DatabaseManager::new` connects via
+    /// `SqlitePool::connect`, whose sqlx defaults enable `PRAGMA foreign_keys`.
+    /// Repositories rely on this (ON DELETE CASCADE cleaning up child rows), so
+    /// a regression here (e.g. custom connect options dropping the default) must
+    /// fail loudly rather than silently orphaning rows.
+    #[tokio::test]
+    async fn production_style_pool_enforces_foreign_keys() {
+        let dir = std::env::temp_dir().join(format!("muesly-fk-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("fk_test.sqlite").to_string_lossy().to_string();
+        let missing = dir.join("nope.db").to_string_lossy().to_string();
+
+        let manager = DatabaseManager::new(&db_path, &missing)
+            .await
+            .expect("create manager");
+        let enabled = DatabaseManager::foreign_keys_enabled(manager.pool())
+            .await
+            .expect("query pragma");
+        manager.cleanup().await.expect("cleanup");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(enabled, "PRAGMA foreign_keys must be ON for the production pool");
     }
 }
