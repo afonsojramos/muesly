@@ -443,6 +443,14 @@ async fn run_retranscription<R: Runtime>(
         .await
         .map_err(|e| anyhow!("Failed to delete existing transcripts: {}", e))?;
 
+    // Cluster numbering is not stable across retranscription; drop stale names
+    // so a later diarize run cannot pair old names with new cluster ids.
+    sqlx::query("DELETE FROM speaker_names WHERE meeting_id = ?")
+        .bind(&meeting_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| anyhow!("Failed to clear speaker names: {}", e))?;
+
     for segment in &segments {
         sqlx::query(
             "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration)

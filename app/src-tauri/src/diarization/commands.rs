@@ -355,11 +355,14 @@ pub async fn set_speaker_name(
         .map_err(|e| format!("set speaker name: {e}"))
 }
 
-/// Decide the `speaker_id` to persist for each segment. Only `system` segments
-/// (remote participants) receive a diarized cluster; every other segment (the
-/// user's `mic`, or an unknown source) is cleared to `None`. This keeps the local
-/// user off the cluster axis entirely, so they are never mislabeled as a remote
-/// speaker, and clears any stale cluster left by an earlier run.
+/// Decide the `speaker_id` to persist for each segment.
+///
+/// - `system` (remote) segments always receive a diarized cluster when turns match.
+/// - `mic` (local user) segments are always cleared — the local user stays off the
+///   cluster axis so they are never mislabeled as a remote "Speaker N".
+/// - `None` / unknown source (retranscribed or imported mixed audio) is treated as
+///   diarizable, because there is no source split and the sidecar turns are the
+///   only speaker signal available.
 fn assign_speaker_ids(
     segments: &[(String, f64, f64, Option<String>)],
     turns: &[reconcile::SpeakerTurn],
@@ -367,10 +370,15 @@ fn assign_speaker_ids(
     segments
         .iter()
         .map(|(id, start, end, speaker)| {
-            let speaker_id = if speaker.as_deref() == Some("system") {
-                reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
-            } else {
-                None
+            let speaker_id = match speaker.as_deref() {
+                Some("mic") => None,
+                Some("system") | None => {
+                    reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
+                }
+                // Unknown non-empty source: still diarizable (defensive).
+                Some(_) => {
+                    reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
+                }
             };
             (id.clone(), speaker_id)
         })
@@ -511,11 +519,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_source_segments_are_left_unlabeled() {
+    fn null_source_segments_are_diarizable() {
+        // Retranscribed / imported mixed audio has speaker: None; those segments
+        // must still receive cluster ids so Speakers can label them.
         let segments = vec![seg("x-1", 0.0, 1.0, None)];
         let turns = [turn(0.0, 1.0, 0)];
         let out = assign_speaker_ids(&segments, &turns);
-        assert_eq!(out[0], ("x-1".to_string(), None));
+        assert_eq!(out[0], ("x-1".to_string(), Some(0)));
     }
 
     #[test]
