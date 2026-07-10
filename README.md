@@ -19,6 +19,7 @@ Capture, transcribe, and summarize everything you say, entirely on your own mach
 
 ## Why muesly?
 
+- **Speech-to-text for everything.** Meetings, dictation, calls, lectures — not a meeting-only tool. Capture what you say and what others say through the system.
 - **Local first.** Audio capture, transcription, and (by default) summarization all run on your device. Nothing leaves your machine unless you explicitly pick a cloud model.
 - **Yours to keep.** Recordings, transcripts, and summaries live in a local SQLite database you can export or delete at any time. No vendor lock-in.
 - **Flexible AI.** Summarize with the built-in local model, your own Ollama server, or a cloud provider (Anthropic Claude, OpenAI, Groq, xAI Grok, OpenRouter, or any OpenAI-compatible endpoint).
@@ -27,9 +28,10 @@ Capture, transcribe, and summarize everything you say, entirely on your own mach
 ## Features
 
 - **Local transcription** using Whisper or Parakeet models, GPU-accelerated and in-process.
-- **Real-time transcript** as you speak.
+- **Real-time transcript** as you speak, with optional named speaker labels after diarization.
 - **Dual audio capture** of microphone and system audio at once, with professional mixing (ducking, clipping prevention) and voice-activity filtering so only speech reaches the transcription engine.
-- **AI summaries** generated locally by default, with optional translation to your chosen output language.
+- **AI summaries and Ask anything chat** generated locally by default, with optional translation and cloud BYOK.
+- **Calendar-aware recording** (upcoming meetings, auto-start, folders) and push-to-talk dictation.
 - **Import & enhance** `Beta`: bring in existing audio files, or re-transcribe a recording with a different model or language, all processed locally.
 - **GPU acceleration**, auto-detected at build time: Metal + CoreML (macOS), CUDA / Vulkan (Windows/Linux).
 
