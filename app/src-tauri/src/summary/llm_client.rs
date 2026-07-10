@@ -263,27 +263,104 @@ pub async fn generate_summary(
 
     info!("🐞 LLM Request to {}: model={}", provider_name(provider), model_name);
 
+    let response = send_with_retry(
+        client,
+        provider,
+        model_name,
+        &api_url,
+        &headers,
+        &request_body,
+        cancellation_token,
+        true,
+    )
+    .await?;
+
+    // Parse response based on provider
+    if provider == &LLMProvider::Claude {
+        let chat_response = response
+            .json::<ClaudeChatResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        info!("🐞 LLM Response received from Claude");
+
+        let content = chat_response
+            .content
+            .get(0)
+            .ok_or("No content in LLM response")?
+            .text
+            .trim();
+        Ok(content.to_string())
+    } else {
+        let chat_response = response
+            .json::<ChatResponse>()
+            .await
+            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+
+        info!("🐞 LLM Response received from {}", provider_name(provider));
+
+        let content = chat_response
+            .choices
+            .get(0)
+            .ok_or("No content in LLM response")?
+            .message
+            .content
+            .trim();
+        Ok(content.to_string())
+    }
+}
+
+/// Sends the request with retry/backoff (retryable statuses and connect errors
+/// only — never after response bytes have been received) and returns the
+/// successful response. When `bound_body` is true the whole body read is
+/// covered by [`REQUEST_TIMEOUT_DURATION`] (buffered path); when false only the
+/// connect/headers wait is bounded, so a streaming body may run arbitrarily
+/// long (the stream reader enforces its own per-chunk timeout).
+#[allow(clippy::too_many_arguments)]
+async fn send_with_retry(
+    client: &Client,
+    provider: &LLMProvider,
+    model_name: &str,
+    api_url: &str,
+    headers: &header::HeaderMap,
+    request_body: &serde_json::Value,
+    cancellation_token: Option<&CancellationToken>,
+    bound_body: bool,
+) -> Result<reqwest::Response, String> {
     let mut attempt: u32 = 0;
-    let response = loop {
-        let send = client
-            .post(&api_url)
-            .headers(headers.clone())
-            .json(&request_body)
-            .timeout(REQUEST_TIMEOUT_DURATION)
-            .send();
+    loop {
+        let mut request = client.post(api_url).headers(headers.clone()).json(request_body);
+        if bound_body {
+            request = request.timeout(REQUEST_TIMEOUT_DURATION);
+        }
+        let send = async {
+            if bound_body {
+                Ok(request.send().await)
+            } else {
+                // Bound the headers wait ourselves; the body stays unbounded.
+                tokio::time::timeout(REQUEST_TIMEOUT_DURATION, request.send())
+                    .await
+                    .map_err(|_| {
+                        format!(
+                            "LLM request timed out after {} seconds",
+                            REQUEST_TIMEOUT_DURATION.as_secs()
+                        )
+                    })
+            }
+        };
 
         // Race the request against cancellation when a token is present.
         let result = if let Some(token) = cancellation_token {
             tokio::select! {
-                r = send => r,
+                r = send => r?,
                 _ = token.cancelled() => return Err("Summary generation was cancelled".to_string()),
             }
         } else {
-            send.await
+            send.await?
         };
 
         match result {
-            Ok(resp) if resp.status().is_success() => break resp,
+            Ok(resp) if resp.status().is_success() => return Ok(resp),
             Ok(resp) => {
                 let status = resp.status();
                 if is_retryable_status(status) && attempt + 1 < MAX_SEND_ATTEMPTS {
@@ -335,41 +412,216 @@ pub async fn generate_summary(
                 return Err(map_send_error(&e));
             }
         }
+    }
+}
+
+/// Max silence between streaming chunks before the stream counts as stalled.
+/// Resets on every chunk, so answer length is unbounded; only a stall trips it.
+const SSE_INTER_CHUNK_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// Outcome of one parsed SSE line.
+#[derive(Debug, PartialEq)]
+enum SseDelta {
+    /// New content to append.
+    Text(String),
+    /// The stream finished cleanly.
+    Done,
+    /// The provider reported an error frame mid-stream (logged, not surfaced).
+    Error,
+    /// Housekeeping (event names, comments, keep-alives, role/usage deltas).
+    Ignore,
+}
+
+/// Drains complete `\n`-terminated lines out of the SSE byte buffer, leaving a
+/// partial trailing line — possibly mid-UTF-8-character — for the next chunk.
+fn drain_sse_lines(buf: &mut Vec<u8>) -> Vec<String> {
+    let mut lines = Vec::new();
+    while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+        let raw: Vec<u8> = buf.drain(..=pos).collect();
+        lines.push(
+            String::from_utf8_lossy(&raw)
+                .trim_end_matches(['\r', '\n'])
+                .to_string(),
+        );
+    }
+    lines
+}
+
+/// Parses one OpenAI-compatible SSE line (`data: {"choices":[{"delta":...}]}`,
+/// terminated by `data: [DONE]`). Used by every provider except Claude.
+fn parse_openai_sse_line(line: &str) -> SseDelta {
+    let Some(data) = line.strip_prefix("data:") else {
+        return SseDelta::Ignore;
+    };
+    let data = data.trim();
+    if data == "[DONE]" {
+        return SseDelta::Done;
+    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
+        return SseDelta::Ignore;
+    };
+    if value.get("error").is_some() {
+        log::debug!("OpenAI-compatible stream error frame: {}", data);
+        return SseDelta::Error;
+    }
+    match value["choices"][0]["delta"]["content"].as_str() {
+        Some(text) if !text.is_empty() => SseDelta::Text(text.to_string()),
+        _ => SseDelta::Ignore,
+    }
+}
+
+/// Parses one Claude Messages-API SSE line (`content_block_delta` text deltas,
+/// terminated by `message_stop`).
+fn parse_claude_sse_line(line: &str) -> SseDelta {
+    let Some(data) = line.strip_prefix("data:") else {
+        return SseDelta::Ignore;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+        return SseDelta::Ignore;
+    };
+    match value["type"].as_str() {
+        Some("content_block_delta") => match value["delta"]["text"].as_str() {
+            Some(text) if !text.is_empty() => SseDelta::Text(text.to_string()),
+            _ => SseDelta::Ignore,
+        },
+        Some("message_stop") => SseDelta::Done,
+        Some("error") => {
+            log::debug!("Claude stream error frame received");
+            SseDelta::Error
+        }
+        _ => SseDelta::Ignore,
+    }
+}
+
+/// Streaming sibling of [`generate_summary`] for HTTP providers: sets
+/// `stream: true`, invokes `on_token` with each content delta as it arrives,
+/// and returns the full accumulated text. Retries happen only before any bytes
+/// are received (same policy as the buffered path). BuiltInAI is not handled
+/// here — callers stream it through the sidecar directly.
+#[allow(clippy::too_many_arguments)]
+pub async fn generate_summary_streaming(
+    client: &Client,
+    provider: &LLMProvider,
+    model_name: &str,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    ollama_endpoint: Option<&str>,
+    custom_openai_endpoint: Option<&str>,
+    max_tokens: Option<u32>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    cancellation_token: Option<&CancellationToken>,
+    mut on_token: impl FnMut(String),
+) -> Result<String, String> {
+    use futures_util::StreamExt;
+
+    if provider == &LLMProvider::BuiltInAI {
+        return Err("BuiltInAI streams via the local sidecar, not HTTP".to_string());
+    }
+    if let Some(token) = cancellation_token {
+        if token.is_cancelled() {
+            return Err("Summary generation was cancelled".to_string());
+        }
+    }
+
+    let (api_url, headers) = build_request_target(
+        provider,
+        api_key,
+        ollama_endpoint,
+        custom_openai_endpoint,
+    )?;
+
+    let mut request_body = if provider != &LLMProvider::Claude {
+        build_openai_compatible_body(model_name, system_prompt, user_prompt, max_tokens, temperature, top_p)
+    } else {
+        build_claude_body(model_name, system_prompt, user_prompt, max_tokens)
+    };
+    request_body["stream"] = serde_json::Value::Bool(true);
+
+    info!("🐞 LLM streaming request to {}: model={}", provider_name(provider), model_name);
+
+    let response = send_with_retry(
+        client,
+        provider,
+        model_name,
+        &api_url,
+        &headers,
+        &request_body,
+        cancellation_token,
+        false,
+    )
+    .await?;
+
+    let parse_line: fn(&str) -> SseDelta = if provider == &LLMProvider::Claude {
+        parse_claude_sse_line
+    } else {
+        parse_openai_sse_line
     };
 
-    // Parse response based on provider
-    if provider == &LLMProvider::Claude {
-        let chat_response = response
-            .json::<ClaudeChatResponse>()
-            .await
-            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+    let mut stream = response.bytes_stream();
+    let mut buf: Vec<u8> = Vec::new();
+    let mut full = String::new();
 
-        info!("🐞 LLM Response received from Claude");
+    'outer: loop {
+        let next = tokio::time::timeout(SSE_INTER_CHUNK_TIMEOUT, stream.next());
+        let chunk = if let Some(token) = cancellation_token {
+            tokio::select! {
+                c = next => c,
+                _ = token.cancelled() => return Err("Summary generation was cancelled".to_string()),
+            }
+        } else {
+            next.await
+        };
 
-        let content = chat_response
-            .content
-            .get(0)
-            .ok_or("No content in LLM response")?
-            .text
-            .trim();
-        Ok(content.to_string())
-    } else {
-        let chat_response = response
-            .json::<ChatResponse>()
-            .await
-            .map_err(|e| format!("Failed to parse LLM response: {}", e))?;
+        let chunk = match chunk {
+            Ok(Some(Ok(bytes))) => bytes,
+            Ok(Some(Err(e))) => {
+                // Mid-stream transport failure: partial text is already on
+                // screen; surface a normalized error (no body leakage).
+                log::warn!("{} stream error: {}", provider_name(provider), e);
+                return Err(map_send_error(&e));
+            }
+            // Server closed the stream: treat as end-of-answer (OpenAI ends
+            // with [DONE] first; some compatible servers just close).
+            Ok(None) => break 'outer,
+            Err(_) => {
+                return Err(format!(
+                    "{} stream stalled (no data for {}s).",
+                    provider_name(provider),
+                    SSE_INTER_CHUNK_TIMEOUT.as_secs()
+                ));
+            }
+        };
 
-        info!("🐞 LLM Response received from {}", provider_name(provider));
-
-        let content = chat_response
-            .choices
-            .get(0)
-            .ok_or("No content in LLM response")?
-            .message
-            .content
-            .trim();
-        Ok(content.to_string())
+        buf.extend_from_slice(&chunk);
+        for line in drain_sse_lines(&mut buf) {
+            match parse_line(&line) {
+                SseDelta::Text(text) => {
+                    full.push_str(&text);
+                    on_token(text);
+                }
+                SseDelta::Done => break 'outer,
+                SseDelta::Error => {
+                    return Err(format!(
+                        "{} reported an error while streaming the response.",
+                        provider_name(provider)
+                    ));
+                }
+                SseDelta::Ignore => {}
+            }
+        }
     }
+
+    if full.trim().is_empty() {
+        return Err(format!(
+            "{} returned an empty streaming response.",
+            provider_name(provider)
+        ));
+    }
+
+    info!("🐞 LLM streaming response completed from {}", provider_name(provider));
+    Ok(full)
 }
 
 /// Build the (endpoint URL, headers) for a provider request. BuiltInAI is handled
@@ -729,5 +981,120 @@ mod tests {
         assert_eq!(host_of("user:pass@127.0.0.1:8000").as_deref(), Some("127.0.0.1"));
         assert_eq!(host_of("http://[::1]:11434/v1").as_deref(), Some("::1"));
         assert_eq!(host_of("127.0.0.1").as_deref(), Some("127.0.0.1"));
+    }
+
+    #[test]
+    fn sse_buffer_drains_complete_lines_and_keeps_partials() {
+        let mut buf: Vec<u8> = b"data: a\r\ndata: b\ndata: par".to_vec();
+        let lines = drain_sse_lines(&mut buf);
+        assert_eq!(lines, vec!["data: a", "data: b"]);
+        assert_eq!(buf, b"data: par");
+        // A multi-byte char split across chunks survives reassembly.
+        buf.extend_from_slice("é".as_bytes()[..1].as_ref());
+        assert!(drain_sse_lines(&mut buf).is_empty());
+        buf.extend_from_slice("é".as_bytes()[1..].as_ref());
+        buf.push(b'\n');
+        assert_eq!(drain_sse_lines(&mut buf), vec!["data: paré"]);
+    }
+
+    #[test]
+    fn openai_sse_line_parses_delta_done_and_error() {
+        assert_eq!(
+            parse_openai_sse_line(r#"data: {"choices":[{"delta":{"content":"Hi"}}]}"#),
+            SseDelta::Text("Hi".to_string())
+        );
+        assert_eq!(parse_openai_sse_line("data: [DONE]"), SseDelta::Done);
+        assert_eq!(
+            parse_openai_sse_line(r#"data: {"error":{"message":"secret detail"}}"#),
+            SseDelta::Error
+        );
+        // Role-only first delta, comments, and blank lines are housekeeping.
+        assert_eq!(
+            parse_openai_sse_line(r#"data: {"choices":[{"delta":{"role":"assistant"}}]}"#),
+            SseDelta::Ignore
+        );
+        assert_eq!(parse_openai_sse_line(": keep-alive"), SseDelta::Ignore);
+        assert_eq!(parse_openai_sse_line(""), SseDelta::Ignore);
+    }
+
+    #[tokio::test]
+    async fn streaming_end_to_end_against_a_fake_sse_server() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        // One-shot fake OpenAI-compatible SSE server. Writes are deliberately
+        // split mid-line to exercise chunk-boundary reassembly.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut req = vec![0u8; 4096];
+            let _ = socket.read(&mut req).await.unwrap();
+            let body_str = String::from_utf8_lossy(&req);
+            assert!(body_str.contains("\"stream\":true"), "stream flag missing");
+
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\r\n")
+                .await
+                .unwrap();
+            socket
+                .write_all(br#"data: {"choices":[{"delta":{"content":"Hel"#)
+                .await
+                .unwrap();
+            socket.flush().await.unwrap();
+            socket
+                .write_all(b"\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"lo\"}}]}\n\ndata: [DONE]\n\n")
+                .await
+                .unwrap();
+            socket.flush().await.unwrap();
+        });
+
+        let client = Client::new();
+        let endpoint = format!("http://{}", addr);
+        let mut tokens: Vec<String> = Vec::new();
+        let full = generate_summary_streaming(
+            &client,
+            &LLMProvider::CustomOpenAI,
+            "test-model",
+            "test-key",
+            "system",
+            "user",
+            None,
+            Some(&endpoint),
+            None,
+            None,
+            None,
+            None,
+            |t| tokens.push(t),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(full, "Hello");
+        assert_eq!(tokens, vec!["Hel".to_string(), "lo".to_string()]);
+        server.await.unwrap();
+    }
+
+    #[test]
+    fn claude_sse_line_parses_delta_stop_and_error() {
+        assert_eq!(
+            parse_claude_sse_line(
+                r#"data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}"#
+            ),
+            SseDelta::Text("Hi".to_string())
+        );
+        assert_eq!(
+            parse_claude_sse_line(r#"data: {"type":"message_stop"}"#),
+            SseDelta::Done
+        );
+        assert_eq!(
+            parse_claude_sse_line(r#"data: {"type":"error","error":{"message":"secret"}}"#),
+            SseDelta::Error
+        );
+        // Event-name lines and other frame types are housekeeping.
+        assert_eq!(parse_claude_sse_line("event: content_block_delta"), SseDelta::Ignore);
+        assert_eq!(
+            parse_claude_sse_line(r#"data: {"type":"message_start","message":{}}"#),
+            SseDelta::Ignore
+        );
     }
 }
