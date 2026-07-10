@@ -36,6 +36,10 @@ enum Request {
         repeat_penalty: Option<f32>,
         penalty_last_n: Option<i32>,
         stop_tokens: Option<Vec<String>>,
+        /// When true, emit incremental `Response::Token` lines while generating.
+        /// The terminal `Response::Response` (with the full text) still follows,
+        /// doubling as the end-of-stream marker. Absent/false = legacy behavior.
+        stream: Option<bool>,
     },
     Ping,
     Shutdown,
@@ -45,9 +49,51 @@ enum Request {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
     Response { text: String, error: Option<String> },
+    /// Incremental output chunk, only sent for `stream: true` requests.
+    Token { text: String },
     Pong,
     Goodbye,
     Error { message: String },
+}
+
+/// Decides how much of the accumulated output is safe to emit as a streaming
+/// token. Holds back `max(stop_token.len()) - 1` bytes so no emitted byte can
+/// ever belong to a stop token: a completed stop token is detected (and the
+/// output truncated) the same iteration it completes, before emission, and an
+/// incomplete one is at most `len - 1` trailing bytes — inside the holdback.
+struct StreamEmitter {
+    emitted: usize,
+    holdback: usize,
+}
+
+impl StreamEmitter {
+    fn new(stop_tokens: &[String]) -> Self {
+        Self {
+            emitted: 0,
+            holdback: stop_tokens
+                .iter()
+                .map(|s| s.len())
+                .max()
+                .unwrap_or(0)
+                .saturating_sub(1),
+        }
+    }
+
+    /// Returns the next safe-to-emit chunk of `output` (the full accumulated
+    /// text so far), or `None` if nothing new clears the holdback. Emitted
+    /// chunks always end on a char boundary.
+    fn next_chunk<'a>(&mut self, output: &'a str) -> Option<&'a str> {
+        let mut safe_end = output.len().saturating_sub(self.holdback);
+        while safe_end > 0 && !output.is_char_boundary(safe_end) {
+            safe_end -= 1;
+        }
+        if safe_end <= self.emitted {
+            return None;
+        }
+        let chunk = &output[self.emitted..safe_end];
+        self.emitted = safe_end;
+        Some(chunk)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -351,6 +397,7 @@ impl ModelState {
         max_tokens: i32,
         sampling: SamplingConfig,
         stop_tokens: Vec<String>,
+        stream: bool,
     ) -> Result<String> {
         let start_time = Instant::now();
         let model = self.model.as_ref().context("Model not loaded")?;
@@ -401,6 +448,7 @@ impl ModelState {
         let mut n_cur = n_prompt_tokens;
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut output = String::new();
+        let mut emitter = StreamEmitter::new(&stop_tokens);
 
         eprintln!("🔄 Starting generation (max_tokens: {})", max_tokens);
 
@@ -500,7 +548,19 @@ impl ModelState {
                 }
             }
             if should_stop {
+                // Never emit past a stop truncation; the terminal Response
+                // carries the corrected full text.
                 break;
+            }
+
+            // Emit only after the stop check, so no emitted byte can belong to
+            // a (possibly piece-spanning) stop token.
+            if stream {
+                if let Some(chunk) = emitter.next_chunk(&output) {
+                    send_response(&Response::Token {
+                        text: chunk.to_string(),
+                    })?;
+                }
             }
 
             batch.clear();
@@ -602,9 +662,11 @@ fn main() -> Result<()> {
                         repeat_penalty,
                         penalty_last_n,
                         stop_tokens,
+                        stream,
                     }) => {
                         let max_tokens = max_tokens.unwrap_or(512);
                         let context_size = context_size.unwrap_or(2048);
+                        let stream = stream.unwrap_or(false);
 
                         let sampling = SamplingConfig::from_request(
                             temperature,
@@ -635,6 +697,7 @@ fn main() -> Result<()> {
                             max_tokens,
                             sampling,
                             stop_tokens,
+                            stream,
                         ) {
                             Ok(text) => {
                                 send_response(&Response::Response { text, error: None })?;
@@ -673,4 +736,84 @@ fn main() -> Result<()> {
 
     eprintln!("👋 llama-helper exiting");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stops(tokens: &[&str]) -> Vec<String> {
+        tokens.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn emitter_without_stop_tokens_emits_everything() {
+        let mut e = StreamEmitter::new(&[]);
+        assert_eq!(e.next_chunk("Hel"), Some("Hel"));
+        assert_eq!(e.next_chunk("Hello"), Some("lo"));
+        assert_eq!(e.next_chunk("Hello"), None);
+    }
+
+    #[test]
+    fn emitter_holds_back_potential_stop_token_prefix() {
+        // Stop token "<|end|>" (7 bytes) -> holdback 6: a partial stop token
+        // at the tail is never emitted.
+        let mut e = StreamEmitter::new(&stops(&["<|end|>"]));
+        assert_eq!(e.next_chunk("Hi"), None); // entirely within holdback
+        assert_eq!(e.next_chunk("Hi there<|en"), Some("Hi there".get(0..6).unwrap()));
+        // 12 bytes - 6 holdback = 6 -> "Hi the"; "re<|en" held back.
+        assert_eq!(e.emitted, 6);
+    }
+
+    #[test]
+    fn emitter_never_emits_bytes_of_a_detected_stop_token() {
+        let stop = "<|im_end|>";
+        let mut e = StreamEmitter::new(&stops(&[stop]));
+        // Simulate accumulation: after each append the caller checks
+        // `output.contains(stop)` BEFORE emitting (as generate() does).
+        let mut output = String::new();
+        let mut emitted = String::new();
+        for piece in ["Answer", ": 42", "<|im_", "end|>"] {
+            output.push_str(piece);
+            if output.contains(stop) {
+                break; // generate() truncates and stops without emitting
+            }
+            if let Some(chunk) = e.next_chunk(&output) {
+                emitted.push_str(chunk);
+            }
+        }
+        assert!(!emitted.contains('<'), "emitted leaked stop bytes: {emitted:?}");
+        assert!("Answer: 42".starts_with(&emitted));
+    }
+
+    #[test]
+    fn emitter_respects_char_boundaries() {
+        let mut e = StreamEmitter::new(&stops(&["XY"])); // holdback 1
+        // "é" is 2 bytes; safe_end would land mid-char and must floor.
+        assert_eq!(e.next_chunk("é"), None);
+        assert_eq!(e.next_chunk("éa"), Some("é"));
+    }
+
+    #[test]
+    fn generate_request_parses_with_and_without_stream() {
+        let legacy = r#"{"type":"generate","prompt":"hi"}"#;
+        match serde_json::from_str::<Request>(legacy).unwrap() {
+            Request::Generate { stream, .. } => assert_eq!(stream, None),
+            _ => panic!("wrong variant"),
+        }
+        let streaming = r#"{"type":"generate","prompt":"hi","stream":true}"#;
+        match serde_json::from_str::<Request>(streaming).unwrap() {
+            Request::Generate { stream, .. } => assert_eq!(stream, Some(true)),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn token_response_serializes_with_snake_case_tag() {
+        let json = serde_json::to_string(&Response::Token {
+            text: "abc".to_string(),
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"type":"token","text":"abc"}"#);
+    }
 }
