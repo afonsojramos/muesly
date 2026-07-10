@@ -108,11 +108,12 @@ pub async fn api_get_summary<R: Runtime>(
                 None
             };
 
-            // Fetch meeting title from database
-            let meeting_name = match MeetingsRepository::get_meeting(pool, &meeting_id).await {
-                Ok(Some(meeting_details)) => {
-                    log_info!("Fetched meeting title: {}", &meeting_details.title);
-                    Some(meeting_details.title)
+            // Title only — never load full transcript rows for a status poll.
+            let meeting_name = match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await
+            {
+                Ok(Some(meta)) => {
+                    log_info!("Fetched meeting title: {}", &meta.title);
+                    Some(meta.title)
                 }
                 Ok(None) => {
                     log_warn!("Meeting not found for meeting_id: {}", meeting_id);
@@ -146,9 +147,10 @@ pub async fn api_get_summary<R: Runtime>(
         Ok(None) => {
             log_info!("No summary process found for meeting_id: {}", meeting_id);
 
-            // Still fetch meeting title for idle state
-            let meeting_name = match MeetingsRepository::get_meeting(pool, &meeting_id).await {
-                Ok(Some(meeting_details)) => Some(meeting_details.title),
+            // Still fetch meeting title for idle state (metadata only).
+            let meeting_name = match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await
+            {
+                Ok(Some(meta)) => Some(meta.title),
                 _ => None,
             };
 
