@@ -91,6 +91,8 @@
 	let showDropOverlay = $state(false);
 	let showImportDialog = $state(false);
 	let importFilePath = $state<string | null>(null);
+	/** OS keychain probe/migration failed — API keys may remain in SQLite. */
+	let keychainUnavailable = $state(false);
 
 	// Update-check provider wiring (ports UpdateCheckProvider): check on startup,
 	// surface a notification, and render the update dialog from the shell.
@@ -429,6 +431,26 @@
 				);
 				if (cancelled) unlistenMicSilent();
 				else unsubscribers.push(unlistenMicSilent);
+
+				// OS keychain unavailable or migration incomplete: API keys may remain
+				// in the local SQLite database. Surface this so users are not left on a
+				// silent plaintext fallback.
+				const unlistenKeychain = await listen('keychain-unavailable', () => {
+					keychainUnavailable = true;
+					toast.info('OS keychain unavailable', {
+						description:
+							'Cloud API keys may stay in the local database until the system keychain is set up. Open Settings for details.',
+						duration: 15000,
+						action: {
+							label: 'Open Settings',
+							onClick: () => {
+								void goto('/settings');
+							},
+						},
+					});
+				});
+				if (cancelled) unlistenKeychain();
+				else unsubscribers.push(unlistenKeychain);
 			} catch (error) {
 				console.error('[Layout] Failed to set up shell listeners:', error);
 			}
@@ -451,6 +473,32 @@
 	<div class="flex">
 		<Sidebar />
 		<MainContent>
+			{#if keychainUnavailable}
+				<div
+					class="border-b border-amber-500/40 bg-amber-500/10 px-4 py-2 text-sm text-amber-950 dark:text-amber-100"
+					role="status"
+				>
+					<span class="font-medium">OS keychain unavailable.</span>
+					Cloud API keys may remain in the local database until the system keychain is set up.
+					<button
+						type="button"
+						class="ml-2 underline underline-offset-2"
+						onclick={() => {
+							keychainUnavailable = false;
+							void goto('/settings');
+						}}
+					>
+						Open Settings
+					</button>
+					<button
+						type="button"
+						class="ml-2 text-muted-foreground underline underline-offset-2"
+						onclick={() => (keychainUnavailable = false)}
+					>
+						Dismiss
+					</button>
+				</div>
+			{/if}
 			{@render children()}
 		</MainContent>
 	</div>
