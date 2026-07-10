@@ -318,10 +318,24 @@ pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
     let can_record = check_can_record(app).await;
     log::info!("Tray: can_record: {}", can_record);
 
-    if let Ok(menu) = build_menu(app, recording_state, can_record) {
+    if let Ok(menu) = build_menu(app, recording_state.clone(), can_record) {
         if let Some(tray) = app.tray_by_id("main-tray") {
             let result = tray.set_menu(Some(menu));
             log::info!("Tray: Menu update result: {:?}", result);
+            // Animated-level bars aren't available on all OS tray APIs; use a
+            // clear recording-state tooltip so the menu bar indicator is obvious.
+            let tip = match recording_state {
+                RecordingState::Recording => "muesly · Recording",
+                RecordingState::Paused => "muesly · Paused",
+                RecordingState::Starting => "muesly · Starting…",
+                RecordingState::Stopping => "muesly · Stopping…",
+                RecordingState::Pausing => "muesly · Pausing…",
+                RecordingState::Resuming => "muesly · Resuming…",
+                RecordingState::Stopped => "muesly",
+            };
+            if let Err(e) = tray.set_tooltip(Some(tip)) {
+                log::warn!("Tray: Failed to set tooltip: {}", e);
+            }
         } else {
             log::warn!("Tray: Could not find tray with id 'main-tray'");
         }
