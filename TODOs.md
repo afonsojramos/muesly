@@ -30,8 +30,8 @@ Update this file when shipping — do not leave shipped work unchecked.
 - [x] **Summary model catalog / hardware-aware default / single-pass headroom**
 - [x] **Whisper decode quality**: prior-segment `initial_prompt` continuity +
       temperature ladder (`whisper_engine/decode_policy.rs`).
-- [x] **Transcript cleanup pass**: opt-in via `MUESLY_TRANSCRIPT_CLEANUP=1` before
-      summary (`summary/cleanup.rs` prompts + service wiring).
+- [x] **Transcript cleanup pass**: Settings toggle (default off) + optional
+      `MUESLY_TRANSCRIPT_CLEANUP=1` override; runs as an extra LLM call before summary.
 - [x] **Cloud BYOK first-class**
 - [x] **Me/Them speaker labels**
 - [x] **Full local diarization** via sherpa-onnx helper + named speakers UI.
@@ -41,8 +41,10 @@ Update this file when shipping — do not leave shipped work unchecked.
 ## Recording reliability
 
 - [x] Silent-input detection, system-audio permission, VAD fixes, normalizer gain cap, etc.
-- [ ] **System-audio tap level**: CoreAudio process tap may capture post-volume audio;
-      compensate gain or document that meeting audio needs reasonable volume.
+- [x] **System-audio tap level**: quiet system captures are peak-boosted toward a
+      usable level (`compensate_system_audio_level` on the system pipeline path,
+      max 12×, silence left alone). Residual: true output-volume compensation from
+      CoreAudio device volume if peak boost is still insufficient.
 
 ## Chat / AI
 
