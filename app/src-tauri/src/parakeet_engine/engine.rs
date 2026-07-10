@@ -1030,6 +1030,29 @@ impl ParakeetEngine {
                 file_downloaded as f64 / 1_048_576.0,
                 (total_downloaded as f64 / total_size_bytes as f64) * 100.0
             );
+
+            // Integrity: pin each binary/text artifact (v3 HF LFS OIDs).
+            // FP32 also pulls encoder-model.onnx.data alongside encoder-model.onnx.
+            let files_to_verify: Vec<&str> = if *filename == "encoder-model.onnx" {
+                vec![filename, "encoder-model.onnx.data"]
+            } else {
+                vec![filename]
+            };
+            for verify_name in files_to_verify {
+                let verify_path = model_dir.join(verify_name);
+                if !verify_path.exists() {
+                    continue;
+                }
+                if let Err(e) = crate::model_integrity::require_and_verify(
+                    &verify_path,
+                    crate::model_integrity::parakeet_file_sha256(verify_name),
+                    &format!("parakeet file '{verify_name}'"),
+                ) {
+                    let mut active = self.active_downloads.write().await;
+                    active.remove(model_name);
+                    return Err(e);
+                }
+            }
         }
 
         // Report 100% progress with final speed

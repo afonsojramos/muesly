@@ -752,6 +752,24 @@ impl ModelManager {
             return Err(anyhow!("File validation failed: {}", e));
         }
 
+        // Fail closed: pinned SHA-256 of the GGUF artifact (Hugging Face LFS OID).
+        let gguf_name = model_def.gguf_file.as_str();
+        if let Err(e) = crate::model_integrity::require_and_verify(
+            &file_path,
+            crate::model_integrity::gguf_filename_sha256(gguf_name),
+            &format!("summary GGUF '{gguf_name}'"),
+        ) {
+            {
+                let mut models = self.available_models.write().await;
+                if let Some(model_info) = models.get_mut(model_name) {
+                    model_info.status = ModelStatus::Error(format!("Integrity check failed: {e}"));
+                }
+            }
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(e);
+        }
+
         // Update status to available
         {
             let mut models = self.available_models.write().await;

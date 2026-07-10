@@ -1197,6 +1197,17 @@ impl WhisperEngine {
         fs::rename(&part_path, &file_path).await
             .map_err(|e| anyhow!("Failed to finalize downloaded model: {}", e))?;
 
+        // Fail closed: refuse models without a pinned SHA-256, delete on mismatch.
+        if let Err(e) = crate::model_integrity::require_and_verify(
+            &file_path,
+            crate::model_integrity::whisper_model_sha256(model_name),
+            &format!("whisper model '{model_name}'"),
+        ) {
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(e);
+        }
+
         log::info!("Download completed for model: {}", model_name);
 
         // Update model status to available
