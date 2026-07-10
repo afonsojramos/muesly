@@ -572,6 +572,13 @@ impl SidecarManager {
 
     /// Gracefully shutdown the sidecar
     /// Waits for active requests to complete before killing the process
+    /// Number of in-flight send_request / send_request_streaming calls.
+    /// Used by cancel paths to avoid hard-killing the process while another
+    /// BuiltInAI job is still using the shared sidecar.
+    pub fn active_request_count(&self) -> usize {
+        self.active_request_count.load(Ordering::SeqCst)
+    }
+
     pub async fn shutdown_gracefully(&self) -> Result<()> {
         log::info!("Initiating graceful shutdown of sidecar");
         

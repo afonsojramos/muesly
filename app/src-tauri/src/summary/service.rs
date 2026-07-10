@@ -21,9 +21,12 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 
-// Global registry for cancellation tokens (thread-safe)
-static CANCELLATION_REGISTRY: Lazy<Arc<Mutex<HashMap<String, CancellationToken>>>> =
+// Global registry for cancellation tokens (thread-safe).
+// Each entry carries a generation counter so an older job's cleanup cannot
+// remove a newer regenerate's token (CancellationToken is not PartialEq).
+static CANCELLATION_REGISTRY: Lazy<Arc<Mutex<HashMap<String, (u64, CancellationToken)>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+static CANCELLATION_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 /// Resolved LLM provider/auth/endpoint configuration for a generation call.
 pub(crate) struct LlmCallSettings {
@@ -317,20 +320,33 @@ impl SummaryService {
         detection.language
     }
 
-    /// Registers a new cancellation token for a meeting
-    fn register_cancellation_token(meeting_id: &str) -> CancellationToken {
+    /// Registers a new cancellation token for a meeting. If a prior generation
+    /// is still registered for the same meeting, its token is cancelled first
+    /// (single-flight: regenerate cancels the previous run).
+    /// Returns `(generation, token)` so cleanup is generation-scoped.
+    fn register_cancellation_token(meeting_id: &str) -> (u64, CancellationToken) {
         let token = CancellationToken::new();
+        let gen = CANCELLATION_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut registry) = CANCELLATION_REGISTRY.lock() {
-            registry.insert(meeting_id.to_string(), token.clone());
-            info!("Registered cancellation token for meeting: {}", meeting_id);
+            if let Some((_prev_gen, previous)) =
+                registry.insert(meeting_id.to_string(), (gen, token.clone()))
+            {
+                info!(
+                    "Cancelling previous summary generation for meeting: {}",
+                    meeting_id
+                );
+                previous.cancel();
+            } else {
+                info!("Registered cancellation token for meeting: {}", meeting_id);
+            }
         }
-        token
+        (gen, token)
     }
 
     /// Cancels the summary generation for a meeting
     pub fn cancel_summary(meeting_id: &str) -> bool {
         if let Ok(registry) = CANCELLATION_REGISTRY.lock() {
-            if let Some(token) = registry.get(meeting_id) {
+            if let Some((_gen, token)) = registry.get(meeting_id) {
                 info!("Cancelling summary generation for meeting: {}", meeting_id);
                 token.cancel();
                 return true;
@@ -340,13 +356,63 @@ impl SummaryService {
         false
     }
 
-    /// Cleans up the cancellation token after processing completes
-    fn cleanup_cancellation_token(meeting_id: &str) {
+    /// Cleans up the cancellation token after processing completes.
+    /// Only removes the entry when the generation still matches so a newer
+    /// regenerate's token is never wiped by a finishing older job.
+    fn cleanup_cancellation_token(meeting_id: &str, gen: u64) {
         if let Ok(mut registry) = CANCELLATION_REGISTRY.lock() {
-            if registry.remove(meeting_id).is_some() {
+            let still_ours = registry
+                .get(meeting_id)
+                .map(|(g, _)| *g == gen)
+                .unwrap_or(false);
+            if still_ours {
+                registry.remove(meeting_id);
                 info!("Cleaned up cancellation token for meeting: {}", meeting_id);
             }
         }
+    }
+}
+
+/// RAII guard: removes the meeting's cancellation token on drop when it still
+/// matches the registered generation (early failure / success / cancel paths).
+struct SummaryCancelGuard {
+    meeting_id: String,
+    gen: u64,
+}
+
+impl SummaryCancelGuard {
+    fn new(meeting_id: &str, gen: u64) -> Self {
+        Self {
+            meeting_id: meeting_id.to_string(),
+            gen,
+        }
+    }
+}
+
+impl Drop for SummaryCancelGuard {
+    fn drop(&mut self) {
+        SummaryService::cleanup_cancellation_token(&self.meeting_id, self.gen);
+    }
+}
+
+// Re-open SummaryService impl for process methods (guard lives above).
+impl SummaryService {
+    /// Test-only: how many meetings currently have a registered cancel token.
+    #[cfg(test)]
+    fn registry_len() -> usize {
+        CANCELLATION_REGISTRY
+            .lock()
+            .map(|r| r.len())
+            .unwrap_or(0)
+    }
+
+    /// Test-only: whether a meeting has a registered cancel token.
+    #[cfg(test)]
+    fn registry_has(meeting_id: &str) -> bool {
+        CANCELLATION_REGISTRY
+            .lock()
+            .map(|r| r.contains_key(meeting_id))
+            .unwrap_or(false)
     }
 
     /// Processes transcript in the background and generates summary
@@ -380,8 +446,11 @@ impl SummaryService {
             meeting_id
         );
 
-        // Register cancellation token for this meeting
-        let cancellation_token = Self::register_cancellation_token(&meeting_id);
+        // Register cancellation token for this meeting (cancels any prior run).
+        // RAII guard clears the registry entry on every exit path, including
+        // early resolve failures that used to leak a dead token.
+        let (cancel_gen, cancellation_token) = Self::register_cancellation_token(&meeting_id);
+        let _cancel_guard = SummaryCancelGuard::new(&meeting_id, cancel_gen);
 
         // Resolve provider, API key, and endpoint configuration.
         let LlmCallSettings {
@@ -520,8 +589,7 @@ impl SummaryService {
 
         let duration = start_time.elapsed().as_secs_f64();
 
-        // Clean up cancellation token regardless of outcome
-        Self::cleanup_cancellation_token(&meeting_id);
+        // Cancellation token is cleaned up by `_cancel_guard` on drop.
 
         match result {
             Ok((mut final_markdown, _english_markdown, num_chunks)) => {
@@ -642,7 +710,47 @@ impl SummaryService {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use super::SummaryService;
+
+    #[test]
+    fn register_cancels_previous_token_for_same_meeting() {
+        let (_g1, t1) = SummaryService::register_cancellation_token("m-reg");
+        assert!(!t1.is_cancelled());
+        assert!(SummaryService::registry_has("m-reg"));
+        let (g2, t2) = SummaryService::register_cancellation_token("m-reg");
+        assert!(t1.is_cancelled(), "prior token must be cancelled on re-register");
+        assert!(!t2.is_cancelled());
+        SummaryService::cleanup_cancellation_token("m-reg", g2);
+        assert!(!SummaryService::registry_has("m-reg"));
+    }
+
+    #[test]
+    fn cancel_guard_clears_registry_on_drop() {
+        let (gen, _token) = SummaryService::register_cancellation_token("m-guard");
+        {
+            let _g = SummaryCancelGuard::new("m-guard", gen);
+            assert!(SummaryService::registry_has("m-guard"));
+        }
+        assert!(
+            !SummaryService::registry_has("m-guard"),
+            "RAII guard must clear the registry entry"
+        );
+    }
+
+    #[test]
+    fn cleanup_does_not_remove_newer_token() {
+        let (g1, _t1) = SummaryService::register_cancellation_token("m-race");
+        let (g2, _t2) = SummaryService::register_cancellation_token("m-race");
+        // Older job finishes and tries to clean up with its own generation.
+        SummaryService::cleanup_cancellation_token("m-race", g1);
+        assert!(
+            SummaryService::registry_has("m-race"),
+            "newer token must survive older cleanup"
+        );
+        SummaryService::cleanup_cancellation_token("m-race", g2);
+        assert!(!SummaryService::registry_has("m-race"));
+    }
 
     #[test]
     fn clean_generated_title_strips_quotes_and_clamps() {

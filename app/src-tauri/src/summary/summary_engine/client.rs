@@ -175,10 +175,22 @@ pub async fn generate_with_builtin(
                 result?
             }
             _ = token.cancelled() => {
-                log::warn!("Generation cancelled by user, shutting down sidecar");
-                // Shutdown sidecar to stop generation immediately
-                if let Err(e) = manager.shutdown().await {
-                    log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                // Only hard-kill when no other BuiltInAI request is still using
+                // the shared process. Concurrent jobs (e.g. chat + summary)
+                // must not be torn down by a cancel of this one.
+                // Note: after select! drops the send future, our RequestGuard is
+                // already gone, so the count reflects other waiters/runners only.
+                let others = manager.active_request_count();
+                if others == 0 {
+                    log::warn!("Generation cancelled by user, shutting down sidecar");
+                    if let Err(e) = manager.shutdown().await {
+                        log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                    }
+                } else {
+                    log::warn!(
+                        "Generation cancelled by user; leaving sidecar up for {} other request(s)",
+                        others
+                    );
                 }
                 return Err(anyhow!("Generation cancelled by user"));
             }
@@ -254,9 +266,17 @@ pub async fn generate_with_builtin_streaming(
         tokio::select! {
             result = streaming => result?,
             _ = token.cancelled() => {
-                log::warn!("Streaming generation cancelled by user, shutting down sidecar");
-                if let Err(e) = manager.shutdown().await {
-                    log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                let others = manager.active_request_count();
+                if others == 0 {
+                    log::warn!("Streaming generation cancelled by user, shutting down sidecar");
+                    if let Err(e) = manager.shutdown().await {
+                        log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                    }
+                } else {
+                    log::warn!(
+                        "Streaming generation cancelled; leaving sidecar up for {} other request(s)",
+                        others
+                    );
                 }
                 return Err(anyhow!("Generation cancelled by user"));
             }
