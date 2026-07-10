@@ -19,9 +19,18 @@ class SidePanelState {
 	open = $state(typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
 	activeTab = $state<SidePanelTab>('transcript');
 	width = $state(360);
+	/** Segment id to scroll/highlight when jumping from a summary timestamp. */
+	focusSegmentId = $state<string | null>(null);
 
 	toggle = (): void => {
 		this.open = !this.open;
+	};
+
+	/** Open the transcript tab and request focus on a segment. */
+	jumpToSegment = (segmentId: string): void => {
+		this.open = true;
+		this.activeTab = 'transcript';
+		this.focusSegmentId = segmentId;
 	};
 }
 

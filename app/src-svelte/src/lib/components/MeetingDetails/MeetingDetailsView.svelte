@@ -17,6 +17,7 @@
 	import { saveStatus } from '$lib/stores/save-status.svelte';
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
+	import { findSegmentNearTime } from '$lib/transcript-link';
 	import { debounce } from '$lib/utils/debounce';
 	import { toast } from '$lib/toast';
 	import { storageService } from '$lib/services/storage';
@@ -81,6 +82,26 @@
 	// svelte-ignore state_referenced_locally
 	let customPrompt = $state(summaryContext);
 	const isRecording = false;
+
+	/** Calendar shortlist + self for header chips. */
+	let attendeeChips = $state<string[]>([]);
+	$effect(() => {
+		const id = meeting.id;
+		void (async () => {
+			try {
+				const res = await (await import('$lib/bindings')).commands.getMeetingSpeakers(id);
+				if (res.status !== 'ok') return;
+				const chips: string[] = [];
+				if (res.data.self_name?.trim()) chips.push(res.data.self_name.trim());
+				for (const n of res.data.shortlist) {
+					if (n.trim() && !chips.includes(n.trim())) chips.push(n.trim());
+				}
+				attendeeChips = chips.slice(0, 12);
+			} catch {
+				attendeeChips = [];
+			}
+		})();
+	});
 
 	// Custom prompt auto-save: debounce while typing, flush on teardown so a
 	// freshly typed context isn't lost when switching meetings. Mirrors the title
@@ -251,6 +272,30 @@
 
 	async function handleSaveSummary(data: { markdown: string }): Promise<void> {
 		await meetingData.handleSaveSummary(data);
+	}
+
+	/** Summary `[mm:ss]` click → open transcript panel on the nearest segment. */
+	function handleTimestampClick(seconds: number): void {
+		const pool = (segments ?? meeting.transcripts ?? []).map((s) => ({
+			id: s.id,
+			text: 'text' in s ? String(s.text) : '',
+			audio_start_time:
+				'audio_start_time' in s
+					? (s.audio_start_time as number | null | undefined)
+					: 'timestamp' in s && typeof s.timestamp === 'number'
+						? s.timestamp
+						: null,
+		}));
+		const hit = findSegmentNearTime(pool, seconds);
+		if (hit) {
+			sidePanelState.jumpToSegment(hit.id);
+		} else {
+			sidePanelState.open = true;
+			sidePanelState.activeTab = 'transcript';
+			toast.info('No matching transcript moment', {
+				description: 'Try regenerating the summary with timestamps, or open the transcript panel.',
+			});
+		}
 	}
 
 	onMount(() => {
@@ -440,6 +485,18 @@
 						})}
 					</p>
 				{/if}
+				{#if attendeeChips.length > 0}
+					<div class="mt-3 flex flex-wrap gap-1.5" aria-label="Attendees">
+						{#each attendeeChips as name (name)}
+							<span
+								class="inline-flex max-w-[12rem] items-center truncate rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 text-xs text-foreground"
+								title={name}
+							>
+								{name}
+							</span>
+						{/each}
+					</div>
+				{/if}
 			</div>
 			<SummaryPanel
 				bind:this={summaryPanel}
@@ -462,6 +519,7 @@
 				onTemplateSelect={handleTemplateSelect}
 				isModelConfigLoading={false}
 				onOpenModelSettings={handleRegisterModalOpen}
+				onTimestampClick={handleTimestampClick}
 			/>
 		</div>
 		<!-- Combined Transcript / Notes panel. Always mounted so the notes editor

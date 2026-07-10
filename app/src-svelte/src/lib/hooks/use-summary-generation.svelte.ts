@@ -542,6 +542,8 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 		}
 
 		const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
+		// Always prefix lines with `[mm:ss]` so the model can cite moments that
+		// the summary UI turns into clickable transcript jumps.
 		const fullTranscript = formatTranscriptForLlm(allTranscripts, {
 			names: speakerNames,
 			selfName,
@@ -552,10 +554,15 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 					typeof ts === 'string' ? ts : '',
 				),
 		});
+		// Steer the model to keep a few bracketed timestamps in the markdown.
+		const timestampHint =
+			'When referencing a moment, include a bracketed timestamp like [01:05] from the transcript lines.';
 
 		await processSummary({
 			transcriptText: fullTranscript,
-			customPrompt: buildGenerationContext(customPrompt),
+			customPrompt: buildGenerationContext(
+				[customPrompt, timestampHint].filter((s) => s.trim()).join('\n\n'),
+			),
 		});
 	};
 

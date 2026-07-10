@@ -33,6 +33,7 @@
 		isAssignable,
 		type SpeakerContext,
 	} from '$lib/speaker-label';
+	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import ConfidenceIndicator from './ConfidenceIndicator.svelte';
 	import RecordingStatusBar from './RecordingStatusBar.svelte';
 	import SpeakerLabel from './SpeakerLabel.svelte';
@@ -104,6 +105,21 @@
 		() => isRecording,
 		() => enableStreaming,
 	);
+
+	// Jump from summary timestamp: scroll the target segment into view.
+	$effect(() => {
+		const id = sidePanelState.focusSegmentId;
+		if (!id) return;
+		const el = document.getElementById(`segment-${id}`);
+		if (el) {
+			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			// Clear after a beat so re-clicks still work.
+			const t = setTimeout(() => {
+				if (sidePanelState.focusSegmentId === id) sidePanelState.focusSegmentId = null;
+			}, 2500);
+			return () => clearTimeout(t);
+		}
+	});
 
 	// Infinite scroll: observe the trigger element to load more.
 	$effect(() => {
@@ -199,7 +215,15 @@
 					{@const isStreaming = streaming.streamingSegmentId === segment.id}
 					{@const isMe = segment.speaker === 'mic'}
 					{@const speaker = speakerLabels[i]}
-					<div in:fly={{ y: 5, duration: 150 }} id={`segment-${segment.id}`} class="mb-3">
+					{@const isFocused = sidePanelState.focusSegmentId === segment.id}
+					<div
+						in:fly={{ y: 5, duration: 150 }}
+						id={`segment-${segment.id}`}
+						class={cn(
+							'mb-3 rounded-md transition-colors',
+							isFocused && 'bg-accent/15 ring-1 ring-accent/40',
+						)}
+					>
 						<div class="flex items-start gap-2">
 							<Tooltip.Provider delayDuration={300}>
 								<Tooltip.Root>
