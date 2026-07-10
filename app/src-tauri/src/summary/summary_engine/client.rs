@@ -37,6 +37,10 @@ enum Request {
         repeat_penalty: Option<f32>,
         penalty_last_n: Option<i32>,
         stop_tokens: Option<Vec<String>>,
+        /// When true, the sidecar emits incremental `token` lines before the
+        /// terminal `response` line. Must stay in sync with
+        /// `llama-helper/src/main.rs`.
+        stream: Option<bool>,
     },
 }
 
@@ -44,6 +48,8 @@ enum Request {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
     Response { text: String, error: Option<String> },
+    /// Incremental output chunk (streaming requests only).
+    Token { text: String },
     Error { message: String },
 }
 
@@ -147,29 +153,8 @@ pub async fn generate_with_builtin(
     log::info!("Built-in AI generation request");
     log::info!("Model: {}", model_name);
 
-    // Get model definition
-    let model_def = models::get_model_by_name(model_name)
-        .ok_or_else(|| anyhow!("Unknown model: {}", model_name))?;
-
-    // Resolve model path with caching (avoids repeated filesystem I/O)
-    let model_path = get_cached_model_path(app_data_dir, model_name)?;
-
-    // Apply model-specific chat template
-    let formatted_prompt =
-        models::format_prompt(&model_def.template, system_prompt, user_prompt)?;
-    // Get or initialize sidecar manager
-    let manager = {
-        let mut global_manager = SIDECAR_MANAGER.lock().await;
-        if global_manager.is_none() {
-            log::info!("Initializing sidecar manager");
-            let new_manager = SidecarManager::new(app_data_dir.clone())?;
-            *global_manager = Some(Arc::new(new_manager));
-        }
-        global_manager.clone().unwrap()
-    };
-
-    // Ensure sidecar is running with this model
-    manager.ensure_running(model_path.clone()).await?;
+    let (manager, request_json) =
+        prepare_generation(app_data_dir, model_name, system_prompt, user_prompt, false).await?;
 
     // Check cancellation after sidecar startup
     if let Some(token) = cancellation_token {
@@ -177,25 +162,6 @@ pub async fn generate_with_builtin(
             return Err(anyhow!("Generation cancelled during sidecar startup"));
         }
     }
-
-    // Prepare generation request with model-specific sampling parameters
-    let sampling = model_def.sampling.sanitize_for_llama_helper();
-    let request = Request::Generate {
-        prompt: formatted_prompt,
-        max_tokens: Some(models::DEFAULT_MAX_TOKENS),
-        context_size: Some(model_def.context_size),
-        model_path: Some(model_path.to_string_lossy().to_string()),
-        temperature: Some(sampling.temperature),
-        top_k: Some(sampling.top_k),
-        top_p: Some(sampling.top_p),
-        presence_penalty: Some(sampling.presence_penalty),
-        frequency_penalty: Some(sampling.frequency_penalty),
-        repeat_penalty: Some(sampling.repeat_penalty),
-        penalty_last_n: Some(sampling.penalty_last_n),
-        stop_tokens: Some(sampling.stop_tokens),
-    };
-
-    let request_json = serde_json::to_string(&request)?;
 
     // Send request with timeout
     let timeout = Duration::from_secs(models::GENERATION_TIMEOUT_SECS);
@@ -228,8 +194,147 @@ pub async fn generate_with_builtin(
         }
     }
 
-    // Parse response
-    let response: Response = serde_json::from_str(&response_json)
+    let text = parse_terminal_response(&response_json)?;
+    log::info!("Generation completed: {} chars", text.len());
+    Ok(text)
+}
+
+/// Streaming sibling of [`generate_with_builtin`]: invokes `on_token` with each
+/// incremental output chunk as it is generated, then returns the full final
+/// text. The final text is authoritative — it may correct trailing content the
+/// sidecar held back for stop-token safety.
+///
+/// Cancellation kills the sidecar (the generate loop has no cooperative stop),
+/// exactly like the buffered path; the model reloads on the next request.
+pub async fn generate_with_builtin_streaming(
+    app_data_dir: &PathBuf,
+    model_name: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    cancellation_token: Option<&CancellationToken>,
+    mut on_token: impl FnMut(String),
+) -> Result<String> {
+    if let Some(token) = cancellation_token {
+        if token.is_cancelled() {
+            return Err(anyhow!("Generation cancelled before starting"));
+        }
+    }
+
+    log::info!("Built-in AI streaming generation request");
+    log::info!("Model: {}", model_name);
+
+    let (manager, request_json) =
+        prepare_generation(app_data_dir, model_name, system_prompt, user_prompt, true).await?;
+
+    if let Some(token) = cancellation_token {
+        if token.is_cancelled() {
+            return Err(anyhow!("Generation cancelled during sidecar startup"));
+        }
+    }
+
+    // The first line waits out model load + prompt processing; after that the
+    // timeout resets per token, so long answers never hit a wall-clock budget.
+    let first_line_timeout = Duration::from_secs(models::GENERATION_TIMEOUT_SECS);
+    let inter_line_timeout = Duration::from_secs(models::INTER_TOKEN_TIMEOUT_SECS);
+
+    log::info!("Sending streaming generation request to sidecar");
+
+    let streaming = manager.send_request_streaming(
+        request_json,
+        first_line_timeout,
+        inter_line_timeout,
+        |line: String| match serde_json::from_str::<Response>(&line) {
+            Ok(Response::Token { text }) => on_token(text),
+            // Never log the line itself: it can carry generated content.
+            _ => log::warn!("Ignoring unexpected mid-stream line from sidecar"),
+        },
+    );
+
+    let response_json = if let Some(token) = cancellation_token {
+        tokio::select! {
+            result = streaming => result?,
+            _ = token.cancelled() => {
+                log::warn!("Streaming generation cancelled by user, shutting down sidecar");
+                if let Err(e) = manager.shutdown().await {
+                    log::error!("Failed to shutdown sidecar during cancellation: {}", e);
+                }
+                return Err(anyhow!("Generation cancelled by user"));
+            }
+        }
+    } else {
+        streaming.await?
+    };
+
+    if let Some(token) = cancellation_token {
+        if token.is_cancelled() {
+            return Err(anyhow!("Generation cancelled"));
+        }
+    }
+
+    let text = parse_terminal_response(&response_json)?;
+    log::info!("Streaming generation completed: {} chars", text.len());
+    Ok(text)
+}
+
+/// Resolves the model, ensures the sidecar is running, and serializes the
+/// `Generate` request. Shared by the buffered and streaming paths so the
+/// request contents can never drift between them.
+async fn prepare_generation(
+    app_data_dir: &PathBuf,
+    model_name: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    stream: bool,
+) -> Result<(Arc<SidecarManager>, String)> {
+    // Get model definition
+    let model_def = models::get_model_by_name(model_name)
+        .ok_or_else(|| anyhow!("Unknown model: {}", model_name))?;
+
+    // Resolve model path with caching (avoids repeated filesystem I/O)
+    let model_path = get_cached_model_path(app_data_dir, model_name)?;
+
+    // Apply model-specific chat template
+    let formatted_prompt = models::format_prompt(&model_def.template, system_prompt, user_prompt)?;
+
+    // Get or initialize sidecar manager
+    let manager = {
+        let mut global_manager = SIDECAR_MANAGER.lock().await;
+        if global_manager.is_none() {
+            log::info!("Initializing sidecar manager");
+            let new_manager = SidecarManager::new(app_data_dir.clone())?;
+            *global_manager = Some(Arc::new(new_manager));
+        }
+        global_manager.clone().unwrap()
+    };
+
+    // Ensure sidecar is running with this model
+    manager.ensure_running(model_path.clone()).await?;
+
+    // Prepare generation request with model-specific sampling parameters
+    let sampling = model_def.sampling.sanitize_for_llama_helper();
+    let request = Request::Generate {
+        prompt: formatted_prompt,
+        max_tokens: Some(models::DEFAULT_MAX_TOKENS),
+        context_size: Some(model_def.context_size),
+        model_path: Some(model_path.to_string_lossy().to_string()),
+        temperature: Some(sampling.temperature),
+        top_k: Some(sampling.top_k),
+        top_p: Some(sampling.top_p),
+        presence_penalty: Some(sampling.presence_penalty),
+        frequency_penalty: Some(sampling.frequency_penalty),
+        repeat_penalty: Some(sampling.repeat_penalty),
+        penalty_last_n: Some(sampling.penalty_last_n),
+        stop_tokens: Some(sampling.stop_tokens),
+        stream: if stream { Some(true) } else { None },
+    };
+
+    let request_json = serde_json::to_string(&request)?;
+    Ok((manager, request_json))
+}
+
+/// Parses the terminal sidecar line shared by both generation paths.
+fn parse_terminal_response(response_json: &str) -> Result<String> {
+    let response: Response = serde_json::from_str(response_json)
         .with_context(|| format!("Failed to parse response: {}", response_json))?;
 
     match response {
@@ -237,10 +342,12 @@ pub async fn generate_with_builtin(
             if let Some(err_msg) = error {
                 Err(anyhow!("Generation failed: {}", err_msg))
             } else {
-                log::info!("Generation completed: {} chars", text.len());
                 Ok(text)
             }
         }
+        Response::Token { .. } => Err(anyhow!(
+            "Sidecar sent a mid-stream token where a terminal response was expected"
+        )),
         Response::Error { message } => Err(anyhow!("Sidecar error: {}", message)),
     }
 }
@@ -317,6 +424,7 @@ mod tests {
             repeat_penalty: Some(1.05),
             penalty_last_n: Some(256),
             stop_tokens: Some(vec!["<end_of_turn>".to_string()]),
+            stream: None,
         };
 
         let json = serde_json::to_string(&request).unwrap();
@@ -324,6 +432,15 @@ mod tests {
         assert!(json.contains("\"prompt\":\"test prompt\""));
         assert!(json.contains("\"max_tokens\":512"));
         assert!(json.contains("\"temperature\":1.0"));
+    }
+
+    #[test]
+    fn test_streaming_token_line_deserializes() {
+        let json = r#"{"type":"token","text":"chunk"}"#;
+        match serde_json::from_str::<Response>(json).unwrap() {
+            Response::Token { text } => assert_eq!(text, "chunk"),
+            other => panic!("expected token, got {:?}", other),
+        }
     }
 
     #[test]

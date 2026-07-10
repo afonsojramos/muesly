@@ -393,6 +393,117 @@ impl SidecarManager {
         }
     }
 
+    /// Send a request and stream response lines until the terminal one.
+    ///
+    /// Forwards every incremental `{"type":"token",...}` line to `on_line` and
+    /// returns the first non-token line raw (the terminal
+    /// `{"type":"response",...}` / error, exactly what `send_request` returns).
+    ///
+    /// Differences from `send_request`, both deliberate:
+    /// - The stdout lock is held for the entire stream (not per line), so the
+    ///   health-check `pong` can never interleave into the token stream. The
+    ///   `RequestGuard` already makes the ping loop skip while we run; the held
+    ///   lock is the belt-and-suspenders.
+    /// - The timeout is per read (reset on every line), with a larger allowance
+    ///   for the first line (model load + prompt processing happen before any
+    ///   token), instead of one wall-clock budget for the whole generation.
+    pub async fn send_request_streaming(
+        &self,
+        request_json: String,
+        first_line_timeout: Duration,
+        inter_line_timeout: Duration,
+        mut on_line: impl FnMut(String),
+    ) -> Result<String> {
+        // Track active request (keeps the ping loop quiet while we stream).
+        let _guard = RequestGuard::new(self.active_request_count.clone());
+
+        // Write request to stdin
+        {
+            let mut stdin_lock = self.stdin_writer.lock().await;
+            let stdin = stdin_lock
+                .as_mut()
+                .ok_or_else(|| anyhow!("Sidecar not running"))?;
+
+            stdin
+                .write_all(request_json.as_bytes())
+                .await
+                .context("Failed to write request to stdin")?;
+            stdin
+                .write_all(b"\n")
+                .await
+                .context("Failed to write newline")?;
+            stdin.flush().await.context("Failed to flush stdin")?;
+        }
+
+        // Read lines until the terminal response, holding the lock throughout.
+        // The result is computed inside the block so the lock is released
+        // before any shutdown/activity calls below.
+        let outcome: Result<String> = {
+            let mut stdout_lock = self.stdout_reader.lock().await;
+            let reader = stdout_lock
+                .as_mut()
+                .ok_or_else(|| anyhow!("Sidecar not running"))?;
+
+            let mut timeout = first_line_timeout;
+            loop {
+                let mut line = String::new();
+                match tokio::time::timeout(timeout, reader.read_line(&mut line)).await {
+                    Ok(Ok(0)) => {
+                        break Err(anyhow!(
+                            "Sidecar closed stdout mid-stream (process may have crashed)"
+                        ));
+                    }
+                    Ok(Ok(_)) => {
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let is_token = serde_json::from_str::<serde_json::Value>(trimmed)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("type").and_then(|t| t.as_str()).map(|t| t == "token")
+                            })
+                            .unwrap_or(false);
+                        if is_token {
+                            on_line(trimmed.to_string());
+                            timeout = inter_line_timeout;
+                        } else {
+                            break Ok(trimmed.to_string());
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        break Err(anyhow!("Failed to read streaming response: {}", e));
+                    }
+                    Err(_) => {
+                        break Err(anyhow!(
+                            "Streaming read timed out after {:?} (stream stalled)",
+                            timeout
+                        ));
+                    }
+                }
+            }
+        };
+
+        match outcome {
+            Ok(terminal) => {
+                self.update_activity().await;
+                Ok(terminal)
+            }
+            Err(e) => {
+                // A stalled/broken stream leaves unread token lines in stdout;
+                // kill the sidecar so they can't desync the next request.
+                log::error!("Streaming request failed ({}), shutting down sidecar", e);
+                if let Err(shutdown_err) = self.shutdown().await {
+                    log::error!(
+                        "Failed to shutdown sidecar after streaming failure: {}",
+                        shutdown_err
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+
     /// Read a single line response from stdout
     async fn read_response(&self) -> Result<String> {
         let mut stdout_lock = self.stdout_reader.lock().await;
@@ -678,5 +789,118 @@ impl Drop for SidecarManager {
         }
 
         log::debug!("SidecarManager dropped");
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    /// `MUESLY_LLAMA_HELPER` is process-global; serialize the tests that set it.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Writes an executable fake llama-helper that speaks the stdio protocol.
+    fn write_fake_helper(name: &str, body: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("muesly-fake-helper-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(name);
+        std::fs::write(&path, body).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        path
+    }
+
+    fn manager_with_fake(name: &str, body: &str) -> SidecarManager {
+        let script = write_fake_helper(name, body);
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("MUESLY_LLAMA_HELPER", &script);
+        let manager = SidecarManager::new(std::env::temp_dir()).unwrap();
+        std::env::remove_var("MUESLY_LLAMA_HELPER");
+        manager
+    }
+
+    #[tokio::test]
+    async fn streaming_forwards_token_lines_and_returns_terminal() {
+        let manager = manager_with_fake(
+            "fake-stream-ok.sh",
+            r#"#!/bin/bash
+while IFS= read -r line; do
+  case "$line" in
+    *'"generate"'*)
+      echo '{"type":"token","text":"Hello"}'
+      echo '{"type":"token","text":" world"}'
+      echo '{"type":"response","text":"Hello world!","error":null}'
+      ;;
+    *'"ping"'*) echo '{"type":"pong"}' ;;
+    *'"shutdown"'*) echo '{"type":"goodbye"}'; exit 0 ;;
+  esac
+done
+"#,
+        );
+
+        manager
+            .ensure_running(PathBuf::from("/fake/model.gguf"))
+            .await
+            .unwrap();
+
+        let mut lines = Vec::new();
+        let terminal = manager
+            .send_request_streaming(
+                r#"{"type":"generate","prompt":"hi","stream":true}"#.to_string(),
+                Duration::from_secs(5),
+                Duration::from_secs(5),
+                |line| lines.push(line),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(lines.len(), 2, "expected two token lines, got {lines:?}");
+        assert!(lines[0].contains("Hello") && lines[1].contains("world"));
+        assert!(terminal.contains(r#""text":"Hello world!""#));
+
+        manager.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn streaming_stall_times_out_and_kills_the_sidecar() {
+        let manager = manager_with_fake(
+            "fake-stream-stall.sh",
+            r#"#!/bin/bash
+while IFS= read -r line; do
+  case "$line" in
+    *'"generate"'*)
+      echo '{"type":"token","text":"partial"}'
+      sleep 30
+      ;;
+    *'"shutdown"'*) echo '{"type":"goodbye"}'; exit 0 ;;
+  esac
+done
+"#,
+        );
+
+        manager
+            .ensure_running(PathBuf::from("/fake/model.gguf"))
+            .await
+            .unwrap();
+
+        let mut lines = Vec::new();
+        let err = manager
+            .send_request_streaming(
+                r#"{"type":"generate","prompt":"hi","stream":true}"#.to_string(),
+                Duration::from_secs(5),
+                Duration::from_millis(200),
+                |line| lines.push(line),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(lines.len(), 1, "the token before the stall is delivered");
+        assert!(
+            err.to_string().contains("timed out"),
+            "unexpected error: {err}"
+        );
+        // The stalled sidecar was killed so leftover lines can't desync later
+        // requests.
+        assert!(!manager.is_healthy());
     }
 }

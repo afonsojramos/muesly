@@ -327,6 +327,11 @@ pub const DEFAULT_IDLE_TIMEOUT_SECS: u64 = 300; // 5 minutes
 /// Generation timeout (how long to wait for a response)
 pub const GENERATION_TIMEOUT_SECS: u64 = 900; // 15 minutes
 
+/// Streaming: max gap between consecutive token lines before the stream is
+/// considered stalled. Resets on every line, so total generation length is
+/// unbounded; only a silent stall trips it.
+pub const INTER_TOKEN_TIMEOUT_SECS: u64 = 120; // 2 minutes
+
 #[cfg(test)]
 mod tests {
     use super::*;
