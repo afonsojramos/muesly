@@ -26,7 +26,7 @@ use crate::database::repositories::{
     meeting::MeetingsRepository, summary::SummaryProcessesRepository,
 };
 use crate::state::AppState;
-use crate::summary::llm_client::{generate_summary, LLMProvider};
+use crate::summary::llm_client::{generate_summary_streaming, LLMProvider};
 use crate::summary::service::SummaryService;
 use crate::summary::summary_engine;
 
@@ -247,11 +247,9 @@ pub async fn chat_ask<R: Runtime>(
         gen_id: gen_id.clone(),
     });
 
-    // The local sidecar streams real tokens; every other provider returns the
-    // whole answer, forwarded as a single Token so the Channel contract (and
-    // the frontend) are identical either way.
-    let streamed = settings.provider == LLMProvider::BuiltInAI;
-    let result = if streamed {
+    // Every provider streams: the local sidecar over stdio, everything else
+    // over SSE. Both paths feed the same Channel contract.
+    let result = if settings.provider == LLMProvider::BuiltInAI {
         match app_data_dir.as_ref() {
             Some(dir) => summary_engine::generate_with_builtin_streaming(
                 dir,
@@ -270,7 +268,7 @@ pub async fn chat_ask<R: Runtime>(
     } else {
         let client = crate::providers::common::http_client();
         let max_tokens = settings.custom_openai_max_tokens.or(Some(DEFAULT_MAX_TOKENS));
-        generate_summary(
+        generate_summary_streaming(
             &client,
             &settings.provider,
             &model_name,
@@ -282,8 +280,10 @@ pub async fn chat_ask<R: Runtime>(
             max_tokens,
             settings.custom_openai_temperature,
             settings.custom_openai_top_p,
-            app_data_dir.as_ref(),
             Some(&token),
+            |piece| {
+                let _ = on_event.send(ChatStreamEvent::Token { text: piece });
+            },
         )
         .await
     };
@@ -292,13 +292,8 @@ pub async fn chat_ask<R: Runtime>(
     match result {
         Ok(answer) => {
             let answer = answer.trim().to_string();
-            if !streamed {
-                let _ = on_event.send(ChatStreamEvent::Token {
-                    text: answer.clone(),
-                });
-            }
-            // Done.full is authoritative: for the streamed path it reconciles
-            // the trim and any stop-token holdback the tokens didn't carry.
+            // Done.full is authoritative: it reconciles the trim and anything
+            // the sidecar held back for stop-token safety.
             let _ = on_event.send(ChatStreamEvent::Done {
                 gen_id: gen_id.clone(),
                 full: answer,
