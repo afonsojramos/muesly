@@ -22,6 +22,10 @@
 	let scope = $state<'all' | 'folder'>('folder');
 	const effectiveScopeId = $derived(scope === 'folder' && scopeFolder ? scopeFolder.id : null);
 
+	// Natural-language pack (multi-meeting snippets) for longer queries.
+	let nlPack = $state<string | null>(null);
+	let nlHits = $state<Array<{ meeting_id: string; title: string; match_context: string }>>([]);
+
 	// Title matches are computed locally and instantly; transcript matches arrive
 	// via the debounced store call (api_search_transcripts populates searchResults).
 	let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -29,7 +33,29 @@
 		query = value;
 		clearTimeout(debounce);
 		const q = value.trim();
-		debounce = setTimeout(() => void sidebar.searchTranscripts(q), 150);
+		debounce = setTimeout(() => {
+			void sidebar.searchTranscripts(q);
+			// 3+ words → also pack multi-meeting context for NL Q&A.
+			if (q.split(/\s+/).filter(Boolean).length >= 3) {
+				void (async () => {
+					try {
+						const { invoke } = await import('@tauri-apps/api/core');
+						const res = (await invoke('api_nl_search_meetings', { query: q })) as {
+							hits: Array<{ meeting_id: string; title: string; match_context: string }>;
+							context_pack: string;
+						};
+						nlHits = res.hits ?? [];
+						nlPack = res.context_pack ?? null;
+					} catch {
+						nlHits = [];
+						nlPack = null;
+					}
+				})();
+			} else {
+				nlHits = [];
+				nlPack = null;
+			}
+		}, 150);
 	}
 
 	const results = $derived.by(() => {
@@ -164,6 +190,34 @@
 						<Folder data-icon="inline-start" />
 						In {scopeFolder.name}
 					</Button>
+				</div>
+			{/if}
+
+			{#if nlHits.length > 0}
+				<div class="mt-5 rounded-xl border border-border bg-card p-4">
+					<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Natural-language matches
+					</p>
+					<ul class="mt-2 flex flex-col gap-2">
+						{#each nlHits as hit (hit.meeting_id + hit.match_context)}
+							<li>
+								<button
+									type="button"
+									class="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary"
+									onclick={() => openMeeting(hit.meeting_id)}
+								>
+									<span class="font-medium">{hit.title}</span>
+									<p class="mt-0.5 line-clamp-2 text-muted-foreground">{hit.match_context}</p>
+								</button>
+							</li>
+						{/each}
+					</ul>
+					{#if nlPack}
+						<details class="mt-3 text-xs text-muted-foreground">
+							<summary class="cursor-pointer">Context pack for Ask anything</summary>
+							<pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{nlPack}</pre>
+						</details>
+					{/if}
 				</div>
 			{/if}
 

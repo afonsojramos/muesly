@@ -152,15 +152,35 @@ impl TranscriptsRepository {
             return Ok(Vec::new());
         }
 
-        let search_query = format!("%{}%", query.to_lowercase());
-
+        // Multi-word: OR across up to 4 tokens (NL-friendly). Bind params only;
+        // the SQL shape is a fixed literal so sqlx accepts it.
+        let mut tokens: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() >= 2)
+            .take(4)
+            .map(|w| format!("%{w}%"))
+            .collect();
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        while tokens.len() < 4 {
+            // Impossible match keeps unused slots inert.
+            tokens.push("%\u{FFFF}%".to_string());
+        }
         let rows = sqlx::query_as::<_, (String, String, String, String)>(
             "SELECT m.id, m.title, t.transcript, t.timestamp
              FROM meetings m
              JOIN transcripts t ON m.id = t.meeting_id
-             WHERE LOWER(t.transcript) LIKE ? AND m.deleted_at IS NULL",
+             WHERE m.deleted_at IS NULL AND (
+               LOWER(t.transcript) LIKE ? OR LOWER(t.transcript) LIKE ?
+               OR LOWER(t.transcript) LIKE ? OR LOWER(t.transcript) LIKE ?
+             )",
         )
-        .bind(&search_query)
+        .bind(&tokens[0])
+        .bind(&tokens[1])
+        .bind(&tokens[2])
+        .bind(&tokens[3])
         .fetch_all(pool)
         .await?;
 
