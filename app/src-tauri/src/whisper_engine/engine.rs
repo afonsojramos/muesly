@@ -48,6 +48,17 @@ pub struct WhisperEngine {
     active_downloads: Arc<RwLock<HashSet<String>>>, // Set of models currently being downloaded
     // Wall-clock of the last transcription, for the idle-unload watcher.
     last_used: Arc<RwLock<std::time::Instant>>,
+    /// Tail of the last successful transcript for `initial_prompt` continuity.
+    /// Cleared via [`Self::reset_segment_context`] at recording/job boundaries so
+    /// prompts never leak across meetings.
+    last_segment_text: Arc<RwLock<String>>,
+}
+
+impl WhisperEngine {
+    /// Drop prior-segment prompt context (call at recording start / retranscribe start).
+    pub async fn reset_segment_context(&self) {
+        self.last_segment_text.write().await.clear();
+    }
 }
 
 impl WhisperEngine {
@@ -160,6 +171,7 @@ impl WhisperEngine {
             // Initialize active downloads tracking
             active_downloads: Arc::new(RwLock::new(HashSet::new())),
             last_used: Arc::new(RwLock::new(std::time::Instant::now())),
+            last_segment_text: Arc::new(RwLock::new(String::new())),
         };
         
         Ok(engine)
@@ -748,13 +760,22 @@ impl WhisperEngine {
         let duration_seconds = audio_data.len() as f64 / 16000.0;
         let is_partial = duration_seconds < 15.0; // Consider chunks under 15s as partial
 
-        let initial_prompt = crate::vocabulary::whisper_initial_prompt();
+        let vocab = crate::vocabulary::whisper_initial_prompt();
+        let prior = {
+            let prev = self.last_segment_text.read().await;
+            super::decode_policy::prior_segment_prompt(&prev, 224)
+        };
+        let initial_prompt =
+            super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
         let (cleaned_result, avg_confidence) = tokio::task::spawn_blocking(move || {
             Self::run_full_blocking(&ctx, &audio_data, language, beam_size, temperature, initial_prompt)
         })
         .await
         .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
         let cleaned_result = crate::vocabulary::apply_cached_corrections(&cleaned_result);
+        if !cleaned_result.trim().is_empty() {
+            *self.last_segment_text.write().await = cleaned_result.clone();
+        }
 
         Ok((cleaned_result, avg_confidence, is_partial))
     }
@@ -774,8 +795,8 @@ impl WhisperEngine {
         let hardware_profile = crate::audio::HardwareProfile::detect();
         let adaptive_config = hardware_profile.get_whisper_config();
         let beam_size = adaptive_config.beam_size;
-        // Lower than 0.4 for consistency, higher than 0.0 for quality.
-        let temperature = 0.3;
+        // Preferred temperature; empty results climb the ladder (see decode_policy).
+        let mut temperature = 0.0f32;
 
         let duration_seconds = audio_data.len() as f64 / 16000.0; // Assuming 16kHz
         let is_short_audio = duration_seconds < 1.0;
@@ -826,13 +847,45 @@ impl WhisperEngine {
                       transcription_count, audio_data.len(), duration_seconds);
         }
 
-        let initial_prompt = crate::vocabulary::whisper_initial_prompt();
-        let (cleaned_result, _confidence) = tokio::task::spawn_blocking(move || {
-            Self::run_full_blocking(&ctx, &audio_data, language, beam_size, temperature, initial_prompt)
-        })
-        .await
-        .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
-        let cleaned_result = crate::vocabulary::apply_cached_corrections(&cleaned_result);
+        let vocab = crate::vocabulary::whisper_initial_prompt();
+        let prior = {
+            let prev = self.last_segment_text.read().await;
+            super::decode_policy::prior_segment_prompt(&prev, 224)
+        };
+        let initial_prompt =
+            super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
+
+        // Temperature ladder: retry empty/near-empty decodes with warmer settings.
+        let cleaned_result = loop {
+            let ctx_c = ctx.clone();
+            let audio_c = audio_data.clone();
+            let lang_c = language.clone();
+            let prompt_c = initial_prompt.clone();
+            let temp = temperature;
+            let (text, _conf) = tokio::task::spawn_blocking(move || {
+                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam_size, temp, prompt_c)
+            })
+            .await
+            .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
+            let cleaned = crate::vocabulary::apply_cached_corrections(&text);
+            if !super::decode_policy::should_retry_decode(&cleaned, 1) {
+                break cleaned;
+            }
+            match super::decode_policy::next_temperature(temperature) {
+                Some(next) => {
+                    log::debug!(
+                        "Whisper empty decode at temp {}; retrying at {}",
+                        temperature,
+                        next
+                    );
+                    temperature = next;
+                }
+                None => break cleaned,
+            }
+        };
+        if !cleaned_result.trim().is_empty() {
+            *self.last_segment_text.write().await = cleaned_result.clone();
+        }
 
         // Performance optimization: smart logging for transcription results
         if cleaned_result.is_empty() {

@@ -3,6 +3,7 @@
 // Parallel transcription worker pool and chunk processing logic.
 
 use super::engine::TranscriptionEngine;
+// TranscriptionEngine is used for Whisper context reset at session start.
 use super::provider::TranscriptionError;
 use crate::audio::AudioChunk;
 use log::{error, info, warn};
@@ -85,6 +86,11 @@ pub fn start_transcription_task<R: Runtime>(
                 return;
             }
         };
+
+        // New recording session: do not carry prior-meeting text into Whisper prompts.
+        if let TranscriptionEngine::Whisper(w) = &transcription_engine {
+            w.reset_segment_context().await;
+        }
 
         // Create parallel workers for faster processing while preserving ALL chunks
         const NUM_WORKERS: usize = 1; // Serial processing ensures transcripts emit in chronological order

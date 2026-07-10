@@ -1,6 +1,7 @@
 pub mod engine;
 pub mod acceleration;
 pub mod commands;
+pub mod decode_policy;
 pub mod lang_lock;
 
 pub use engine::*;
