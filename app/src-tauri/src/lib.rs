@@ -26,6 +26,7 @@ pub mod api;
 pub mod audio;
 pub mod calendar;
 pub mod keychain;
+pub mod model_integrity;
 pub mod config;
 pub mod console_utils;
 pub mod database;
@@ -289,7 +290,7 @@ pub fn validate_path_within_roots(
 
 /// Collects the allowed roots for the current app instance: app data dir plus
 /// the user-configured recordings folder (which may be outside app data).
-async fn allowed_roots_for_app<R: Runtime>(
+pub(crate) async fn allowed_roots_for_app<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Vec<std::path::PathBuf>, String> {
     let mut roots = Vec::new();

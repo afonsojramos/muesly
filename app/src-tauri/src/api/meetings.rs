@@ -186,17 +186,67 @@ pub async fn api_restore_meeting<R: Runtime>(
 }
 
 /// Permanently delete a meeting and all its data (used from the Trash view).
+/// After a successful DB hard-delete, removes the recording folder on disk when
+/// it lies under an allowed root (recordings folder / app data). Paths outside
+/// those roots are left alone (never `remove_dir_all` on untrusted paths).
 #[tauri::command]
 #[specta::specta]
 pub async fn api_permanently_delete_meeting<R: Runtime>(
-    _app: AppHandle<R>,
+    app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
     meeting_id: String,
     _auth_token: Option<String>,
 ) -> Result<crate::json::Json, String> {
     let pool = state.db_manager.pool();
+
+    // Capture folder_path before the row is deleted.
+    let folder_path = MeetingsRepository::get_meeting_metadata(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("Failed to load meeting for permanent delete: {e}"))?
+        .and_then(|m| m.folder_path);
+
     match MeetingsRepository::delete_meeting(pool, &meeting_id).await {
         Ok(true) => {
+            if let Some(folder) = folder_path.as_deref().filter(|p| !p.trim().is_empty()) {
+                match crate::allowed_roots_for_app(&app).await {
+                    Ok(roots) => match crate::validate_path_within_roots(folder, &roots, false) {
+                        Ok(validated) => {
+                            if validated.is_dir() {
+                                if let Err(e) = std::fs::remove_dir_all(&validated) {
+                                    // DB is already gone; surface a warning but do not
+                                    // fail the command — the user-facing delete succeeded.
+                                    log_warn!(
+                                        "Permanently deleted meeting {} but failed to remove folder {}: {}",
+                                        meeting_id,
+                                        validated.display(),
+                                        e
+                                    );
+                                } else {
+                                    log_info!(
+                                        "Removed recording folder for meeting {}: {}",
+                                        meeting_id,
+                                        validated.display()
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log_warn!(
+                                "Skipping disk delete for meeting {} (path not under allowed roots): {}",
+                                meeting_id,
+                                e
+                            );
+                        }
+                    },
+                    Err(e) => {
+                        log_warn!(
+                            "Could not resolve allowed roots for disk delete of meeting {}: {}",
+                            meeting_id,
+                            e
+                        );
+                    }
+                }
+            }
             log_info!("Permanently deleted meeting {}", meeting_id);
             Ok(serde_json::json!({ "status": "success", "message": "Meeting permanently deleted" }).into())
         }
@@ -649,21 +699,11 @@ pub async fn open_meeting_folder<R: Runtime>(
 #[tauri::command]
 #[specta::specta]
 pub async fn open_external_url(url: String) -> Result<(), String> {
-    use std::process::Command;
+    // Scheme allowlist + placeholder rejection before any OS handoff.
+    let safe = crate::utils::validate_external_http_url(&url)?;
 
-    let result = if cfg!(target_os = "windows") {
-        Command::new("cmd").args(&["/C", "start", &url]).output()
-    } else if cfg!(target_os = "macos") {
-        Command::new("open").arg(&url).output()
-    } else {
-        // Linux and other Unix-like systems
-        Command::new("xdg-open").arg(&url).output()
-    };
-
-    match result {
-        Ok(_) => Ok(()),
-        Err(e) => Err(format!("Failed to open URL: {}", e)),
-    }
+    // `open::that` avoids Windows `cmd /C start` shell metachar interpretation.
+    open::that(&safe).map_err(|e| format!("Failed to open URL: {e}"))
 }
 
 // ===== CUSTOM OPENAI API COMMANDS =====

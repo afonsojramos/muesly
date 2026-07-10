@@ -29,7 +29,7 @@
 
 	async function handleContactClick(): Promise<void> {
 		try {
-			await invoke('open_external_url', { url: 'TBD' });
+			await invoke('open_external_url', { url: 'https://muesly.ai' });
 		} catch (error) {
 			console.error('Failed to open link:', error);
 		}
