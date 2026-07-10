@@ -116,6 +116,18 @@ class RecordingStateStore {
 				// Already stopped by another surface — treat as a no-op success.
 				return true;
 			}
+			// Backend may still have emitted recording-stopped and best-effort
+			// saved; never block the SQLite save pipeline on a soft stream error.
+			if (
+				message.includes('recording data was still saved') ||
+				message.includes('stream error after best-effort')
+			) {
+				console.warn(
+					'[RecordingStateStore] Stop reported a soft stream error; continuing save pipeline:',
+					message,
+				);
+				return true;
+			}
 			console.error('[RecordingStateStore] Failed to stop recording:', error);
 			return false;
 		}

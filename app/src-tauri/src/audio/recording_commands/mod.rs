@@ -58,14 +58,68 @@ pub(crate) fn is_dictation_active() -> bool {
 }
 
 /// Mark a dictation burst active or finished (owned by the dictation path).
+/// Prefer [`try_claim_dictation`] / [`release_dictation_claim`] for start/stop
+/// so concurrent starts cannot both pass a check-then-act gate.
+#[allow(dead_code)] // kept for tests and any external callers of the flag API
 pub(crate) fn set_dictation_active(active: bool) {
     DICTATION_ACTIVE.store(active, Ordering::SeqCst);
 }
 
 /// Whether a mic-using mode may start: only when neither it nor the other mode
 /// is active. Pure mutual-exclusion gate, separated out for testing.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn can_start(this_active: bool, other_active: bool) -> bool {
     !this_active && !other_active
+}
+
+/// Atomically claim the recording slot before any device/async work. Returns
+/// `Err` if a recording is already claimed or dictation holds the mic.
+/// On success the caller **must** either complete start (leave the flag set)
+/// or call [`release_recording_claim`] on every failure path.
+pub(crate) fn try_claim_recording() -> Result<(), String> {
+    if DICTATION_ACTIVE.load(Ordering::SeqCst) {
+        return Err("Cannot start recording while dictation is active".to_string());
+    }
+    match IS_RECORDING.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(_) => {
+            // Close the race where dictation claimed between the load and CAS.
+            if DICTATION_ACTIVE.load(Ordering::SeqCst) {
+                IS_RECORDING.store(false, Ordering::SeqCst);
+                return Err("Cannot start recording while dictation is active".to_string());
+            }
+            Ok(())
+        }
+        Err(_) => Err("Recording already in progress".to_string()),
+    }
+}
+
+/// Drop a recording claim after a failed start (or after a full stop).
+pub(crate) fn release_recording_claim() {
+    IS_RECORDING.store(false, Ordering::SeqCst);
+}
+
+/// Atomically claim the dictation slot. Mirrors [`try_claim_recording`].
+pub(crate) fn try_claim_dictation() -> Result<(), String> {
+    if IS_RECORDING.load(Ordering::SeqCst) {
+        return Err("Cannot start dictation while recording or already dictating".to_string());
+    }
+    match DICTATION_ACTIVE.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst) {
+        Ok(_) => {
+            if IS_RECORDING.load(Ordering::SeqCst) {
+                DICTATION_ACTIVE.store(false, Ordering::SeqCst);
+                return Err(
+                    "Cannot start dictation while recording or already dictating".to_string(),
+                );
+            }
+            Ok(())
+        }
+        Err(_) => Err("Cannot start dictation while recording or already dictating".to_string()),
+    }
+}
+
+/// Drop a dictation claim after stop or a failed start.
+pub(crate) fn release_dictation_claim() {
+    DICTATION_ACTIVE.store(false, Ordering::SeqCst);
 }
 
 /// Whether the dictation feature is enabled. While enabled, the transcription
@@ -207,24 +261,16 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         meeting_name
     );
 
-    // Check if already recording
-    let current_recording_state = IS_RECORDING.load(Ordering::SeqCst);
-    info!("🔍 IS_RECORDING state check: {}", current_recording_state);
-    if current_recording_state {
-        return Err("Recording already in progress".to_string());
-    }
-    // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
-    if !can_start(
-        current_recording_state,
-        DICTATION_ACTIVE.load(Ordering::SeqCst),
-    ) {
-        return Err("Cannot start recording while dictation is active".to_string());
-    }
+    // Claim the recording slot before any async work so concurrent starts
+    // (UI + calendar scheduler, double-click) cannot both pass a load check.
+    try_claim_recording()?;
+    info!("🔍 IS_RECORDING claimed for start");
 
     // Validate that transcription models are available before starting recording
     info!("🔍 Validating transcription model availability before starting recording...");
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
+        release_recording_claim();
 
         // Emit error event for frontend - actionable: false to show toast instead of modal
         // (download progress is already shown in top-right toast)
@@ -291,6 +337,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                             error!(
                                 "❌ No microphone available (preferred and default both failed)"
                             );
+                            release_recording_claim();
                             return Err(format!(
                                 "No microphone device available. Preferred device '{}' not found, and default microphone unavailable: {}",
                                 pref_name, default_err
@@ -309,6 +356,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                 }
                 Err(e) => {
                     error!("❌ No default microphone available");
+                    release_recording_claim();
                     return Err(format!("No microphone device available: {}", e));
                 }
             }
@@ -395,10 +443,16 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let mic_name_for_check = microphone_device.as_ref().map(|d| d.name.clone());
 
     // Start recording with resolved devices (replaces start_recording_with_defaults_and_auto_save call)
-    let transcription_receiver = manager
+    let transcription_receiver = match manager
         .start_recording(microphone_device, system_device, auto_save)
         .await
-        .map_err(|e| format!("Failed to start recording: {}", e))?;
+    {
+        Ok(rx) => rx,
+        Err(e) => {
+            release_recording_claim();
+            return Err(format!("Failed to start recording: {}", e));
+        }
+    };
 
     let recording_state_for_check = manager.get_state().clone();
     let recording_state_for_level = manager.get_state().clone();
@@ -409,9 +463,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
         *global_manager = Some(manager);
     }
 
-    // Set recording flag and reset speech detection flag
-    info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
-    IS_RECORDING.store(true, Ordering::SeqCst);
+    // Claim already set IS_RECORDING; reset session flags and show the pill.
+    info!("🔍 Recording claim held; resetting SPEECH_DETECTED_EMITTED");
     // Reconcile the pill in lockstep with the recording flag (both start paths):
     // it appears only if the main window is not focused, else the in-app bar shows.
     crate::pill_window::sync_visibility(&app);
@@ -466,15 +519,17 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     }
 
     // Emit success event
-    app.emit(
+    if let Err(e) = app.emit(
         "recording-started",
         serde_json::json!({
             "message": "Recording started successfully with parallel processing",
             "devices": ["Default Microphone", "Default System Audio"],
             "workers": 3
         }),
-    )
-    .map_err(|e| e.to_string())?;
+    ) {
+        // Streams are already running; leave the claim held so stop can clean up.
+        return Err(e.to_string());
+    }
 
     // Update tray menu to reflect recording state
     crate::tray::update_tray_menu(&app);
@@ -505,24 +560,15 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         mic_device_name, system_device_name, meeting_name
     );
 
-    // Check if already recording
-    let current_recording_state = IS_RECORDING.load(Ordering::SeqCst);
-    info!("🔍 IS_RECORDING state check: {}", current_recording_state);
-    if current_recording_state {
-        return Err("Recording already in progress".to_string());
-    }
-    // Mutual exclusion: never start a meeting while a dictation burst holds the mic.
-    if !can_start(
-        current_recording_state,
-        DICTATION_ACTIVE.load(Ordering::SeqCst),
-    ) {
-        return Err("Cannot start recording while dictation is active".to_string());
-    }
+    // Claim the recording slot before any async work (see try_claim_recording).
+    try_claim_recording()?;
+    info!("🔍 IS_RECORDING claimed for device-specific start");
 
     // Validate that transcription models are available before starting recording
     info!("🔍 Validating transcription model availability before starting recording...");
     if let Err(validation_error) = transcription::validate_transcription_model_ready(&app).await {
         error!("Model validation failed: {}", validation_error);
+        release_recording_claim();
 
         // Emit error event for frontend - actionable: false to show toast instead of modal
         // (download progress is already shown in top-right toast)
@@ -538,17 +584,25 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
     // Parse devices
     let mic_device = if let Some(ref name) = mic_device_name {
-        Some(Arc::new(parse_audio_device(name).map_err(|e| {
-            format!("Invalid microphone device '{}': {}", name, e)
-        })?))
+        match parse_audio_device(name) {
+            Ok(device) => Some(Arc::new(device)),
+            Err(e) => {
+                release_recording_claim();
+                return Err(format!("Invalid microphone device '{}': {}", name, e));
+            }
+        }
     } else {
         None
     };
 
     let system_device = if let Some(ref name) = system_device_name {
-        Some(Arc::new(parse_audio_device(name).map_err(|e| {
-            format!("Invalid system device '{}': {}", name, e)
-        })?))
+        match parse_audio_device(name) {
+            Ok(device) => Some(Arc::new(device)),
+            Err(e) => {
+                release_recording_claim();
+                return Err(format!("Invalid system device '{}': {}", name, e));
+            }
+        }
     } else {
         None
     };
@@ -597,10 +651,16 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     let mic_name_for_check = mic_device.as_ref().map(|d| d.name.clone());
 
     // Start recording with specified devices and auto_save setting
-    let transcription_receiver = manager
+    let transcription_receiver = match manager
         .start_recording(mic_device, system_device, auto_save)
         .await
-        .map_err(|e| format!("Failed to start recording: {}", e))?;
+    {
+        Ok(rx) => rx,
+        Err(e) => {
+            release_recording_claim();
+            return Err(format!("Failed to start recording: {}", e));
+        }
+    };
 
     let recording_state_for_check = manager.get_state().clone();
     let recording_state_for_level = manager.get_state().clone();
@@ -611,9 +671,8 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
         *global_manager = Some(manager);
     }
 
-    // Set recording flag and reset speech detection flag
-    info!("🔍 Setting IS_RECORDING to true and resetting SPEECH_DETECTED_EMITTED");
-    IS_RECORDING.store(true, Ordering::SeqCst);
+    // Claim already set IS_RECORDING; reset session flags and show the pill.
+    info!("🔍 Recording claim held; resetting SPEECH_DETECTED_EMITTED");
     // Reconcile the pill in lockstep with the recording flag (both start paths):
     // it appears only if the main window is not focused, else the in-app bar shows.
     crate::pill_window::sync_visibility(&app);
@@ -734,22 +793,21 @@ pub async fn stop_recording<R: Runtime>(
 
     let (stop_result, manager_for_cleanup) = stop_result;
 
-    match stop_result {
+    // Remember a stream-stop error so we still best-effort save + emit
+    // `recording-stopped` (frontend depends on that event for the SQLite save).
+    let stream_stop_error = match stop_result {
         Ok(_) => {
             info!("✅ Audio streams stopped successfully - no more chunks will be created");
+            None
         }
         Err(e) => {
-            error!("❌ Failed to stop audio streams: {}", e);
-            // Clear recording state and tear down the floating pill before
-            // bailing: this early return otherwise skips the IS_RECORDING reset
-            // and pill_window::hide below, orphaning an always-on-top pill (and
-            // its global pause shortcut) over every app with no recording
-            // running.
-            IS_RECORDING.store(false, Ordering::SeqCst);
-            crate::pill_window::hide(&app);
-            return Err(format!("Failed to stop audio streams: {}", e));
+            error!(
+                "❌ Failed to stop audio streams (continuing best-effort save): {}",
+                e
+            );
+            Some(e)
         }
-    }
+    };
 
     // Step 1.5: Clean up transcript listener to release microphone
     // Unlisten transcript-update event to prevent lingering references
@@ -1060,7 +1118,7 @@ pub async fn stop_recording<R: Runtime>(
 
     // Set recording flag to false
     info!("🔍 Setting IS_RECORDING to false");
-    IS_RECORDING.store(false, Ordering::SeqCst);
+    release_recording_claim();
     // Hide the floating pill before emitting `recording-stopped` so the webview
     // does not flash a teardown frame as it unmounts.
     crate::pill_window::hide(&app);
@@ -1085,27 +1143,59 @@ pub async fn stop_recording<R: Runtime>(
         "recording-shutdown-progress",
         serde_json::json!({
             "stage": "complete",
-            "message": "Recording stopped successfully",
+            "message": if stream_stop_error.is_some() {
+                "Recording stopped with stream errors (best-effort save)"
+            } else {
+                "Recording stopped successfully"
+            },
             "progress": 100
         }),
     );
 
-    // Emit final stop event with folder_path and meeting_name for frontend to save
+    // Always emit stop so the frontend can save, even when stream stop failed.
+    // Soft stream failures are carried only on the event payload.
     app.emit(
         "recording-stopped",
         serde_json::json!({
             "message": "Recording stopped - frontend will save after all transcripts received",
             "folder_path": folder_path_str,
-            "meeting_name": meeting_name_str
+            "meeting_name": meeting_name_str,
+            "stream_stop_error": stream_stop_error.as_ref().map(|e| e.to_string()),
         }),
     )
     .map_err(|e| e.to_string())?;
+    let recording_stopped_emitted = true;
 
     // Update tray menu to reflect stopped state
     crate::tray::update_tray_menu(&app);
 
-    info!("🎉 Recording stopped successfully with ZERO transcript chunks lost");
-    Ok(())
+    if let Some(e) = stream_stop_error {
+        warn!(
+            "Recording stopped with stream error after best-effort save (returning Ok so frontend can persist): {}",
+            e
+        );
+    } else {
+        info!("🎉 Recording stopped successfully with ZERO transcript chunks lost");
+    }
+
+    // Every stop entry point (UI pill/bar, tray, RecordingControls) gates the
+    // SQLite save pipeline on invoke success. After recording-stopped is
+    // emitted, always report Ok — stream soft-failures must not skip save.
+    if stop_invoke_succeeds_after_best_effort(recording_stopped_emitted) {
+        Ok(())
+    } else {
+        Err("Failed to emit recording-stopped".to_string())
+    }
+}
+
+/// Whether the stop invoke should report success after the best-effort save
+/// path. Once `recording-stopped` has been emitted, the answer is always yes —
+/// stream soft-failures must not surface as invoke `Err` or the frontend/tray
+/// skip the SQLite save pipeline.
+pub(crate) fn stop_invoke_succeeds_after_best_effort(
+    recording_stopped_emitted: bool,
+) -> bool {
+    recording_stopped_emitted
 }
 
 /// Pause the current recording
@@ -1233,5 +1323,60 @@ mod tests {
         assert!(!can_start(true, false)); // this mode already active
         assert!(!can_start(false, true)); // the other mode active
         assert!(!can_start(true, true));
+    }
+
+    /// Serialize claim tests: they mutate process-wide statics.
+    static CLAIM_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn try_claim_recording_is_exclusive() {
+        let _lock = CLAIM_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // Ensure a clean slate (other tests may have touched the flags).
+        release_recording_claim();
+        release_dictation_claim();
+
+        assert!(try_claim_recording().is_ok());
+        assert!(is_recording_active());
+        // Second claim must fail while the first holds the slot.
+        let err = try_claim_recording().unwrap_err();
+        assert!(err.contains("already in progress"), "got: {err}");
+        release_recording_claim();
+        assert!(!is_recording_active());
+        // After release, claim works again.
+        assert!(try_claim_recording().is_ok());
+        release_recording_claim();
+    }
+
+    #[test]
+    fn try_claim_recording_refuses_when_dictation_active() {
+        let _lock = CLAIM_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        release_recording_claim();
+        release_dictation_claim();
+        assert!(try_claim_dictation().is_ok());
+        let err = try_claim_recording().unwrap_err();
+        assert!(err.contains("dictation"), "got: {err}");
+        release_dictation_claim();
+    }
+
+    #[test]
+    fn try_claim_dictation_is_exclusive_and_blocks_recording() {
+        let _lock = CLAIM_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        release_recording_claim();
+        release_dictation_claim();
+        assert!(try_claim_dictation().is_ok());
+        assert!(try_claim_dictation().is_err());
+        assert!(try_claim_recording().is_err());
+        release_dictation_claim();
+        assert!(try_claim_recording().is_ok());
+        assert!(try_claim_dictation().is_err());
+        release_recording_claim();
+    }
+
+    #[test]
+    fn stop_invoke_succeeds_when_recording_stopped_was_emitted() {
+        // After best-effort save + emit, invoke must be Ok so UI/tray save runs
+        // even if streams failed soft. Stream error is event-only.
+        assert!(stop_invoke_succeeds_after_best_effort(true));
+        assert!(!stop_invoke_succeeds_after_best_effort(false));
     }
 }

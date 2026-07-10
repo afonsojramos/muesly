@@ -12,7 +12,7 @@ use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::audio::audio_processing::resample;
 use crate::audio::recording_commands::{
-    can_start, is_dictation_active, is_recording_active, set_dictation_active,
+    release_dictation_claim, try_claim_dictation,
 };
 use crate::database::repositories::dictation_preset::{
     DictationCleanupPreset, DictationCleanupPresetsRepository,
@@ -33,12 +33,15 @@ static DICTATION_CAPTURE: Mutex<Option<DictationCapture>> = Mutex::new(None);
 #[tauri::command]
 #[specta::specta]
 pub async fn start_dictation() -> Result<(), String> {
-    if !can_start(is_dictation_active(), is_recording_active()) {
-        return Err("Cannot start dictation while recording or already dictating".to_string());
-    }
-    let capture = DictationCapture::start().map_err(|e| format!("start dictation capture: {e}"))?;
+    try_claim_dictation()?;
+    let capture = match DictationCapture::start() {
+        Ok(c) => c,
+        Err(e) => {
+            release_dictation_claim();
+            return Err(format!("start dictation capture: {e}"));
+        }
+    };
     *DICTATION_CAPTURE.lock().unwrap_or_else(|e| e.into_inner()) = Some(capture);
-    set_dictation_active(true);
     Ok(())
 }
 
@@ -50,7 +53,7 @@ pub async fn stop_dictation<R: Runtime>(app: AppHandle<R>) -> Result<String, Str
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take();
-    set_dictation_active(false);
+    release_dictation_claim();
     let capture = capture.ok_or_else(|| "no dictation in progress".to_string())?;
 
     let (samples, sample_rate) = capture
