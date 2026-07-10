@@ -50,11 +50,25 @@
 		value?: string;
 		editable?: boolean;
 		class?: string;
+		/**
+		 * Visual role of the document. `ai` uses muted foreground (Granola-style
+		 * dual-color: AI gray, user notes default/black).
+		 */
+		tone?: 'user' | 'ai';
 		/** Fires on every edit with the current markdown. */
 		onChange?: (markdown: string) => void;
+		/** Optional: click a `[mm:ss]` timestamp to jump to the transcript. */
+		onTimestampClick?: (seconds: number) => void;
 	}
 
-	let { value = '', editable = true, class: className, onChange }: Props = $props();
+	let {
+		value = '',
+		editable = true,
+		class: className,
+		tone = 'user',
+		onChange,
+		onTimestampClick,
+	}: Props = $props();
 
 	// The TipTap Editor is a mutable, non-reactive object — keep it in a plain
 	// variable (never $state) so its ProseMirror internals aren't proxied.
@@ -75,8 +89,30 @@
 		if (!editor) return;
 		lastValueProp = markdown;
 		isProgrammatic = true;
+		// Store plain markdown; timestamp tokens stay as `[mm:ss]` text (decorated
+		// for clicks). Avoid HTML spans TipTap would strip.
 		editor.commands.setContent(markdown, { contentType: 'markdown' });
 		isProgrammatic = false;
+	}
+
+	/** Click handler: if the user clicked a `[mm:ss]` token, jump. */
+	function handleProseClick(view: { posAtCoords: (c: { left: number; top: number }) => { pos: number } | null; state: { doc: { textBetween: (a: number, b: number) => string } } }, event: MouseEvent): boolean {
+		if (!onTimestampClick) return false;
+		const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
+		if (!coords) return false;
+		const { pos } = coords;
+		// Expand a small window around the click to capture [mm:ss].
+		const from = Math.max(0, pos - 8);
+		const to = pos + 8;
+		const around = view.state.doc.textBetween(from, to);
+		const m = around.match(/\[(\d{1,2}):(\d{2})\]/);
+		if (!m) return false;
+		const seconds = Number(m[1]) * 60 + Number(m[2]);
+		if (Number.isFinite(seconds)) {
+			onTimestampClick(seconds);
+			return true;
+		}
+		return false;
 	}
 
 	onMount(() => {
@@ -89,6 +125,9 @@
 			contentType: 'markdown',
 			onUpdate: ({ editor: ed }) => {
 				if (!isProgrammatic) onChange?.(ed.getMarkdown());
+			},
+			editorProps: {
+				handleClick: (view, _pos, event) => handleProseClick(view, event),
 			},
 		});
 		lastValueProp = value;
@@ -129,7 +168,21 @@
 	}
 </script>
 
-<div bind:this={element} class={cn('tiptap-prose', className)}></div>
+<div
+	bind:this={element}
+	class={cn('tiptap-prose', tone === 'ai' && 'tiptap-prose-ai', className)}
+	onclick={(e) => {
+		if (!onTimestampClick) return;
+		const t = e.target;
+		if (!(t instanceof HTMLElement)) return;
+		const link = t.closest('[data-transcript-ts]');
+		if (!(link instanceof HTMLElement)) return;
+		e.preventDefault();
+		const sec = Number(link.dataset.transcriptTs);
+		if (Number.isFinite(sec)) onTimestampClick(sec);
+	}}
+	role="presentation"
+></div>
 
 <style>
 	.tiptap-prose :global(.ProseMirror) {
@@ -139,6 +192,17 @@
 		color: var(--color-foreground);
 		/* Hide the native caret; the FixedCaret extension draws a text-sized one. */
 		caret-color: transparent;
+	}
+
+	/* AI-generated body: muted gray; user notes keep default foreground. */
+	.tiptap-prose-ai :global(.ProseMirror) {
+		color: var(--color-muted-foreground);
+	}
+	.tiptap-prose-ai :global(.ProseMirror strong),
+	.tiptap-prose-ai :global(.ProseMirror h1),
+	.tiptap-prose-ai :global(.ProseMirror h2),
+	.tiptap-prose-ai :global(.ProseMirror h3) {
+		color: var(--color-foreground);
 	}
 
 	/* Custom caret: a thin bar sized to the text (1.15em) and vertically centred on

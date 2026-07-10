@@ -5,6 +5,7 @@
 
 	import type { Summary, SummaryDataResponse } from '$lib/types';
 	import { summaryToMarkdown } from '$lib/utils/summary-markdown';
+	// Timestamps stay as plain `[mm:ss]` text; Editor click-handler jumps.
 	import { saveStatus } from '$lib/stores/save-status.svelte';
 	import { debounce } from '$lib/utils/debounce';
 	import { toast } from '$lib/toast';
@@ -26,9 +27,18 @@
 		editable?: boolean;
 		/** Markdown is the canonical persisted shape; we only ever emit markdown. */
 		onSave?: (data: { markdown: string }) => void | Promise<void>;
+		/** Jump to a transcript moment when a `[mm:ss]`-style link is activated. */
+		onTimestampClick?: (seconds: number) => void;
 	}
 
-	let { summaryData, status = 'idle', error = null, editable = true, onSave }: Props = $props();
+	let {
+		summaryData,
+		status = 'idle',
+		error = null,
+		editable = true,
+		onSave,
+		onTimestampClick,
+	}: Props = $props();
 
 	const incomingMarkdown = $derived(summaryToMarkdown(summaryData));
 	// `savedMarkdown` is the single clean baseline; `currentMarkdown` is the
@@ -118,5 +128,11 @@
 		<Alert.Description>Try generating a new summary.</Alert.Description>
 	</Alert.Root>
 {:else}
-	<Editor value={incomingMarkdown} {editable} onChange={handleChange} />
+	<Editor
+		value={incomingMarkdown}
+		{editable}
+		tone="ai"
+		onChange={handleChange}
+		{onTimestampClick}
+	/>
 {/if}

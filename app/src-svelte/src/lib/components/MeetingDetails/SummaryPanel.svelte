@@ -32,6 +32,7 @@
 		onTemplateSelect: (templateId: string, templateName: string) => void;
 		isModelConfigLoading?: boolean;
 		onOpenModelSettings?: (openFn: () => void) => void;
+		onTimestampClick?: (seconds: number) => void;
 	}
 
 	let {
@@ -54,6 +55,7 @@
 		onTemplateSelect,
 		isModelConfigLoading = false,
 		onOpenModelSettings,
+		onTimestampClick,
 	}: Props = $props();
 
 	let summaryView = $state<ReturnType<typeof SummaryView>>();
@@ -160,6 +162,7 @@
 					error={summaryError}
 					editable={true}
 					onSave={onSaveSummary}
+					{onTimestampClick}
 				/>
 				{#if summaryError}
 					<div class="mt-4">
