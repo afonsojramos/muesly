@@ -407,6 +407,18 @@ impl AudioCapture {
             data.to_vec()
         };
 
+        // System path only: CoreAudio process taps often see post-volume output,
+        // so quiet speaker levels starve VAD/transcription. Boost toward a usable
+        // peak without inventing signal from silence (see compensate_system_audio_level).
+        if matches!(self.device_type, DeviceType::System) {
+            mono_data = super::audio_processing::compensate_system_audio_level(
+                &mono_data,
+                super::audio_processing::SYSTEM_AUDIO_TARGET_PEAK,
+                super::audio_processing::SYSTEM_AUDIO_MAX_GAIN,
+                super::audio_processing::SYSTEM_AUDIO_SILENCE_FLOOR,
+            );
+        }
+
         // CRITICAL FIX: Resample to 48kHz if device uses different sample rate
         // This fixes Bluetooth devices (like Sony WH-1000XM4) that report 16kHz or 44.1kHz
         // Without this, audio is sped up 3x and VAD fails
@@ -603,8 +615,8 @@ impl AudioCapture {
             .chunk_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-        // RAW AUDIO: No gain applied here - will be applied AFTER mixing
-        // This prevents amplifying system audio bleed-through in the microphone
+        // Mic remains raw here (gain after mix). System already received
+        // peak compensation above when DeviceType::System.
 
         // DIAGNOSTIC: Log audio levels for debugging (especially mic issues)
         // if chunk_id % 100 == 0 && !mono_data.is_empty() {

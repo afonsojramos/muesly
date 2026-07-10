@@ -755,3 +755,93 @@ pub fn write_transcript_json_to_file(
 
     Ok(file_path.to_string_lossy().to_string())
 }
+
+/// Peak absolute sample in a buffer.
+pub fn peak_abs(samples: &[f32]) -> f32 {
+    samples.iter().map(|x| x.abs()).fold(0.0f32, f32::max)
+}
+
+/// RMS of a buffer.
+pub fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    (samples.iter().map(|&x| x * x).sum::<f32>() / samples.len() as f32).sqrt()
+}
+
+/// Boost quiet system-audio captures (e.g. post-volume CoreAudio taps) toward a
+/// usable speech level without clipping. Pure and unit-tested.
+///
+/// - Silent / near-silent (`peak < floor`) is left alone (don't invent noise).
+/// - If peak is below `target_peak`, scale by `min(max_gain, target_peak / peak)`.
+/// - Samples are hard-capped to ±1.0 after scaling.
+pub fn compensate_system_audio_level(
+    samples: &[f32],
+    target_peak: f32,
+    max_gain: f32,
+    silence_floor: f32,
+) -> Vec<f32> {
+    let peak = peak_abs(samples);
+    if peak < silence_floor || peak <= 0.0 {
+        return samples.to_vec();
+    }
+    let gain = (target_peak / peak).min(max_gain).max(1.0);
+    if (gain - 1.0).abs() < 1e-3 {
+        return samples.to_vec();
+    }
+    samples
+        .iter()
+        .map(|&s| (s * gain).clamp(-1.0, 1.0))
+        .collect()
+}
+
+/// Defaults tuned for quiet meeting-output taps: aim for ~0.25 peak, never more
+/// than 12× boost, ignore near-zero buffers.
+pub const SYSTEM_AUDIO_TARGET_PEAK: f32 = 0.25;
+pub const SYSTEM_AUDIO_MAX_GAIN: f32 = 12.0;
+pub const SYSTEM_AUDIO_SILENCE_FLOOR: f32 = 1e-5;
+
+#[cfg(test)]
+mod system_audio_level_tests {
+    use super::*;
+
+    #[test]
+    fn leaves_silent_alone() {
+        let s = vec![0.0f32; 64];
+        let out = compensate_system_audio_level(
+            &s,
+            SYSTEM_AUDIO_TARGET_PEAK,
+            SYSTEM_AUDIO_MAX_GAIN,
+            SYSTEM_AUDIO_SILENCE_FLOOR,
+        );
+        assert_eq!(out, s);
+    }
+
+    #[test]
+    fn boosts_quiet_speech() {
+        // Peak 0.02 ≈ volume turned way down.
+        let s: Vec<f32> = (0..100).map(|i| if i % 2 == 0 { 0.02 } else { -0.02 }).collect();
+        let out = compensate_system_audio_level(
+            &s,
+            SYSTEM_AUDIO_TARGET_PEAK,
+            SYSTEM_AUDIO_MAX_GAIN,
+            SYSTEM_AUDIO_SILENCE_FLOOR,
+        );
+        let peak = peak_abs(&out);
+        assert!(peak > 0.15, "expected boost toward target, peak={peak}");
+        assert!(peak <= 1.0);
+    }
+
+    #[test]
+    fn does_not_amplify_already_loud() {
+        let s = vec![0.5f32, -0.5, 0.4, -0.4];
+        let out = compensate_system_audio_level(
+            &s,
+            SYSTEM_AUDIO_TARGET_PEAK,
+            SYSTEM_AUDIO_MAX_GAIN,
+            SYSTEM_AUDIO_SILENCE_FLOOR,
+        );
+        // gain would be < 1 so we leave at 1.0 (no attenuation).
+        assert_eq!(peak_abs(&out), peak_abs(&s));
+    }
+}
