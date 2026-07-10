@@ -32,6 +32,12 @@ pub struct SidecarManager {
     /// Stdout reader for receiving responses
     stdout_reader: Arc<Mutex<Option<BufReader<ChildStdout>>>>,
 
+    /// Serializes whole request/response exchanges on the sidecar's stdio. The
+    /// stdin and stdout locks alone are per-half, so without this a second
+    /// caller could interleave its request between another caller's write and
+    /// read and the two would swap responses.
+    exchange_lock: Arc<Mutex<()>>,
+
     /// Last activity timestamp
     last_activity: Arc<RwLock<Instant>>,
 
@@ -94,6 +100,7 @@ impl SidecarManager {
             child_process: Arc::new(Mutex::new(None)),
             stdin_writer: Arc::new(Mutex::new(None)),
             stdout_reader: Arc::new(Mutex::new(None)),
+            exchange_lock: Arc::new(Mutex::new(())),
             last_activity: Arc::new(RwLock::new(Instant::now())),
             is_healthy: Arc::new(AtomicBool::new(false)),
             should_shutdown: Arc::new(AtomicBool::new(false)),
@@ -357,6 +364,10 @@ impl SidecarManager {
         // Track active request
         let _guard = RequestGuard::new(self.active_request_count.clone());
 
+        // One exchange at a time: hold from write through read so concurrent
+        // callers can't swap responses.
+        let _exchange = self.exchange_lock.lock().await;
+
         // Write request to stdin
         {
             let mut stdin_lock = self.stdin_writer.lock().await;
@@ -416,6 +427,10 @@ impl SidecarManager {
     ) -> Result<String> {
         // Track active request (keeps the ping loop quiet while we stream).
         let _guard = RequestGuard::new(self.active_request_count.clone());
+
+        // One exchange at a time: hold from write through the whole stream so
+        // concurrent callers can't interleave into it.
+        let _exchange = self.exchange_lock.lock().await;
 
         // Write request to stdin
         {
@@ -674,6 +689,7 @@ impl SidecarManager {
             child_process: self.child_process.clone(),
             stdin_writer: self.stdin_writer.clone(),
             stdout_reader: self.stdout_reader.clone(),
+            exchange_lock: self.exchange_lock.clone(),
             last_activity: self.last_activity.clone(),
             is_healthy: self.is_healthy.clone(),
             should_shutdown: self.should_shutdown.clone(),
@@ -722,6 +738,7 @@ impl SidecarManager {
             child_process: self.child_process.clone(),
             stdin_writer: self.stdin_writer.clone(),
             stdout_reader: self.stdout_reader.clone(),
+            exchange_lock: self.exchange_lock.clone(),
             last_activity: self.last_activity.clone(),
             is_healthy: self.is_healthy.clone(),
             should_shutdown: self.should_shutdown.clone(),
@@ -857,6 +874,55 @@ done
         assert_eq!(lines.len(), 2, "expected two token lines, got {lines:?}");
         assert!(lines[0].contains("Hello") && lines[1].contains("world"));
         assert!(terminal.contains(r#""text":"Hello world!""#));
+
+        manager.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn concurrent_exchanges_cannot_swap_responses() {
+        // Request A's answer is delayed, so without the exchange lock request
+        // B's read would win the stdout lock and steal answer-A.
+        let manager = std::sync::Arc::new(manager_with_fake(
+            "fake-concurrent.sh",
+            r#"#!/bin/bash
+while IFS= read -r line; do
+  case "$line" in
+    *'"prompt":"A"'*) sleep 0.1; echo '{"type":"response","text":"answer-A","error":null}' ;;
+    *'"prompt":"B"'*) echo '{"type":"response","text":"answer-B","error":null}' ;;
+    *'"shutdown"'*) echo '{"type":"goodbye"}'; exit 0 ;;
+  esac
+done
+"#,
+        ));
+
+        manager
+            .ensure_running(PathBuf::from("/fake/model.gguf"))
+            .await
+            .unwrap();
+
+        let m1 = manager.clone();
+        let a = tokio::spawn(async move {
+            m1.send_request(
+                r#"{"type":"generate","prompt":"A"}"#.to_string(),
+                Duration::from_secs(5),
+            )
+            .await
+        });
+        // Let A write first, then race B against A's delayed response.
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        let m2 = manager.clone();
+        let b = tokio::spawn(async move {
+            m2.send_request(
+                r#"{"type":"generate","prompt":"B"}"#.to_string(),
+                Duration::from_secs(5),
+            )
+            .await
+        });
+
+        let response_a = a.await.unwrap().unwrap();
+        let response_b = b.await.unwrap().unwrap();
+        assert!(response_a.contains("answer-A"), "A got: {response_a}");
+        assert!(response_b.contains("answer-B"), "B got: {response_b}");
 
         manager.shutdown().await.unwrap();
     }
