@@ -165,17 +165,62 @@ pub async fn diarize_meeting<R: Runtime>(
     // Only the `system` (remote) side is clustered; the mic side is always the
     // local user and is cleared so it can never be shown as a remote "Speaker N".
     let assignments = assign_speaker_ids(&segments, &turns);
+    let remote_names = remote_attendee_names(pool, &meeting_id).await?;
+    let labeled = apply_diarization(pool, &meeting_id, &assignments, &remote_names).await?;
 
-    // Drop prior names FIRST: cluster numbering is not stable across runs, so if
-    // the reassignment loop below fails partway a stale name must never remain
-    // paired with a freshly-numbered cluster (a swapped-identity display).
-    SpeakerNamesRepository::clear_for_meeting(pool, &meeting_id)
+    // Let any open transcript view refresh instead of waiting for a reopen.
+    let _ = app.emit(
+        "diarization-complete",
+        serde_json::json!({ "meeting_id": meeting_id }),
+    );
+
+    Ok(labeled)
+}
+
+/// The meeting's remote (non-self) attendee display names, from the persisted
+/// calendar snapshot. Empty when there is no snapshot.
+async fn remote_attendee_names(
+    pool: &SqlitePool,
+    meeting_id: &str,
+) -> Result<Vec<String>, String> {
+    let Some(event) = CalendarEventsRepository::get(pool, meeting_id)
+        .await
+        .map_err(|e| format!("load calendar event: {e}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    Ok(context::snapshot_attendees(&event)
+        .into_iter()
+        .filter(|a| !a.is_self)
+        .filter_map(|a| a.name)
+        .filter(|n| !n.trim().is_empty())
+        .collect())
+}
+
+/// Persist a diarization run atomically: clear prior names (cluster numbering is
+/// not stable across runs), write every segment's new `speaker_id`, and
+/// conservatively auto-name the single unambiguous cluster. One transaction, so
+/// a failure can never leave new cluster ids paired with stale names (a
+/// swapped-identity display) or a half-relabeled transcript. Returns the number
+/// of system segments that received a cluster.
+async fn apply_diarization(
+    pool: &SqlitePool,
+    meeting_id: &str,
+    assignments: &[(String, Option<i64>)],
+    remote_names: &[String],
+) -> Result<u32, String> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| format!("begin diarization transaction: {e}"))?;
+
+    SpeakerNamesRepository::clear_for_meeting(&mut *tx, meeting_id)
         .await
         .map_err(|e| format!("clear speaker names: {e}"))?;
 
     let mut labeled = 0u32;
-    for (id, speaker_id) in &assignments {
-        TranscriptsRepository::set_segment_speaker_id(pool, id, *speaker_id)
+    for (id, speaker_id) in assignments {
+        TranscriptsRepository::set_segment_speaker_id(&mut *tx, id, *speaker_id)
             .await
             .map_err(|e| format!("persist speaker_id: {e}"))?;
         if speaker_id.is_some() {
@@ -183,41 +228,19 @@ pub async fn diarize_meeting<R: Runtime>(
         }
     }
 
-    // Conservatively auto-name the single unambiguous case.
     let mut cluster_ids: Vec<i64> = assignments.iter().filter_map(|(_, s)| *s).collect();
     cluster_ids.sort_unstable();
     cluster_ids.dedup();
-    auto_fill_speaker_names(pool, &meeting_id, &cluster_ids).await?;
-
-    Ok(labeled)
-}
-
-/// Conservatively name clusters when the mapping is unambiguous: exactly one
-/// remote (non-self) attendee and exactly one diarized cluster. Best-effort; a
-/// missing calendar snapshot simply yields no auto-fill.
-async fn auto_fill_speaker_names(
-    pool: &SqlitePool,
-    meeting_id: &str,
-    cluster_ids: &[i64],
-) -> Result<(), String> {
-    let Some(event) = CalendarEventsRepository::get(pool, meeting_id)
-        .await
-        .map_err(|e| format!("load calendar event: {e}"))?
-    else {
-        return Ok(());
-    };
-    let remote_names: Vec<String> = context::snapshot_attendees(&event)
-        .into_iter()
-        .filter(|a| !a.is_self)
-        .filter_map(|a| a.name)
-        .filter(|n| !n.trim().is_empty())
-        .collect();
-    if let Some((cluster, name)) = auto_fill_assignment(&remote_names, cluster_ids) {
-        SpeakerNamesRepository::upsert(pool, meeting_id, cluster, &name)
+    if let Some((cluster, name)) = auto_fill_assignment(remote_names, &cluster_ids) {
+        SpeakerNamesRepository::upsert(&mut *tx, meeting_id, cluster, &name)
             .await
             .map_err(|e| format!("auto-fill speaker name: {e}"))?;
     }
-    Ok(())
+
+    tx.commit()
+        .await
+        .map_err(|e| format!("commit diarization transaction: {e}"))?;
+    Ok(labeled)
 }
 
 /// The single auto-fill assignment, only when the case is unambiguous: exactly
@@ -595,9 +618,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn auto_fill_names_the_single_remote_cluster() {
+    async fn apply_diarization_labels_segments_and_auto_fills_the_single_remote() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
+        insert_segment(&pool, "m1", "t-sys", "system", None).await;
         insert_event(
             &pool,
             "m1",
@@ -605,36 +629,59 @@ mod tests {
         )
         .await;
 
-        auto_fill_speaker_names(&pool, "m1", &[0]).await.expect("auto-fill");
+        let remote = remote_attendee_names(&pool, "m1").await.expect("attendees");
+        assert_eq!(remote, vec!["Bruno".to_string()], "self is excluded");
 
+        let assignments = vec![("t-sys".to_string(), Some(0i64))];
+        let labeled = apply_diarization(&pool, "m1", &assignments, &remote)
+            .await
+            .expect("apply");
+        assert_eq!(labeled, 1);
+
+        // The segment carries the cluster and the cluster carries the name.
+        let sid: Option<i64> = sqlx::query_scalar("SELECT speaker_id FROM transcripts WHERE id = ?")
+            .bind("t-sys")
+            .fetch_one(&pool)
+            .await
+            .expect("segment");
+        assert_eq!(sid, Some(0));
         let names = SpeakerNamesRepository::get_for_meeting(&pool, "m1")
             .await
             .expect("get");
         assert_eq!(names.len(), 1);
-        assert_eq!(names[0].speaker_id, 0);
         assert_eq!(names[0].name, "Bruno");
     }
 
     #[tokio::test]
-    async fn auto_fill_declines_ambiguous_and_no_event() {
+    async fn apply_diarization_clears_stale_names_and_declines_ambiguity() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        // Two remote attendees, one cluster -> ambiguous, no name.
-        insert_event(
-            &pool,
-            "m1",
-            r#"[{"name":"Bruno","status":"accepted","is_self":false},{"name":"Carla","status":"accepted","is_self":false}]"#,
-        )
-        .await;
-        auto_fill_speaker_names(&pool, "m1", &[0]).await.expect("auto-fill");
-        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "m1")
+        insert_segment(&pool, "m1", "t-sys", "system", None).await;
+        // A name from a previous run must not survive re-diarization.
+        SpeakerNamesRepository::upsert(&pool, "m1", 5, "Old Name")
             .await
-            .expect("get")
-            .is_empty());
+            .expect("stale name");
 
-        // No calendar event -> early return, no name.
+        // Two remote names + one cluster -> ambiguous, no auto-fill.
+        let remote = vec!["Bruno".to_string(), "Carla".to_string()];
+        apply_diarization(&pool, "m1", &[("t-sys".to_string(), Some(0))], &remote)
+            .await
+            .expect("apply");
+        assert!(
+            SpeakerNamesRepository::get_for_meeting(&pool, "m1")
+                .await
+                .expect("get")
+                .is_empty(),
+            "stale names cleared, no guess made"
+        );
+
+        // No attendees at all (e.g. no calendar event) -> still no name, no error.
         insert_meeting(&pool, "m2").await;
-        auto_fill_speaker_names(&pool, "m2", &[0]).await.expect("auto-fill");
+        let none = remote_attendee_names(&pool, "m2").await.expect("attendees");
+        assert!(none.is_empty());
+        apply_diarization(&pool, "m2", &[("missing".to_string(), Some(0))], &none)
+            .await
+            .expect("apply");
         assert!(SpeakerNamesRepository::get_for_meeting(&pool, "m2")
             .await
             .expect("get")

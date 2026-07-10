@@ -25,13 +25,17 @@ impl SpeakerNamesRepository {
         .await
     }
 
-    /// Assign (or rename) the name for a cluster within a meeting.
-    pub async fn upsert(
-        pool: &SqlitePool,
+    /// Assign (or rename) the name for a cluster within a meeting. Generic over
+    /// the executor so it can run standalone or inside a transaction.
+    pub async fn upsert<'e, E>(
+        executor: E,
         meeting_id: &str,
         speaker_id: i64,
         name: &str,
-    ) -> Result<(), sqlx::Error> {
+    ) -> Result<(), sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
         sqlx::query(
             "INSERT INTO speaker_names (meeting_id, speaker_id, name) VALUES (?, ?, ?) \
              ON CONFLICT(meeting_id, speaker_id) DO UPDATE SET name = excluded.name",
@@ -39,19 +43,20 @@ impl SpeakerNamesRepository {
         .bind(meeting_id)
         .bind(speaker_id)
         .bind(name)
-        .execute(pool)
+        .execute(executor)
         .await?;
         Ok(())
     }
 
     /// Drop every name for a meeting (used before a fresh diarization run).
-    pub async fn clear_for_meeting(
-        pool: &SqlitePool,
-        meeting_id: &str,
-    ) -> Result<(), sqlx::Error> {
+    /// Generic over the executor so it can run inside a transaction.
+    pub async fn clear_for_meeting<'e, E>(executor: E, meeting_id: &str) -> Result<(), sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
         sqlx::query("DELETE FROM speaker_names WHERE meeting_id = ?")
             .bind(meeting_id)
-            .execute(pool)
+            .execute(executor)
             .await?;
         Ok(())
     }

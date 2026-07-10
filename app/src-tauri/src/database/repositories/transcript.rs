@@ -48,16 +48,20 @@ impl TranscriptsRepository {
     }
 
     /// Assign (or clear, with `None`) the diarized speaker cluster for a
-    /// transcript segment.
-    pub async fn set_segment_speaker_id(
-        pool: &SqlitePool,
+    /// transcript segment. Generic over the executor so it can run inside a
+    /// transaction.
+    pub async fn set_segment_speaker_id<'e, E>(
+        executor: E,
         transcript_id: &str,
         speaker_id: Option<i64>,
-    ) -> Result<(), SqlxError> {
+    ) -> Result<(), SqlxError>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
         sqlx::query("UPDATE transcripts SET speaker_id = ? WHERE id = ?")
             .bind(speaker_id)
             .bind(transcript_id)
-            .execute(pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
