@@ -66,6 +66,29 @@ async fn claim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) -> boo
     }
 }
 
+/// Drop a fire claim so a later tick can retry. Used when auto-start fails
+/// transiently (model still downloading, mic busy) so the occurrence is not
+/// permanently skipped within `MAX_STALE_MINUTES`.
+async fn unclaim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) {
+    if let Err(e) = sqlx::query(
+        "DELETE FROM scheduler_fired WHERE ical_uid = ? AND occurrence_minute = ?",
+    )
+    .bind(ical_uid)
+    .bind(minute)
+    .execute(pool)
+    .await
+    {
+        log::warn!("scheduler unclaim_fire failed: {e}");
+    }
+}
+
+/// Pure helper for tests: whether a failed start should release the fire claim.
+/// Capture-already-active is a permanent claim (we intentionally skip); hard
+/// start failure is not.
+pub fn should_unclaim_on_start_failure(start_failed: bool, capture_already_active: bool) -> bool {
+    start_failed && !capture_already_active
+}
+
 /// Drop fire markers older than ~30 days so the table doesn't grow unbounded.
 async fn prune_old_fired(pool: &sqlx::SqlitePool) {
     let cutoff = Utc::now() - Duration::days(30);
@@ -184,7 +207,14 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
                             }
                         }
                     }
-                    Err(e) => log::warn!("scheduler auto-start failed: {e}"),
+                    Err(e) => {
+                        // Transient start failure (model loading, mic unavailable):
+                        // release the claim so a later tick within MAX_STALE can retry.
+                        log::warn!("scheduler auto-start failed: {e}");
+                        if should_unclaim_on_start_failure(true, false) {
+                            unclaim_fire(&pool, &uid, minute).await;
+                        }
+                    }
                 }
             }
         }
@@ -208,5 +238,48 @@ mod tests {
         assert!(should_fire(at(10, 8), start, end, stale)); // just started
         assert!(!should_fire(at(10, 30), start, end, stale)); // ongoing but stale
         assert!(!should_fire(at(11, 1), start, end, stale)); // ended
+    }
+
+    #[test]
+    fn unclaim_policy_for_start_failure() {
+        // Hard start failure → release claim so a later tick can retry.
+        assert!(should_unclaim_on_start_failure(true, false));
+        // Capture already active: claim stays (intentional skip).
+        assert!(!should_unclaim_on_start_failure(true, true));
+        // Success: never unclaim.
+        assert!(!should_unclaim_on_start_failure(false, false));
+    }
+
+    async fn test_pool() -> sqlx::SqlitePool {
+        use sqlx::sqlite::SqlitePoolOptions;
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::query(
+            "CREATE TABLE scheduler_fired (
+                ical_uid TEXT NOT NULL,
+                occurrence_minute INTEGER NOT NULL,
+                fired_at TEXT NOT NULL,
+                PRIMARY KEY (ical_uid, occurrence_minute)
+            )",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn claim_fire_is_once_and_unclaim_allows_retry() {
+        let pool = test_pool().await;
+        assert!(claim_fire(&pool, "uid-1", 100).await);
+        assert!(!claim_fire(&pool, "uid-1", 100).await, "second claim must fail");
+        unclaim_fire(&pool, "uid-1", 100).await;
+        assert!(
+            claim_fire(&pool, "uid-1", 100).await,
+            "after unclaim the occurrence can fire again"
+        );
     }
 }
