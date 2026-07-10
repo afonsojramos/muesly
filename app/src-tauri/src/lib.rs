@@ -874,6 +874,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         providers::xai::get_xai_models,
         api::api_get_meetings::<tauri::Wry>,
         api::api_search_transcripts::<tauri::Wry>,
+        api::api_list_people::<tauri::Wry>,
+        api::api_nl_search_meetings::<tauri::Wry>,
         api::api_get_model_config::<tauri::Wry>,
         api::api_save_model_config::<tauri::Wry>,
         api::api_get_api_key::<tauri::Wry>,

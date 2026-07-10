@@ -14,6 +14,7 @@
 		Settings,
 		Trash2,
 		Upload,
+		Users,
 	} from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
@@ -517,6 +518,20 @@
 					>
 						<Upload class="size-4" />
 						<span>Import audio</span>
+					</button>
+
+					<button
+						type="button"
+						onclick={() => goto('/people')}
+						class={cn(
+							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+							pathname === '/people'
+								? 'bg-secondary font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+						)}
+					>
+						<Users class="size-4" />
+						<span>People</span>
 					</button>
 
 					<button

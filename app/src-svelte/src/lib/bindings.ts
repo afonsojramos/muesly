@@ -217,6 +217,8 @@ export const commands = {
 	getXaiModels: (apiKey: string | null) => typedError<XaiModel[], string>(__TAURI_INVOKE("get_xai_models", { apiKey })),
 	apiGetMeetings: (authToken: string | null, page: number | null, pageSize: number | null) => typedError<Meeting_Serialize[], string>(__TAURI_INVOKE("api_get_meetings", { authToken, page, pageSize })),
 	apiSearchTranscripts: (query: string, authToken: string | null) => typedError<TranscriptSearchResult[], string>(__TAURI_INVOKE("api_search_transcripts", { query, authToken })),
+	apiListPeople: () => typedError<PersonGroup[], string>(__TAURI_INVOKE("api_list_people")),
+	apiNlSearchMeetings: (query: string) => typedError<NlSearchResponse, string>(__TAURI_INVOKE("api_nl_search_meetings", { query })),
 	apiGetModelConfig: (authToken: string | null) => typedError<{
 	provider: string,
 	model: string,
@@ -1061,6 +1063,20 @@ export type ModelStatus = {
 	summary: string,
 };
 
+export type NlSearchHit = {
+	meeting_id: string,
+	title: string,
+	match_context: string,
+	timestamp: string,
+};
+
+export type NlSearchResponse = {
+	query: string,
+	hits: NlSearchHit[],
+	/**  Context block suitable for pasting into a chat/LLM follow-up. */
+	context_pack: string,
+};
+
 export type NotesResponse = NotesResponse_Serialize | NotesResponse_Deserialize;
 
 export type NotesResponse_Deserialize = {
@@ -1195,6 +1211,18 @@ export type ParakeetModelInfo = {
 	speed: string,
 	status: any,
 	description: string,
+};
+
+export type PersonGroup = {
+	name: string,
+	meeting_count: number,
+	meetings: PersonMeetingRef[],
+};
+
+export type PersonMeetingRef = {
+	meeting_id: string,
+	title: string,
+	created_at: string,
 };
 
 /**
