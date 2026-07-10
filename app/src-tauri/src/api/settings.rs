@@ -565,3 +565,26 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
         }
     }
 }
+
+/// Whether transcript cleanup runs before summarization (default off).
+#[tauri::command]
+#[specta::specta]
+pub async fn get_transcript_cleanup_enabled(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    SettingsRepository::get_transcript_cleanup_enabled(state.db_manager.pool())
+        .await
+        .map_err(|e| format!("read transcript cleanup setting: {e}"))
+}
+
+/// Enable or disable pre-summary transcript cleanup.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_transcript_cleanup_enabled(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    SettingsRepository::set_transcript_cleanup_enabled(state.db_manager.pool(), enabled)
+        .await
+        .map_err(|e| format!("save transcript cleanup setting: {e}"))
+}

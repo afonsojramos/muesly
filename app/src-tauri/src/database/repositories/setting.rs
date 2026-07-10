@@ -38,6 +38,30 @@ pub enum MigrationOutcome {
 // NOTE: Handle data exclusion in the higher layer as this is database abstraction layer(using SELECT *)
 
 impl SettingsRepository {
+    /// Whether to run an LLM cleanup pass on the transcript before summarizing.
+    /// Default off (extra latency / cost).
+    pub async fn get_transcript_cleanup_enabled(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT transcript_cleanup_enabled FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub async fn set_transcript_cleanup_enabled(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query("UPDATE settings SET transcript_cleanup_enabled = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
     /// Whether meeting auto-detection is enabled (single-row settings, id='1').
     pub async fn get_auto_detect_meetings(
         pool: &SqlitePool,

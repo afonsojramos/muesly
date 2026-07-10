@@ -877,6 +877,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         api::api_list_people::<tauri::Wry>,
         api::api_nl_search_meetings::<tauri::Wry>,
         api::api_get_model_config::<tauri::Wry>,
+        api::get_transcript_cleanup_enabled,
+        api::set_transcript_cleanup_enabled,
         api::api_save_model_config::<tauri::Wry>,
         api::api_get_api_key::<tauri::Wry>,
         api::api_get_transcript_config::<tauri::Wry>,

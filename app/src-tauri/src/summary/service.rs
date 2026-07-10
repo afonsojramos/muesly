@@ -523,17 +523,25 @@ impl SummaryService {
         // Get app data directory for BuiltInAI provider
         let app_data_dir = _app.path().app_data_dir().ok();
 
-        // Optional pre-summary cleanup (disfluencies/casing). Opt-in via env so
-        // default latency is unchanged; pure prompt builders live in cleanup.rs.
+        // Optional pre-summary cleanup (disfluencies/casing). Controlled by the
+        // `transcript_cleanup_enabled` setting (default off — extra LLM call).
+        // Env `MUESLY_TRANSCRIPT_CLEANUP=1` still forces on for CI/dev overrides.
         let mut text = text;
-        if std::env::var("MUESLY_TRANSCRIPT_CLEANUP")
+        let cleanup_setting = SettingsRepository::get_transcript_cleanup_enabled(&pool)
+            .await
+            .unwrap_or(false);
+        let cleanup_env = std::env::var("MUESLY_TRANSCRIPT_CLEANUP")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
+            .unwrap_or(false);
+        if (cleanup_setting || cleanup_env)
             && crate::summary::cleanup::should_cleanup(&text, 200)
         {
-            info!("Running optional transcript cleanup before summary");
+            info!("Running transcript cleanup before summary");
             let sys = crate::summary::cleanup::cleanup_system_prompt().to_string();
             let user = crate::summary::cleanup::cleanup_user_prompt(&text);
+            // Cleanup must return ~full transcript; use a size-aware budget, not
+            // the summary default (4096), which truncates long meetings.
+            let cleanup_tokens = Some(crate::summary::cleanup::cleanup_max_tokens(&text));
             match crate::summary::llm_client::generate_summary(
                 &crate::providers::common::http_client(),
                 &provider,
@@ -543,7 +551,7 @@ impl SummaryService {
                 &user,
                 ollama_endpoint.as_deref(),
                 custom_openai_endpoint.as_deref(),
-                custom_openai_max_tokens,
+                cleanup_tokens.or(custom_openai_max_tokens),
                 custom_openai_temperature,
                 custom_openai_top_p,
                 app_data_dir.as_ref(),
@@ -551,11 +559,20 @@ impl SummaryService {
             )
             .await
             {
-                Ok(cleaned) if !cleaned.trim().is_empty() => {
+                Ok(cleaned)
+                    if crate::summary::cleanup::accept_cleaned_transcript(&text, &cleaned, 0.7) =>
+                {
                     text = cleaned;
                     info!("Transcript cleanup applied ({} chars)", text.len());
                 }
-                Ok(_) => warn!("Transcript cleanup returned empty; using original"),
+                Ok(cleaned) if cleaned.trim().is_empty() => {
+                    warn!("Transcript cleanup returned empty; using original")
+                }
+                Ok(cleaned) => warn!(
+                    "Transcript cleanup looked truncated ({} -> {} chars); using original",
+                    text.chars().count(),
+                    cleaned.chars().count()
+                ),
                 Err(e) => warn!("Transcript cleanup failed (using original): {}", e),
             }
         }

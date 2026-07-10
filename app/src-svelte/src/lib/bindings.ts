@@ -226,6 +226,10 @@ export const commands = {
 	apiKey: string | null,
 	ollamaEndpoint: string | null,
 } | null, string>(__TAURI_INVOKE("api_get_model_config", { authToken })),
+	/**  Whether transcript cleanup runs before summarization (default off). */
+	getTranscriptCleanupEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_transcript_cleanup_enabled")),
+	/**  Enable or disable pre-summary transcript cleanup. */
+	setTranscriptCleanupEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_transcript_cleanup_enabled", { enabled })),
 	apiSaveModelConfig: (provider: string, model: string, whisperModel: string, apiKey: string | null, ollamaEndpoint: string | null, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_save_model_config", { provider, model, whisperModel, apiKey, ollamaEndpoint, authToken })),
 	apiGetApiKey: (provider: string, authToken: string | null) => typedError<string, string>(__TAURI_INVOKE("api_get_api_key", { provider, authToken })),
 	apiGetTranscriptConfig: (authToken: string | null) => typedError<{
