@@ -6,6 +6,7 @@
 	import { commands } from '$lib/bindings';
 	import { toast } from '$lib/toast';
 	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	interface Props {
@@ -57,7 +58,23 @@
 		}
 	}
 
+	let confirmOpen = $state(false);
+
+	// Re-diarization clears assigned names (cluster numbering isn't stable across
+	// runs), so when names exist the run needs an explicit confirmation first.
 	async function identifySpeakers(): Promise<void> {
+		if (diarizing) return;
+		const speakers = await commands.getMeetingSpeakers(meetingId);
+		const hasAssignedNames =
+			speakers.status === 'ok' && speakers.data.speakers.some((s) => s.name != null);
+		if (hasAssignedNames) {
+			confirmOpen = true;
+			return;
+		}
+		await runDiarization();
+	}
+
+	async function runDiarization(): Promise<void> {
 		if (diarizing) return;
 		diarizing = true;
 		try {
@@ -125,3 +142,25 @@
 		</Tooltip.Provider>
 	{/if}
 {/if}
+
+<Dialog.Root bind:open={confirmOpen}>
+	<Dialog.Content class="sm:max-w-[420px]">
+		<Dialog.Title>Re-identify speakers?</Dialog.Title>
+		<Dialog.Description>
+			Speaker groups are rebuilt from scratch, so the names you assigned to speakers in this meeting
+			will be cleared.
+		</Dialog.Description>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (confirmOpen = false)}>Cancel</Button>
+			<Button
+				variant="accent"
+				onclick={() => {
+					confirmOpen = false;
+					void runDiarization();
+				}}
+			>
+				Re-identify
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
