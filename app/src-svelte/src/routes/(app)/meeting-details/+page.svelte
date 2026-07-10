@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { listen } from '@tauri-apps/api/event';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Loader } from '@lucide/svelte';
@@ -122,6 +123,27 @@
 	// Surface transcript loading errors.
 	$effect(() => {
 		if (paginated.error) error = paginated.error;
+	});
+
+	// Live-refresh when a diarization run (auto-run on stop, or the manual
+	// "Speakers" button) finishes for THIS meeting, so the new speaker labels
+	// appear without reopening the note.
+	$effect(() => {
+		const id = meetingId;
+		if (!id || isDevPreview) return;
+		let unlisten: (() => void) | undefined;
+		let disposed = false;
+		void listen<{ meeting_id: string }>('diarization-complete', (e) => {
+			if (e.payload?.meeting_id === id) void paginated.refetch();
+		}).then((fn) => {
+			// The effect can be cleaned up before listen() resolves; unlisten then.
+			if (disposed) fn();
+			else unlisten = fn;
+		});
+		return () => {
+			disposed = true;
+			unlisten?.();
+		};
 	});
 
 	async function checkForGemmaModel(): Promise<boolean> {
