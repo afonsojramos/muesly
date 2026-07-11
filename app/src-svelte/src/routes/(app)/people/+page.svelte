@@ -6,6 +6,7 @@
 	import { commands, type PersonGroup } from '$lib/bindings';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
+	import { formatSeconds } from '$lib/talk-time';
 	import { toast } from '$lib/toast';
 
 	let people = $state<PersonGroup[]>([]);
@@ -110,6 +111,11 @@
 											<span class="ml-2 text-sm text-muted-foreground tabular-nums">
 												{person.meeting_count} meeting{person.meeting_count === 1 ? '' : 's'}
 											</span>
+											{#if person.speech_seconds != null}
+												<span class="ml-2 text-sm text-muted-foreground tabular-nums">
+													· spoke {formatSeconds(person.speech_seconds)}
+												</span>
+											{/if}
 										</button>
 									</Card.Header>
 									{#if expanded === person.name}
@@ -123,6 +129,13 @@
 															onclick={() => void goto(`/meeting-details?id=${m.meeting_id}`)}
 														>
 															<span class="truncate">{m.title || 'Untitled'}</span>
+															{#if m.speech_seconds != null}
+																<span
+																	class="ml-auto pl-2 text-xs text-muted-foreground tabular-nums"
+																>
+																	{formatSeconds(m.speech_seconds)}
+																</span>
+															{/if}
 														</Button>
 													</li>
 												{/each}
