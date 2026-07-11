@@ -17,8 +17,9 @@ pub fn fts_quote_token(token: &str) -> String {
     format!("\"{cleaned}\"")
 }
 
-/// Build an FTS5 MATCH expression: token1 OR token2 OR ...
-/// Returns None if no usable tokens.
+/// Build an FTS5 MATCH expression: "token1"* OR "token2"* OR ...
+/// Prefix queries catch partial words ("budg" hits "budget"), which keeps the
+/// LIKE fallback for the rare infix-only case. Returns None if no usable tokens.
 pub fn build_fts_match_query(query: &str) -> Option<String> {
     let tokens = fts_tokens(query);
     if tokens.is_empty() {
@@ -27,7 +28,7 @@ pub fn build_fts_match_query(query: &str) -> Option<String> {
     Some(
         tokens
             .iter()
-            .map(|t| fts_quote_token(t))
+            .map(|t| format!("{}*", fts_quote_token(t)))
             .collect::<Vec<_>>()
             .join(" OR "),
     )
@@ -46,9 +47,15 @@ mod tests {
     }
 
     #[test]
+    fn tokens_are_prefix_queries() {
+        let q = build_fts_match_query("budget launch").unwrap();
+        assert_eq!(q, "\"budget\"* OR \"launch\"*");
+    }
+
+    #[test]
     fn strips_specials() {
         let q = build_fts_match_query("hello!!!").unwrap();
-        assert_eq!(q, "\"hello\"");
+        assert_eq!(q, "\"hello\"*");
     }
 
     #[test]
