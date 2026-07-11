@@ -19,6 +19,10 @@ pub struct FolderModel {
     pub name: String,
     /// Optional emoji icon (NULL when unset).
     pub emoji: Option<String>,
+    /// Parent folder id (NULL = root; nesting is one level deep).
+    pub parent_id: Option<String>,
+    /// When the folder was favorited (NULL = not a favorite).
+    pub favorited_at: Option<DateTimeUtc>,
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
 }

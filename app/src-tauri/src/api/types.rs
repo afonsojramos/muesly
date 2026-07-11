@@ -22,6 +22,10 @@ pub struct Folder {
     pub id: String,
     pub name: String,
     pub emoji: Option<String>,
+    /// Parent folder id (None = root; nesting is one level deep).
+    pub parent_id: Option<String>,
+    /// Whether the folder is pinned to the sidebar's Favorites section.
+    pub favorited: bool,
     pub created_at: String,
 }
 

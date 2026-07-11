@@ -137,7 +137,7 @@ mod tests {
     }
 
     async fn folder(pool: &SqlitePool, name: &str) -> String {
-        FoldersRepository::create_folder(pool, name, None)
+        FoldersRepository::create_folder(pool, name, None, None)
             .await
             .unwrap()
             .id

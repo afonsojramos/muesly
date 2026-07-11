@@ -8,26 +8,42 @@ impl FoldersRepository {
     /// All folders, alphabetical.
     pub async fn list_folders(pool: &SqlitePool) -> Result<Vec<FolderModel>, sqlx::Error> {
         sqlx::query_as::<_, FolderModel>(
-            "SELECT id, name, emoji, created_at, updated_at FROM folders ORDER BY name COLLATE NOCASE ASC",
+            "SELECT id, name, emoji, parent_id, favorited_at, created_at, updated_at \
+             FROM folders ORDER BY name COLLATE NOCASE ASC",
         )
         .fetch_all(pool)
         .await
     }
 
-    /// Create a folder and return it. Generates a `folder-{uuid}` id.
+    /// A single folder's parent id, or None if the folder doesn't exist.
+    /// (Nested Option: outer = row found, inner = has a parent.)
+    pub async fn folder_parent_id(
+        pool: &SqlitePool,
+        folder_id: &str,
+    ) -> Result<Option<Option<String>>, sqlx::Error> {
+        sqlx::query_scalar("SELECT parent_id FROM folders WHERE id = ?")
+            .bind(folder_id)
+            .fetch_optional(pool)
+            .await
+    }
+
+    /// Create a folder (optionally inside a parent) and return it.
+    /// Generates a `folder-{uuid}` id.
     pub async fn create_folder(
         pool: &SqlitePool,
         name: &str,
         emoji: Option<&str>,
+        parent_id: Option<&str>,
     ) -> Result<FolderModel, sqlx::Error> {
         let id = format!("folder-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
         sqlx::query(
-            "INSERT INTO folders (id, name, emoji, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO folders (id, name, emoji, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(name)
         .bind(emoji)
+        .bind(parent_id)
         .bind(now)
         .bind(now)
         .execute(pool)
@@ -36,9 +52,29 @@ impl FoldersRepository {
             id,
             name: name.to_string(),
             emoji: emoji.map(str::to_string),
+            parent_id: parent_id.map(str::to_string),
+            favorited_at: None,
             created_at: crate::database::models::DateTimeUtc(now),
             updated_at: crate::database::models::DateTimeUtc(now),
         })
+    }
+
+    /// Mark or unmark a folder as favorite. False if it doesn't exist.
+    pub async fn set_folder_favorite(
+        pool: &SqlitePool,
+        folder_id: &str,
+        favorite: bool,
+    ) -> Result<bool, sqlx::Error> {
+        let now = Utc::now();
+        let favorited_at = favorite.then_some(now);
+        let result =
+            sqlx::query("UPDATE folders SET favorited_at = ?, updated_at = ? WHERE id = ?")
+                .bind(favorited_at)
+                .bind(now)
+                .bind(folder_id)
+                .execute(pool)
+                .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     /// Update a folder's name and emoji. False if it doesn't exist.
@@ -59,12 +95,20 @@ impl FoldersRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Delete a folder, detaching (not deleting) its meetings. False if absent.
+    /// Delete a folder, detaching (not deleting) its meetings and promoting its
+    /// subfolders to the root. False if absent.
     /// Foreign keys aren't relied upon here, so the detach is explicit.
     pub async fn delete_folder(pool: &SqlitePool, folder_id: &str) -> Result<bool, sqlx::Error> {
         let mut tx = pool.begin().await?;
 
         sqlx::query("UPDATE meetings SET folder_id = NULL WHERE folder_id = ?")
+            .bind(folder_id)
+            .execute(&mut *tx)
+            .await?;
+
+        // Promote subfolders to the root (nesting is one level, so the deleted
+        // folder's parent is always the root).
+        sqlx::query("UPDATE folders SET parent_id = NULL WHERE parent_id = ?")
             .bind(folder_id)
             .execute(&mut *tx)
             .await?;
@@ -136,7 +180,7 @@ mod tests {
     #[tokio::test]
     async fn create_list_update_folder() {
         let pool = test_pool().await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", Some("💼")).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", Some("💼"), None).await.unwrap();
         assert!(folder.id.starts_with("folder-"));
         assert_eq!(folder.emoji.as_deref(), Some("💼"));
 
@@ -154,10 +198,68 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subfolder_roundtrip_and_parent_lookup() {
+        let pool = test_pool().await;
+        let root = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let child = FoldersRepository::create_folder(&pool, "Interviews", None, Some(&root.id))
+            .await
+            .unwrap();
+        assert_eq!(child.parent_id.as_deref(), Some(root.id.as_str()));
+
+        // Parent lookup distinguishes missing folder / root / child.
+        assert_eq!(FoldersRepository::folder_parent_id(&pool, "nope").await.unwrap(), None);
+        assert_eq!(
+            FoldersRepository::folder_parent_id(&pool, &root.id).await.unwrap(),
+            Some(None)
+        );
+        assert_eq!(
+            FoldersRepository::folder_parent_id(&pool, &child.id).await.unwrap(),
+            Some(Some(root.id.clone()))
+        );
+
+        let listed = FoldersRepository::list_folders(&pool).await.unwrap();
+        let listed_child = listed.iter().find(|f| f.id == child.id).unwrap();
+        assert_eq!(listed_child.parent_id.as_deref(), Some(root.id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn favorite_set_and_clear() {
+        let pool = test_pool().await;
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        assert!(folder.favorited_at.is_none());
+
+        assert!(FoldersRepository::set_folder_favorite(&pool, &folder.id, true).await.unwrap());
+        let listed = FoldersRepository::list_folders(&pool).await.unwrap();
+        assert!(listed[0].favorited_at.is_some());
+
+        assert!(FoldersRepository::set_folder_favorite(&pool, &folder.id, false).await.unwrap());
+        let listed = FoldersRepository::list_folders(&pool).await.unwrap();
+        assert!(listed[0].favorited_at.is_none());
+
+        // Unknown folder reports false.
+        assert!(!FoldersRepository::set_folder_favorite(&pool, "nope", true).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn delete_folder_promotes_subfolders_to_root() {
+        let pool = test_pool().await;
+        let root = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let child = FoldersRepository::create_folder(&pool, "Interviews", None, Some(&root.id))
+            .await
+            .unwrap();
+
+        assert!(FoldersRepository::delete_folder(&pool, &root.id).await.unwrap());
+        let listed = FoldersRepository::list_folders(&pool).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, child.id);
+        assert!(listed[0].parent_id.is_none(), "child should be promoted to root");
+    }
+
+    #[tokio::test]
     async fn move_meeting_in_and_out_of_folder() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", None).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
 
         assert!(FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap());
         let m = MeetingsRepository::get_meeting_metadata(&pool, "m1").await.unwrap().unwrap();
@@ -172,7 +274,7 @@ mod tests {
     async fn delete_folder_detaches_meetings() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", None).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
         FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap();
 
         assert!(FoldersRepository::delete_folder(&pool, &folder.id).await.unwrap());

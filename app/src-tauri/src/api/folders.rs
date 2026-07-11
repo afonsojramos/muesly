@@ -30,6 +30,8 @@ pub async fn api_list_folders<R: Runtime>(
                 id: f.id,
                 name: f.name,
                 emoji: f.emoji,
+                parent_id: f.parent_id,
+                favorited: f.favorited_at.is_some(),
                 created_at: f.created_at.0.to_rfc3339(),
             })
             .collect()),
@@ -47,6 +49,7 @@ pub async fn api_create_folder<R: Runtime>(
     state: tauri::State<'_, AppState>,
     name: String,
     emoji: Option<String>,
+    parent_id: Option<String>,
 ) -> Result<Folder, String> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
@@ -54,19 +57,59 @@ pub async fn api_create_folder<R: Runtime>(
     }
     let emoji = normalize_emoji(emoji.as_deref());
     let pool = state.db_manager.pool();
-    match FoldersRepository::create_folder(pool, trimmed, emoji.as_deref()).await {
+
+    // Nesting is one level deep: the parent must exist and be a root folder.
+    if let Some(pid) = parent_id.as_deref() {
+        match FoldersRepository::folder_parent_id(pool, pid).await {
+            Ok(None) => return Err(format!("Parent folder not found: {}", pid)),
+            Ok(Some(Some(_))) => {
+                return Err("Subfolders can't contain further subfolders".to_string())
+            }
+            Ok(Some(None)) => {}
+            Err(e) => {
+                log_error!("Error checking parent folder {}: {}", pid, e);
+                return Err(format!("Failed to create folder: {}", e));
+            }
+        }
+    }
+
+    match FoldersRepository::create_folder(pool, trimmed, emoji.as_deref(), parent_id.as_deref())
+        .await
+    {
         Ok(f) => {
             log_info!("Created folder {} ({})", f.name, f.id);
             Ok(Folder {
                 id: f.id,
                 name: f.name,
                 emoji: f.emoji,
+                parent_id: f.parent_id,
+                favorited: f.favorited_at.is_some(),
                 created_at: f.created_at.0.to_rfc3339(),
             })
         }
         Err(e) => {
             log_error!("Error creating folder: {}", e);
             Err(format!("Failed to create folder: {}", e))
+        }
+    }
+}
+
+/// Pin or unpin a folder in the sidebar's Favorites section.
+#[tauri::command]
+#[specta::specta]
+pub async fn api_set_folder_favorite<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    folder_id: String,
+    favorite: bool,
+) -> Result<crate::json::Json, String> {
+    let pool = state.db_manager.pool();
+    match FoldersRepository::set_folder_favorite(pool, &folder_id, favorite).await {
+        Ok(true) => Ok(serde_json::json!({ "status": "success" }).into()),
+        Ok(false) => Err(format!("Folder not found: {}", folder_id)),
+        Err(e) => {
+            log_error!("Error setting favorite on folder {}: {}", folder_id, e);
+            Err(format!("Failed to update favorite: {}", e))
         }
     }
 }

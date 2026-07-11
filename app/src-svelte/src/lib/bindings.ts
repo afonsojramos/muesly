@@ -257,9 +257,11 @@ export const commands = {
 	 */
 	apiPermanentlyDeleteMeeting: (meetingId: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_permanently_delete_meeting", { meetingId, authToken })),
 	apiListFolders: () => typedError<Folder[], string>(__TAURI_INVOKE("api_list_folders")),
-	apiCreateFolder: (name: string, emoji: string | null) => typedError<Folder, string>(__TAURI_INVOKE("api_create_folder", { name, emoji })),
+	apiCreateFolder: (name: string, emoji: string | null, parentId: string | null) => typedError<Folder, string>(__TAURI_INVOKE("api_create_folder", { name, emoji, parentId })),
 	apiUpdateFolder: (folderId: string, name: string, emoji: string | null) => typedError<any, string>(__TAURI_INVOKE("api_update_folder", { folderId, name, emoji })),
 	apiDeleteFolder: (folderId: string) => typedError<any, string>(__TAURI_INVOKE("api_delete_folder", { folderId })),
+	/**  Pin or unpin a folder in the sidebar's Favorites section. */
+	apiSetFolderFavorite: (folderId: string, favorite: boolean) => typedError<any, string>(__TAURI_INVOKE("api_set_folder_favorite", { folderId, favorite })),
 	/**  Move a meeting into a folder, or out of all folders when `folder_id` is None. */
 	apiMoveMeetingToFolder: (meetingId: string, folderId: string | null) => typedError<any, string>(__TAURI_INVOKE("api_move_meeting_to_folder", { meetingId, folderId })),
 	apiGetMeeting: (meetingId: string, authToken: string | null) => typedError<MeetingDetails_Serialize, string>(__TAURI_INVOKE("api_get_meeting", { meetingId, authToken })),
@@ -925,6 +927,10 @@ export type Folder = {
 	id: string,
 	name: string,
 	emoji: string | null,
+	/**  Parent folder id (None = root; nesting is one level deep). */
+	parent_id: string | null,
+	/**  Whether the folder is pinned to the sidebar's Favorites section. */
+	favorited: boolean,
 	created_at: string,
 };
 
