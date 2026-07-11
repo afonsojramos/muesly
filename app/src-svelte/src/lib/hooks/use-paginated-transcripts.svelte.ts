@@ -19,7 +19,10 @@ import type {
 
 const DEFAULT_PAGE_SIZE = 100;
 
-function toSegments(transcripts: Transcript[]): TranscriptSegmentData[] {
+/** Map backend transcript rows to the renderer's segment shape. Exported for
+ * tests: dropping a field here silently disables downstream features (losing
+ * `speaker_id` once broke named-speaker labels in the saved-meeting view). */
+export function toSegments(transcripts: Transcript[]): TranscriptSegmentData[] {
 	return transcripts.map((t) => ({
 		id: t.id,
 		timestamp: t.audio_start_time ?? 0,
@@ -27,6 +30,7 @@ function toSegments(transcripts: Transcript[]): TranscriptSegmentData[] {
 		text: t.text,
 		confidence: t.confidence,
 		speaker: t.speaker,
+		speaker_id: t.speaker_id,
 	}));
 }
 
