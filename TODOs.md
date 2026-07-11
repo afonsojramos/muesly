@@ -43,19 +43,24 @@ Update this file when shipping — do not leave shipped work unchecked.
 - [x] Silent-input detection, system-audio permission, VAD fixes, normalizer gain cap, etc.
 - [x] **System-audio tap level**: quiet system captures are peak-boosted toward a
       usable level (`compensate_system_audio_level` on the system pipeline path,
-      max 12×, silence left alone). Residual: true output-volume compensation from
-      CoreAudio device volume if peak boost is still insufficient.
+      max 12×, silence left alone). Pure `volume_extra_gain` /
+      `compensate_system_audio_with_volume` helpers exist for when a platform
+      exposes device volume; **macOS process taps do not** (post-volume samples,
+      no reliable per-tap volume read on the hot path), so runtime stays peak-only.
 
 ## Chat / AI
 
 - [x] **"Ask anything" chat bar** (streaming Channel + recipes).
 - [x] **Natural-language search across meetings**: 3+ word queries also call
       `api_nl_search_meetings` and show a multi-meeting context pack on `/search`.
+- [x] **FTS5 transcript search**: `transcripts_fts` virtual table + triggers;
+      multi-word OR MATCH with LIKE fallback and LIMIT 50.
 
 ## Organization
 
 - [x] Folders, trash
-- [x] **People view** at `/people` (`api_list_people` groups by attendee name).
+- [x] **People view** at `/people` (`api_list_people` groups by attendee name;
+      company/org from email domain when present).
 
 ## Sharing & platform
 
@@ -72,9 +77,29 @@ Update this file when shipping — do not leave shipped work unchecked.
 
 ## Docs
 
-- [ ] **Regenerate README screenshots/GIFs** (needs real UI capture session).
+- [ ] **Add README product screenshots/GIFs** when a real UI capture session is
+      available. Current README uses badges only (no broken local image embeds).
+
+## Dictation
+
+- [x] **Push-to-talk dictation (primary path)**: macOS shortcut + text injection +
+      cleanup presets; model stays warm while dictation is enabled (idle unload
+      skipped). Residual / parked: Windows/Linux injection polish, deeper
+      per-app context presets, and a dedicated status surface for "preparing…"
+      cold-reload when the model was never loaded.
 
 ## Copy & positioning
 
 - [x] **README** Why/Features reframed for speech-to-text + calendar/dictation.
 - [x] **About subtitle** updated to speech-to-text positioning.
+
+## Polish residuals (2026-07-10)
+
+- [x] Live Whisper temperature ladder (same family as offline decode).
+- [x] Bulk multi-row transcript segment inserts on save path.
+- [x] Windowed transcript list for long meetings (`windowed-list` +
+      `VirtualizedTranscriptView`).
+- [x] Cleanup phase status (`summary-phase` + UI copy) when pre-summary cleanup
+      is enabled.
+- [x] Coming-up **Join** affordance when `conference_url` is present.
+- [x] Eval multi-utterance goldens + `pnpm eval` from repo root.
