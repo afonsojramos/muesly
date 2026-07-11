@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { Folder, FolderPlus, Lock, RefreshCw } from '@lucide/svelte';
+	import { ExternalLink, Folder, FolderPlus, Lock, RefreshCw, Video } from '@lucide/svelte';
 
 	import type { PreviewEvent } from '$lib/bindings';
 	import { commands } from '$lib/bindings';
@@ -135,21 +135,46 @@
 		await startRecordingWithTitle(ev.title, 'coming_up', pin);
 		void goto('/note');
 	}
+
+	async function onJoin(): Promise<void> {
+		const url = ev.conference_url?.trim();
+		if (!url) return;
+		const res = await commands.openExternalUrl(url);
+		if (res.status === 'error') {
+			toast.error('Could not open meeting link', { description: res.error });
+		}
+	}
 </script>
 
 <div class="group flex items-start gap-3">
 	<div class="mt-0.5 h-8 w-0.5 flex-shrink-0 rounded-full bg-success/60"></div>
 	<div class="min-w-0 flex-1">
 		<div class="truncate text-sm font-medium">{ev.title}</div>
-		<div class="truncate text-xs text-muted-foreground">
-			{formatEventTime(ev.start)}
-			{#if ev.calendar_name}
-				· {ev.calendar_name}
+		<div class="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+			<span class="truncate">
+				{formatEventTime(ev.start)}
+				{#if ev.calendar_name}
+					· {ev.calendar_name}
+				{/if}
+			</span>
+			{#if ev.conference_url}
+				<span
+					class="inline-flex items-center gap-0.5 text-accent"
+					title="Conference link available"
+				>
+					<Video class="size-3" />
+				</span>
 			{/if}
 		</div>
 	</div>
 
 	<div class="flex flex-shrink-0 items-center gap-1.5">
+		{#if ev.conference_url && (showStart || minutesUntilStart <= 30)}
+			<Button size="sm" variant="outline" onclick={() => void onJoin()} aria-label="Join meeting">
+				<ExternalLink data-icon="inline-start" />
+				Join
+			</Button>
+		{/if}
 		{#if showStart}
 			<Button size="sm" variant="secondary" onclick={onStart}>Start</Button>
 		{/if}
