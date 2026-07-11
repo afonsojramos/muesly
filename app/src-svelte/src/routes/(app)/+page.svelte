@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	import FolderIcon from '@lucide/svelte/icons/folder';
 
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
@@ -24,6 +25,9 @@
 	// Recent notes, newest-first, grouped into recency buckets ("This Week", month
 	// names, …). This is the home overview that replaced the note editor.
 	const noteGroups = $derived(groupByRecency(sidebar.meetings, (m) => m.createdAt));
+
+	// Folder lookup for the per-note folder chip.
+	const folderById = $derived(new Map(sidebar.folders.map((f) => [f.id, f])));
 
 	function openMeeting(id: string): void {
 		void goto(`/meeting-details?id=${id}`);
@@ -146,12 +150,25 @@
 					<h2 class="mb-1 px-3 text-xs font-medium text-muted-foreground/70">{group.label}</h2>
 					<div class="flex flex-col">
 						{#each group.items as meeting (meeting.id)}
+							{@const folder = meeting.folderId ? folderById.get(meeting.folderId) : undefined}
 							<button
 								type="button"
 								onclick={() => openMeeting(meeting.id)}
 								class="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary"
 							>
 								<span class="min-w-0 flex-1 truncate text-sm font-medium">{meeting.title}</span>
+								{#if folder}
+									<span
+										class="inline-flex max-w-40 flex-shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+									>
+										{#if folder.emoji}
+											<span aria-hidden="true">{folder.emoji}</span>
+										{:else}
+											<FolderIcon class="size-3" />
+										{/if}
+										<span class="truncate">{folder.name}</span>
+									</span>
+								{/if}
 								<span class="flex-shrink-0 text-xs text-muted-foreground">
 									{formatEventTime(meeting.createdAt ?? '')}
 								</span>
