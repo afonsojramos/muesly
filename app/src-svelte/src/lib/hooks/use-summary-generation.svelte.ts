@@ -175,23 +175,14 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 				await Analytics.trackCustomPromptUsed(customPrompt.trim().length);
 			}
 
-			// If cleanup is on, surface that phase early (backend also emits summary-phase).
-			const cleanupRes = await commands.getTranscriptCleanupEnabled();
-			const cleanupOn = cleanupRes.status === 'ok' && cleanupRes.data;
-			if (cleanupOn && !isRegeneration) {
-				summaryStatus = 'cleanup';
-			}
+			// The cleanup phase (when enabled) is surfaced by the backend's
+			// summary-phase events; no need to pre-fetch the setting here.
 			await bindPhaseListener(meeting.id);
 
-			toast.info(
-				cleanupOn && !isRegeneration
-					? 'Cleaning transcript, then summarizing…'
-					: `${isRegeneration ? 'Regenerating' : 'Generating'} summary...`,
-				{
-					description: `Using ${modelConfig.provider}/${modelConfig.model}`,
-					duration: 3000,
-				},
-			);
+			toast.info(`${isRegeneration ? 'Regenerating' : 'Generating'} summary...`, {
+				description: `Using ${modelConfig.provider}/${modelConfig.model}`,
+				duration: 3000,
+			});
 
 			const result = (await invoke('api_process_transcript', {
 				params: {
@@ -573,7 +564,6 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 		let speakerNames: Map<number, string> | undefined;
 		let selfName: string | undefined;
 		try {
-			const { commands } = await import('$lib/bindings');
 			const res = await commands.getMeetingSpeakers(meeting.id);
 			if (res.status === 'ok') {
 				speakerNames = new Map(
