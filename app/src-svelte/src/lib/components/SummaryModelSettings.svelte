@@ -55,8 +55,8 @@
 				<div>
 					<Card.Title>Clean transcript before summarizing</Card.Title>
 					<Card.Description>
-						Run an extra AI pass to fix fillers, casing, and punctuation before the summary.
-						Adds latency (and cost for cloud models). Off by default.
+						Run an extra AI pass to fix fillers, casing, and punctuation before the summary. Adds
+						latency (and cost for cloud models). Off by default.
 					</Card.Description>
 				</div>
 				<Switch

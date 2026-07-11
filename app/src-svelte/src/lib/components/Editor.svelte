@@ -96,7 +96,13 @@
 	}
 
 	/** Click handler: if the user clicked a `[mm:ss]` token, jump. */
-	function handleProseClick(view: { posAtCoords: (c: { left: number; top: number }) => { pos: number } | null; state: { doc: { textBetween: (a: number, b: number) => string } } }, event: MouseEvent): boolean {
+	function handleProseClick(
+		view: {
+			posAtCoords: (c: { left: number; top: number }) => { pos: number } | null;
+			state: { doc: { textBetween: (a: number, b: number) => string } };
+		},
+		event: MouseEvent,
+	): boolean {
 		if (!onTimestampClick) return false;
 		const coords = view.posAtCoords({ left: event.clientX, top: event.clientY });
 		if (!coords) return false;

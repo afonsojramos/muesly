@@ -69,8 +69,8 @@
 				<Badge variant="secondary" class="tabular-nums">v{currentVersion}</Badge>
 			</div>
 			<p class="mt-2 max-w-sm text-sm text-muted-foreground">
-				Private speech-to-text for everything you say — capture, transcribe, and
-				summarize on your machine.
+				Private speech-to-text for everything you say — capture, transcribe, and summarize on your
+				machine.
 			</p>
 			<div class="mt-4 flex flex-col items-center gap-2">
 				<Button
