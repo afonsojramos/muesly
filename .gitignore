@@ -46,6 +46,7 @@ Thumbs.db
 .idea/
 .cursor/
 .gstack/
+.playwright-mcp/
 *.sw?
 
 # Scratch / experiments
