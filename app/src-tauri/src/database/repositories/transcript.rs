@@ -47,6 +47,35 @@ impl TranscriptsRepository {
         Ok(rows.into_iter().map(|(id,)| id).collect())
     }
 
+    /// Total speech seconds per `(speaker, speaker_id)` group for a meeting,
+    /// with each group's first appearance time (drives the UI's "Speaker N"
+    /// numbering). Aggregated in SQL so the result is complete regardless of how
+    /// many transcript pages the frontend has loaded. Duration falls back to
+    /// `end - start` when the stored duration is NULL or <= 0 (legacy chunk rows
+    /// wrote 0.0 with zeroed times); groups with no usable signal are dropped.
+    pub async fn talk_time_groups(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Vec<(Option<String>, Option<i64>, f64, Option<f64>)>, SqlxError> {
+        sqlx::query_as(
+            "SELECT speaker, speaker_id, \
+                    SUM(CASE \
+                        WHEN duration IS NOT NULL AND duration > 0 THEN duration \
+                        WHEN audio_start_time IS NOT NULL AND audio_end_time IS NOT NULL \
+                             AND audio_end_time > audio_start_time \
+                            THEN audio_end_time - audio_start_time \
+                        ELSE 0 END) AS seconds, \
+                    MIN(audio_start_time) AS first_start \
+             FROM transcripts WHERE meeting_id = ? \
+             GROUP BY speaker, speaker_id \
+             HAVING seconds > 0 \
+             ORDER BY first_start",
+        )
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await
+    }
+
     /// Assign (or clear, with `None`) the diarized speaker cluster for a
     /// transcript segment. Generic over the executor so it can run inside a
     /// transaction.
@@ -196,13 +225,15 @@ impl TranscriptsRepository {
     ) -> Result<Vec<TranscriptSearchResult>, SqlxError> {
         // snippet() centers the context on the actual FTS hit (stemming- and
         // multi-token-aware); a literal re-scan of the query string would miss
-        // stemmed matches. Column 2 is `transcript` in the vtable definition.
+        // stemmed matches. Column 0 is `transcript`, the vtable's only indexed
+        // column; meeting_id / timestamp come from the external-content rowid join.
         let rows = sqlx::query_as::<_, (String, String, String, String)>(
             "SELECT m.id, m.title,
-                    snippet(transcripts_fts, 2, '', '', '...', 24),
-                    transcripts_fts.timestamp
+                    snippet(transcripts_fts, 0, '', '', '...', 24),
+                    t.timestamp
              FROM transcripts_fts
-             JOIN meetings m ON m.id = transcripts_fts.meeting_id
+             JOIN transcripts t ON t.rowid = transcripts_fts.rowid
+             JOIN meetings m ON m.id = t.meeting_id
              WHERE transcripts_fts MATCH ? AND m.deleted_at IS NULL
              ORDER BY rank
              LIMIT 50",
@@ -291,6 +322,133 @@ impl TranscriptsRepository {
             }
             None => transcript.chars().take(200).collect(), // Fallback to the start of the transcript
         }
+    }
+}
+
+#[cfg(test)]
+mod talk_time_tests {
+    use super::*;
+    use chrono::Utc;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    async fn test_pool() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("connect in-memory sqlite");
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .expect("run migrations");
+        pool
+    }
+
+    async fn insert_meeting(pool: &SqlitePool, id: &str) {
+        let now = Utc::now();
+        sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(id)
+            .bind("Test meeting")
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await
+            .expect("insert meeting");
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn insert_timed_segment(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        id: &str,
+        speaker: Option<&str>,
+        speaker_id: Option<i64>,
+        start: Option<f64>,
+        end: Option<f64>,
+        duration: Option<f64>,
+    ) {
+        sqlx::query(
+            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker, speaker_id) \
+             VALUES (?, ?, 'text', '00:00:01', ?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(meeting_id)
+        .bind(start)
+        .bind(end)
+        .bind(duration)
+        .bind(speaker)
+        .bind(speaker_id)
+        .execute(pool)
+        .await
+        .expect("insert segment");
+    }
+
+    #[tokio::test]
+    async fn groups_by_speaker_and_cluster_with_first_start_order() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        // Cluster 1 appears first (at 0s), mic second (at 5s), cluster 0 third.
+        insert_timed_segment(&pool, "m1", "s1", Some("system"), Some(1), Some(0.0), Some(4.0), Some(4.0)).await;
+        insert_timed_segment(&pool, "m1", "s2", Some("mic"), None, Some(5.0), Some(8.0), Some(3.0)).await;
+        insert_timed_segment(&pool, "m1", "s3", Some("system"), Some(0), Some(9.0), Some(10.0), Some(1.0)).await;
+        insert_timed_segment(&pool, "m1", "s4", Some("system"), Some(1), Some(11.0), Some(13.0), Some(2.0)).await;
+
+        let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
+            .await
+            .expect("aggregate");
+
+        assert_eq!(groups.len(), 3);
+        // Ordered by first appearance: cluster 1, mic, cluster 0.
+        assert_eq!(groups[0].1, Some(1));
+        assert!((groups[0].2 - 6.0).abs() < 1e-9, "cluster 1 sums both segments");
+        assert_eq!(groups[1].0.as_deref(), Some("mic"));
+        assert!((groups[1].2 - 3.0).abs() < 1e-9);
+        assert_eq!(groups[2].1, Some(0));
+        assert_eq!(groups[0].3, Some(0.0));
+    }
+
+    #[tokio::test]
+    async fn duration_falls_back_to_span_and_zero_rows_drop_out() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        // NULL duration but valid span -> contributes end - start.
+        insert_timed_segment(&pool, "m1", "s1", Some("mic"), None, Some(0.0), Some(2.5), None).await;
+        // Legacy chunk row: duration 0.0 with zeroed times -> contributes nothing.
+        insert_timed_segment(&pool, "m1", "s2", Some("system"), None, Some(0.0), Some(0.0), Some(0.0)).await;
+        // No timing at all -> excluded.
+        insert_timed_segment(&pool, "m1", "s3", Some("system"), Some(4), None, None, None).await;
+
+        let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
+            .await
+            .expect("aggregate");
+
+        assert_eq!(groups.len(), 1, "only the mic group has usable signal");
+        assert_eq!(groups[0].0.as_deref(), Some("mic"));
+        assert!((groups[0].2 - 2.5).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn undiarized_system_speech_groups_under_null_cluster() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        insert_timed_segment(&pool, "m1", "s1", Some("system"), None, Some(0.0), Some(3.0), Some(3.0)).await;
+
+        let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
+            .await
+            .expect("aggregate");
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].0.as_deref(), Some("system"));
+        assert_eq!(groups[0].1, None);
+    }
+
+    #[tokio::test]
+    async fn empty_meeting_yields_no_groups() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
+            .await
+            .expect("aggregate");
+        assert!(groups.is_empty());
     }
 }
 

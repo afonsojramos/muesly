@@ -334,6 +334,39 @@ async fn meeting_speakers(
     })
 }
 
+/// One `(speaker, speaker_id)` group's total speech time within a meeting.
+/// `first_start` is the group's first appearance, which drives the frontend's
+/// contiguous "Speaker N" numbering (same order the transcript labels use).
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
+pub struct TalkTimeGroup {
+    pub speaker: Option<String>,
+    pub speaker_id: Option<i64>,
+    pub seconds: f64,
+    pub first_start: Option<f64>,
+}
+
+/// Per-speaker-group speech totals for a meeting, aggregated over ALL segments
+/// in SQL (complete regardless of transcript pagination in the UI).
+#[tauri::command]
+#[specta::specta]
+pub async fn get_talk_time(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Vec<TalkTimeGroup>, String> {
+    let rows = TranscriptsRepository::talk_time_groups(state.db_manager.pool(), &meeting_id)
+        .await
+        .map_err(|e| format!("aggregate talk time: {e}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|(speaker, speaker_id, seconds, first_start)| TalkTimeGroup {
+            speaker,
+            speaker_id,
+            seconds,
+            first_start,
+        })
+        .collect())
+}
+
 /// Assign (or rename) the name for a diarized cluster within a meeting.
 #[tauri::command]
 #[specta::specta]

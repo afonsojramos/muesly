@@ -36,6 +36,11 @@ export const commands = {
 	 *  shortlist and the local user's name, for the transcript's speaker UI.
 	 */
 	getMeetingSpeakers: (meetingId: string) => typedError<MeetingSpeakers, string>(__TAURI_INVOKE("get_meeting_speakers", { meetingId })),
+	/**
+	 *  Per-speaker-group speech totals for a meeting, aggregated over ALL segments
+	 *  in SQL (complete regardless of transcript pagination in the UI).
+	 */
+	getTalkTime: (meetingId: string) => typedError<TalkTimeGroup[], string>(__TAURI_INVOKE("get_talk_time", { meetingId })),
 	/**  Assign (or rename) the name for a diarized cluster within a meeting. */
 	setSpeakerName: (meetingId: string, speakerId: number, name: string) => typedError<null, string>(__TAURI_INVOKE("set_speaker_name", { meetingId, speakerId, name })),
 	readAudioFile: (filePath: string) => typedError<number[], string>(__TAURI_INVOKE("read_audio_file", { filePath })),
@@ -1343,6 +1348,18 @@ export type SummaryResponse = {
 	end: string | null,
 	data: any | null,
 	error: string | null,
+};
+
+/**
+ *  One `(speaker, speaker_id)` group's total speech time within a meeting.
+ *  `first_start` is the group's first appearance, which drives the frontend's
+ *  contiguous "Speaker N" numbering (same order the transcript labels use).
+ */
+export type TalkTimeGroup = {
+	speaker: string | null,
+	speaker_id: number | null,
+	seconds: number | null,
+	first_start: number | null,
 };
 
 /**  Detailed template structure for preview/debugging */

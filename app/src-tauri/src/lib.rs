@@ -777,6 +777,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         diarization::commands::diarize_meeting::<tauri::Wry>,
         diarization::commands::download_diarization_models::<tauri::Wry>,
         diarization::commands::get_meeting_speakers,
+        diarization::commands::get_talk_time,
         diarization::commands::set_speaker_name,
         read_audio_file::<tauri::Wry>,
         save_transcript::<tauri::Wry>,
