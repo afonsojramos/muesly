@@ -111,7 +111,7 @@
 											value={`${lang.name} ${lang.code}`}
 											onSelect={() => selectLanguage(lang.code)}
 										>
-											<CheckIcon class={cn('text-accent', !isSelected && 'text-transparent')} />
+											<CheckIcon class={cn('text-brand', !isSelected && 'text-transparent')} />
 											<span class={cn(isSelected && 'font-medium')}>{lang.name}</span>
 										</Command.Item>
 									{/each}

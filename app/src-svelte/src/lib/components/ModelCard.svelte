@@ -72,14 +72,14 @@
 		class={cn(
 			'relative gap-0 overflow-visible border-2 p-3 transition-all',
 			isSelected && isAvailable
-				? 'border-accent bg-accent/5'
+				? 'border-brand bg-brand/5'
 				: isAvailable
 					? 'cursor-pointer hover:border-muted-foreground/40'
 					: 'cursor-default bg-secondary/50',
 		)}
 	>
 		{#if isRecommended}
-			<Badge class="bg-accent text-accent-foreground absolute -right-2 -top-2">Recommended</Badge>
+			<Badge class="bg-brand text-brand-foreground absolute -right-2 -top-2">Recommended</Badge>
 		{/if}
 
 		<div class="flex items-start justify-between gap-4">
@@ -92,7 +92,7 @@
 						<span class="text-sm text-muted-foreground">{tagline}</span>
 					{/if}
 					{#if isSelected && isAvailable}
-						<Badge class="bg-accent text-accent-foreground">✓</Badge>
+						<Badge class="bg-brand text-brand-foreground">✓</Badge>
 					{/if}
 					{#if perfBadge}
 						<Badge class={perfBadge.class}>{perfBadge.label}</Badge>
@@ -145,7 +145,7 @@
 					{/if}
 				{:else if status === 'missing' && onDownload}
 					<Button
-						variant="accent"
+						variant="brand"
 						size="sm"
 						onclick={(e) => {
 							e.stopPropagation();
@@ -182,7 +182,7 @@
 						{/if}
 						{#if onDownload}
 							<Button
-								variant="accent"
+								variant="brand"
 								size="sm"
 								onclick={(e) => {
 									e.stopPropagation();
@@ -202,8 +202,8 @@
 				<Separator class="mb-3" />
 				<div class="mb-2 flex items-center justify-between">
 					<div class="flex items-center gap-2">
-						<span class="text-sm font-medium text-accent">Downloading...</span>
-						<span class="text-sm font-semibold text-accent">
+						<span class="text-sm font-medium text-brand">Downloading...</span>
+						<span class="text-sm font-semibold text-brand">
 							{Math.round(downloadProgress ?? 0)}%
 						</span>
 					</div>

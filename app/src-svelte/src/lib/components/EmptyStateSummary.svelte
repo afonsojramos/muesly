@@ -25,7 +25,7 @@
 	</p>
 
 	{#if hasModel}
-		<Button variant="accent" onclick={onGenerate} disabled={isGenerating}>
+		<Button variant="brand" onclick={onGenerate} disabled={isGenerating}>
 			<Sparkles data-icon="inline-start" />
 			{isGenerating ? 'Enhancing...' : 'Enhance notes'}
 		</Button>

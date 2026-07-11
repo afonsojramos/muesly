@@ -109,7 +109,7 @@
 					class={cn(
 						'flex items-start gap-3 rounded-lg border p-3 transition-all',
 						currentBackend === backend.id
-							? 'border-accent bg-accent/5'
+							? 'border-brand bg-brand/5'
 							: 'border-input bg-background hover:border-muted-foreground/40',
 						isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
 					)}
@@ -124,7 +124,7 @@
 						<div class="flex items-center justify-between">
 							<span class="text-sm font-medium">{backend.name}</span>
 							{#if currentBackend === backend.id}
-								<Badge variant="secondary" class="text-accent">Active</Badge>
+								<Badge variant="secondary" class="text-brand">Active</Badge>
 							{:else if isCoreAudio}
 								<Badge variant="secondary">Disabled</Badge>
 							{/if}

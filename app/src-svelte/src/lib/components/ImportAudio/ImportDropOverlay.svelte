@@ -20,10 +20,10 @@
 	>
 		<div
 			class={cn(
-				'scale-100 rounded-2xl border-2 border-dashed border-accent bg-accent/15 p-12 text-center shadow-2xl',
+				'scale-100 rounded-2xl border-2 border-dashed border-brand bg-brand/15 p-12 text-center shadow-2xl',
 			)}
 		>
-			<Upload class="mx-auto mb-4 size-16 text-accent" />
+			<Upload class="mx-auto mb-4 size-16 text-brand" />
 			<p class="text-xl font-medium text-white">Drop audio file to import</p>
 			<p class="mt-2 text-sm text-white/80">{getAudioFormatsDisplayList()}</p>
 		</div>

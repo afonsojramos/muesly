@@ -121,7 +121,7 @@
 		</Alert.Description>
 	</Alert.Root>
 {:else if isLoading}
-	<Alert.Root class="text-accent">
+	<Alert.Root class="text-brand">
 		<Loader2Icon class="animate-spin" />
 		<Alert.Title>
 			{status === 'cleanup'

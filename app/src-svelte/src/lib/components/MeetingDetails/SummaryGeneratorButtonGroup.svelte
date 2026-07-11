@@ -280,7 +280,7 @@
 						{#snippet child({ props })}
 							<Button
 								{...props}
-								variant="accent"
+								variant="brand"
 								size="sm"
 								class="rounded-full xl:px-4"
 								disabled={isCheckingModels || isModelConfigLoading}

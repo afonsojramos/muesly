@@ -104,7 +104,7 @@
 							{...props}
 							variant="outline"
 							size="sm"
-							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
+							class="border-brand/40 bg-brand/10 hover:bg-brand/20 @[34rem]:px-4"
 							disabled={diarizing}
 							aria-label="Identify speakers"
 							onclick={identifySpeakers}
@@ -126,7 +126,7 @@
 							{...props}
 							variant="outline"
 							size="sm"
-							class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
+							class="border-brand/40 bg-brand/10 hover:bg-brand/20 @[34rem]:px-4"
 							disabled={downloading}
 							aria-label="Download speaker models"
 							onclick={downloadModels}
@@ -153,7 +153,7 @@
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (confirmOpen = false)}>Cancel</Button>
 			<Button
-				variant="accent"
+				variant="brand"
 				onclick={() => {
 					confirmOpen = false;
 					void runDiarization();

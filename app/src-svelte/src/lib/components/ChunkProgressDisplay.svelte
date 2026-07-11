@@ -54,7 +54,7 @@
 			case 'completed':
 				return 'text-success bg-success/10 border-success/20';
 			case 'processing':
-				return 'text-accent bg-accent/10 border-accent/20';
+				return 'text-brand bg-brand/10 border-brand/20';
 			case 'failed':
 				return 'text-destructive bg-destructive/5 border-destructive/20';
 			default:
@@ -149,7 +149,7 @@
 			<div class="text-muted-foreground">Completed</div>
 		</div>
 		<div class="text-center">
-			<div class="text-lg font-semibold text-accent">{progress.processing_chunks}</div>
+			<div class="text-lg font-semibold text-brand">{progress.processing_chunks}</div>
 			<div class="text-muted-foreground">Processing</div>
 		</div>
 		<div class="text-center">
@@ -163,9 +163,9 @@
 	</div>
 
 	{#if progress.estimated_remaining_ms && progress.estimated_remaining_ms > 0}
-		<Alert.Root class="mb-4 border-accent/20 bg-accent/10 text-accent">
+		<Alert.Root class="mb-4 border-brand/20 bg-brand/10 text-brand">
 			<span>⏱️</span>
-			<Alert.Description class="text-accent">
+			<Alert.Description class="text-brand">
 				Estimated time remaining: {formatTimeRemaining(progress.estimated_remaining_ms)}
 			</Alert.Description>
 		</Alert.Root>
@@ -190,7 +190,7 @@
 
 						{#if chunk.status === 'processing'}
 							<div
-								class="size-3 animate-spin rounded-full border border-accent border-t-transparent"
+								class="size-3 animate-spin rounded-full border border-brand border-t-transparent"
 							></div>
 						{/if}
 					</div>

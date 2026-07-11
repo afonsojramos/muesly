@@ -244,7 +244,7 @@
 					</Button>
 				</div>
 
-				<div class="rounded-lg border border-accent/20 bg-accent/5 p-4">
+				<div class="rounded-lg border border-brand/20 bg-brand/5 p-4">
 					<div class="text-sm text-foreground">
 						<strong>File Format:</strong>
 						{preferences.file_format.toUpperCase()} files

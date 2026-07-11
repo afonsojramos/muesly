@@ -71,7 +71,7 @@
 						<Command.Separator />
 					{/if}
 					<Command.Item value={`use-${query}`} onSelect={() => assign(query)}>
-						<span class="text-accent">Use “{query.trim()}”</span>
+						<span class="text-brand">Use “{query.trim()}”</span>
 					</Command.Item>
 				{/if}
 			</Command.List>

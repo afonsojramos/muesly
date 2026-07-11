@@ -98,7 +98,7 @@
 								{...props}
 								variant="outline"
 								size="sm"
-								class="border-accent/40 bg-accent/10 hover:bg-accent/20 @[34rem]:px-4"
+								class="border-brand/40 bg-brand/10 hover:bg-brand/20 @[34rem]:px-4"
 								aria-label="Retranscribe"
 								onclick={() => {
 									Analytics.trackButtonClick('enhance_transcript', 'meeting_details');

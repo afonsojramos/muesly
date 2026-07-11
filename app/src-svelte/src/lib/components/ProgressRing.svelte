@@ -26,7 +26,7 @@
 			cx={size / 2}
 			cy={size / 2}
 			r={radius}
-			stroke="var(--color-accent)"
+			stroke="var(--color-brand)"
 			stroke-width={strokeWidth}
 			stroke-dasharray={circumference}
 			stroke-dashoffset={dashOffset}
@@ -35,5 +35,5 @@
 			class="transition-all duration-300 ease-in-out"
 		/>
 	</svg>
-	<span class="absolute text-xs font-medium text-accent">{Math.round(progress)}%</span>
+	<span class="absolute text-xs font-medium text-brand">{Math.round(progress)}%</span>
 </div>

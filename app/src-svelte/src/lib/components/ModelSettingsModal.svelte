@@ -536,7 +536,7 @@
 												value={item.label}
 												onSelect={() => selectOllamaModel(item.value)}
 											>
-												<Check class={cn('text-accent', !isSelected && 'text-transparent')} />
+												<Check class={cn('text-brand', !isSelected && 'text-transparent')} />
 												<span class={cn('truncate', isSelected && 'font-medium')}>{item.label}</span
 												>
 											</Command.Item>
@@ -684,7 +684,7 @@
 						Stored locally on this device. Get a key at
 						<button
 							type="button"
-							class="text-accent underline"
+							class="text-brand underline"
 							onclick={() => invoke('open_external_url', { url: cloudProvider.keyUrl })}
 						>
 							{cloudProvider.keyUrl.replace('https://', '')}
@@ -810,7 +810,7 @@
 									</Alert.Description>
 								</Alert.Root>
 								<Button
-									variant="accent"
+									variant="brand"
 									size="sm"
 									class="w-full"
 									onclick={() =>
@@ -902,6 +902,6 @@
 	</div>
 
 	<div class="mt-6 flex justify-end">
-		<Button variant="accent" disabled={isDoneDisabled} onclick={handleSave}>Save</Button>
+		<Button variant="brand" disabled={isDoneDisabled} onclick={handleSave}>Save</Button>
 	</div>
 </div>

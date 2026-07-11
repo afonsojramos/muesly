@@ -17,10 +17,10 @@
 </script>
 
 {#if progress !== null}
-	<div class="rounded-lg border border-accent/20 bg-accent/5 p-4">
+	<div class="rounded-lg border border-brand/20 bg-brand/5 p-4">
 		<div class="mb-2 flex items-center justify-between">
 			<div class="flex items-center gap-2">
-				<div class="size-4 animate-spin rounded-full border-b-2 border-accent"></div>
+				<div class="size-4 animate-spin rounded-full border-b-2 border-brand"></div>
 				<span class="text-sm font-medium">
 					{isCompleted ? 'Finalizing...' : `Downloading ${modelName}`}
 				</span>

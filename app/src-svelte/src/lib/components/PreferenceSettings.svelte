@@ -144,7 +144,7 @@
 					</Button>
 				</div>
 
-				<div class="rounded-md bg-accent/5 p-3">
+				<div class="rounded-md bg-brand/5 p-3">
 					<p class="text-xs text-foreground">
 						<strong>Note:</strong> Database and models are stored together in your application data directory
 						for unified management.

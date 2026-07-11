@@ -184,7 +184,7 @@
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
 				{#if importer.isProcessing}
-					<Loader2 class="size-5 animate-spin text-accent" />
+					<Loader2 class="size-5 animate-spin text-brand" />
 					Importing Audio...
 				{:else if importer.error}
 					<AlertCircle class="size-5 text-destructive" />
@@ -193,7 +193,7 @@
 					<CheckCircle2 class="size-5 text-success" />
 					Import Complete
 				{:else}
-					<Upload class="size-5 text-accent" />
+					<Upload class="size-5 text-brand" />
 					Import Audio File
 				{/if}
 			</Dialog.Title>
@@ -213,7 +213,7 @@
 				{#if importer.fileInfo}
 					<div class="flex flex-col gap-3 rounded-lg bg-secondary p-4">
 						<div class="flex items-start gap-3">
-							<FileAudio class="size-8 shrink-0 text-accent" />
+							<FileAudio class="size-8 shrink-0 text-brand" />
 							<div class="min-w-0 flex-1">
 								<p class="truncate font-medium text-foreground">{importer.fileInfo.filename}</p>
 								<div class="mt-1 flex items-center gap-4 text-sm text-muted-foreground">
@@ -225,7 +225,7 @@
 										<HardDrive class="size-3.5" />
 										{formatFileSize(importer.fileInfo.size_bytes)}
 									</span>
-									<span class="font-medium text-accent">{importer.fileInfo.format}</span>
+									<span class="font-medium text-brand">{importer.fileInfo.format}</span>
 								</div>
 							</div>
 						</div>

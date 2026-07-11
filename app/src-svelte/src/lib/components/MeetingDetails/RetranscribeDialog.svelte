@@ -253,11 +253,11 @@
 	<Dialog.Content class="sm:max-w-[450px]" showCloseButton={!isProcessing}>
 		<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
 			{#if isProcessing}
-				<Loader2Icon class="size-5 animate-spin text-accent" />
+				<Loader2Icon class="size-5 animate-spin text-brand" />
 			{:else if error}
 				<AlertCircleIcon class="size-5 text-destructive" />
 			{:else}
-				<RefreshCwIcon class="size-5 text-accent" />
+				<RefreshCwIcon class="size-5 text-brand" />
 			{/if}
 			{dialogTitle}
 		</Dialog.Title>
@@ -354,7 +354,7 @@
 		<Dialog.Footer>
 			{#if !isProcessing && !error}
 				<Button variant="outline" onclick={() => onOpenChange(false)}>Cancel</Button>
-				<Button variant="accent" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
+				<Button variant="brand" disabled={!meetingFolderPath} onclick={handleStartRetranscription}>
 					<RefreshCwIcon />
 					Start Retranscription
 				</Button>

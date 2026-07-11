@@ -198,7 +198,7 @@
 					class={cn(
 						'rounded-lg border p-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
 						selectedModel === model.name
-							? 'border-accent ring-1 ring-inset ring-accent'
+							? 'border-brand ring-1 ring-inset ring-brand'
 							: 'border-border hover:border-muted-foreground/40',
 						isAvailable && !modelIsDownloading ? 'cursor-pointer bg-card' : 'bg-card',
 					)}
@@ -212,7 +212,7 @@
 										<span class="size-2 rounded-full bg-success"></span> Ready
 									</span>
 									{#if selectedModel === model.name}
-										<Badge class="bg-accent/15 text-accent">Selected</Badge>
+										<Badge class="bg-brand/15 text-brand">Selected</Badge>
 									{/if}
 								{:else if isCorrupted}
 									<Badge variant="destructive">

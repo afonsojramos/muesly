@@ -123,7 +123,7 @@
 			</div>
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center">
-					<Loader2Icon class="mx-auto mb-4 size-12 animate-spin text-accent" />
+					<Loader2Icon class="mx-auto mb-4 size-12 animate-spin text-brand" />
 					<p class="text-muted-foreground">
 						{summaryStatus === 'cleanup' ? 'Cleaning transcript…' : 'Generating AI Summary...'}
 					</p>
@@ -172,7 +172,7 @@
 						<Button
 							variant="link"
 							size="sm"
-							class="h-auto p-0 text-accent"
+							class="h-auto p-0 text-brand"
 							onclick={() => {
 								Analytics.trackButtonClick('regenerate_summary', 'meeting_details');
 								void onRegenerateSummary();

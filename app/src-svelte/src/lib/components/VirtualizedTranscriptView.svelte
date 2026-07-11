@@ -252,7 +252,7 @@
 						<div
 							class={cn(
 								'size-3 rounded-full',
-								isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent',
+								isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-brand',
 							)}
 						></div>
 					</div>
@@ -285,7 +285,7 @@
 						id={`segment-${segment.id}`}
 						class={cn(
 							'mb-3 rounded-md transition-colors',
-							isFocused && 'bg-accent/15 ring-1 ring-accent/40',
+							isFocused && 'bg-brand/15 ring-1 ring-brand/40',
 						)}
 					>
 						<div class="flex items-start gap-2">
@@ -338,8 +338,8 @@
 								<div
 									class={cn(
 										'inline-block max-w-[88%] rounded-xl px-3 py-1.5 text-left',
-										isMe ? 'bg-accent/15' : 'bg-secondary',
-										isStreaming && 'ring-1 ring-accent/30',
+										isMe ? 'bg-brand/15' : 'bg-secondary',
+										isStreaming && 'ring-1 ring-brand/30',
 									)}
 								>
 									<p
@@ -376,7 +376,7 @@
 
 			{#if !isStopping && isRecording && !isPaused && !isProcessing && segments.length > 0}
 				<div in:fade out:fade class="mt-4 flex items-center gap-2 text-muted-foreground">
-					<div class="size-2 animate-pulse rounded-full bg-accent"></div>
+					<div class="size-2 animate-pulse rounded-full bg-brand"></div>
 					<span class="text-sm">Listening...</span>
 				</div>
 			{/if}

@@ -344,7 +344,7 @@
 						<span>Recording...</span>
 					</Button>
 				{:else}
-					<Button variant="accent" size="sm" onclick={handleRecordingToggle} class="h-7 w-full">
+					<Button variant="brand" size="sm" onclick={handleRecordingToggle} class="h-7 w-full">
 						<Plus />
 						<span>New note</span>
 					</Button>

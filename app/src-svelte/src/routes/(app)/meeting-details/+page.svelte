@@ -321,7 +321,7 @@
 			<button
 				type="button"
 				onclick={() => goto('/')}
-				class="rounded bg-accent px-4 py-2 text-accent-foreground transition-opacity hover:opacity-90"
+				class="rounded bg-brand px-4 py-2 text-brand-foreground transition-opacity hover:opacity-90"
 			>
 				Go Back
 			</button>

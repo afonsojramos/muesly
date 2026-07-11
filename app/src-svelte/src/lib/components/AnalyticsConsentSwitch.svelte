@@ -135,13 +135,13 @@
 		</div>
 	{/if}
 
-	<div class="flex items-start gap-2 rounded border border-accent/20 bg-accent/5 p-2">
-		<Info class="mt-0.5 size-4 shrink-0 text-accent" />
+	<div class="flex items-start gap-2 rounded border border-brand/20 bg-brand/5 p-2">
+		<Info class="mt-0.5 size-4 shrink-0 text-brand" />
 		<div class="text-xs text-muted-foreground">
 			<p class="mb-1">
 				Your meetings, transcripts, and recordings remain completely private and local.
 			</p>
-			<button class="text-accent underline hover:no-underline" onclick={handlePrivacyPolicyClick}>
+			<button class="text-brand underline hover:no-underline" onclick={handlePrivacyPolicyClick}>
 				View Privacy Policy
 			</button>
 		</div>

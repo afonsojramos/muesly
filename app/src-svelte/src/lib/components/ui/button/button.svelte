@@ -8,7 +8,7 @@
 		variants: {
 			variant: {
 				default: 'bg-primary text-primary-foreground [a]:hover:bg-primary/80',
-				accent: 'bg-accent text-accent-foreground hover:opacity-90',
+				brand: 'bg-brand text-brand-foreground hover:opacity-90',
 				outline:
 					'border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground',
 				secondary:

@@ -188,8 +188,8 @@
 		aria-orientation="vertical"
 		aria-label="Resize side panel"
 		class={cn(
-			'absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors hover:bg-accent/40',
-			isResizing && 'bg-accent/50',
+			'absolute inset-y-0 -left-px z-10 w-1 cursor-col-resize transition-colors hover:bg-brand/40',
+			isResizing && 'bg-brand/50',
 		)}
 		onpointerdown={startResize}
 	></div>

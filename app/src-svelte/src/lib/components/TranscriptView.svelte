@@ -243,7 +243,7 @@
 
 	{#if !isStopping && isRecording && !isPaused && !isProcessing && transcripts.length > 0}
 		<div in:fade out:fade class="mt-4 flex items-center gap-2 text-muted-foreground">
-			<div class="size-2 animate-pulse rounded-full bg-accent"></div>
+			<div class="size-2 animate-pulse rounded-full bg-brand"></div>
 			<span class="text-sm">Listening...</span>
 		</div>
 	{/if}
@@ -253,7 +253,7 @@
 			{#if isRecording}
 				<div class="mb-3 flex items-center justify-center">
 					<div
-						class={cn('size-3 rounded-full', isPaused ? 'bg-warning' : 'animate-pulse bg-accent')}
+						class={cn('size-3 rounded-full', isPaused ? 'bg-warning' : 'animate-pulse bg-brand')}
 					></div>
 				</div>
 				<p class="text-sm text-muted-foreground">

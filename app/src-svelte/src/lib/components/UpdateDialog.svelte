@@ -152,13 +152,13 @@
 			<Dialog.Header>
 				<Dialog.Title class="flex items-center gap-2 text-lg font-semibold">
 					{#if isDownloading}
-						<Loader2 class="size-5 animate-spin text-accent" />
+						<Loader2 class="size-5 animate-spin text-brand" />
 						Downloading Update
 					{:else if error}
 						<AlertCircle class="size-5 text-destructive" />
 						Update Error
 					{:else}
-						<Download class="size-5 text-accent" />
+						<Download class="size-5 text-brand" />
 						Update Available
 					{/if}
 				</Dialog.Title>
@@ -182,7 +182,7 @@
 						</div>
 						<div class="flex justify-between text-sm">
 							<span class="text-muted-foreground">New Version:</span>
-							<span class="font-medium text-accent">{updateInfo.version}</span>
+							<span class="font-medium text-brand">{updateInfo.version}</span>
 						</div>
 						{#if updateInfo.date}
 							<div class="flex justify-between text-sm">
@@ -230,7 +230,7 @@
 			<Dialog.Footer>
 				{#if !isDownloading && !error}
 					<Button variant="outline" onclick={() => handleOpenChange(false)}>Later</Button>
-					<Button variant="accent" onclick={handleDownloadAndInstall}>
+					<Button variant="brand" onclick={handleDownloadAndInstall}>
 						<Download data-icon="inline-start" />
 						Download & Install
 					</Button>

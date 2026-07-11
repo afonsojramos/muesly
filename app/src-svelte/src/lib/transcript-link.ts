@@ -46,7 +46,7 @@ export function findSegmentNearTime(
 export function linkTimestampsInMarkdown(markdown: string): string {
 	return markdown.replace(/\[(\d{1,2}):(\d{2})\]/g, (_full, mm, ss) => {
 		const seconds = Number(mm) * 60 + Number(ss);
-		return `<span data-transcript-ts="${seconds}" class="transcript-ts cursor-pointer text-accent underline underline-offset-2">[${mm}:${ss}]</span>`;
+		return `<span data-transcript-ts="${seconds}" class="transcript-ts cursor-pointer text-brand underline underline-offset-2">[${mm}:${ss}]</span>`;
 	});
 }
 

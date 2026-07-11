@@ -205,7 +205,7 @@
 							'relative flex size-12 items-center justify-center rounded-full text-white transition-colors',
 							isStarting || isProcessing || isValidatingModel
 								? 'bg-muted-foreground/50'
-								: 'bg-accent hover:opacity-90',
+								: 'bg-brand hover:opacity-90',
 						)}
 					>
 						{#if isValidatingModel}
@@ -223,7 +223,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
 						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>
@@ -292,7 +292,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
 						)}
 						style={`height: ${isRecording && !isPaused ? height : '4px'}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>

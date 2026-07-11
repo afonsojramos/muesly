@@ -226,7 +226,7 @@
 		width: 1.5px;
 		transform: translateY(-50%);
 		/* The brand accent, nudged a bit darker for the caret. */
-		background: color-mix(in oklab, var(--color-accent), black 15%);
+		background: color-mix(in oklab, var(--color-brand), black 15%);
 		animation: fixed-caret-blink 1.1s steps(1, end) infinite;
 	}
 	.tiptap-prose :global(.ProseMirror:not(:focus) .fixed-caret::after) {
@@ -300,7 +300,7 @@
 		left: -1.4rem;
 	}
 	.tiptap-prose :global(.ProseMirror a) {
-		color: var(--color-accent);
+		color: var(--color-brand);
 		text-decoration: underline;
 		text-underline-offset: 2px;
 	}

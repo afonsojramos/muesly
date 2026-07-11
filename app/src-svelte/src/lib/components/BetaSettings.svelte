@@ -47,7 +47,7 @@
 		</Card.Root>
 	{/each}
 
-	<Alert.Root class="border-accent/20">
+	<Alert.Root class="border-brand/20">
 		<Alert.Description>
 			<strong>Note:</strong> When disabled, beta features will be hidden. Your existing meetings remain
 			unaffected.

@@ -27,7 +27,7 @@
 	<div
 		class={cn(
 			'size-2 rounded-full',
-			isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-accent',
+			isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-brand',
 		)}
 	></div>
 	<span class={cn('text-sm tabular-nums', isPaused ? 'text-muted-foreground' : 'text-foreground')}>

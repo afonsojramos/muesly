@@ -198,7 +198,7 @@
 					<div
 						class={cn(
 							'w-1 rounded-full transition-all duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-accent',
+							isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
 						)}
 						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}
 					></div>

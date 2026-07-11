@@ -89,12 +89,12 @@
 </script>
 
 {#if isVisible}
-	<div class="mb-4 rounded-lg border-2 border-accent/40 bg-accent/5 p-4">
+	<div class="mb-4 rounded-lg border-2 border-brand/40 bg-brand/5 p-4">
 		<div class="flex items-start gap-3">
-			<Database class="mt-0.5 size-6 shrink-0 text-accent" />
+			<Database class="mt-0.5 size-6 shrink-0 text-brand" />
 			<div class="flex-1">
 				<div class="mb-1 flex items-center gap-2">
-					<AlertCircle class="size-4 text-accent" />
+					<AlertCircle class="size-4 text-brand" />
 					<h3 class="text-sm font-semibold">Previous muesly Installation Detected!</h3>
 				</div>
 				<p class="mb-2 text-sm text-muted-foreground">

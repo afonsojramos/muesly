@@ -158,10 +158,7 @@
 				{/if}
 			</span>
 			{#if ev.conference_url}
-				<span
-					class="inline-flex items-center gap-0.5 text-accent"
-					title="Conference link available"
-				>
+				<span class="inline-flex items-center gap-0.5 text-brand" title="Conference link available">
 					<Video class="size-3" />
 				</span>
 			{/if}
@@ -240,8 +237,8 @@
 								{#if canCreate}
 									<Command.Separator />
 									<Command.Item value={`Create ${query}`} onSelect={createAndAssign}>
-										<FolderPlus class="size-4 text-accent" />
-										<span class="text-accent">Create “{query.trim()}”</span>
+										<FolderPlus class="size-4 text-brand" />
+										<span class="text-brand">Create “{query.trim()}”</span>
 									</Command.Item>
 								{/if}
 							</Command.List>

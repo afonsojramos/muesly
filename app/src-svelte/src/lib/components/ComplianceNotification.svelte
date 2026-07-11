@@ -64,7 +64,7 @@
 					Later
 				</Button>
 				<Button
-					variant="accent"
+					variant="brand"
 					size="sm"
 					class="h-6 flex-1 px-2 py-0.5 text-xs"
 					onclick={acknowledge}

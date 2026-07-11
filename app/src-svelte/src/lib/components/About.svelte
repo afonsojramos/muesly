@@ -86,7 +86,7 @@
 					{/if}
 				</Button>
 				{#if updates.updateInfo?.available}
-					<span class="text-xs text-accent">Update available: v{updates.updateInfo.version}</span>
+					<span class="text-xs text-brand">Update available: v{updates.updateInfo.version}</span>
 				{/if}
 			</div>
 		</Card.Content>
@@ -104,9 +104,7 @@
 					<div
 						class="rounded-lg border border-border bg-secondary/40 p-4 transition-colors hover:bg-secondary/60"
 					>
-						<div
-							class="flex size-9 items-center justify-center rounded-md bg-accent/10 text-accent"
-						>
+						<div class="flex size-9 items-center justify-center rounded-md bg-brand/10 text-brand">
 							<Icon class="size-5" />
 						</div>
 						<h4 class="mt-3 text-sm font-semibold">{feature.title}</h4>
@@ -118,7 +116,7 @@
 	</Card.Root>
 
 	<!-- Coming soon -->
-	<Alert.Root class="border-accent/30 text-accent">
+	<Alert.Root class="border-brand/30 text-brand">
 		<Sparkles />
 		<Alert.Description class="text-foreground">
 			<span class="font-semibold">Coming soon:</span> A library of on-device AI agents — automating follow-ups,
