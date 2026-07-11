@@ -81,6 +81,10 @@
 		onblur={() => (capturing = false)}
 		aria-label={capturing ? 'Press the new shortcut, Escape to cancel' : 'Change shortcut'}
 	>
-		{capturing ? 'Press shortcut…' : formatAccelerator(info.accelerator, platform.isMac)}
+		{#if capturing}
+			Press shortcut…
+		{:else}
+			<span class="tracking-widest">{formatAccelerator(info.accelerator, platform.isMac)}</span>
+		{/if}
 	</Button>
 </div>
