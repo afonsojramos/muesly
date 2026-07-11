@@ -1228,12 +1228,22 @@ export type PersonGroup = {
 	company: string | null,
 	meeting_count: number,
 	meetings: PersonMeetingRef[],
+	/**
+	 *  Total speaking time across linked meetings. `None` when no meeting has
+	 *  named-speaker data for this person (renders exactly as before).
+	 */
+	speech_seconds: number | null,
 };
 
 export type PersonMeetingRef = {
 	meeting_id: string,
 	title: string,
 	created_at: string,
+	/**
+	 *  Seconds this person spoke in the meeting, when named-speaker data links
+	 *  them (diarization + name assignment). `None` = no data, never zero.
+	 */
+	speech_seconds: number | null,
 };
 
 /**
