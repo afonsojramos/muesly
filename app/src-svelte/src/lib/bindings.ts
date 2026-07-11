@@ -477,6 +477,12 @@ export const commands = {
 	getCustomVocabulary: () => typedError<VocabularyEntry[], string>(__TAURI_INVOKE("get_custom_vocabulary")),
 	setRecordingShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_recording_shortcut_enabled", { enabled })),
 	setDictationShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_shortcut_enabled", { enabled })),
+	getRecordingShortcut: () => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("get_recording_shortcut")),
+	/**  Set (or reset with `None`) the recording shortcut accelerator. */
+	setRecordingShortcut: (accelerator: string | null) => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("set_recording_shortcut", { accelerator })),
+	getDictationShortcut: () => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("get_dictation_shortcut")),
+	/**  Set (or reset with `None`) the dictation shortcut accelerator. */
+	setDictationShortcut: (accelerator: string | null) => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("set_dictation_shortcut", { accelerator })),
 	/**  Get notification settings */
 	getNotificationSettings: () => typedError<NotificationSettings, string>(__TAURI_INVOKE("get_notification_settings")),
 	/**  Set notification settings */
@@ -932,6 +938,12 @@ export type Folder = {
 	/**  Whether the folder is pinned to the sidebar's Favorites section. */
 	favorited: boolean,
 	created_at: string,
+};
+
+export type GlobalShortcutInfo = {
+	accelerator: string,
+	default_accelerator: string,
+	is_custom: boolean,
 };
 
 /**  Groq model information returned to frontend */

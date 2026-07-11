@@ -713,9 +713,206 @@ async fn get_custom_vocabulary<R: Runtime>(
     }
 }
 
-/// The single global recording shortcut. Uses Alt/Option (not Shift) to avoid
+/// Default global recording shortcut. Uses Alt/Option (not Shift) to avoid
 /// the browser hard-reload clash on Cmd/Ctrl+Shift+R.
 const RECORDING_SHORTCUT: &str = "CmdOrCtrl+Alt+R";
+
+/// Default global push-to-talk dictation shortcut: hold to dictate, release to
+/// transcribe.
+const DICTATION_SHORTCUT: &str = "CmdOrCtrl+Shift+D";
+
+/// Effective (possibly user-customized) accelerators. Mirrors the settings DB
+/// so the synchronous global-shortcut handler can match events without a pool.
+struct ShortcutAccels {
+    recording: String,
+    dictation: String,
+}
+
+static SHORTCUT_ACCELS: std::sync::LazyLock<std::sync::RwLock<ShortcutAccels>> =
+    std::sync::LazyLock::new(|| {
+        std::sync::RwLock::new(ShortcutAccels {
+            recording: RECORDING_SHORTCUT.to_string(),
+            dictation: DICTATION_SHORTCUT.to_string(),
+        })
+    });
+
+/// Refresh the in-memory accelerators from the settings DB (no-op when the DB
+/// isn't up yet or a value is unset).
+async fn load_shortcut_accels<R: Runtime>(app: &AppHandle<R>) {
+    use crate::database::repositories::setting::SettingsRepository;
+    let Some(state) = app.try_state::<state::AppState>() else {
+        return;
+    };
+    let pool = state.db_manager.pool();
+    let recording = SettingsRepository::get_recording_shortcut(pool).await.ok().flatten();
+    let dictation = SettingsRepository::get_dictation_shortcut(pool).await.ok().flatten();
+    let mut accels = SHORTCUT_ACCELS.write().unwrap();
+    accels.recording = recording.unwrap_or_else(|| RECORDING_SHORTCUT.to_string());
+    accels.dictation = dictation.unwrap_or_else(|| DICTATION_SHORTCUT.to_string());
+}
+
+/// Validate a user-supplied accelerator: must parse, and needs a modifier
+/// unless it's a bare function key (F1-F24 work fine as global hotkeys).
+fn validate_accelerator(accel: &str) -> Result<(), String> {
+    let shortcut = accel
+        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        .map_err(|e| format!("Not a valid shortcut: {}", e))?;
+    let key = format!("{:?}", shortcut.key);
+    let is_function_key = key.len() >= 2
+        && key.starts_with('F')
+        && key[1..].chars().all(|c| c.is_ascii_digit());
+    if shortcut.mods.is_empty() && !is_function_key {
+        return Err("Global shortcuts need at least one modifier key".to_string());
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize, specta::Type)]
+struct GlobalShortcutInfo {
+    accelerator: String,
+    default_accelerator: String,
+    is_custom: bool,
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn get_recording_shortcut<R: Runtime>(app: AppHandle<R>) -> Result<GlobalShortcutInfo, String> {
+    load_shortcut_accels(&app).await;
+    let accelerator = SHORTCUT_ACCELS.read().unwrap().recording.clone();
+    Ok(GlobalShortcutInfo {
+        is_custom: accelerator != RECORDING_SHORTCUT,
+        default_accelerator: RECORDING_SHORTCUT.to_string(),
+        accelerator,
+    })
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn get_dictation_shortcut<R: Runtime>(app: AppHandle<R>) -> Result<GlobalShortcutInfo, String> {
+    load_shortcut_accels(&app).await;
+    let accelerator = SHORTCUT_ACCELS.read().unwrap().dictation.clone();
+    Ok(GlobalShortcutInfo {
+        is_custom: accelerator != DICTATION_SHORTCUT,
+        default_accelerator: DICTATION_SHORTCUT.to_string(),
+        accelerator,
+    })
+}
+
+/// Which of the two rebindable global shortcuts a command targets.
+#[derive(Clone, Copy, PartialEq)]
+enum GlobalShortcutKind {
+    Recording,
+    Dictation,
+}
+
+/// Shared set-accelerator flow: validate, persist, swap the live registration
+/// if the shortcut is currently registered, and roll back on failure.
+async fn set_shortcut_accel<R: Runtime>(
+    app: AppHandle<R>,
+    kind: GlobalShortcutKind,
+    accelerator: Option<String>,
+) -> Result<GlobalShortcutInfo, String> {
+    use crate::database::repositories::setting::SettingsRepository;
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    let default_accel = match kind {
+        GlobalShortcutKind::Recording => RECORDING_SHORTCUT,
+        GlobalShortcutKind::Dictation => DICTATION_SHORTCUT,
+    };
+    let custom = accelerator
+        .as_deref()
+        .map(str::trim)
+        .filter(|a| !a.is_empty() && *a != default_accel)
+        .map(str::to_string);
+    let new_accel = custom.clone().unwrap_or_else(|| default_accel.to_string());
+    validate_accelerator(&new_accel)?;
+
+    load_shortcut_accels(&app).await;
+    let (old_accel, other_accel) = {
+        let accels = SHORTCUT_ACCELS.read().unwrap();
+        match kind {
+            GlobalShortcutKind::Recording => (accels.recording.clone(), accels.dictation.clone()),
+            GlobalShortcutKind::Dictation => (accels.dictation.clone(), accels.recording.clone()),
+        }
+    };
+    if new_accel == other_accel {
+        return Err("That shortcut is already used by the other muesly action".to_string());
+    }
+
+    let state = app
+        .try_state::<state::AppState>()
+        .ok_or_else(|| "App state not ready".to_string())?;
+    let pool = state.db_manager.pool();
+    let persist = match kind {
+        GlobalShortcutKind::Recording => {
+            SettingsRepository::set_recording_shortcut(pool, custom.as_deref()).await
+        }
+        GlobalShortcutKind::Dictation => {
+            SettingsRepository::set_dictation_shortcut(pool, custom.as_deref()).await
+        }
+    };
+    persist.map_err(|e| format!("Failed to save shortcut: {}", e))?;
+
+    // Swap the live registration only when the old chord is registered (i.e.
+    // the feature is enabled right now).
+    let gs = app.global_shortcut();
+    let was_registered = old_accel
+        .parse::<tauri_plugin_global_shortcut::Shortcut>()
+        .map(|s| gs.is_registered(s))
+        .unwrap_or(false);
+    if was_registered && old_accel != new_accel {
+        let _ = gs.unregister(old_accel.as_str());
+        if let Err(e) = gs.register(new_accel.as_str()) {
+            // Roll back: restore the old registration and stored value.
+            let _ = gs.register(old_accel.as_str());
+            let revert = old_accel.as_str();
+            let revert = (revert != default_accel).then_some(revert);
+            let _ = match kind {
+                GlobalShortcutKind::Recording => {
+                    SettingsRepository::set_recording_shortcut(pool, revert).await
+                }
+                GlobalShortcutKind::Dictation => {
+                    SettingsRepository::set_dictation_shortcut(pool, revert).await
+                }
+            };
+            return Err(format!("Could not register {} (is it taken by another app?): {}", new_accel, e));
+        }
+    }
+
+    {
+        let mut accels = SHORTCUT_ACCELS.write().unwrap();
+        match kind {
+            GlobalShortcutKind::Recording => accels.recording = new_accel.clone(),
+            GlobalShortcutKind::Dictation => accels.dictation = new_accel.clone(),
+        }
+    }
+    log_info!("Global shortcut updated: {}", new_accel);
+    Ok(GlobalShortcutInfo {
+        is_custom: new_accel != default_accel,
+        default_accelerator: default_accel.to_string(),
+        accelerator: new_accel,
+    })
+}
+
+/// Set (or reset with `None`) the recording shortcut accelerator.
+#[tauri::command]
+#[specta::specta]
+async fn set_recording_shortcut<R: Runtime>(
+    app: AppHandle<R>,
+    accelerator: Option<String>,
+) -> Result<GlobalShortcutInfo, String> {
+    set_shortcut_accel(app, GlobalShortcutKind::Recording, accelerator).await
+}
+
+/// Set (or reset with `None`) the dictation shortcut accelerator.
+#[tauri::command]
+#[specta::specta]
+async fn set_dictation_shortcut<R: Runtime>(
+    app: AppHandle<R>,
+    accelerator: Option<String>,
+) -> Result<GlobalShortcutInfo, String> {
+    set_shortcut_accel(app, GlobalShortcutKind::Dictation, accelerator).await
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -724,22 +921,21 @@ async fn set_recording_shortcut_enabled<R: Runtime>(
     enabled: bool,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    load_shortcut_accels(&app).await;
+    let accel = SHORTCUT_ACCELS.read().unwrap().recording.clone();
     let gs = app.global_shortcut();
     if enabled {
         // Re-register defensively: unregister first so a double-enable cannot error.
-        let _ = gs.unregister(RECORDING_SHORTCUT);
-        gs.register(RECORDING_SHORTCUT)
+        let _ = gs.unregister(accel.as_str());
+        gs.register(accel.as_str())
             .map_err(|e| format!("Failed to register recording shortcut: {}", e))?;
-        log_info!("Global recording shortcut registered: {}", RECORDING_SHORTCUT);
+        log_info!("Global recording shortcut registered: {}", accel);
     } else {
-        let _ = gs.unregister(RECORDING_SHORTCUT);
+        let _ = gs.unregister(accel.as_str());
         log_info!("Global recording shortcut disabled");
     }
     Ok(())
 }
-
-/// The global push-to-talk dictation shortcut: hold to dictate, release to transcribe.
-const DICTATION_SHORTCUT: &str = "CmdOrCtrl+Shift+D";
 
 #[tauri::command]
 #[specta::specta]
@@ -748,14 +944,16 @@ async fn set_dictation_shortcut_enabled<R: Runtime>(
     enabled: bool,
 ) -> Result<(), String> {
     use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    load_shortcut_accels(&app).await;
+    let accel = SHORTCUT_ACCELS.read().unwrap().dictation.clone();
     let gs = app.global_shortcut();
     if enabled {
-        let _ = gs.unregister(DICTATION_SHORTCUT);
-        gs.register(DICTATION_SHORTCUT)
+        let _ = gs.unregister(accel.as_str());
+        gs.register(accel.as_str())
             .map_err(|e| format!("Failed to register dictation shortcut: {}", e))?;
-        log_info!("Global dictation shortcut registered: {}", DICTATION_SHORTCUT);
+        log_info!("Global dictation shortcut registered: {}", accel);
     } else {
-        let _ = gs.unregister(DICTATION_SHORTCUT);
+        let _ = gs.unregister(accel.as_str());
         log_info!("Global dictation shortcut disabled");
     }
     Ok(())
@@ -947,6 +1145,10 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         get_custom_vocabulary::<tauri::Wry>,
         set_recording_shortcut_enabled::<tauri::Wry>,
         set_dictation_shortcut_enabled::<tauri::Wry>,
+        get_recording_shortcut::<tauri::Wry>,
+        set_recording_shortcut::<tauri::Wry>,
+        get_dictation_shortcut::<tauri::Wry>,
+        set_dictation_shortcut::<tauri::Wry>,
         notifications::commands::get_notification_settings,
         notifications::commands::set_notification_settings,
         notifications::commands::request_notification_permission,
@@ -1099,7 +1301,9 @@ pub fn run() {
                             .map(|s| &s == shortcut)
                             .unwrap_or(false)
                     };
-                    let is_dictation = matches(DICTATION_SHORTCUT);
+                    // Effective (possibly user-customized) dictation chord.
+                    let dictation_accel = SHORTCUT_ACCELS.read().unwrap().dictation.clone();
+                    let is_dictation = matches(&dictation_accel);
                     // Pill backstops act on key-down only; the handlers themselves
                     // no-op when no recording is active.
                     if matches(pill_window::TOGGLE_PAUSE_SHORTCUT) {

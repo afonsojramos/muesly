@@ -62,6 +62,66 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Custom recording-shortcut accelerator (None = built-in default).
+    pub async fn get_recording_shortcut(
+        pool: &SqlitePool,
+    ) -> std::result::Result<Option<String>, sqlx::Error> {
+        let value: Option<Option<String>> =
+            sqlx::query_scalar("SELECT recording_shortcut FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.flatten().filter(|s| !s.trim().is_empty()))
+    }
+
+    /// Persist the recording-shortcut accelerator (None resets to the default).
+    pub async fn set_recording_shortcut(
+        pool: &SqlitePool,
+        accelerator: Option<&str>,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, recording_shortcut)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                recording_shortcut = excluded.recording_shortcut
+            "#,
+        )
+        .bind(accelerator)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Custom dictation-shortcut accelerator (None = built-in default).
+    pub async fn get_dictation_shortcut(
+        pool: &SqlitePool,
+    ) -> std::result::Result<Option<String>, sqlx::Error> {
+        let value: Option<Option<String>> =
+            sqlx::query_scalar("SELECT dictation_shortcut FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.flatten().filter(|s| !s.trim().is_empty()))
+    }
+
+    /// Persist the dictation-shortcut accelerator (None resets to the default).
+    pub async fn set_dictation_shortcut(
+        pool: &SqlitePool,
+        accelerator: Option<&str>,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, dictation_shortcut)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                dictation_shortcut = excluded.dictation_shortcut
+            "#,
+        )
+        .bind(accelerator)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Whether meeting auto-detection is enabled (single-row settings, id='1').
     pub async fn get_auto_detect_meetings(
         pool: &SqlitePool,
@@ -925,6 +985,36 @@ mod tests {
     // -----------------------------------------------------------------------
     // Existing tests — updated to pass a MockStore
     // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn shortcut_accelerators_roundtrip_and_reset() {
+        let pool = test_pool().await;
+
+        // Unset defaults to None for both shortcuts.
+        assert!(SettingsRepository::get_recording_shortcut(&pool).await.unwrap().is_none());
+        assert!(SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().is_none());
+
+        SettingsRepository::set_recording_shortcut(&pool, Some("CmdOrCtrl+Shift+F9"))
+            .await
+            .unwrap();
+        SettingsRepository::set_dictation_shortcut(&pool, Some("Alt+Space"))
+            .await
+            .unwrap();
+        assert_eq!(
+            SettingsRepository::get_recording_shortcut(&pool).await.unwrap().as_deref(),
+            Some("CmdOrCtrl+Shift+F9")
+        );
+        assert_eq!(
+            SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().as_deref(),
+            Some("Alt+Space")
+        );
+
+        // None resets to default; empty strings read back as None too.
+        SettingsRepository::set_recording_shortcut(&pool, None).await.unwrap();
+        SettingsRepository::set_dictation_shortcut(&pool, Some("  ")).await.unwrap();
+        assert!(SettingsRepository::get_recording_shortcut(&pool).await.unwrap().is_none());
+        assert!(SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().is_none());
+    }
 
     #[tokio::test]
     async fn transcription_language_missing_returns_none() {
