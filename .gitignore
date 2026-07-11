@@ -24,6 +24,8 @@ meeting_minutes.db
 # Media (recordings & demo assets)
 *.wav
 *.mp4
+# Versioned eval audio fixture (small, license-clean) — see app/scripts/eval/README.md
+!app/scripts/eval/fixtures/*.wav
 docs/demo.mov
 docs/demo.gif
 
