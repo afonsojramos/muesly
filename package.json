@@ -13,6 +13,7 @@
 		"test": "pnpm -C app/src-svelte test",
 		"eval:wer": "node app/scripts/eval/wer.mjs",
 		"eval:rubric": "node app/scripts/eval/summary-rubric.mjs",
+		"eval:real": "node app/scripts/eval/real-run.mjs",
 		"eval": "node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp.txt --max-wer 0 && node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt --max-wer 10"
 	}
 }
