@@ -767,12 +767,39 @@ impl WhisperEngine {
         };
         let initial_prompt =
             super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
-        let (cleaned_result, avg_confidence) = tokio::task::spawn_blocking(move || {
-            Self::run_full_blocking(&ctx, &audio_data, language, beam_size, temperature, initial_prompt)
-        })
-        .await
-        .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
-        let cleaned_result = crate::vocabulary::apply_cached_corrections(&cleaned_result);
+
+        // Same temperature ladder family as offline `transcribe_audio`.
+        // Arc the buffer so ladder retries don't deep-copy the audio per pass.
+        let audio_data = std::sync::Arc::new(audio_data);
+        let mut temperature = temperature;
+        let (cleaned_result, avg_confidence) = loop {
+            let ctx_c = ctx.clone();
+            let audio_c = std::sync::Arc::clone(&audio_data);
+            let lang_c = language.clone();
+            let prompt_c = initial_prompt.clone();
+            let temp = temperature;
+            let beam = beam_size;
+            let (text, conf) = tokio::task::spawn_blocking(move || {
+                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam, temp, prompt_c)
+            })
+            .await
+            .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
+            let cleaned = crate::vocabulary::apply_cached_corrections(&text);
+            if !super::decode_policy::should_retry_decode(&cleaned, 1) {
+                break (cleaned, conf);
+            }
+            match super::decode_policy::next_temperature(temperature) {
+                Some(next) => {
+                    log::debug!(
+                        "Live Whisper empty decode at temp {}; retrying at {}",
+                        temperature,
+                        next
+                    );
+                    temperature = next;
+                }
+                None => break (cleaned, conf),
+            }
+        };
         if !cleaned_result.trim().is_empty() {
             *self.last_segment_text.write().await = cleaned_result.clone();
         }
@@ -856,9 +883,11 @@ impl WhisperEngine {
             super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
 
         // Temperature ladder: retry empty/near-empty decodes with warmer settings.
+        // Arc the buffer so ladder retries don't deep-copy the audio per pass.
+        let audio_data = std::sync::Arc::new(audio_data);
         let cleaned_result = loop {
             let ctx_c = ctx.clone();
-            let audio_c = audio_data.clone();
+            let audio_c = std::sync::Arc::clone(&audio_data);
             let lang_c = language.clone();
             let prompt_c = initial_prompt.clone();
             let temp = temperature;
