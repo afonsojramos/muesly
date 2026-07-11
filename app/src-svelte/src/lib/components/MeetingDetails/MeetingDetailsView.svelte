@@ -462,37 +462,6 @@
 						</Tooltip.Root>
 					</Tooltip.Provider>
 					<div class="ml-auto flex items-center gap-1">
-						<Tooltip.Provider delayDuration={300}>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-sm"
-											onclick={() => sidePanelState.toggle()}
-											class="text-muted-foreground hover:text-foreground"
-											aria-label={sidePanelState.open
-												? 'Hide transcript & notes'
-												: 'Show transcript & notes'}
-											aria-pressed={sidePanelState.open}
-										>
-											{#if sidePanelState.open}
-												<PanelRightCloseIcon />
-											{:else}
-												<PanelRightOpenIcon />
-											{/if}
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<span class="flex items-center">
-										{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
-										<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
-									</span>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
 						<DropdownMenu.Root>
 							<Tooltip.Provider delayDuration={300}>
 								<Tooltip.Root>
@@ -538,6 +507,37 @@
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon-sm"
+											onclick={() => sidePanelState.toggle()}
+											class="text-muted-foreground hover:text-foreground"
+											aria-label={sidePanelState.open
+												? 'Hide transcript & notes'
+												: 'Show transcript & notes'}
+											aria-pressed={sidePanelState.open}
+										>
+											{#if sidePanelState.open}
+												<PanelRightCloseIcon />
+											{:else}
+												<PanelRightOpenIcon />
+											{/if}
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>
+									<span class="flex items-center">
+										{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
+										<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
+									</span>
+								</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
 					</div>
 				</div>
 			</div>
