@@ -66,6 +66,7 @@
 
 	const isSummaryLoading = $derived(
 		summaryStatus === 'processing' ||
+			summaryStatus === 'cleanup' ||
 			summaryStatus === 'summarizing' ||
 			summaryStatus === 'regenerating',
 	);
@@ -123,7 +124,9 @@
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center">
 					<Loader2Icon class="mx-auto mb-4 size-12 animate-spin text-accent" />
-					<p class="text-muted-foreground">Generating AI Summary...</p>
+					<p class="text-muted-foreground">
+						{summaryStatus === 'cleanup' ? 'Cleaning transcript…' : 'Generating AI Summary...'}
+					</p>
 				</div>
 			</div>
 		</div>

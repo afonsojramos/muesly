@@ -421,7 +421,7 @@ impl SummaryService {
     /// the main thread. It updates the database with progress and results.
     ///
     /// # Arguments
-    /// * `_app` - Tauri app handle (for future use)
+    /// * `app` - Tauri app handle (data dir + phase event emits)
     /// * `pool` - SQLx connection pool
     /// * `meeting_id` - Unique identifier for the meeting
     /// * `text` - Full transcript text
@@ -430,7 +430,7 @@ impl SummaryService {
     /// * `custom_prompt` - Optional user-provided context
     /// * `template_id` - Template identifier (e.g., "daily_standup", "standard_meeting")
     pub async fn process_transcript_background<R: tauri::Runtime>(
-        _app: AppHandle<R>,
+        app: AppHandle<R>,
         pool: SqlitePool,
         meeting_id: String,
         text: String,
@@ -521,7 +521,7 @@ impl SummaryService {
         };
 
         // Get app data directory for BuiltInAI provider
-        let app_data_dir = _app.path().app_data_dir().ok();
+        let app_data_dir = app.path().app_data_dir().ok();
 
         // Optional pre-summary cleanup (disfluencies/casing). Controlled by the
         // `transcript_cleanup_enabled` setting (default off — extra LLM call).
@@ -537,6 +537,14 @@ impl SummaryService {
             && crate::summary::cleanup::should_cleanup(&text, 200)
         {
             info!("Running transcript cleanup before summary");
+            // Surface phase so the UI can show "Cleaning transcript…" while this runs.
+            let _ = app.emit(
+                "summary-phase",
+                serde_json::json!({
+                    "meeting_id": meeting_id,
+                    "phase": "cleanup",
+                }),
+            );
             let sys = crate::summary::cleanup::cleanup_system_prompt().to_string();
             let user = crate::summary::cleanup::cleanup_user_prompt(&text);
             // Cleanup must return ~full transcript; use a size-aware budget, not
@@ -575,6 +583,13 @@ impl SummaryService {
                 ),
                 Err(e) => warn!("Transcript cleanup failed (using original): {}", e),
             }
+            let _ = app.emit(
+                "summary-phase",
+                serde_json::json!({
+                    "meeting_id": meeting_id,
+                    "phase": "summarizing",
+                }),
+            );
         }
 
         // Resolve output and transcript languages for the two-pass summary

@@ -15,6 +15,7 @@
 	type SummaryStatus =
 		| 'idle'
 		| 'processing'
+		| 'cleanup'
 		| 'summarizing'
 		| 'regenerating'
 		| 'completed'
@@ -64,7 +65,10 @@
 	}
 
 	const isLoading = $derived(
-		status === 'processing' || status === 'summarizing' || status === 'regenerating',
+		status === 'processing' ||
+			status === 'cleanup' ||
+			status === 'summarizing' ||
+			status === 'regenerating',
 	);
 	const hasContent = $derived(incomingMarkdown.trim().length > 0);
 
@@ -78,7 +82,13 @@
 	export async function save(): Promise<void> {
 		if (!onSave || currentMarkdown === savedMarkdown || saving) return;
 		// Don't persist while a generation is streaming content in.
-		if (status === 'processing' || status === 'summarizing' || status === 'regenerating') return;
+		if (
+			status === 'processing' ||
+			status === 'cleanup' ||
+			status === 'summarizing' ||
+			status === 'regenerating'
+		)
+			return;
 		saving = true;
 		saveStatus.begin();
 		const snapshot = currentMarkdown;
@@ -114,12 +124,18 @@
 	<Alert.Root class="text-accent">
 		<Loader2Icon class="animate-spin" />
 		<Alert.Title>
-			{status === 'processing' ? 'Processing Transcript' : 'Generating Summary'}
+			{status === 'cleanup'
+				? 'Cleaning Transcript'
+				: status === 'processing'
+					? 'Processing Transcript'
+					: 'Generating Summary'}
 		</Alert.Title>
 		<Alert.Description>
-			{status === 'processing'
-				? 'Analyzing your transcript…'
-				: 'Creating a detailed summary of your meeting…'}
+			{status === 'cleanup'
+				? 'Fixing fillers, casing, and punctuation before the summary…'
+				: status === 'processing'
+					? 'Analyzing your transcript…'
+					: 'Creating a detailed summary of your meeting…'}
 		</Alert.Description>
 	</Alert.Root>
 {:else if !hasContent && status === 'completed'}

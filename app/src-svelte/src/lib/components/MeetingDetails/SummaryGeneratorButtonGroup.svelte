@@ -71,6 +71,7 @@
 
 	const isGenerating = $derived(
 		summaryStatus === 'processing' ||
+			summaryStatus === 'cleanup' ||
 			summaryStatus === 'summarizing' ||
 			summaryStatus === 'regenerating',
 	);

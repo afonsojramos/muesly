@@ -11,11 +11,13 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { Summary, Transcript } from '$lib/types';
 import type { ModelConfig } from '$lib/services/config';
 import type { BuiltInModelInfo } from '$lib/ai/builtin-ai';
 import { Analytics } from '$lib/analytics';
+import { commands } from '$lib/bindings';
 import { sidebar } from '$lib/stores/sidebar.svelte';
 import { toast } from '$lib/toast';
 import { isOllamaNotInstalledError } from '$lib/utils';
@@ -23,6 +25,7 @@ import { isOllamaNotInstalledError } from '$lib/utils';
 export type SummaryStatus =
 	| 'idle'
 	| 'processing'
+	| 'cleanup'
 	| 'summarizing'
 	| 'regenerating'
 	| 'completed'
@@ -111,6 +114,32 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 	let summaryStatus = $state<SummaryStatus>('idle');
 	let summaryError = $state<string | null>(null);
 	let originalTranscript = '';
+	let phaseUnlisten: UnlistenFn | null = null;
+
+	function teardownPhaseListener(): void {
+		phaseUnlisten?.();
+		phaseUnlisten = null;
+	}
+
+	async function bindPhaseListener(meetingId: string): Promise<void> {
+		teardownPhaseListener();
+		try {
+			phaseUnlisten = await listen<{ meeting_id?: string; phase?: string }>(
+				'summary-phase',
+				(ev) => {
+					const p = ev.payload;
+					if (!p || p.meeting_id !== meetingId) return;
+					if (p.phase === 'cleanup') {
+						summaryStatus = 'cleanup';
+					} else if (p.phase === 'summarizing' && summaryStatus === 'cleanup') {
+						summaryStatus = 'summarizing';
+					}
+				},
+			);
+		} catch {
+			// Non-fatal: status still advances via polling.
+		}
+	}
 
 	const processSummary = async ({
 		transcriptText,
@@ -146,10 +175,23 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 				await Analytics.trackCustomPromptUsed(customPrompt.trim().length);
 			}
 
-			toast.info(`${isRegeneration ? 'Regenerating' : 'Generating'} summary...`, {
-				description: `Using ${modelConfig.provider}/${modelConfig.model}`,
-				duration: 3000,
-			});
+			// If cleanup is on, surface that phase early (backend also emits summary-phase).
+			const cleanupRes = await commands.getTranscriptCleanupEnabled();
+			const cleanupOn = cleanupRes.status === 'ok' && cleanupRes.data;
+			if (cleanupOn && !isRegeneration) {
+				summaryStatus = 'cleanup';
+			}
+			await bindPhaseListener(meeting.id);
+
+			toast.info(
+				cleanupOn && !isRegeneration
+					? 'Cleaning transcript, then summarizing…'
+					: `${isRegeneration ? 'Regenerating' : 'Generating'} summary...`,
+				{
+					description: `Using ${modelConfig.provider}/${modelConfig.model}`,
+					duration: 3000,
+				},
+			);
 
 			const result = (await invoke('api_process_transcript', {
 				params: {
@@ -171,6 +213,9 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 				meeting.id,
 				processId,
 				async (pollingResult: SummaryPollResult) => {
+					// Polling only reports terminal states; drop the phase listener so a
+					// stray late `summary-phase` event can't flip the status back.
+					teardownPhaseListener();
 					if (pollingResult.status === 'cancelled') {
 						try {
 							const existing = (await invoke('api_get_summary', {
@@ -350,6 +395,7 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 				},
 			);
 		} catch (error) {
+			teardownPhaseListener();
 			const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 			summaryError = errorMessage;
 			summaryStatus = 'error';
@@ -549,10 +595,7 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 			selfName,
 			includeTimestamps: true,
 			formatTime: (start, ts) =>
-				formatTime(
-					typeof start === 'number' ? start : undefined,
-					typeof ts === 'string' ? ts : '',
-				),
+				formatTime(typeof start === 'number' ? start : undefined, typeof ts === 'string' ? ts : ''),
 		});
 		// Steer the model to keep a few bracketed timestamps in the markdown.
 		const timestampHint =
