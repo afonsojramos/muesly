@@ -27,7 +27,12 @@
 	import { storageService } from '$lib/services/storage';
 	import { useMeetingData } from '$lib/hooks/use-meeting-data.svelte';
 	import { useTemplates } from '$lib/hooks/use-templates.svelte';
-	import { useCopyOperations } from '$lib/hooks/use-copy-operations.svelte';
+	import {
+		fetchAllTranscripts,
+		fetchSpeakerContext,
+		transcriptMarkdownBody,
+		useCopyOperations,
+	} from '$lib/hooks/use-copy-operations.svelte';
 	import { useMeetingOperations } from '$lib/hooks/use-meeting-operations.svelte';
 	import { useSummaryGeneration } from '$lib/hooks/use-summary-generation.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -185,13 +190,20 @@
 		}
 	}
 
-	// Export the note (title + AI summary) to a Markdown file via a native Save
-	// dialog. The backend writes the file and returns the chosen path.
+	// Export the note (title + AI summary + speaker-labeled transcript) to a
+	// Markdown file via a native Save dialog. The backend writes the file and
+	// returns the chosen path. A meeting with no transcript exports summary-only.
 	async function handleExportMarkdown(): Promise<void> {
 		try {
 			const summaryMarkdown = (await summaryPanel?.getSummaryMarkdown()) ?? '';
 			const title = meetingData.meetingTitle?.trim() || 'Untitled meeting';
-			const contents = `# ${title}\n\n${summaryMarkdown}`.trim() + '\n';
+			let contents = `# ${title}\n\n${summaryMarkdown}`.trim();
+			const rows = await fetchAllTranscripts(meeting.id);
+			if (rows.length > 0) {
+				const ctx = await fetchSpeakerContext(meeting.id);
+				contents += `\n\n## Transcript\n\n${transcriptMarkdownBody(rows, ctx)}`;
+			}
+			contents = contents.trim() + '\n';
 			const safeName = (title.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 80) || 'meeting') + '.md';
 
 			const savedPath = await invoke<string | null>('api_export_meeting_markdown', {

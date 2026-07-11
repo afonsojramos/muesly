@@ -60,7 +60,10 @@ describe('formatTranscriptMarkdown', () => {
 	});
 
 	it('degrades to plain timestamped lines with no speaker data', () => {
-		const rows = [row('a', 'one', undefined, undefined, 1), row('b', 'two', undefined, undefined, 5)];
+		const rows = [
+			row('a', 'one', undefined, undefined, 1),
+			row('b', 'two', undefined, undefined, 5),
+		];
 		const out = formatTranscriptMarkdown(rows, ctx(), { formatTime });
 		expect(out).toBe('[00:01] one\n[00:05] two');
 		expect(out).not.toContain('**');
