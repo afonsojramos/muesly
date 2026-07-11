@@ -10,6 +10,9 @@
 		"lint:fix": "pnpm -C app/src-svelte lint:fix",
 		"format": "pnpm -C app/src-svelte format",
 		"format:check": "pnpm -C app/src-svelte format:check",
-		"test": "pnpm -C app/src-svelte test"
+		"test": "pnpm -C app/src-svelte test",
+		"eval:wer": "node app/scripts/eval/wer.mjs",
+		"eval:rubric": "node app/scripts/eval/summary-rubric.mjs",
+		"eval": "node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp.txt --max-wer 0 && node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt --max-wer 10"
 	}
 }

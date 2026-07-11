@@ -1,7 +1,8 @@
 name: Eval Harness
 
-# Optional quality checks — does not block merges on model quality, only that
-# the harness scripts run. Expand fixtures over time.
+# Quality checks against fixed fixtures: the scripts must run AND stay within
+# per-fixture WER thresholds (deterministic, so safe to gate). No live model
+# output is scored here. Expand fixtures over time.
 on:
   pull_request:
     paths:
@@ -23,11 +24,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Word error rate (fixtures)
+      - name: Word error rate (short fixture)
         run: |
           node app/scripts/eval/wer.mjs \
             app/scripts/eval/fixtures/sample-ref.txt \
-            app/scripts/eval/fixtures/sample-hyp.txt
+            app/scripts/eval/fixtures/sample-hyp.txt \
+            --max-wer 0
+      - name: Word error rate (multi-utterance golden)
+        run: |
+          node app/scripts/eval/wer.mjs \
+            app/scripts/eval/fixtures/meeting-golden-ref.txt \
+            app/scripts/eval/fixtures/meeting-golden-hyp.txt \
+            --max-wer 0
+          node app/scripts/eval/wer.mjs \
+            app/scripts/eval/fixtures/meeting-golden-ref.txt \
+            app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt \
+            --max-wer 10
       - name: Summary rubric (sample markdown)
         run: |
           cat > /tmp/sample-summary.md <<'MD'

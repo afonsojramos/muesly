@@ -36,11 +36,26 @@ export function wer(refText, hypText) {
   return editDistance(ref, hyp) / ref.length;
 }
 
-const [refPath, hypPath] = process.argv.slice(2);
+const args = process.argv.slice(2);
+let maxWerPct = null;
+const flagIdx = args.indexOf('--max-wer');
+if (flagIdx !== -1) {
+  maxWerPct = Number(args[flagIdx + 1]);
+  args.splice(flagIdx, 2);
+  if (!Number.isFinite(maxWerPct) || maxWerPct < 0) {
+    console.error('--max-wer requires a non-negative percentage');
+    process.exit(2);
+  }
+}
+const [refPath, hypPath] = args;
 if (!refPath || !hypPath) {
-  console.error('Usage: node wer.mjs <reference.txt> <hypothesis.txt>');
+  console.error('Usage: node wer.mjs <reference.txt> <hypothesis.txt> [--max-wer <pct>]');
   process.exit(2);
 }
 const score = wer(fs.readFileSync(refPath, 'utf8'), fs.readFileSync(hypPath, 'utf8'));
-console.log(`WER: ${(score * 100).toFixed(2)}%`);
-process.exit(score === 0 ? 0 : 0); // always 0 for CI scaffold; print only
+const pct = score * 100;
+console.log(`WER: ${pct.toFixed(2)}%`);
+if (maxWerPct !== null && pct > maxWerPct) {
+  console.error(`FAIL: WER ${pct.toFixed(2)}% exceeds threshold ${maxWerPct}%`);
+  process.exit(1);
+}
