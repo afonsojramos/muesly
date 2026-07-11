@@ -2,9 +2,10 @@
 //!
 //! Transport is a `#[tauri::command]` plus a `tauri::ipc::Channel` (the app is
 //! `adapter-static`, so there is no JS server and all LLM access lives in Rust).
-//! Phase 1 emits the whole answer as a single `Token` + `Done` via the existing
-//! [`generate_summary`] path; real token streaming is an additive follow-up that
-//! reuses this exact command/Channel shape.
+//! Every provider streams for real: the local sidecar emits incremental `Token`
+//! lines over stdio (requires a sidecar binary built after the streaming
+//! protocol landed — an older binary silently answers in one bulk response),
+//! and HTTP providers stream over SSE. `Done.full` remains authoritative.
 //!
 //! Privacy: chat context is the meeting's transcript + summary + title only. Like
 //! the summary pipeline, the user's configured provider *is* the consent for
@@ -52,8 +53,8 @@ const DEFAULT_MAX_TOKENS: u32 = 1024;
 pub enum ChatStreamEvent {
     /// Generation accepted and started.
     Started { gen_id: String },
-    /// An incremental chunk of the answer. In Phase 1 the whole answer arrives
-    /// as a single `Token`; real streaming sends many.
+    /// An incremental chunk of the answer; many arrive per generation. (A
+    /// pre-streaming sidecar binary sends none — the answer then lands in `Done`.)
     Token { text: String },
     /// Generation finished successfully; `full` is the complete answer.
     Done { gen_id: String, full: String },
