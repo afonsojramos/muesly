@@ -1,14 +1,21 @@
-# Eval harness (scaffold)
+# Eval harness
 
-Minimal offline checks for ASR/summary quality so model and pipeline changes are measurable.
+Offline checks for ASR/summary quality so model and pipeline changes are measurable.
+Two tiers:
+
+- **Dry-run** (`pnpm eval`, CI): scores pre-written hypothesis text against golden
+  references — proves the scoring scripts, not the engine.
+- **Real run** (`pnpm eval:real`, dev machines only): transcribes a checked-in audio
+  fixture with the actual Whisper engine and gates its WER against the golden.
 
 ## Layout
 
 ```
 app/scripts/eval/
-  fixtures/           # sample golden transcripts (plain text)
-  wer.mjs             # word error rate vs golden
+  fixtures/           # golden transcripts (plain text) + real-speech.wav audio
+  wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
   summary-rubric.mjs  # checklist scoring of a summary markdown file
+  real-run.mjs        # real-engine run: cargo example -> WER gate
 ```
 
 ## Usage
@@ -29,6 +36,29 @@ node app/scripts/eval/wer.mjs \
 pnpm eval:rubric -- path/to/summary.md
 ```
 
+## Real run (`pnpm eval:real`)
+
+Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
+`fixtures/real-speech.wav` with the `tiny` Whisper model and gates WER against
+`fixtures/real-speech-ref.txt`.
+
+- **First-run costs:** compiles the Rust workspace, downloads FFmpeg during the
+  build, and fetches the `tiny` model (~75 MB) into the gitignored dev models
+  dir. Later runs reuse everything. Missing Tauri sidecar binaries are stubbed
+  automatically (same approach as CI's rust-check).
+- **Threshold:** default `--max-wer 10`. Calibration (2026-07-11, Apple Silicon,
+  Metal): 3 consecutive runs scored 0.00% WER, so 10% is a regression tripwire,
+  not a quality bar. Re-calibrate by running it a few times after intentional
+  decode changes and updating the default in `real-run.mjs`.
+- **Backend variance:** the example builds with the workspace's default
+  features (Metal/CoreML are hardwired on macOS); small cross-backend drift is
+  absorbed by the threshold.
+- **Fixture provenance:** `real-speech.wav` is synthesized locally via macOS
+  `say` (16 kHz mono, ~28 s, ~0.9 MB) from `real-speech-ref.txt` — no third-party
+  rights involved. A real recorded meeting clip (public domain or self-recorded
+  only) is a welcome replacement; keep it ≤ ~1 MB and update the reference text
+  and calibration.
+
 Fixtures:
 
 | File | Role |
@@ -37,11 +67,13 @@ Fixtures:
 | `meeting-golden-ref.txt` | Multi-utterance sprint-planning reference |
 | `meeting-golden-hyp.txt` | Clean hypothesis (expect ~0% WER) |
 | `meeting-golden-hyp-noisy.txt` | ASR-like errors (non-zero WER) |
+| `real-speech.wav` + `real-speech-ref.txt` | Audio + golden for the real-engine run |
 
 Add more fixtures under `fixtures/` as real meetings are curated.
 
 CI: `.github/workflows/eval-harness.yml` runs WER (short + multi-utterance) +
 rubric dry-run on changes to `app/scripts/eval/**`. Fixture WER is asserted
 with `--max-wer` (0% for clean hypotheses, 10% for the noisy one); fixtures are
-fixed files, so the thresholds are deterministic. No live model output is
-scored or gated.
+fixed files, so the thresholds are deterministic. **CI never runs `eval:real`**
+— the real run needs a Rust build, a model download, and hardware-dependent
+inference, so it stays a dev-machine check by design.
