@@ -38,10 +38,12 @@ export function buildTalkTimeBuckets(
 
 	const totals = new Map<string, number>();
 	for (const g of groups) {
-		if (g.seconds <= 0) continue;
+		// specta exports f64 as `number | null` (non-finite floats serialize to null).
+		const seconds = g.seconds ?? 0;
+		if (seconds <= 0) continue;
 		const label = labelFor(g, ctx, displayIndex);
 		if (!label) continue;
-		totals.set(label, (totals.get(label) ?? 0) + g.seconds);
+		totals.set(label, (totals.get(label) ?? 0) + seconds);
 	}
 
 	const total = [...totals.values()].reduce((a, b) => a + b, 0);

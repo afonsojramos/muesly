@@ -13,6 +13,7 @@
 		SIDE_PANEL_SUMMARY_MIN_WIDTH,
 		type SidePanelTab,
 	} from '$lib/stores/side-panel.svelte';
+	import TalkTimeBar from './TalkTimeBar.svelte';
 	import TranscriptButtonGroup from './TranscriptButtonGroup.svelte';
 	import NotesView from './NotesView.svelte';
 
@@ -235,6 +236,14 @@
 				{onRefetchTranscripts}
 			/>
 		</div>
+
+		<!-- Talk-time breakdown: post-meeting only; hides itself when it carries
+		     no signal (fewer than two speakers with timed speech). -->
+		{#if !isRecording && meetingId}
+			<div class="flex-shrink-0 px-4 pb-2">
+				<TalkTimeBar {meetingId} segments={convertedSegments} speakerContext={speakers.ctx} />
+			</div>
+		{/if}
 
 		<div class="min-h-0 flex-1 overflow-hidden pb-4">
 			<VirtualizedTranscriptView
