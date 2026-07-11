@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Calendar, ExternalLink, RefreshCw, ShieldAlert, Trash2 } from '@lucide/svelte';
+	import { Calendar, RefreshCw, ShieldAlert, Trash2 } from '@lucide/svelte';
 
 	import { Switch } from '$lib/components/ui/switch';
 	import * as Alert from '$lib/components/ui/alert';
@@ -67,6 +67,39 @@
 	}
 
 	async function toggleAccount(id: string, next: boolean): Promise<void> {
+		// The local (EventKit) source is what needs macOS calendar permission, so
+		// enabling it requests access inline — no separate "grant access" button.
+		if (next && id === localAccount?.id && !granted) {
+			requesting = true;
+			try {
+				const r = await commands.calendarRequestAccess();
+				if (r.status === 'ok') authStatus = r.data;
+			} finally {
+				requesting = false;
+			}
+			if (!granted) {
+				if (authStatus === 'restricted') {
+					toast.error('Calendar access is restricted', {
+						description:
+							'Your device management settings prevent granting calendar access to muesly.',
+					});
+				} else {
+					// macOS only shows the consent prompt once; afterwards access has to
+					// be granted from System Settings.
+					toast.error('Calendar access not granted', {
+						description: 'Grant muesly full calendar access in System Settings, then try again.',
+						action: {
+							label: 'Open System Settings',
+							onClick: () => {
+								void commands.calendarOpenSettings();
+							},
+						},
+					});
+				}
+				return;
+			}
+			void loadCalendars();
+		}
 		const res = await commands.calendarSetAccountEnabled(id, next);
 		if (res.status === 'error') {
 			toast.error('Could not update source', { description: res.error });
@@ -197,47 +230,16 @@
 		})();
 	});
 
+	// Permission is requested when the local "On this Mac" source is enabled
+	// (see toggleAccount); the master toggle doesn't gate on it since Google
+	// sources work without EventKit access.
 	async function handleEnableToggle(next: boolean): Promise<void> {
-		// Turning on without permission: request it first.
-		if (next && !granted) {
-			requesting = true;
-			try {
-				authStatus = await commands
-					.calendarRequestAccess()
-					.then((r) => (r.status === 'ok' ? r.data : authStatus));
-			} finally {
-				requesting = false;
-			}
-			if (!granted) {
-				toast.error('Calendar access not granted', {
-					description: 'muesly needs read access to your calendar to add meeting context.',
-				});
-				return;
-			}
-			await loadCalendars();
-		}
-
 		enabled = next;
 		const res = await commands.calendarSetContextEnabled(next);
 		if (res.status === 'error') {
 			enabled = !next;
 			toast.error('Failed to update calendar setting', { description: res.error });
 		}
-	}
-
-	async function requestAccess(): Promise<void> {
-		requesting = true;
-		try {
-			const r = await commands.calendarRequestAccess();
-			if (r.status === 'ok') authStatus = r.data;
-			if (granted) await loadCalendars();
-		} finally {
-			requesting = false;
-		}
-	}
-
-	async function openSettings(): Promise<void> {
-		await commands.calendarOpenSettings();
 	}
 
 	async function toggleCalendar(id: string, include: boolean): Promise<void> {
@@ -318,7 +320,8 @@
 							</div>
 							{#if localAccount}
 								<Switch
-									checked={localAccount.enabled}
+									checked={localAccount.enabled && granted}
+									disabled={requesting}
 									onCheckedChange={(v) => toggleAccount(localAccount.id, v)}
 								/>
 							{/if}
@@ -455,32 +458,6 @@
 					{/if}
 				</div>
 			</Card.Root>
-		{/if}
-
-		{#if enabled && !granted}
-			<Alert.Root class="border-warning/50 bg-warning/10 text-warning">
-				<ShieldAlert />
-				<Alert.Title>Calendar access required</Alert.Title>
-				<Alert.Description class="text-warning/90">
-					{#if authStatus === 'restricted'}
-						<p>
-							Calendar access is restricted by your device management and cannot be granted here.
-						</p>
-					{:else if authStatus === 'denied' || authStatus === 'writeonly'}
-						<p class="mb-2">
-							muesly needs read access to your calendar. Grant full access in System Settings.
-						</p>
-						<Button variant="outline" size="sm" onclick={openSettings}>
-							<ExternalLink data-icon="inline-start" /> Open System Settings
-						</Button>
-					{:else}
-						<p class="mb-2">muesly needs read access to your calendar.</p>
-						<Button variant="outline" size="sm" disabled={requesting} onclick={requestAccess}>
-							<Calendar data-icon="inline-start" /> Grant calendar access
-						</Button>
-					{/if}
-				</Alert.Description>
-			</Alert.Root>
 		{/if}
 
 		{#if enabled && granted}
