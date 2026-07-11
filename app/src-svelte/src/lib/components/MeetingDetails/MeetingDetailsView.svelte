@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
+	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import CopyIcon from '@lucide/svelte/icons/copy';
 	import DownloadIcon from '@lucide/svelte/icons/download';
+	import EllipsisVerticalIcon from '@lucide/svelte/icons/ellipsis-vertical';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
@@ -28,6 +32,8 @@
 	import { useSummaryGeneration } from '$lib/hooks/use-summary-generation.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import SidePanel from './SidePanel.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
@@ -181,7 +187,7 @@
 
 	// Export the note (title + AI summary) to a Markdown file via a native Save
 	// dialog. The backend writes the file and returns the chosen path.
-	async function handleExport(): Promise<void> {
+	async function handleExportMarkdown(): Promise<void> {
 		try {
 			const summaryMarkdown = (await summaryPanel?.getSummaryMarkdown()) ?? '';
 			const title = meetingData.meetingTitle?.trim() || 'Untitled meeting';
@@ -199,6 +205,64 @@
 		} catch (error) {
 			console.error('Failed to export note:', error);
 			toast.error('Failed to export note', { description: String(error) });
+		}
+	}
+
+	async function handleCopyNotes(): Promise<void> {
+		try {
+			const notes = (sidePanel?.getNotesMarkdown() ?? notesMarkdown).trim();
+			if (!notes) {
+				toast.error('No notes to copy');
+				return;
+			}
+			await navigator.clipboard.writeText(notes);
+			toast.success('Notes copied to clipboard');
+			void Analytics.trackButtonClick('copy_notes', 'meeting_details');
+		} catch (error) {
+			console.error('Failed to copy notes:', error);
+			toast.error('Failed to copy notes', { description: String(error) });
+		}
+	}
+
+	let deleteConfirmOpen = $state(false);
+	let deleting = $state(false);
+
+	async function handleDeleteMeeting(): Promise<void> {
+		if (deleting) return;
+		deleting = true;
+		const meetingId = meeting.id;
+		try {
+			await invoke('api_delete_meeting', { meetingId });
+			sidebar.meetings = sidebar.meetings.filter((m) => m.id !== meetingId);
+			void Analytics.trackMeetingDeleted(meetingId);
+			toast.success('Meeting moved to trash', {
+				description: 'Restore it from Settings → Trash',
+				action: {
+					label: 'Undo',
+					onClick: () => {
+						void (async () => {
+							try {
+								await invoke('api_restore_meeting', { meetingId });
+								await sidebar.refetchMeetings();
+							} catch (error) {
+								console.error('Failed to restore meeting:', error);
+							}
+						})();
+					},
+				},
+			});
+			deleteConfirmOpen = false;
+			if (sidebar.currentMeeting?.id === meetingId) {
+				sidebar.setCurrentMeeting({ id: 'intro-call', title: '+ New Call' });
+			}
+			void goto('/');
+		} catch (error) {
+			console.error('Failed to delete meeting:', error);
+			toast.error('Failed to delete meeting', {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			deleting = false;
 		}
 	}
 
@@ -394,25 +458,6 @@
 											{...props}
 											variant="ghost"
 											size="icon-sm"
-											onclick={handleExport}
-											class="text-muted-foreground hover:text-foreground"
-											aria-label="Export note as Markdown"
-										>
-											<DownloadIcon />
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content>Export as Markdown</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
-						<Tooltip.Provider delayDuration={300}>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-sm"
 											onclick={() => sidePanelState.toggle()}
 											class="text-muted-foreground hover:text-foreground"
 											aria-label={sidePanelState.open
@@ -436,12 +481,57 @@
 								</Tooltip.Content>
 							</Tooltip.Root>
 						</Tooltip.Provider>
+						<DropdownMenu.Root>
+							<Tooltip.Provider delayDuration={300}>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										{#snippet child({ props: tooltipProps })}
+											<DropdownMenu.Trigger>
+												{#snippet child({ props: menuProps })}
+													<Button
+														{...tooltipProps}
+														{...menuProps}
+														variant="ghost"
+														size="icon-sm"
+														class="text-muted-foreground hover:text-foreground"
+														aria-label="Meeting actions"
+													>
+														<EllipsisVerticalIcon />
+													</Button>
+												{/snippet}
+											</DropdownMenu.Trigger>
+										{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content>Meeting actions</Tooltip.Content>
+								</Tooltip.Root>
+							</Tooltip.Provider>
+							<DropdownMenu.Content align="end" class="min-w-48">
+								<DropdownMenu.Item onSelect={() => void handleCopyNotes()}>
+									<CopyIcon />
+									Copy notes
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onSelect={() => void handleExportMarkdown()}>
+									<DownloadIcon />
+									Export as Markdown
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									variant="destructive"
+									onSelect={() => {
+										deleteConfirmOpen = true;
+									}}
+								>
+									<Trash2Icon />
+									Delete meeting
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 					</div>
 				</div>
 			</div>
 			<!-- Note header: large display title + date, Granola-style. -->
 			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-4">
-				<div class="flex items-start gap-2">
+				<div class="flex items-start gap-1">
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
@@ -549,3 +639,22 @@
 		/>
 	</div>
 </div>
+
+<Dialog.Root bind:open={deleteConfirmOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Delete meeting</Dialog.Title>
+			<Dialog.Description>
+				Move this meeting to the trash? You can restore it from Settings → Trash.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (deleteConfirmOpen = false)} disabled={deleting}>
+				Cancel
+			</Button>
+			<Button variant="destructive" onclick={() => void handleDeleteMeeting()} disabled={deleting}>
+				{deleting ? 'Deleting…' : 'Delete'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
