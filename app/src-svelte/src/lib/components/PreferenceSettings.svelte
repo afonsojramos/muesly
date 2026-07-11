@@ -143,13 +143,6 @@
 						<FolderOpen data-icon="inline-start" /> Open Folder
 					</Button>
 				</div>
-
-				<div class="rounded-md bg-brand/5 p-3">
-					<p class="text-xs text-foreground">
-						<strong>Note:</strong> Database and models are stored together in your application data directory
-						for unified management.
-					</p>
-				</div>
 			</Card.Content>
 		</Card.Root>
 

@@ -10,6 +10,7 @@
 	import Loadable from '$lib/components/Loadable.svelte';
 	import { toast } from '$lib/toast';
 	import { cn } from '$lib/utils';
+	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import {
 		commands,
 		type CalendarAccount,
@@ -35,6 +36,8 @@
 	// ignored rather than overwriting the result of the click they completed.
 	let addAttempt = 0;
 
+	// EventKit is macOS-only; other platforms hide the "On this Mac" source.
+	const platform = usePlatform();
 	const granted = $derived(authStatus === 'granted');
 	const googleAccounts = $derived(accounts.filter((a) => a.source === 'google'));
 	const localAccount = $derived(accounts.find((a) => a.source === 'eventkit') ?? null);
@@ -68,7 +71,7 @@
 
 	async function toggleAccount(id: string, next: boolean): Promise<void> {
 		// The local (EventKit) source is what needs macOS calendar permission, so
-		// enabling it requests access inline — no separate "grant access" button.
+		// enabling it requests access inline (no separate "grant access" button).
 		if (next && id === localAccount?.id && !granted) {
 			requesting = true;
 			try {
@@ -309,57 +312,61 @@
 					recordings.
 				</div>
 				<div class="flex flex-col gap-2">
-					<!-- Local macOS source (calendars always shown, like Google accounts) -->
-					<div class="flex flex-col gap-2">
-						<div class="flex items-center justify-between gap-3">
-							<div class="min-w-0 flex-1 truncate text-sm">
-								On this Mac
-								{#if !granted}
-									<span class="ml-2 text-xs text-warning">(calendar access needed)</span>
+					<!-- Local macOS source (calendars always shown, like Google accounts).
+					     EventKit is macOS-only, so other platforms don't get the row at all
+					     even though the eventkit-local account row exists in the DB. -->
+					{#if platform.isMac}
+						<div class="flex flex-col gap-2">
+							<div class="flex items-center justify-between gap-3">
+								<div class="min-w-0 flex-1 truncate text-sm">
+									On this Mac
+									{#if !granted}
+										<span class="ml-2 text-xs text-warning">(calendar access needed)</span>
+									{/if}
+								</div>
+								{#if localAccount}
+									<Switch
+										checked={localAccount.enabled && granted}
+										disabled={requesting}
+										onCheckedChange={(v) => toggleAccount(localAccount.id, v)}
+									/>
 								{/if}
 							</div>
-							{#if localAccount}
-								<Switch
-									checked={localAccount.enabled && granted}
-									disabled={requesting}
-									onCheckedChange={(v) => toggleAccount(localAccount.id, v)}
-								/>
+
+							{#if granted}
+								<div
+									class={cn(
+										'divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-muted/20 transition-opacity',
+										localAccount && !localAccount.enabled && 'opacity-50',
+									)}
+								>
+									{#if !localCalendarsLoaded}
+										<div class="px-3 py-2 text-xs text-muted-foreground">Loading calendars…</div>
+									{:else if calendars.length === 0}
+										<div class="px-3 py-2 text-xs text-muted-foreground">No calendars found.</div>
+									{:else}
+										{#each calendars as cal (cal.id)}
+											<div class="flex items-center justify-between gap-3 px-3 py-2">
+												<span class="min-w-0 flex-1 truncate text-sm">
+													{cal.title}
+													{#if cal.excluded_by_default}
+														<span class="ml-1 text-xs text-muted-foreground"
+															>(excluded by default)</span
+														>
+													{/if}
+												</span>
+												<Switch
+													checked={!cal.excluded_by_default && !excludedIds.has(cal.id)}
+													disabled={cal.excluded_by_default}
+													onCheckedChange={(v) => toggleCalendar(cal.id, v)}
+												/>
+											</div>
+										{/each}
+									{/if}
+								</div>
 							{/if}
 						</div>
-
-						{#if granted}
-							<div
-								class={cn(
-									'divide-y divide-border/60 overflow-hidden rounded-md border border-border/60 bg-muted/20 transition-opacity',
-									localAccount && !localAccount.enabled && 'opacity-50',
-								)}
-							>
-								{#if !localCalendarsLoaded}
-									<div class="px-3 py-2 text-xs text-muted-foreground">Loading calendars…</div>
-								{:else if calendars.length === 0}
-									<div class="px-3 py-2 text-xs text-muted-foreground">No calendars found.</div>
-								{:else}
-									{#each calendars as cal (cal.id)}
-										<div class="flex items-center justify-between gap-3 px-3 py-2">
-											<span class="min-w-0 flex-1 truncate text-sm">
-												{cal.title}
-												{#if cal.excluded_by_default}
-													<span class="ml-1 text-xs text-muted-foreground"
-														>(excluded by default)</span
-													>
-												{/if}
-											</span>
-											<Switch
-												checked={!cal.excluded_by_default && !excludedIds.has(cal.id)}
-												disabled={cal.excluded_by_default}
-												onCheckedChange={(v) => toggleCalendar(cal.id, v)}
-											/>
-										</div>
-									{/each}
-								{/if}
-							</div>
-						{/if}
-					</div>
+					{/if}
 
 					<!-- Connected Google accounts (calendars always shown) -->
 					{#each googleAccounts as acct (acct.id)}
