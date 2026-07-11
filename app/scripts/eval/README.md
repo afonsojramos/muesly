@@ -47,17 +47,19 @@ Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
   dir. Later runs reuse everything. Missing Tauri sidecar binaries are stubbed
   automatically (same approach as CI's rust-check).
 - **Threshold:** default `--max-wer 10`. Calibration (2026-07-11, Apple Silicon,
-  Metal): 3 consecutive runs scored 0.00% WER, so 10% is a regression tripwire,
-  not a quality bar. Re-calibrate by running it a few times after intentional
-  decode changes and updating the default in `real-run.mjs`.
+  Metal): 3 consecutive runs of `tiny` on the fixture scored 0.00% WER, so 10%
+  is a regression tripwire, not a quality bar. Re-calibrate by running it a few
+  times after intentional decode changes and updating the default in
+  `real-run.mjs`.
 - **Backend variance:** the example builds with the workspace's default
   features (Metal/CoreML are hardwired on macOS); small cross-backend drift is
   absorbed by the threshold.
-- **Fixture provenance:** `real-speech.wav` is synthesized locally via macOS
-  `say` (16 kHz mono, ~28 s, ~0.9 MB) from `real-speech-ref.txt` — no third-party
-  rights involved. A real recorded meeting clip (public domain or self-recorded
-  only) is a welcome replacement; keep it ≤ ~1 MB and update the reference text
-  and calibration.
+- **Fixture provenance:** `real-speech.wav` is a 27 s excerpt (16 kHz mono,
+  ~0.9 MB) of the LibriVox recording of Lincoln's Gettysburg Address read by
+  John Greenman (archive.org item `gettysburg_johng_librivox`, public domain).
+  The reference is the canonical Bliss-copy text of the excerpt, cross-checked
+  against `tiny` and `base` transcriptions. Additional clips must stay public
+  domain or self-recorded, ≤ ~1 MB, with the reference and calibration updated.
 
 Fixtures:
 
