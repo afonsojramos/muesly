@@ -151,15 +151,24 @@
 					<div class="flex flex-col">
 						{#each group.items as meeting (meeting.id)}
 							{@const folder = meeting.folderId ? folderById.get(meeting.folderId) : undefined}
-							<button
-								type="button"
-								onclick={() => openMeeting(meeting.id)}
-								class="flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-secondary"
+							<!-- The title button stretches over the whole row (after:inset-0), so the
+							     folder chip stays a valid sibling link instead of a nested button. -->
+							<div
+								class="relative flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-secondary"
 							>
-								<span class="min-w-0 flex-1 truncate text-sm font-medium">{meeting.title}</span>
+								<button
+									type="button"
+									onclick={() => openMeeting(meeting.id)}
+									class="min-w-0 flex-1 truncate text-left text-sm font-medium after:absolute after:inset-0 after:rounded-lg"
+								>
+									{meeting.title}
+								</button>
 								{#if folder}
-									<span
-										class="inline-flex max-w-40 flex-shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground"
+									<button
+										type="button"
+										onclick={() => void goto(`/folder?id=${folder.id}`)}
+										aria-label={`Open folder ${folder.name}`}
+										class="relative z-10 inline-flex max-w-40 flex-shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
 									>
 										{#if folder.emoji}
 											<span aria-hidden="true">{folder.emoji}</span>
@@ -167,12 +176,12 @@
 											<FolderIcon class="size-3" />
 										{/if}
 										<span class="truncate">{folder.name}</span>
-									</span>
+									</button>
 								{/if}
 								<span class="flex-shrink-0 text-xs text-muted-foreground">
 									{formatEventTime(meeting.createdAt ?? '')}
 								</span>
-							</button>
+							</div>
 						{/each}
 					</div>
 				</section>
