@@ -430,7 +430,7 @@
 						</button>
 					{/each}
 				{:else}
-					{#snippet folderRow(section: FolderInfo, depth: number)}
+					{#snippet folderRow(section: FolderInfo, depth: number, rowKey: string)}
 						<div class="rounded-md">
 							<div
 								class={cn(
@@ -457,12 +457,12 @@
 								<div
 									class={cn(
 										'absolute inset-y-0 right-1 hidden items-center rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex',
-										openFolderMenuId === section.id && 'flex',
+										openFolderMenuId === rowKey && 'flex',
 									)}
 								>
 									<DropdownMenu.Root
-										open={openFolderMenuId === section.id}
-										onOpenChange={(open) => (openFolderMenuId = open ? section.id : null)}
+										open={openFolderMenuId === rowKey}
+										onOpenChange={(open) => (openFolderMenuId = open ? rowKey : null)}
 									>
 										<DropdownMenu.Trigger>
 											{#snippet child({ props })}
@@ -529,7 +529,7 @@
 							Favorites
 						</div>
 						{#each favoriteFolders as section (section.id)}
-							{@render folderRow(section, 0)}
+							{@render folderRow(section, 0, `fav-${section.id}`)}
 						{/each}
 					{/if}
 
@@ -558,9 +558,9 @@
 					</div>
 
 					{#each rootFolders as section (section.id)}
-						{@render folderRow(section, 0)}
+						{@render folderRow(section, 0, `tree-${section.id}`)}
 						{#each subfoldersOf.get(section.id) ?? [] as child (child.id)}
-							{@render folderRow(child, 1)}
+							{@render folderRow(child, 1, `tree-${child.id}`)}
 						{/each}
 					{/each}
 				{/if}
