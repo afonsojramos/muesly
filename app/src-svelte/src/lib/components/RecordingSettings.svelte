@@ -24,6 +24,8 @@
 	import DictationCleanupSettings from './DictationCleanupSettings.svelte';
 	import { config } from '$lib/stores/config.svelte';
 	import { commands } from '$lib/bindings';
+	import { usePlatform } from '$lib/hooks/use-platform.svelte';
+	import { formatAccelerator } from '$lib/shortcut-accel';
 
 	let preferences = $state<RecordingPreferences>({
 		save_folder: '',
@@ -41,6 +43,11 @@
 	let dictationEnabled = $state(false);
 	// macOS Accessibility permission, needed to paste dictated text into other apps.
 	let accessibilityTrusted = $state(true);
+
+	// Live shortcut labels (rebindable in General → Keyboard shortcuts).
+	const platform = usePlatform();
+	let recordingAccel = $state<string | null>(null);
+	let dictationAccel = $state<string | null>(null);
 
 	onMount(() => {
 		void (async () => {
@@ -87,6 +94,15 @@
 			if (enabled.status === 'ok') dictationEnabled = enabled.data;
 			const trusted = await commands.dictationAccessibilityTrusted();
 			if (trusted.status === 'ok') accessibilityTrusted = trusted.data;
+		})();
+
+		void (async () => {
+			const [rec, dic] = await Promise.all([
+				commands.getRecordingShortcut(),
+				commands.getDictationShortcut(),
+			]);
+			if (rec.status === 'ok') recordingAccel = rec.data.accelerator;
+			if (dic.status === 'ok') dictationAccel = dic.data.accelerator;
 		})();
 	});
 
@@ -277,7 +293,9 @@
 			<div class="flex-1">
 				<div class="font-medium">Global recording shortcut</div>
 				<div class="text-sm text-muted-foreground">
-					Start or stop a recording with Cmd+Option+R (Ctrl+Alt+R on Windows/Linux) from any app.
+					Start or stop a recording with
+					{recordingAccel ? formatAccelerator(recordingAccel, platform.isMac) : 'the shortcut'}
+					from any app. Rebind it in General settings.
 				</div>
 			</div>
 			<Switch
@@ -328,8 +346,9 @@
 			<div class="flex-1">
 				<div class="font-medium">Push-to-talk dictation</div>
 				<div class="text-sm text-muted-foreground">
-					Hold the dictation hotkey to dictate; on release the transcribed text is inserted into the
-					focused app. Keeps the model warm. macOS needs Accessibility permission.
+					Hold {dictationAccel ? formatAccelerator(dictationAccel, platform.isMac) : 'the hotkey'}
+					to dictate; on release the transcribed text is inserted into the focused app. Keeps the model
+					warm. macOS needs Accessibility permission.
 				</div>
 				{#if dictationEnabled && !accessibilityTrusted}
 					<div class="mt-2 text-sm text-destructive">
