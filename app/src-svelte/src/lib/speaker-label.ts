@@ -8,6 +8,7 @@
  * reads "Speaker N" with N renumbered to a contiguous 1-based index per meeting.
  */
 
+import type { MeetingSpeakers } from '$lib/bindings';
 import type { TranscriptSegmentData } from '$lib/types';
 
 export interface SpeakerContext {
@@ -22,6 +23,19 @@ export interface SpeakerContext {
 /** An empty context (no names known yet). */
 export function emptySpeakerContext(): SpeakerContext {
 	return { names: new Map(), selfName: undefined, shortlist: [] };
+}
+
+/** Map the backend's `get_meeting_speakers` payload to a SpeakerContext. */
+export function speakerContextFrom(data: MeetingSpeakers): SpeakerContext {
+	return {
+		names: new Map(
+			data.speakers
+				.filter((s): s is { speaker_id: number; name: string } => s.name != null)
+				.map((s) => [s.speaker_id, s.name]),
+		),
+		selfName: data.self_name ?? undefined,
+		shortlist: data.shortlist,
+	};
 }
 
 /**

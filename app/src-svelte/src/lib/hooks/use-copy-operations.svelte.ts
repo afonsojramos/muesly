@@ -9,8 +9,11 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { commands } from '$lib/bindings';
 import type { Summary, Transcript } from '$lib/types';
 import { Analytics } from '$lib/analytics';
+import { formatTranscriptMarkdown } from '$lib/format-transcript-markdown';
+import { emptySpeakerContext, speakerContextFrom, type SpeakerContext } from '$lib/speaker-label';
 import { toast } from '$lib/toast';
 
 interface MeetingShape {
@@ -38,39 +41,57 @@ export interface UseCopyOperations {
 	handleCopySummary: () => Promise<void>;
 }
 
-function formatTime(seconds: number | undefined, fallback: string): string {
-	if (seconds === undefined) return fallback;
+function formatTime(seconds: number | undefined, fallback: string | undefined): string {
+	if (seconds === undefined) return fallback ?? '[--:--]';
 	const total = Math.floor(seconds);
 	const mins = Math.floor(total / 60);
 	const secs = total % 60;
 	return `[${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
 }
 
+/** Fetch every transcript row for a meeting (total-count probe, then one full
+ * read). Shared by copy-transcript and the markdown export. */
+export async function fetchAllTranscripts(meetingId: string): Promise<Transcript[]> {
+	try {
+		const firstPage = (await invoke('api_get_meeting_transcripts', {
+			meetingId,
+			limit: 1,
+			offset: 0,
+		})) as PaginatedTranscripts;
+
+		if (firstPage.total_count === 0) return [];
+
+		const all = (await invoke('api_get_meeting_transcripts', {
+			meetingId,
+			limit: firstPage.total_count,
+			offset: 0,
+		})) as PaginatedTranscripts;
+		return all.transcripts;
+	} catch (error) {
+		console.error('Error fetching all transcripts:', error);
+		toast.error('Failed to fetch transcripts');
+		return [];
+	}
+}
+
+/** Load the meeting's speaker naming context, degrading to an empty context on
+ * any failure so labeled formatting falls back to plain timestamped lines. */
+export async function fetchSpeakerContext(meetingId: string): Promise<SpeakerContext> {
+	try {
+		const res = await commands.getMeetingSpeakers(meetingId);
+		return res.status === 'ok' ? speakerContextFrom(res.data) : emptySpeakerContext();
+	} catch {
+		return emptySpeakerContext();
+	}
+}
+
+/** The labeled, turn-grouped markdown body shared by copy and export. */
+export function transcriptMarkdownBody(rows: Transcript[], ctx: SpeakerContext): string {
+	return formatTranscriptMarkdown(rows, ctx, { formatTime });
+}
+
 export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOperations {
 	const { meeting, getMeetingTitle, getAiSummary, getSummaryMarkdown } = options;
-
-	const fetchAllTranscripts = async (meetingId: string): Promise<Transcript[]> => {
-		try {
-			const firstPage = (await invoke('api_get_meeting_transcripts', {
-				meetingId,
-				limit: 1,
-				offset: 0,
-			})) as PaginatedTranscripts;
-
-			if (firstPage.total_count === 0) return [];
-
-			const all = (await invoke('api_get_meeting_transcripts', {
-				meetingId,
-				limit: firstPage.total_count,
-				offset: 0,
-			})) as PaginatedTranscripts;
-			return all.transcripts;
-		} catch (error) {
-			console.error('Error fetching all transcripts:', error);
-			toast.error('Failed to fetch transcripts for copying');
-			return [];
-		}
-	};
 
 	const handleCopyTranscript = async (): Promise<void> => {
 		const all = await fetchAllTranscripts(meeting.id);
@@ -82,9 +103,8 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 		const title = getMeetingTitle() ?? meeting.title;
 		const header = `# Transcript of the Meeting: ${meeting.id} - ${title}\n\n`;
 		const date = `## Date: ${new Date(meeting.created_at).toLocaleDateString()}\n\n`;
-		const body = all
-			.map((t) => `${formatTime(t.audio_start_time, t.timestamp)} ${t.text}  `)
-			.join('\n');
+		const ctx = await fetchSpeakerContext(meeting.id);
+		const body = transcriptMarkdownBody(all, ctx);
 
 		await navigator.clipboard.writeText(header + date + body);
 		toast.success('Transcript copied to clipboard');

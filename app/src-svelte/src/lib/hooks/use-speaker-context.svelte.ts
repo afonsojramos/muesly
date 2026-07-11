@@ -14,7 +14,12 @@
 
 import { commands } from '$lib/bindings';
 import type { TranscriptSegmentData } from '$lib/types';
-import { clusterSignatureOf, emptySpeakerContext, type SpeakerContext } from '$lib/speaker-label';
+import {
+	clusterSignatureOf,
+	emptySpeakerContext,
+	speakerContextFrom,
+	type SpeakerContext,
+} from '$lib/speaker-label';
 import { toast } from '$lib/toast';
 
 export interface UseSpeakerContext {
@@ -42,15 +47,7 @@ export function useSpeakerContext(
 			toast.error('Failed to load speaker names', { description: res.error });
 			return;
 		}
-		ctx = {
-			names: new Map(
-				res.data.speakers
-					.filter((s): s is { speaker_id: number; name: string } => s.name != null)
-					.map((s) => [s.speaker_id, s.name]),
-			),
-			selfName: res.data.self_name ?? undefined,
-			shortlist: res.data.shortlist,
-		};
+		ctx = speakerContextFrom(res.data);
 	}
 
 	$effect(() => {
