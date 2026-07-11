@@ -27,6 +27,10 @@ export interface Folder {
 	id: string;
 	name: string;
 	emoji?: string | null;
+	/** Parent folder id (undefined = root; nesting is one level deep). */
+	parentId?: string;
+	/** Pinned to the sidebar's Favorites section. */
+	favorited?: boolean;
 	createdAt?: string;
 }
 
@@ -152,12 +156,16 @@ class SidebarStore {
 				id: string;
 				name: string;
 				emoji?: string | null;
+				parent_id?: string | null;
+				favorited?: boolean;
 				created_at?: string;
 			}>;
 			this.folders = list.map((f) => ({
 				id: f.id,
 				name: f.name,
 				emoji: f.emoji ?? null,
+				parentId: f.parent_id ?? undefined,
+				favorited: f.favorited ?? false,
 				createdAt: f.created_at,
 			}));
 		} catch (error) {
@@ -174,8 +182,17 @@ class SidebarStore {
 		}
 	};
 
-	createFolder = async (name: string, emoji: string | null = null): Promise<void> => {
-		await invoke('api_create_folder', { name, emoji });
+	createFolder = async (
+		name: string,
+		emoji: string | null = null,
+		parentId: string | null = null,
+	): Promise<void> => {
+		await invoke('api_create_folder', { name, emoji, parentId });
+		await this.refetchFolders();
+	};
+
+	setFolderFavorite = async (folderId: string, favorite: boolean): Promise<void> => {
+		await invoke('api_set_folder_favorite', { folderId, favorite });
 		await this.refetchFolders();
 	};
 

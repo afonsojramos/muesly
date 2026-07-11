@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
+		Ellipsis,
 		Folder,
 		FolderPlus,
 		Home,
@@ -12,6 +13,8 @@
 		Plus,
 		Search,
 		Settings,
+		Star,
+		StarOff,
 		Trash2,
 		Upload,
 		Users,
@@ -23,13 +26,18 @@
 	import { config } from '$lib/stores/config.svelte';
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
-	import { sidebar, type CurrentMeeting } from '$lib/stores/sidebar.svelte';
+	import {
+		sidebar,
+		type CurrentMeeting,
+		type Folder as FolderInfo,
+	} from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte';
 	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	let deleteModal = $state<{ open: boolean; itemId: string | null }>({
@@ -52,10 +60,16 @@
 	const activeSettingsTab = $derived(resolveSettingsTab(page.url.searchParams.get('tab')));
 
 	// Folder + move-to-folder modals.
-	let folderModal = $state<{ open: boolean; mode: 'create' | 'rename'; folderId: string | null }>({
+	let folderModal = $state<{
+		open: boolean;
+		mode: 'create' | 'rename';
+		folderId: string | null;
+		parentId: string | null;
+	}>({
 		open: false,
 		mode: 'create',
 		folderId: null,
+		parentId: null,
 	});
 	let folderNameInput = $state('');
 	let folderEmojiInput = $state('');
@@ -65,13 +79,30 @@
 		name: '',
 	});
 
-	function openCreateFolder(): void {
-		folderModal = { open: true, mode: 'create', folderId: null };
+	// Sidebar folder organization: favorites pinned above the tree, subfolders
+	// (one level) indented under their parent.
+	const favoriteFolders = $derived(sidebar.folders.filter((f) => f.favorited));
+	const rootFolders = $derived(sidebar.folders.filter((f) => !f.parentId));
+	const subfoldersOf = $derived.by(() => {
+		const map = new Map<string, FolderInfo[]>();
+		for (const f of sidebar.folders) {
+			if (!f.parentId) continue;
+			const list = map.get(f.parentId) ?? [];
+			list.push(f);
+			map.set(f.parentId, list);
+		}
+		return map;
+	});
+	// Keeps a row's hover-revealed trigger visible while its menu is open.
+	let openFolderMenuId = $state<string | null>(null);
+
+	function openCreateFolder(parentId: string | null = null): void {
+		folderModal = { open: true, mode: 'create', folderId: null, parentId };
 		folderNameInput = '';
 		folderEmojiInput = '';
 	}
 	function openRenameFolder(folderId: string, name: string, emoji: string | null): void {
-		folderModal = { open: true, mode: 'rename', folderId };
+		folderModal = { open: true, mode: 'rename', folderId, parentId: null };
 		folderNameInput = name;
 		folderEmojiInput = emoji ?? '';
 	}
@@ -80,13 +111,23 @@
 		if (!name) return;
 		const emoji = folderEmojiInput.trim() || null;
 		try {
-			if (folderModal.mode === 'create') await sidebar.createFolder(name, emoji);
+			if (folderModal.mode === 'create')
+				await sidebar.createFolder(name, emoji, folderModal.parentId);
 			else if (folderModal.folderId) await sidebar.updateFolder(folderModal.folderId, name, emoji);
-			folderModal = { open: false, mode: 'create', folderId: null };
+			folderModal = { open: false, mode: 'create', folderId: null, parentId: null };
 			folderNameInput = '';
 			folderEmojiInput = '';
 		} catch (error) {
 			toast.error('Failed to save folder', {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+	async function toggleFolderFavorite(folder: FolderInfo): Promise<void> {
+		try {
+			await sidebar.setFolderFavorite(folder.id, !folder.favorited);
+		} catch (error) {
+			toast.error('Failed to update favorites', {
 				description: error instanceof Error ? error.message : String(error),
 			});
 		}
@@ -389,34 +430,13 @@
 						</button>
 					{/each}
 				{:else}
-					<!-- Folders header + create -->
-					<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
-						<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
-						<Tooltip.Provider delayDuration={300}>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-xs"
-											onclick={openCreateFolder}
-											class="text-muted-foreground"
-											aria-label="New folder"
-										>
-											<FolderPlus />
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content>New folder</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
-					</div>
-
-					{#each sidebar.folders as section (section.id)}
+					{#snippet folderRow(section: FolderInfo, depth: number)}
 						<div class="rounded-md">
 							<div
-								class="group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary"
+								class={cn(
+									'group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary',
+									depth > 0 && 'ml-4',
+								)}
 								data-roving-row
 							>
 								<button
@@ -435,61 +455,113 @@
 									<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
 								</button>
 								<div
-									class="absolute inset-y-0 right-1 hidden items-center gap-0.5 rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex"
+									class={cn(
+										'absolute inset-y-0 right-1 hidden items-center rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex',
+										openFolderMenuId === section.id && 'flex',
+									)}
 								>
-									<Tooltip.Provider delayDuration={300}>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon-xs"
-														onclick={() =>
-															openRenameFolder(section.id, section.name, section.emoji ?? null)}
-														onkeydown={handleRovingKeydown}
-														data-roving
-														tabindex={-1}
-														class="text-muted-foreground hover:bg-border"
-														aria-label="Rename folder"
-													>
-														<Pencil />
-													</Button>
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content>Rename folder</Tooltip.Content>
-										</Tooltip.Root>
-									</Tooltip.Provider>
-									<Tooltip.Provider delayDuration={300}>
-										<Tooltip.Root>
-											<Tooltip.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon-xs"
-														onclick={() =>
-															(deleteFolderModal = {
-																open: true,
-																folderId: section.id,
-																name: section.name,
-															})}
-														onkeydown={handleRovingKeydown}
-														data-roving
-														tabindex={-1}
-														class="text-muted-foreground hover:bg-border hover:text-destructive"
-														aria-label="Delete folder"
-													>
-														<Trash2 />
-													</Button>
-												{/snippet}
-											</Tooltip.Trigger>
-											<Tooltip.Content>Delete folder</Tooltip.Content>
-										</Tooltip.Root>
-									</Tooltip.Provider>
+									<DropdownMenu.Root
+										open={openFolderMenuId === section.id}
+										onOpenChange={(open) => (openFolderMenuId = open ? section.id : null)}
+									>
+										<DropdownMenu.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon-xs"
+													onkeydown={handleRovingKeydown}
+													data-roving
+													tabindex={-1}
+													class="text-muted-foreground hover:bg-border"
+													aria-label={`Folder actions for ${section.name}`}
+												>
+													<Ellipsis />
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+										<DropdownMenu.Content align="start" class="min-w-44">
+											{#if !section.parentId}
+												<DropdownMenu.Item onSelect={() => openCreateFolder(section.id)}>
+													<FolderPlus />
+													Create subfolder
+												</DropdownMenu.Item>
+											{/if}
+											<DropdownMenu.Item onSelect={() => void toggleFolderFavorite(section)}>
+												{#if section.favorited}
+													<StarOff />
+													Remove from favorites
+												{:else}
+													<Star />
+													Add to favorites
+												{/if}
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item
+												onSelect={() =>
+													openRenameFolder(section.id, section.name, section.emoji ?? null)}
+											>
+												<Pencil />
+												Rename
+											</DropdownMenu.Item>
+											<DropdownMenu.Separator />
+											<DropdownMenu.Item
+												variant="destructive"
+												onSelect={() =>
+													(deleteFolderModal = {
+														open: true,
+														folderId: section.id,
+														name: section.name,
+													})}
+											>
+												<Trash2 />
+												Delete folder
+											</DropdownMenu.Item>
+										</DropdownMenu.Content>
+									</DropdownMenu.Root>
 								</div>
 							</div>
 						</div>
+					{/snippet}
+
+					{#if favoriteFolders.length > 0}
+						<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">
+							Favorites
+						</div>
+						{#each favoriteFolders as section (section.id)}
+							{@render folderRow(section, 0)}
+						{/each}
+					{/if}
+
+					<!-- Folders header + create -->
+					<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
+						<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => openCreateFolder()}
+											class="text-muted-foreground"
+											aria-label="New folder"
+										>
+											<FolderPlus />
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>New folder</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+					</div>
+
+					{#each rootFolders as section (section.id)}
+						{@render folderRow(section, 0)}
+						{#each subfoldersOf.get(section.id) ?? [] as child (child.id)}
+							{@render folderRow(child, 1)}
+						{/each}
 					{/each}
 				{/if}
 			</div>
@@ -604,12 +676,16 @@
 <Dialog.Root
 	open={folderModal.open}
 	onOpenChange={(next) => {
-		if (!next) folderModal = { open: false, mode: 'create', folderId: null };
+		if (!next) folderModal = { open: false, mode: 'create', folderId: null, parentId: null };
 	}}
 >
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Title class="text-lg font-semibold">
-			{folderModal.mode === 'create' ? 'New folder' : 'Edit folder'}
+			{folderModal.mode !== 'create'
+				? 'Edit folder'
+				: folderModal.parentId
+					? 'New subfolder'
+					: 'New folder'}
 		</Dialog.Title>
 		<div class="flex items-center gap-2">
 			<EmojiPicker
@@ -629,7 +705,8 @@
 		<Dialog.Footer>
 			<Button
 				variant="outline"
-				onclick={() => (folderModal = { open: false, mode: 'create', folderId: null })}
+				onclick={() =>
+					(folderModal = { open: false, mode: 'create', folderId: null, parentId: null })}
 			>
 				Cancel
 			</Button>
