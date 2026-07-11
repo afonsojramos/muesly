@@ -50,10 +50,7 @@ describe('buildTalkTimeBuckets', () => {
 
 	it('drops zero-second and unknown-source groups; empty input yields empty output', () => {
 		expect(buildTalkTimeBuckets([], ctx())).toEqual([]);
-		const buckets = buildTalkTimeBuckets(
-			[group(null, null, 50), group('mic', null, 0)],
-			ctx(),
-		);
+		const buckets = buildTalkTimeBuckets([group(null, null, 50), group('mic', null, 0)], ctx());
 		expect(buckets).toEqual([]);
 	});
 
