@@ -39,6 +39,7 @@
 	import SpeakerLabel from './SpeakerLabel.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { cn } from '$lib/utils';
+	import { shouldWindow, windowRange, type WindowRange } from '$lib/windowed-list';
 
 	interface Props {
 		segments: TranscriptSegmentData[];
@@ -61,6 +62,9 @@
 		/** Persist a cluster's name; when set, system labels become editable. */
 		onAssignSpeaker?: (speakerId: number, name: string) => void | Promise<void>;
 	}
+
+	/** Approximate row height for windowing (variable content; overscan covers drift). */
+	const EST_ROW_PX = 72;
 
 	let {
 		segments,
@@ -89,6 +93,30 @@
 
 	let scrollEl = $state<HTMLDivElement>();
 	let loadMoreTrigger = $state<HTMLDivElement>();
+	let win = $state<WindowRange>({ start: 0, end: 0, padTop: 0, padBottom: 0 });
+
+	const useWindowing = $derived(shouldWindow(segments.length) && !isRecording);
+
+	function recomputeWindow(): void {
+		const el = scrollEl;
+		if (!el || !useWindowing) {
+			win = {
+				start: 0,
+				end: segments.length,
+				padTop: 0,
+				padBottom: 0,
+			};
+			return;
+		}
+		win = windowRange(el.scrollTop, el.clientHeight, segments.length, EST_ROW_PX, 10);
+	}
+
+	// Keep the window in sync when the segment list grows (pagination / live).
+	$effect(() => {
+		void segments.length;
+		void isRecording;
+		recomputeWindow();
+	});
 
 	useAutoScroll({
 		getScrollElement: () => scrollEl ?? null,
@@ -107,18 +135,30 @@
 	);
 
 	// Jump from summary timestamp: scroll the target segment into view.
+	// When windowed, expand the window around the focused index first.
 	$effect(() => {
 		const id = sidePanelState.focusSegmentId;
 		if (!id) return;
-		const el = document.getElementById(`segment-${id}`);
-		if (el) {
-			el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-			// Clear after a beat so re-clicks still work.
-			const t = setTimeout(() => {
-				if (sidePanelState.focusSegmentId === id) sidePanelState.focusSegmentId = null;
-			}, 2500);
-			return () => clearTimeout(t);
+		const idx = segments.findIndex((s) => s.id === id);
+		if (idx >= 0 && useWindowing && scrollEl) {
+			const targetTop = Math.max(0, idx * EST_ROW_PX - scrollEl.clientHeight / 3);
+			scrollEl.scrollTop = targetTop;
+			recomputeWindow();
 		}
+		// Defer DOM lookup a frame so the window can mount the target row.
+		const frame = requestAnimationFrame(() => {
+			const el = document.getElementById(`segment-${id}`);
+			if (el) {
+				el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			}
+		});
+		const t = setTimeout(() => {
+			if (sidePanelState.focusSegmentId === id) sidePanelState.focusSegmentId = null;
+		}, 2500);
+		return () => {
+			cancelAnimationFrame(frame);
+			clearTimeout(t);
+		};
 	});
 
 	// Infinite scroll: observe the trigger element to load more.
@@ -148,26 +188,31 @@
 		return () => observer.disconnect();
 	});
 
-	// Scroll-based fallback for fast scrolling.
+	// Scroll: update window + load-more fallback.
 	$effect(() => {
 		const el = scrollEl;
-		if (!onLoadMore || !hasMore || isLoadingMore || isRecording || !el) return;
+		if (!el) return;
 
 		let ticking = false;
 		const handleScroll = (): void => {
-			if (ticking || isLoadingMore || !hasMore) return;
+			if (ticking) return;
 			ticking = true;
 			requestAnimationFrame(() => {
-				const { scrollTop, scrollHeight, clientHeight } = el;
-				const scrollBottom = scrollHeight - scrollTop - clientHeight;
-				if (scrollBottom < 200 && hasMore && !isLoadingMore) {
-					onLoadMore?.();
+				recomputeWindow();
+				if (onLoadMore && hasMore && !isLoadingMore && !isRecording) {
+					const { scrollTop, scrollHeight, clientHeight } = el;
+					const scrollBottom = scrollHeight - scrollTop - clientHeight;
+					if (scrollBottom < 200) {
+						onLoadMore();
+					}
 				}
 				ticking = false;
 			});
 		};
 
 		el.addEventListener('scroll', handleScroll, { passive: true });
+		// Initial measure after layout.
+		requestAnimationFrame(() => recomputeWindow());
 		return () => el.removeEventListener('scroll', handleScroll);
 	});
 
@@ -175,6 +220,21 @@
 		const text = streaming.getDisplayText(segment);
 		return cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
 	}
+
+	const visibleStart = $derived(useWindowing ? win.start : 0);
+	const visibleEnd = $derived(useWindowing ? win.end : segments.length);
+
+	// When windowed, the row that opened the current speaker run may sit above
+	// the window; surface the active speaker on the first mounted row instead.
+	function speakerRowAt(i: number): { label?: string; show: boolean } | undefined {
+		const row = speakerLabels[i];
+		if (row && useWindowing && i === visibleStart && !row.show && row.label) {
+			return { ...row, show: true };
+		}
+		return row;
+	}
+	const padTop = $derived(useWindowing ? win.padTop : 0);
+	const padBottom = $derived(useWindowing ? win.padBottom : 0);
 </script>
 
 <div bind:this={scrollEl} class="flex h-full flex-col overflow-y-auto px-4 py-2">
@@ -211,10 +271,14 @@
 			</div>
 		{:else}
 			<div class="space-y-1">
-				{#each segments as segment, i (segment.id)}
+				{#if padTop > 0}
+					<div style:height="{padTop}px" aria-hidden="true"></div>
+				{/if}
+				{#each segments.slice(visibleStart, visibleEnd) as segment, j (segment.id)}
+					{@const i = visibleStart + j}
 					{@const isStreaming = streaming.streamingSegmentId === segment.id}
 					{@const isMe = segment.speaker === 'mic'}
-					{@const speaker = speakerLabels[i]}
+					{@const speaker = speakerRowAt(i)}
 					{@const isFocused = sidePanelState.focusSegmentId === segment.id}
 					<div
 						in:fly={{ y: 5, duration: 150 }}
@@ -288,6 +352,9 @@
 						</div>
 					</div>
 				{/each}
+				{#if padBottom > 0}
+					<div style:height="{padBottom}px" aria-hidden="true"></div>
+				{/if}
 			</div>
 
 			{#if (hasMore || isLoadingMore) && !isRecording && segments.length > 0}
