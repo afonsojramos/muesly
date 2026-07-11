@@ -1219,6 +1219,8 @@ export type ParakeetModelInfo = {
 
 export type PersonGroup = {
 	name: string,
+	/**  Best-effort org label from the attendee's email domain, when available. */
+	company: string | null,
 	meeting_count: number,
 	meetings: PersonMeetingRef[],
 };
