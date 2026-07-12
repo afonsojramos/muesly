@@ -7,6 +7,14 @@ use serde::{Serialize, Deserialize};
 
 use super::ffmpeg::find_ffmpeg_path;
 
+/// Escape a path for an FFmpeg concat-demuxer list line. Each entry is wrapped in
+/// single quotes, so a literal `'` in the path (e.g. an apostrophe in the meeting
+/// title, which reaches the folder name) must be written as `'\''` or FFmpeg's
+/// concat parse breaks and the merge fails.
+fn ffmpeg_concat_escape(path: &std::path::Path) -> String {
+    path.display().to_string().replace('\'', "'\\''")
+}
+
 /// Audio data without device type (we only store mixed audio)
 #[derive(Clone)]
 struct AudioData {
@@ -164,7 +172,7 @@ impl IncrementalAudioSaver {
 
             // Use absolute path for FFmpeg (required for safe mode)
             let abs_path = checkpoint_path.canonicalize()?;
-            list_content.push_str(&format!("file '{}'\n", abs_path.display()));
+            list_content.push_str(&format!("file '{}'\n", ffmpeg_concat_escape(&abs_path)));
         }
 
         std::fs::write(&list_file, list_content)?;
@@ -302,7 +310,7 @@ pub async fn recover_audio_from_checkpoints(
     for entry in &checkpoint_files {
         let path = entry.path().canonicalize()
             .map_err(|e| format!("Failed to canonicalize path: {}", e))?;
-        concat_content.push_str(&format!("file '{}'\n", path.display()));
+        concat_content.push_str(&format!("file '{}'\n", ffmpeg_concat_escape(&path)));
     }
 
     std::fs::write(&concat_file_path, concat_content)
