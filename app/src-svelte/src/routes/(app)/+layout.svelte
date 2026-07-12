@@ -27,6 +27,7 @@
 	import MainContent from '$lib/components/MainContent.svelte';
 	import RecordingBar from '$lib/components/RecordingBar.svelte';
 	import ChatBar from '$lib/components/ChatBar/ChatBar.svelte';
+	import GlobalChatBar from '$lib/components/ChatBar/GlobalChatBar.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { cn } from '$lib/utils';
 	import DownloadProgressToast from '$lib/components/shared/DownloadProgressToast.svelte';
@@ -517,10 +518,11 @@
 	</div>
 {/if}
 
-<!-- "Ask anything" chat bar. Shown on the note and meeting-details views (during
-     AND after a recording), independent of the recording/focus state above.
+<!-- Floating chat bar. The per-meeting "Ask anything" chat on the note and
+     meeting-details views (during AND after a recording); the "Ask your
+     meetings" global chat on Home. Same pill + panel surface, different store.
      Stacks above the RecordingBar when both are visible. -->
-{#if page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
+{#if page.url.pathname === '/' || page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
 	<div
 		class={cn(
 			'fixed z-40 -translate-x-1/2 transition-[left,bottom] duration-300',
@@ -528,7 +530,11 @@
 		)}
 		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
 	>
-		<ChatBar />
+		{#if page.url.pathname === '/'}
+			<GlobalChatBar />
+		{:else}
+			<ChatBar />
+		{/if}
 	</div>
 {/if}
 
