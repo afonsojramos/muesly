@@ -19,6 +19,36 @@ pub struct VocabularyEntry {
 static VOCABULARY: LazyLock<RwLock<Vec<VocabularyEntry>>> =
     LazyLock::new(|| RwLock::new(Vec::new()));
 
+/// Per-recording prompt-bias terms (meeting title + attendee names), set at
+/// recording start from the matched calendar event and cleared at stop. Only
+/// ever fed to the local Whisper initial_prompt; never leaves the device.
+static MEETING_TERMS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
+
+/// Keep the terms portion of the initial prompt well under Whisper's prompt
+/// budget (~224 tokens shared with the prior-segment text).
+const MAX_PROMPT_TERM_CHARS: usize = 400;
+
+pub fn set_meeting_prompt_terms(terms: Vec<String>) {
+    let cleaned: Vec<String> = terms
+        .into_iter()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .collect();
+    if let Ok(mut guard) = MEETING_TERMS.write() {
+        *guard = cleaned;
+    }
+}
+
+pub fn clear_meeting_prompt_terms() {
+    if let Ok(mut guard) = MEETING_TERMS.write() {
+        guard.clear();
+    }
+}
+
+fn meeting_prompt_terms() -> Vec<String> {
+    MEETING_TERMS.read().map(|g| g.clone()).unwrap_or_default()
+}
+
 pub fn set_vocabulary(entries: Vec<VocabularyEntry>) {
     if let Ok(mut guard) = VOCABULARY.write() {
         *guard = entries;
@@ -55,16 +85,30 @@ pub fn apply_cached_corrections(text: &str) -> String {
     apply_corrections(text, &entries)
 }
 
-/// Build a Whisper initial_prompt from the distinct, non-empty `to` terms
-/// (the correct spellings), or None when there is nothing to bias toward.
+/// Build a Whisper initial_prompt from the distinct, non-empty vocabulary `to`
+/// terms (the correct spellings) plus the current meeting's context terms
+/// (title, attendee names), or None when there is nothing to bias toward.
+/// Capped so it can't crowd the prior-segment text out of the prompt budget.
 pub fn whisper_initial_prompt() -> Option<String> {
     let entries = get_vocabulary();
     let mut terms: Vec<String> = Vec::new();
-    for e in &entries {
-        let t = e.to.trim();
-        if !t.is_empty() && !terms.iter().any(|x| x == t) {
-            terms.push(t.to_string());
+    let mut total_chars = 0usize;
+    let mut push = |t: &str, terms: &mut Vec<String>, total: &mut usize| {
+        let t = t.trim();
+        if t.is_empty() || terms.iter().any(|x| x.eq_ignore_ascii_case(t)) {
+            return;
         }
+        if *total + t.len() > MAX_PROMPT_TERM_CHARS {
+            return;
+        }
+        *total += t.len();
+        terms.push(t.to_string());
+    };
+    for e in &entries {
+        push(&e.to, &mut terms, &mut total_chars);
+    }
+    for t in meeting_prompt_terms() {
+        push(&t, &mut terms, &mut total_chars);
     }
     if terms.is_empty() {
         None
@@ -107,6 +151,41 @@ mod tests {
         assert!(p.contains("Kubernetes") && p.contains("muesly"));
         assert_eq!(p.matches("Kubernetes").count(), 1);
         set_vocabulary(Vec::new()); // reset shared state for other tests
+    }
+
+    // MEETING_TERMS is process-global; serialize the tests that mutate it.
+    static MEETING_TERMS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn initial_prompt_includes_meeting_terms_until_cleared() {
+        let _guard = MEETING_TERMS_TEST_LOCK.lock().unwrap();
+        set_meeting_prompt_terms(vec![
+            "Q3 Budget Sync".into(),
+            "Afonso Ramos".into(),
+            "  ".into(), // blank terms are dropped
+            "afonso ramos".into(), // case-insensitive duplicate is dropped
+        ]);
+        let p = whisper_initial_prompt().unwrap();
+        assert!(p.contains("Q3 Budget Sync"), "prompt missing title: {p}");
+        assert_eq!(p.matches("Afonso Ramos").count(), 1);
+
+        clear_meeting_prompt_terms();
+        let after = whisper_initial_prompt().unwrap_or_default();
+        assert!(!after.contains("Q3 Budget Sync"), "terms must clear on stop: {after}");
+    }
+
+    #[test]
+    fn initial_prompt_terms_are_capped() {
+        let _guard = MEETING_TERMS_TEST_LOCK.lock().unwrap();
+        let long: Vec<String> = (0..100).map(|i| format!("Attendee Number {i:03}")).collect();
+        set_meeting_prompt_terms(long);
+        let p = whisper_initial_prompt().unwrap();
+        assert!(
+            p.len() <= MAX_PROMPT_TERM_CHARS + 2 * 100, // joined separators
+            "prompt should stay near the cap, got {} chars",
+            p.len()
+        );
+        clear_meeting_prompt_terms();
     }
 
     #[test]

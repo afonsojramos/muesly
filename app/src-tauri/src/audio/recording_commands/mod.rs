@@ -153,20 +153,37 @@ pub async fn get_dictation_enabled() -> Result<bool, String> {
 // `.await` (e.g. device reconnection); a std mutex held across `.await` risks blocking
 // a worker / deadlock. The other statics below stay on std::sync::Mutex — they're only
 // held briefly with no await in between.
-/// Resolve a high-confidence calendar meeting title for "now", or None. Used to
-/// auto-title a recording started without an explicit name. Returns None on any
-/// failure (calendar off, no permission, no/low-confidence match) so it can
-/// never block or fail a recording. Resolved before the `RecordingManager` lock
-/// is taken so an EventKit stall can't extend a contended lock.
-async fn calendar_title_override<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
-    let pool = app
-        .try_state::<crate::state::AppState>()?
-        .db_manager
-        .pool()
-        .clone();
-    let resolved =
-        crate::calendar::service::resolve_event_for_instant(&pool, chrono::Utc::now()).await?;
-    resolved.title_for_high_confidence().map(|s| s.to_string())
+/// Resolve the calendar event for "now" once, returning the high-confidence
+/// title override (used to auto-title an unnamed recording) plus prompt-bias
+/// terms (event title + attendee names) for the local transcription engine.
+/// Returns empty on any failure (calendar off, no permission, no match) so it
+/// can never block or fail a recording. Resolved before the `RecordingManager`
+/// lock is taken so an EventKit stall can't extend a contended lock.
+async fn calendar_recording_context<R: Runtime>(
+    app: &AppHandle<R>,
+) -> (Option<String>, Vec<String>) {
+    let Some(state) = app.try_state::<crate::state::AppState>() else {
+        return (None, Vec::new());
+    };
+    let pool = state.db_manager.pool().clone();
+    let Some(resolved) =
+        crate::calendar::service::resolve_event_for_instant(&pool, chrono::Utc::now()).await
+    else {
+        return (None, Vec::new());
+    };
+    let title_override = resolved.title_for_high_confidence().map(|s| s.to_string());
+    // Prompt terms use the resolved event at any confidence: a wrong bias term
+    // is harmless, a right one fixes proper-noun spellings.
+    let mut terms: Vec<String> = Vec::new();
+    if let Some(title) = resolved.candidate.title.as_deref() {
+        terms.push(title.to_string());
+    }
+    for attendee in &resolved.candidate.attendees {
+        if let Some(name) = attendee.name.as_deref() {
+            terms.push(name.to_string());
+        }
+    }
+    (title_override, terms)
 }
 
 static RECORDING_MANAGER: std::sync::LazyLock<tokio::sync::Mutex<Option<RecordingManager>>> =
@@ -416,9 +433,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Always ensure a meeting name is set so incremental saver initializes.
     // When the user didn't name it, try the calendar for a high-confidence
     // meeting title before falling back to a timestamp.
+    let (title_override, mut prompt_terms) = calendar_recording_context(&app).await;
     let effective_meeting_name = match meeting_name.clone() {
         Some(name) => name,
-        None => match calendar_title_override(&app).await {
+        None => match title_override {
             Some(title) => title,
             None => {
                 // Example: Meeting 2025-10-03_08-25-23
@@ -427,6 +445,13 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
             }
         },
     };
+    // Bias Whisper toward this meeting's proper nouns (event title + attendee
+    // names, plus a user-typed meeting name) for the duration of the recording;
+    // cleared again in stop_recording.
+    if let Some(name) = meeting_name.as_deref() {
+        prompt_terms.push(name.to_string());
+    }
+    crate::vocabulary::set_meeting_prompt_terms(prompt_terms);
     manager.set_meeting_name(Some(effective_meeting_name));
 
     // Set up error callback
@@ -886,6 +911,10 @@ pub async fn stop_recording<R: Runtime>(
     } else {
         info!("ℹ️ No transcription task found to wait for");
     }
+
+    // All chunks of this recording are decoded; drop the per-meeting prompt
+    // bias so it can't leak into the next recording or into dictation.
+    crate::vocabulary::clear_meeting_prompt_terms();
 
     // Step 3: Now safely unload Whisper model after ALL chunks are processed
     let _ = app.emit(
