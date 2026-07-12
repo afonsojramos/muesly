@@ -97,6 +97,7 @@ async fn clear_seed(pool: &SqlitePool) {
         ("meeting_notes", "meeting_id"),
         ("summary_processes", "meeting_id"),
         ("transcript_chunks", "meeting_id"),
+        ("chat_messages", "meeting_id"),
         ("transcripts", "meeting_id"),
     ];
     // Table/column names are hardcoded above (never user input), so the
@@ -142,6 +143,8 @@ struct SeedMeeting {
     notes: Option<&'static str>,
     /// (speaker_id, name) labels applied to diarized clusters.
     speaker_names: &'static [(i64, &'static str)],
+    /// (role, content) "Ask anything" turns; role is "user" or "assistant".
+    chat: &'static [(&'static str, &'static str)],
 }
 
 const FOLDERS: &[SeedFolder] = &[
@@ -174,6 +177,12 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Sprint Planning\n\n**Decisions**\n- Ship the beta on March 10.\n- Kubernetes migration is top priority this sprint.\n\n**Action items**\n- Alex: send the revised timeline by Friday.\n- Finalize the mobile launch budget.",
         notes: Some("Remember to double-check the staging cluster capacity before the migration."),
         speaker_names: &[(0, "Alex Rivera"), (1, "Priya Shah")],
+        chat: &[
+            ("user", "What did we decide about the beta launch?"),
+            ("assistant", "You decided to ship the beta on March 10, with the Kubernetes migration as the top priority for this sprint."),
+            ("user", "Who owns the timeline?"),
+            ("assistant", "Alex is the action-item owner: send the revised timeline by Friday."),
+        ],
     },
     SeedMeeting {
         id: "seed-meeting-roadmap",
@@ -191,6 +200,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Q3 Roadmap Review\n\n- Hiring: two engineers needed for the analytics milestone.\n- Search rollout timeline is tight; revisit after budget review.",
         notes: None,
         speaker_names: &[(0, "Priya Shah")],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-1on1-alex",
@@ -208,6 +218,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## 1:1 with Alex\n\n- Alex blocked on staging access (unblocking today).\n- Interested in owning more roadmap planning next quarter.",
         notes: Some("Follow up on staging access. Alex wants growth into planning."),
         speaker_names: &[(0, "Alex Rivera")],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-design",
@@ -224,6 +235,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Design Critique\n\n- Add guidance to empty states in onboarding.\n- Improve button color contrast for accessibility.",
         notes: None,
         speaker_names: &[],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-standup",
@@ -240,6 +252,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Team Standup\n\n- Search indexing wrapping up.\n- Onboarding flow pairing in progress.",
         notes: None,
         speaker_names: &[],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-dentist",
@@ -255,6 +268,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Dentist\n\n- Book follow-up cleaning next month.\n- Next checkup in six months.",
         notes: Some("Insurance covered the cleaning. Book online."),
         speaker_names: &[],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-uncategorized",
@@ -270,6 +284,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Coffee Chat\n\n- Marcus settling into the new team well.\n- Hiring push is paying off.",
         notes: None,
         speaker_names: &[],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-old",
@@ -286,6 +301,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Analytics Kickoff\n\n- Goal: self-serve dashboard by end of quarter.\n- Next: define key metrics and the data pipeline.",
         notes: None,
         speaker_names: &[],
+        chat: &[],
     },
     SeedMeeting {
         id: "seed-meeting-trashed",
@@ -298,6 +314,7 @@ const MEETINGS: &[SeedMeeting] = &[
         summary_markdown: "## Vendor Call\n\n- Cancelled.",
         notes: None,
         speaker_names: &[],
+        chat: &[],
     },
 ];
 
@@ -431,6 +448,24 @@ async fn seed(pool: &SqlitePool) {
             )
             .await
             .unwrap_or_else(|e| fail(format!("insert speaker_name {}: {e}", m.id)));
+        }
+
+        // Persisted "Ask anything" chat turns, so the in-meeting chat has a
+        // thread (its panel starts collapsed as a "Continue chat" pill).
+        for (i, (role, content)) in m.chat.iter().enumerate() {
+            let ts = (created + Duration::seconds(i as i64)).to_rfc3339();
+            sqlx::query(
+                "INSERT INTO chat_messages (id, meeting_id, role, content, created_at) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(format!("{}-chat-{i}", m.id))
+            .bind(m.id)
+            .bind(*role)
+            .bind(*content)
+            .bind(ts)
+            .execute(pool)
+            .await
+            .unwrap_or_else(|e| fail(format!("insert chat {}: {e}", m.id)));
         }
     }
 }
