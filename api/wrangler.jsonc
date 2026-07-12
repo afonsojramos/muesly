@@ -16,8 +16,8 @@
 			"database_id": "af5c8dd2-e894-4960-a5f5-8e75bfef549e",
 			"migrations_dir": "drizzle"
 		}
-	]
-	// Optional: serve on the API domain the app trusts (matches the app CSP +
-	// default BARS_API_URL). Add after `wrangler deploy`:
-	// "routes": [{ "pattern": "api.muesly.ai", "custom_domain": true }]
+	],
+	// The API domain the app trusts (its default base URL + Tauri CSP). The
+	// muesly.ai zone is on this account, so deploy provisions the DNS + cert.
+	"routes": [{ "pattern": "api.muesly.ai", "custom_domain": true }]
 }
