@@ -15,6 +15,7 @@
 	import { useTranscriptRecovery } from '$lib/hooks/use-transcript-recovery.svelte';
 
 	import ComingUp from '$lib/components/home/ComingUp.svelte';
+	import GlobalChat from '$lib/components/home/GlobalChat.svelte';
 	import TranscriptRecovery from '$lib/components/TranscriptRecovery/TranscriptRecovery.svelte';
 
 	const isBrowser = typeof window !== 'undefined';
@@ -144,6 +145,8 @@
 	<div class="flex-1 overflow-y-auto">
 		<div class="mx-auto w-full max-w-[820px] px-8 pb-24 pt-4">
 			<ComingUp />
+
+			<GlobalChat />
 
 			{#each noteGroups as group (group.label)}
 				<section class="mb-8">
