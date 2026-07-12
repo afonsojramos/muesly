@@ -11,10 +11,11 @@
 		RefreshCw,
 		XCircle,
 	} from '@lucide/svelte';
-	import { tick } from 'svelte';
+	import { onDestroy, tick } from 'svelte';
 
 	import type { OllamaModel } from '$lib/stores/config.svelte';
 	import { configService, type ModelConfig } from '$lib/services/config';
+	import { debounce } from '$lib/utils/debounce';
 	import { ollamaDownload } from '$lib/stores/ollama-download.svelte';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
@@ -299,6 +300,9 @@
 			modelsCache.set(trimmedEndpoint, list);
 			ollamaNotInstalled = false;
 			restoreCachedModel();
+			// Persist the (now-fetched) endpoint + current model selection; while the
+			// endpoint was unfetched the save gate blocked it.
+			autoSave();
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : 'Failed to load Ollama models';
 			error = errorMsg;
@@ -359,6 +363,7 @@
 		if (provider === 'custom-openai') {
 			await loadCustomConfig();
 		}
+		autoSave();
 	}
 
 	async function loadCustomConfig(): Promise<void> {
@@ -379,7 +384,10 @@
 
 	function handleOllamaModelSelect(value: string[]): void {
 		const model = value[0];
-		if (model) setModelConfig({ ...modelConfig, model });
+		if (model) {
+			setModelConfig({ ...modelConfig, model });
+			autoSave();
+		}
 	}
 
 	function selectOllamaModel(model: string): void {
@@ -434,7 +442,22 @@
 		}
 	}
 
-	async function handleSave(): Promise<void> {
+	// Auto-save: there is no Save button. Every valid selection or edit persists
+	// automatically, debounced so typing a key / model / endpoint coalesces into
+	// one save instead of one per keystroke. Debouncing also means `commit` always
+	// reads settled reactive state (no stale reads), and because saves only fire
+	// from user handlers, config loads and the save→`model-config-updated` echo
+	// never trigger a save (no loop).
+	const autoSave = debounce(() => void commit(), 500);
+	// Flush a pending save on teardown so closing the dialog mid-debounce doesn't
+	// drop the last change.
+	onDestroy(() => autoSave.flush());
+
+	async function commit(): Promise<void> {
+		// Same gate the old Save button carried: never persist an incomplete config
+		// (missing Ollama fetch, or a cloud/custom provider without key + model).
+		if (isDoneDisabled) return;
+
 		if (modelConfig.provider === 'custom-openai') {
 			try {
 				await configService.saveCustomOpenAIConfig({
@@ -558,7 +581,10 @@
 					<Input
 						id="custom-endpoint"
 						value={customOpenAIEndpoint}
-						oninput={(e) => (customOpenAIEndpoint = e.currentTarget.value)}
+						oninput={(e) => {
+							customOpenAIEndpoint = e.currentTarget.value;
+							autoSave();
+						}}
 						placeholder="http://localhost:8000/v1"
 					/>
 					<p class="text-xs text-muted-foreground">Base URL of the OpenAI-compatible API</p>
@@ -569,7 +595,10 @@
 					<Input
 						id="custom-model"
 						value={customOpenAIModel}
-						oninput={(e) => (customOpenAIModel = e.currentTarget.value)}
+						oninput={(e) => {
+							customOpenAIModel = e.currentTarget.value;
+							autoSave();
+						}}
 						placeholder="gpt-4, llama-3-70b, etc."
 					/>
 					<p class="text-xs text-muted-foreground">Model identifier to use for requests</p>
@@ -581,7 +610,10 @@
 						id="custom-api-key"
 						type="password"
 						value={customOpenAIApiKey}
-						oninput={(e) => (customOpenAIApiKey = e.currentTarget.value)}
+						oninput={(e) => {
+							customOpenAIApiKey = e.currentTarget.value;
+							autoSave();
+						}}
 						placeholder="Leave empty if not required"
 					/>
 				</div>
@@ -608,7 +640,10 @@
 									id="custom-max-tokens"
 									type="number"
 									value={customMaxTokens}
-									oninput={(e) => (customMaxTokens = e.currentTarget.value)}
+									oninput={(e) => {
+										customMaxTokens = e.currentTarget.value;
+										autoSave();
+									}}
 									placeholder="e.g., 4096"
 								/>
 							</div>
@@ -621,7 +656,10 @@
 									min="0"
 									max="2"
 									value={customTemperature}
-									oninput={(e) => (customTemperature = e.currentTarget.value)}
+									oninput={(e) => {
+										customTemperature = e.currentTarget.value;
+										autoSave();
+									}}
 									placeholder="e.g., 0.7"
 								/>
 							</div>
@@ -634,7 +672,10 @@
 									min="0"
 									max="1"
 									value={customTopP}
-									oninput={(e) => (customTopP = e.currentTarget.value)}
+									oninput={(e) => {
+										customTopP = e.currentTarget.value;
+										autoSave();
+									}}
 									placeholder="e.g., 0.9"
 								/>
 							</div>
@@ -677,7 +718,10 @@
 						id="cloud-api-key"
 						type="password"
 						value={modelConfig.apiKey ?? ''}
-						oninput={(e) => setModelConfig({ ...modelConfig, apiKey: e.currentTarget.value })}
+						oninput={(e) => {
+							setModelConfig({ ...modelConfig, apiKey: e.currentTarget.value });
+							autoSave();
+						}}
 						placeholder="Paste your API key"
 					/>
 					<p class="text-xs text-muted-foreground">
@@ -697,7 +741,10 @@
 					<Input
 						id="cloud-model"
 						value={modelConfig.model}
-						oninput={(e) => setModelConfig({ ...modelConfig, model: e.currentTarget.value })}
+						oninput={(e) => {
+							setModelConfig({ ...modelConfig, model: e.currentTarget.value });
+							autoSave();
+						}}
 						placeholder={cloudProvider.modelPlaceholder}
 					/>
 					<p class="text-xs text-muted-foreground">
@@ -881,7 +928,10 @@
 										sizeLabel={model.size}
 										isSelected={modelConfig.model === model.name}
 										downloadProgress={modelIsDownloading ? (progress ?? 0) : null}
-										onSelect={() => setModelConfig({ ...modelConfig, model: model.name })}
+										onSelect={() => {
+											setModelConfig({ ...modelConfig, model: model.name });
+											autoSave();
+										}}
 									/>
 								{/each}
 							</div>
@@ -892,16 +942,15 @@
 		{/if}
 
 		{#if modelConfig.provider === 'builtin-ai'}
-			<div class="mt-6">
+			<div>
 				<BuiltInModelManager
 					selectedModel={modelConfig.model}
-					onModelSelect={(model) => setModelConfig({ ...modelConfig, model })}
+					onModelSelect={(model) => {
+						setModelConfig({ ...modelConfig, model });
+						autoSave();
+					}}
 				/>
 			</div>
 		{/if}
-	</div>
-
-	<div class="mt-6 flex justify-end">
-		<Button variant="brand" disabled={isDoneDisabled} onclick={handleSave}>Save</Button>
 	</div>
 </div>
