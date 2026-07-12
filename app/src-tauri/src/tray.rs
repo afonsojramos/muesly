@@ -238,16 +238,27 @@ pub fn update_tray_menu<R: Runtime>(app: &AppHandle<R>) {
 
 pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: RecordingState) {
     log::info!("Tray: Setting intermediate state: {:?}", state);
-    // During recording state transitions, we assume recording is allowed (we're already recording)
-    if let Ok(menu) = build_menu(app, state, true) {
-        if let Some(tray) = app.tray_by_id("main-tray") {
-            let result = tray.set_menu(Some(menu));
-            log::info!("Tray: Intermediate state menu update result: {:?}", result);
+    // Tray + menu are AppKit objects: build and touch them (including dropping
+    // the handle from tray_by_id) only on the main thread. Doing it on a tokio
+    // worker removes the NSStatusItem off-main, which macOS aborts with
+    // EXC_BREAKPOINT (BSServiceMainRunLoopQueue assertBarrierOnQueue).
+    let app_handle = app.clone();
+    let dispatched = app.run_on_main_thread(move || {
+        // During recording state transitions, we assume recording is allowed
+        // (we're already recording).
+        if let Ok(menu) = build_menu(&app_handle, state, true) {
+            if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                let result = tray.set_menu(Some(menu));
+                log::info!("Tray: Intermediate state menu update result: {:?}", result);
+            } else {
+                log::warn!("Tray: Could not find tray with id 'main-tray'");
+            }
         } else {
-            log::warn!("Tray: Could not find tray with id 'main-tray'");
+            log::error!("Tray: Failed to build menu for intermediate state");
         }
-    } else {
-        log::error!("Tray: Failed to build menu for intermediate state");
+    });
+    if let Err(e) = dispatched {
+        log::error!("Tray: Failed to dispatch tray state update to main thread: {}", e);
     }
 }
 
@@ -318,29 +329,39 @@ pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
     let can_record = check_can_record(app).await;
     log::info!("Tray: can_record: {}", can_record);
 
-    if let Ok(menu) = build_menu(app, recording_state.clone(), can_record) {
-        if let Some(tray) = app.tray_by_id("main-tray") {
-            let result = tray.set_menu(Some(menu));
-            log::info!("Tray: Menu update result: {:?}", result);
-            // Animated-level bars aren't available on all OS tray APIs; use a
-            // clear recording-state tooltip so the menu bar indicator is obvious.
-            let tip = match recording_state {
-                RecordingState::Recording => "muesly · Recording",
-                RecordingState::Paused => "muesly · Paused",
-                RecordingState::Starting => "muesly · Starting…",
-                RecordingState::Stopping => "muesly · Stopping…",
-                RecordingState::Pausing => "muesly · Pausing…",
-                RecordingState::Resuming => "muesly · Resuming…",
-                RecordingState::Stopped => "muesly",
-            };
-            if let Err(e) = tray.set_tooltip(Some(tip)) {
-                log::warn!("Tray: Failed to set tooltip: {}", e);
+    // Tray + menu are AppKit objects: build and touch them (including dropping
+    // the handle from tray_by_id) only on the main thread. Dropping the handle
+    // on a tokio worker removes the NSStatusItem off-main, which macOS aborts
+    // with EXC_BREAKPOINT (BSServiceMainRunLoopQueue assertBarrierOnQueue).
+    let app_handle = app.clone();
+    let dispatched = app.run_on_main_thread(move || {
+        if let Ok(menu) = build_menu(&app_handle, recording_state.clone(), can_record) {
+            if let Some(tray) = app_handle.tray_by_id("main-tray") {
+                let result = tray.set_menu(Some(menu));
+                log::info!("Tray: Menu update result: {:?}", result);
+                // Animated-level bars aren't available on all OS tray APIs; use a
+                // clear recording-state tooltip so the menu bar indicator is obvious.
+                let tip = match recording_state {
+                    RecordingState::Recording => "muesly · Recording",
+                    RecordingState::Paused => "muesly · Paused",
+                    RecordingState::Starting => "muesly · Starting…",
+                    RecordingState::Stopping => "muesly · Stopping…",
+                    RecordingState::Pausing => "muesly · Pausing…",
+                    RecordingState::Resuming => "muesly · Resuming…",
+                    RecordingState::Stopped => "muesly",
+                };
+                if let Err(e) = tray.set_tooltip(Some(tip)) {
+                    log::warn!("Tray: Failed to set tooltip: {}", e);
+                }
+            } else {
+                log::warn!("Tray: Could not find tray with id 'main-tray'");
             }
         } else {
-            log::warn!("Tray: Could not find tray with id 'main-tray'");
+            log::error!("Tray: Failed to build menu");
         }
-    } else {
-        log::error!("Tray: Failed to build menu");
+    });
+    if let Err(e) = dispatched {
+        log::error!("Tray: Failed to dispatch tray update to main thread: {}", e);
     }
 }
 
