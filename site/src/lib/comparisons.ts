@@ -1,5 +1,5 @@
 // Factual, fair comparisons framed on what matters for privacy. Rows are kept to
-// stable structural facts (where data is processed, account, open source, bot,
+// stable structural facts (where data is processed, account, public source, bot,
 // price model, platforms), not volatile specifics like exact prices. Each entry
 // includes an honest "where they're better" list so the pages build trust.
 
@@ -37,8 +37,8 @@ const sharedRows = (overrides: Partial<Record<string, CompareRow>>): CompareRow[
 			advantage: 'muesly'
 		},
 		openSource: {
-			dimension: 'Open source',
-			muesly: 'Yes (MIT)',
+			dimension: 'Source code public',
+			muesly: 'Yes (PolyForm Noncommercial)',
 			them: 'No',
 			advantage: 'muesly'
 		},
@@ -78,9 +78,9 @@ export const comparisons: Comparison[] = [
 		name: 'Otter.ai',
 		title: 'muesly vs Otter.ai: the private, local alternative',
 		description:
-			'Otter.ai sends a bot to your call and processes everything in the cloud. muesly records and transcribes on your device. Free and open source.',
+			'Otter.ai sends a bot to your call and processes everything in the cloud. muesly records and transcribes on your device. Free, with public source code.',
 		intro:
-			'Otter is a mature, cloud meeting assistant that sends a bot (OtterPilot) into your calls and processes your conversations on its servers. muesly is the opposite by design: it records your own audio locally, transcribes and summarizes on your device, and is open source so you can verify exactly where your data goes.',
+			'Otter is a mature, cloud meeting assistant that sends a bot (OtterPilot) into your calls and processes your conversations on its servers. muesly is the opposite by design: it records your own audio locally, transcribes and summarizes on your device, and its source code is public so you can verify exactly where your data goes.',
 		rows: sharedRows({}),
 		theyreBetter: [
 			'Polished mobile apps and real-time collaboration',
@@ -91,11 +91,11 @@ export const comparisons: Comparison[] = [
 	{
 		slug: 'granola',
 		name: 'Granola',
-		title: 'muesly vs Granola: open source and on-device',
+		title: 'muesly vs Granola: source-available and on-device',
 		description:
-			'Granola is a polished, cloud meeting notepad. muesly keeps recording, transcription, and summaries on your device, and is open source and free.',
+			'Granola is a polished, cloud meeting notepad. muesly keeps recording, transcription, and summaries on your device, and is source-available and free.',
 		intro:
-			'Granola is a well-designed meeting notepad that, like muesly, captures audio without a bot. The difference is where your notes live: Granola processes and stores them in the cloud behind an account, while muesly keeps everything on your device. muesly is also open source and free, so you can audit it and run it without a subscription.',
+			'Granola is a well-designed meeting notepad that, like muesly, captures audio without a bot. The difference is where your notes live: Granola processes and stores them in the cloud behind an account, while muesly keeps everything on your device. muesly is also source-available and free, so you can audit it and run it without a subscription.',
 		rows: sharedRows({
 			bot: {
 				dimension: 'Bot joins your call',
@@ -113,11 +113,11 @@ export const comparisons: Comparison[] = [
 	{
 		slug: 'fireflies',
 		name: 'Fireflies.ai',
-		title: 'muesly vs Fireflies.ai: private, no bot, open source',
+		title: 'muesly vs Fireflies.ai: private, no bot, source-available',
 		description:
-			'Fireflies sends a bot to your meetings and stores transcripts in the cloud. muesly records locally on your device. Free and open source.',
+			'Fireflies sends a bot to your meetings and stores transcripts in the cloud. muesly records locally on your device. Free, with public source code.',
 		intro:
-			'Fireflies is a cloud conversation-intelligence tool that joins your meetings with a bot and keeps transcripts on its servers, with deep CRM and team integrations. muesly trades that breadth for control: it records your own audio locally, processes on your device, and is open source and free.',
+			'Fireflies is a cloud conversation-intelligence tool that joins your meetings with a bot and keeps transcripts on its servers, with deep CRM and team integrations. muesly trades that breadth for control: it records your own audio locally, processes on your device, and is source-available and free.',
 		rows: sharedRows({}),
 		theyreBetter: [
 			'Deep CRM and workflow integrations',
