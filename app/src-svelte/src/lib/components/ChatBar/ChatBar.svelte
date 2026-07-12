@@ -174,8 +174,11 @@
 		</div>
 	{/if}
 
+	<!-- items-center keeps the icon rail, input, and send button on one vertical
+	     axis in every state (a grown multiline draft included) — never the
+	     bottom-pinned look. -->
 	<div
-		class="flex items-end gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
+		class="flex items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 	>
 		{#if hasMessages && !panelOpen}
 			<Button
@@ -270,7 +273,7 @@
 			placeholder={hasMessages && !panelOpen ? 'Continue chat' : 'Ask anything about this meeting…'}
 			aria-label="Ask anything about this meeting"
 			rows={1}
-			class="max-h-40 min-h-0 flex-1 resize-none self-center border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
+			class="max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
 		/>
 
 		{#if chat.isStreaming}
