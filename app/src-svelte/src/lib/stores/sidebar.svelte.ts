@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { SvelteMap } from 'svelte/reactivity';
 
 import { Analytics } from '$lib/analytics';
+import { backgroundTasks } from './background-tasks.svelte';
 import { recordingState } from './recording-state.svelte';
 
 export interface CurrentMeeting {
@@ -246,6 +247,7 @@ class SidebarStore {
 		if (existing) clearInterval(existing);
 
 		let pollCount = 0;
+		backgroundTasks.begin('summary', meetingId, 'Generating summary');
 
 		const interval = setInterval(async () => {
 			pollCount++;
@@ -253,6 +255,7 @@ class SidebarStore {
 			if (pollCount >= MAX_POLLS) {
 				clearInterval(interval);
 				this.activeSummaryPolls.delete(meetingId);
+				backgroundTasks.finish('summary', meetingId, 'error', 'Timed out after 15 minutes');
 				onUpdate({
 					status: 'error',
 					error:
@@ -275,6 +278,13 @@ class SidebarStore {
 				if (terminal || idleAfterStart) {
 					clearInterval(interval);
 					this.activeSummaryPolls.delete(meetingId);
+					if (result.status === 'completed') {
+						backgroundTasks.finish('summary', meetingId, 'done', 'Summary ready');
+					} else if (result.status === 'error' || result.status === 'failed') {
+						backgroundTasks.finish('summary', meetingId, 'error', result.error ?? 'Failed');
+					} else {
+						backgroundTasks.dismiss(`summary:${meetingId}`);
+					}
 				}
 			} catch (error) {
 				onUpdate({
@@ -283,6 +293,12 @@ class SidebarStore {
 				});
 				clearInterval(interval);
 				this.activeSummaryPolls.delete(meetingId);
+				backgroundTasks.finish(
+					'summary',
+					meetingId,
+					'error',
+					error instanceof Error ? error.message : 'Unknown error',
+				);
 			}
 		}, POLL_INTERVAL_MS);
 
@@ -295,6 +311,7 @@ class SidebarStore {
 		if (interval) {
 			clearInterval(interval);
 			this.activeSummaryPolls.delete(meetingId);
+			backgroundTasks.dismiss(`summary:${meetingId}`);
 		}
 	};
 

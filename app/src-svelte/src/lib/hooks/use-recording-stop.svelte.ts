@@ -14,6 +14,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { onMount } from 'svelte';
 
 import { Analytics } from '$lib/analytics';
+import { backgroundTasks } from '$lib/stores/background-tasks.svelte';
 import { commands } from '$lib/bindings';
 import { FOLDER_PIN_KEY } from '$lib/hooks/use-recording-start.svelte';
 import { storageService } from '$lib/services/storage';
@@ -63,6 +64,7 @@ async function runQualityPass(meetingId: string, folderPath: string): Promise<vo
 		setTimeout(finish, QUALITY_PASS_TIMEOUT_MS);
 	});
 
+	backgroundTasks.begin('retranscription', meetingId, 'Quality pass: re-transcribing');
 	const started = await commands.startRetranscriptionCommand(
 		meetingId,
 		folderPath,

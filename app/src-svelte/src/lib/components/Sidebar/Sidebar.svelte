@@ -33,6 +33,7 @@
 	} from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import BackgroundTasksButton from './BackgroundTasksButton.svelte';
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte';
 	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
@@ -357,6 +358,7 @@
 			</Tooltip.Content>
 		</Tooltip.Root>
 	</Tooltip.Provider>
+	<BackgroundTasksButton />
 </div>
 
 <div class="fixed left-0 top-0 z-40 h-screen">

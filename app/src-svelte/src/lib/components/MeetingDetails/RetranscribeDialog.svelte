@@ -16,6 +16,7 @@
 	} from '$lib/hooks/use-transcription-models.svelte';
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
+	import { backgroundTasks } from '$lib/stores/background-tasks.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Progress } from '$lib/components/ui/progress';
@@ -186,6 +187,7 @@
 				model_name: selectedModelDetails?.name || '',
 			});
 
+			backgroundTasks.begin('retranscription', meetingId, 'Re-transcribing meeting');
 			await invoke('start_retranscription_command', {
 				meetingId,
 				meetingFolderPath,
@@ -364,6 +366,9 @@
 					<XIcon data-icon="inline-start" />
 					Cancel
 				</Button>
+				<!-- Close the dialog without cancelling: the job keeps running and
+				     stays visible in the sidebar's background tasks list. -->
+				<Button variant="secondary" onclick={() => onOpenChange(false)}>Run in background</Button>
 			{/if}
 			{#if error}
 				<Button variant="outline" onclick={() => onOpenChange(false)}>Close</Button>
