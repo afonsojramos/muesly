@@ -21,6 +21,32 @@ use super::models;
 // Sidecar State Management
 // ============================================================================
 
+/// The sidecar protocol version this app expects. Must match `PROTOCOL_VERSION`
+/// in `llama-helper/src/main.rs`. Version 1 = pre-streaming binaries (bare
+/// `{"type":"pong"}`); version 2 added incremental `Token` streaming.
+const EXPECTED_SIDECAR_PROTOCOL: u64 = 2;
+
+/// The sidecar's protocol version from a pong payload. Pre-versioning binaries
+/// send no field — read as version 1.
+fn pong_protocol_version(pong: &serde_json::Value) -> u64 {
+    pong.get("protocol_version").and_then(|v| v.as_u64()).unwrap_or(1)
+}
+
+/// Warn (once per app run) when the sidecar binary speaks an older protocol
+/// than this app expects. A stale binary fails SOFT — e.g. a pre-streaming
+/// binary silently answers streaming requests in one bulk response — so
+/// without this the mismatch is invisible.
+fn warn_once_on_stale_protocol(version: u64) {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if version < EXPECTED_SIDECAR_PROTOCOL && !WARNED.swap(true, Ordering::Relaxed) {
+        log::warn!(
+            "llama-helper sidecar speaks protocol v{version} but the app expects v{EXPECTED_SIDECAR_PROTOCOL} — \
+             the binary in src-tauri/binaries/ is stale (features like token streaming degrade silently). \
+             Rebuild it: cargo build --release -p llama-helper --features metal, then copy to binaries/."
+        );
+    }
+}
+
 /// Sidecar process manager with keep-alive and health monitoring
 pub struct SidecarManager {
     /// Child process handle
@@ -564,6 +590,7 @@ impl SidecarManager {
 
         let resp: serde_json::Value = serde_json::from_str(&response)?;
         if resp.get("type").and_then(|t| t.as_str()) == Some("pong") {
+            warn_once_on_stale_protocol(pong_protocol_version(&resp));
             Ok(())
         } else {
             Err(anyhow!("Unexpected ping response: {}", response))
@@ -813,6 +840,24 @@ impl Drop for SidecarManager {
         }
 
         log::debug!("SidecarManager dropped");
+    }
+}
+
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+
+    #[test]
+    fn pong_without_version_reads_as_v1() {
+        let pong: serde_json::Value = serde_json::from_str(r#"{"type":"pong"}"#).unwrap();
+        assert_eq!(pong_protocol_version(&pong), 1);
+    }
+
+    #[test]
+    fn pong_with_version_reads_it() {
+        let pong: serde_json::Value =
+            serde_json::from_str(r#"{"type":"pong","protocol_version":2}"#).unwrap();
+        assert_eq!(pong_protocol_version(&pong), 2);
     }
 }
 

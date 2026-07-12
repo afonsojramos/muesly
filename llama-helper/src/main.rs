@@ -45,13 +45,21 @@ enum Request {
     Shutdown,
 }
 
+/// Sidecar protocol version, reported in `Pong` so the app can detect a stale
+/// binary. History: 1 (implicit, pre-streaming — no version field on pong),
+/// 2 (incremental `Token` streaming + versioned pong). Bump on any wire change.
+const PROTOCOL_VERSION: u32 = 2;
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
     Response { text: String, error: Option<String> },
     /// Incremental output chunk, only sent for `stream: true` requests.
     Token { text: String },
-    Pong,
+    /// Health-check reply. Carries the protocol version so the app can warn
+    /// when a rebuilt app talks to an outdated sidecar binary (pre-versioning
+    /// binaries send a bare `{"type":"pong"}`, read as version 1).
+    Pong { protocol_version: u32 },
     Goodbye,
     Error { message: String },
 }
@@ -712,7 +720,9 @@ fn main() -> Result<()> {
                     }
                     Ok(Request::Ping) => {
                         state.update_activity();
-                        send_response(&Response::Pong)?;
+                        send_response(&Response::Pong {
+                            protocol_version: PROTOCOL_VERSION,
+                        })?;
                     }
                     Ok(Request::Shutdown) => {
                         eprintln!("🛑 Shutdown requested");
@@ -792,6 +802,18 @@ mod tests {
         // "é" is 2 bytes; safe_end would land mid-char and must floor.
         assert_eq!(e.next_chunk("é"), None);
         assert_eq!(e.next_chunk("éa"), Some("é"));
+    }
+
+    #[test]
+    fn pong_serializes_with_protocol_version() {
+        let json = serde_json::to_string(&Response::Pong {
+            protocol_version: PROTOCOL_VERSION,
+        })
+        .unwrap();
+        assert_eq!(
+            json,
+            format!(r#"{{"type":"pong","protocol_version":{PROTOCOL_VERSION}}}"#)
+        );
     }
 
     #[test]

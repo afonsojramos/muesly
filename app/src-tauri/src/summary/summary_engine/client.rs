@@ -251,12 +251,16 @@ pub async fn generate_with_builtin_streaming(
 
     log::info!("Sending streaming generation request to sidecar");
 
+    let mut token_events = 0usize;
     let streaming = manager.send_request_streaming(
         request_json,
         first_line_timeout,
         inter_line_timeout,
         |line: String| match serde_json::from_str::<Response>(&line) {
-            Ok(Response::Token { text }) => on_token(text),
+            Ok(Response::Token { text }) => {
+                token_events += 1;
+                on_token(text);
+            }
             // Never log the line itself: it can carry generated content.
             _ => log::warn!("Ignoring unexpected mid-stream line from sidecar"),
         },
@@ -292,6 +296,16 @@ pub async fn generate_with_builtin_streaming(
     }
 
     let text = parse_terminal_response(&response_json)?;
+    // A non-empty answer with zero Token lines means the sidecar ignored
+    // `stream: true` — the classic stale-binary failure (protocol v1 answers
+    // streaming requests in one bulk response, silently).
+    if token_events == 0 && !text.is_empty() {
+        log::warn!(
+            "Streaming request produced no incremental tokens — the llama-helper binary \
+             likely predates the streaming protocol. Rebuild it: \
+             cargo build --release -p llama-helper --features metal, then copy to binaries/."
+        );
+    }
     log::info!("Streaming generation completed: {} chars", text.len());
     Ok(text)
 }
