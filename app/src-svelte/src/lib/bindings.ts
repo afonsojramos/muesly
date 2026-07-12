@@ -235,6 +235,10 @@ export const commands = {
 	getTranscriptCleanupEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_transcript_cleanup_enabled")),
 	/**  Enable or disable pre-summary transcript cleanup. */
 	setTranscriptCleanupEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_transcript_cleanup_enabled", { enabled })),
+	/**  Whether the post-meeting quality pass (batch re-transcription) is enabled. */
+	getPostMeetingQualityPassEnabled: () => typedError<boolean, string>(__TAURI_INVOKE("get_post_meeting_quality_pass_enabled")),
+	/**  Enable or disable the post-meeting quality pass. */
+	setPostMeetingQualityPassEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_post_meeting_quality_pass_enabled", { enabled })),
 	apiSaveModelConfig: (provider: string, model: string, whisperModel: string, apiKey: string | null, ollamaEndpoint: string | null, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_save_model_config", { provider, model, whisperModel, apiKey, ollamaEndpoint, authToken })),
 	apiGetApiKey: (provider: string, authToken: string | null) => typedError<string, string>(__TAURI_INVOKE("api_get_api_key", { provider, authToken })),
 	apiGetTranscriptConfig: (authToken: string | null) => typedError<{

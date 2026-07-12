@@ -27,6 +27,56 @@ import { transcripts } from '$lib/stores/transcript.svelte';
 
 const isBrowser = typeof window !== 'undefined';
 
+/** Upper bound on waiting for the post-meeting quality pass (long meetings). */
+const QUALITY_PASS_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Re-transcribe the saved recording with the batch pipeline (merged VAD
+ * windows, no realtime pressure) and wait for it to finish, so speaker
+ * identification runs against the final segments. Local engines only.
+ */
+async function runQualityPass(meetingId: string, folderPath: string): Promise<void> {
+	const provider = config.transcriptModelConfig?.provider === 'parakeet' ? 'parakeet' : 'whisper';
+	const model = config.transcriptModelConfig?.model ?? null;
+	const langRes = await commands.getTranscriptionLanguage();
+	const language = langRes.status === 'ok' && langRes.data !== 'auto' ? langRes.data : null;
+
+	const completion = new Promise<void>((resolve) => {
+		let unComplete: UnlistenFn | undefined;
+		let unError: UnlistenFn | undefined;
+		let settled = false;
+		const finish = (): void => {
+			if (settled) return;
+			settled = true;
+			unComplete?.();
+			unError?.();
+			resolve();
+		};
+		const matches = (payload: unknown): boolean =>
+			(payload as { meeting_id?: string })?.meeting_id === meetingId;
+		void listen('retranscription-complete', (e) => {
+			if (matches(e.payload)) finish();
+		}).then((u) => (unComplete = u));
+		void listen('retranscription-error', (e) => {
+			if (matches(e.payload)) finish();
+		}).then((u) => (unError = u));
+		setTimeout(finish, QUALITY_PASS_TIMEOUT_MS);
+	});
+
+	const started = await commands.startRetranscriptionCommand(
+		meetingId,
+		folderPath,
+		language,
+		model,
+		provider,
+	);
+	if (started.status === 'error') {
+		console.error('Quality pass failed to start:', started.error);
+		return;
+	}
+	await completion;
+}
+
 declare global {
 	interface Window {
 		handleRecordingStop?: (callApi?: boolean) => void;
@@ -174,6 +224,21 @@ export function useRecordingStop(
 						}
 					} catch (calendarError) {
 						console.error('Failed to attach calendar event:', calendarError);
+					}
+
+					// Optional post-meeting quality pass: replace the live segments with
+					// a batch re-transcription of the saved audio. Awaited so speaker
+					// identification below labels the final segments, and gated to
+					// local engines (never re-bills a cloud provider). Best-effort.
+					try {
+						const qp = await commands.getPostMeetingQualityPassEnabled();
+						const provider = config.transcriptModelConfig?.provider;
+						const isLocalEngine = provider === 'localWhisper' || provider === 'parakeet';
+						if (qp.status === 'ok' && qp.data && isLocalEngine && folderPath) {
+							await runQualityPass(meetingId, folderPath);
+						}
+					} catch (qualityError) {
+						console.error('Post-meeting quality pass failed:', qualityError);
 					}
 
 					// Auto-identify speakers for a calendar meeting with attendees, but

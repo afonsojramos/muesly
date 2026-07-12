@@ -62,6 +62,37 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Whether to re-transcribe each finished meeting with the batch pipeline
+    /// (merged VAD windows). Default off (extra compute per meeting).
+    pub async fn get_post_meeting_quality_pass(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> = sqlx::query_scalar(
+            "SELECT post_meeting_quality_pass FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub async fn set_post_meeting_quality_pass(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, post_meeting_quality_pass)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                post_meeting_quality_pass = excluded.post_meeting_quality_pass
+            "#,
+        )
+        .bind(enabled as i64)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Custom recording-shortcut accelerator (None = built-in default).
     pub async fn get_recording_shortcut(
         pool: &SqlitePool,
@@ -985,6 +1016,16 @@ mod tests {
     // -----------------------------------------------------------------------
     // Existing tests — updated to pass a MockStore
     // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn post_meeting_quality_pass_defaults_off_and_roundtrips() {
+        let pool = test_pool().await;
+        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
+        SettingsRepository::set_post_meeting_quality_pass(&pool, true).await.unwrap();
+        assert!(SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
+        SettingsRepository::set_post_meeting_quality_pass(&pool, false).await.unwrap();
+        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
+    }
 
     #[tokio::test]
     async fn shortcut_accelerators_roundtrip_and_reset() {

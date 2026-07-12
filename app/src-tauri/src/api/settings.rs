@@ -588,3 +588,26 @@ pub async fn set_transcript_cleanup_enabled(
         .await
         .map_err(|e| format!("save transcript cleanup setting: {e}"))
 }
+
+/// Whether the post-meeting quality pass (batch re-transcription) is enabled.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_post_meeting_quality_pass_enabled(
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    SettingsRepository::get_post_meeting_quality_pass(state.db_manager.pool())
+        .await
+        .map_err(|e| format!("read quality pass setting: {e}"))
+}
+
+/// Enable or disable the post-meeting quality pass.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_post_meeting_quality_pass_enabled(
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    SettingsRepository::set_post_meeting_quality_pass(state.db_manager.pool(), enabled)
+        .await
+        .map_err(|e| format!("save quality pass setting: {e}"))
+}

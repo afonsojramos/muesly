@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
+	import { onMount } from 'svelte';
 	import { Eye, EyeOff, Lock, Unlock, Plus, X } from '@lucide/svelte';
 
 	import type { TranscriptModelProps } from '$lib/services/config';
@@ -12,6 +13,9 @@
 	import WhisperModelManager from './WhisperModelManager.svelte';
 	import ParakeetModelManager from './ParakeetModelManager.svelte';
 	import { config } from '$lib/stores/config.svelte';
+	import { commands } from '$lib/bindings';
+	import { Switch } from '$lib/components/ui/switch';
+	import { toast } from '$lib/toast';
 
 	interface Props {
 		transcriptModelConfig: TranscriptModelProps;
@@ -27,6 +31,23 @@
 	let isApiKeyLocked = $state(true);
 	// svelte-ignore state_referenced_locally
 	let uiProvider = $state<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
+
+	// Post-meeting quality pass: batch re-transcription of the saved audio.
+	let qualityPassEnabled = $state(false);
+	onMount(() => {
+		void (async () => {
+			const res = await commands.getPostMeetingQualityPassEnabled();
+			if (res.status === 'ok') qualityPassEnabled = res.data;
+		})();
+	});
+	async function toggleQualityPass(enabled: boolean): Promise<void> {
+		qualityPassEnabled = enabled;
+		const res = await commands.setPostMeetingQualityPassEnabled(enabled);
+		if (res.status === 'error') {
+			qualityPassEnabled = !enabled;
+			toast.error('Failed to update quality pass setting', { description: res.error });
+		}
+	}
 
 	// Keep the provider dropdown synced with external config changes.
 	$effect(() => {
@@ -227,5 +248,19 @@
 				</Button>
 			</div>
 		</Card.Content>
+	</Card.Root>
+
+	<Card.Root>
+		<Card.Header class="flex-row items-center justify-between gap-4 space-y-0">
+			<div>
+				<Card.Title>Post-meeting quality pass</Card.Title>
+				<Card.Description>
+					After each meeting, re-transcribe the full recording with merged context for higher
+					accuracy. Local models only; adds processing time after the recording stops. Off by
+					default.
+				</Card.Description>
+			</div>
+			<Switch checked={qualityPassEnabled} onCheckedChange={toggleQualityPass} />
+		</Card.Header>
 	</Card.Root>
 </div>
