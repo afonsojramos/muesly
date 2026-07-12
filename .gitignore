@@ -53,3 +53,6 @@ Thumbs.db
 
 # Scratch / experiments
 /experiments
+
+# Imported third-party bar content (staged for review, never shipped).
+app/src-svelte/src/lib/bars/catalog.imported.ts
