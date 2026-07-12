@@ -21,31 +21,45 @@ ran this public bar". Reads are public.
 Managed with Drizzle. Tables live in `src/db/schema.ts`; SQL migrations are
 generated into `drizzle/` and applied to the shared `muesly` D1 with wrangler.
 
-## Deploy (first time)
-
 ```bash
-pnpm install
-pnpm dlx wrangler login                 # or: npx wrangler login
-
-# Create the shared D1 database, then paste the printed database_id into wrangler.jsonc
-pnpm dlx wrangler d1 create muesly
-
-pnpm db:migrate                          # applies drizzle/ migrations to remote D1
-pnpm deploy                              # deploys the Worker
-
-# Optional: serve on api.muesly.ai (uncomment the `routes` block in
-# wrangler.jsonc, or add the custom domain in the Cloudflare dashboard).
-```
-
-## Changing the schema
-
-```bash
-# 1. edit src/db/schema.ts
-pnpm db:generate      # writes a new migration into drizzle/
+# after editing src/db/schema.ts:
+pnpm db:generate      # writes a migration into drizzle/
 pnpm db:migrate       # applies it to remote D1  (add :local for the dev DB)
 ```
 
 Never hand-edit files in `drizzle/`.
+
+## Deploy — GitHub Actions (primary)
+
+Pushing changes under `api/**` to `main` runs `.github/workflows/deploy-api.yml`,
+which applies migrations and deploys. It needs two repo secrets (Settings →
+Secrets and variables → Actions):
+
+- `CLOUDFLARE_API_TOKEN` — a scoped token (Account → Workers Scripts: Edit, D1:
+  Edit; Account: Read). This is the only real secret.
+- `CLOUDFLARE_ACCOUNT_ID` — the account id. Kept out of the committed config on
+  purpose; wrangler reads it from this env var.
+
+The D1 `database_id` lives in `wrangler.jsonc` — it's a non-secret identifier and
+is required for the binding.
+
+## Deploy — manual / first time
+
+```bash
+pnpm install
+pnpm dlx wrangler login                       # or export CLOUDFLARE_API_TOKEN
+pnpm dlx wrangler d1 create muesly            # once; paste database_id into wrangler.jsonc
+
+# account_id isn't in the config, so pass it for multi-account setups:
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> pnpm db:migrate
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> pnpm run release
+
+# Optional: serve on api.muesly.ai (uncomment `routes` in wrangler.jsonc, or add
+# the custom domain in the dashboard).
+```
+
+`release` is `wrangler deploy` under a non-`deploy` name (bare `pnpm deploy` is a
+built-in pnpm command and won't run this script).
 
 ## The app
 

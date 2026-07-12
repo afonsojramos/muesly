@@ -1,11 +1,11 @@
 {
-	"name": "muesly-bars-api",
+	"name": "muesly-api",
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
 	"scripts": {
 		"dev": "wrangler dev",
-		"deploy": "wrangler deploy",
+		"release": "wrangler deploy",
 		"db:generate": "drizzle-kit generate",
 		"db:migrate": "wrangler d1 migrations apply muesly --remote",
 		"db:migrate:local": "wrangler d1 migrations apply muesly --local",

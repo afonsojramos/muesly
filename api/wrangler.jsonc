@@ -2,6 +2,8 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "muesly-api",
 	"main": "src/index.ts",
+	// account_id comes from the CLOUDFLARE_ACCOUNT_ID env var (GitHub secret in CI,
+	// or your shell locally), so no personal id lives in this public repo.
 	"compatibility_date": "2024-11-01",
 	"observability": { "enabled": true },
 	// One shared app database (feature tables live inside, e.g. bar_usage).
