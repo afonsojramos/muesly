@@ -24,7 +24,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 use crate::database::repositories::{
-    meeting::MeetingsRepository, summary::SummaryProcessesRepository,
+    chat_messages::{ChatMessageRow, ChatMessagesRepository, RecentChatThread},
+    meeting::MeetingsRepository,
+    summary::SummaryProcessesRepository,
 };
 use crate::state::AppState;
 use crate::summary::llm_client::{generate_summary_streaming, LLMProvider};
@@ -391,6 +393,22 @@ pub async fn chat_ask<R: Runtime>(
     match result {
         Ok(answer) => {
             let answer = answer.trim().to_string();
+            // Persist the completed turn so the thread survives collapse and
+            // navigation (best-effort: a live-recording meeting id is not in
+            // SQLite yet, and `append` skips it silently; a DB error must not
+            // fail an answer the user already has on screen).
+            match ChatMessagesRepository::append(&pool, &meeting_id, "user", &question).await {
+                Ok(true) => {
+                    if let Err(e) =
+                        ChatMessagesRepository::append(&pool, &meeting_id, "assistant", &answer)
+                            .await
+                    {
+                        warn!("chat_ask: persisting assistant turn failed: {e}");
+                    }
+                }
+                Ok(false) => {} // ephemeral live-recording meeting: in-memory only
+                Err(e) => warn!("chat_ask: persisting user turn failed: {e}"),
+            }
             // Done.full is authoritative: it reconciles the trim and anything
             // the sidecar held back for stop-token safety.
             let _ = on_event.send(ChatStreamEvent::Done {
@@ -415,6 +433,37 @@ pub async fn chat_ask<R: Runtime>(
             Ok(())
         }
     }
+}
+
+/// The persisted chat thread for a meeting, in conversation order.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_history(
+    state: State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Vec<ChatMessageRow>, String> {
+    ChatMessagesRepository::list_for_meeting(state.db_manager.pool(), &meeting_id)
+        .await
+        .map_err(|e| format!("load chat history: {e}"))
+}
+
+/// Deletes the meeting's persisted chat thread.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_clear(state: State<'_, AppState>, meeting_id: String) -> Result<(), String> {
+    ChatMessagesRepository::clear_for_meeting(state.db_manager.pool(), &meeting_id)
+        .await
+        .map_err(|e| format!("clear chat history: {e}"))
+}
+
+/// Recent chat threads across meetings (newest activity first) for the
+/// "Recent chats" list.
+#[tauri::command]
+#[specta::specta]
+pub async fn chat_recent(state: State<'_, AppState>) -> Result<Vec<RecentChatThread>, String> {
+    ChatMessagesRepository::recent_threads(state.db_manager.pool(), 15)
+        .await
+        .map_err(|e| format!("list recent chats: {e}"))
 }
 
 /// Cancels an in-flight chat generation by `gen_id`. Returns whether one was found.

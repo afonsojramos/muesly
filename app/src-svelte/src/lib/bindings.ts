@@ -367,6 +367,15 @@ export const commands = {
 	chatAsk: (meetingId: string, question: string, history: ChatTurn[], model: string, modelName: string, genId: string, liveTranscript: string | null, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, liveTranscript, onEvent })),
 	/**  Cancels an in-flight chat generation by `gen_id`. Returns whether one was found. */
 	chatCancel: (genId: string) => __TAURI_INVOKE<boolean>("chat_cancel", { genId }),
+	/**  The persisted chat thread for a meeting, in conversation order. */
+	chatHistory: (meetingId: string) => typedError<ChatMessageRow[], string>(__TAURI_INVOKE("chat_history", { meetingId })),
+	/**  Deletes the meeting's persisted chat thread. */
+	chatClear: (meetingId: string) => typedError<null, string>(__TAURI_INVOKE("chat_clear", { meetingId })),
+	/**
+	 *  Recent chat threads across meetings (newest activity first) for the
+	 *  "Recent chats" list.
+	 */
+	chatRecent: () => typedError<RecentChatThread[], string>(__TAURI_INVOKE("chat_recent")),
 	/**
 	 *  Lists all available templates
 	 * 
@@ -825,6 +834,15 @@ export type CalendarInfo = {
 	excluded_by_default: boolean,
 };
 
+/**  One persisted chat turn. */
+export type ChatMessageRow = {
+	id: string,
+	meeting_id: string,
+	role: string,
+	content: string,
+	created_at: string,
+};
+
 /**
  *  Events streamed back to the frontend over the `Channel`. Serde adjacently
  *  tagged so the payload is `{ event, data }`, matching `Channel.onmessage`.
@@ -835,8 +853,8 @@ export type ChatStreamEvent =
 	gen_id: string,
 } } | 
 /**
- *  An incremental chunk of the answer. In Phase 1 the whole answer arrives
- *  as a single `Token`; real streaming sends many.
+ *  An incremental chunk of the answer; many arrive per generation. (A
+ *  pre-streaming sidecar binary sends none — the answer then lands in `Done`.)
  */
 { event: "token"; data: {
 	text: string,
@@ -1315,6 +1333,16 @@ export type ProcessTranscriptResponse = {
 
 /**  Quantization type for Parakeet models */
 export type QuantizationType = "FP32" | "Int8";
+
+/**  A meeting that has a chat thread, for the "Recent chats" list. */
+export type RecentChatThread = {
+	meeting_id: string,
+	meeting_title: string,
+	/**  First user question of the thread - the list's human handle. */
+	first_question: string,
+	message_count: number,
+	last_message_at: string,
+};
 
 /**  Reconnection status information */
 export type ReconnectionStatus = {
