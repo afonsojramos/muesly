@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { CheckCircle2, ListChecks, LoaderCircle, TriangleAlert, X } from '@lucide/svelte';
+	import { CheckCircle2, ListChecks, TriangleAlert, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
 	import { mergeProps } from 'bits-ui';
 
 	import { backgroundTasks, type BackgroundTask } from '$lib/stores/background-tasks.svelte';
+	import Spinner from '$lib/components/Spinner.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Progress } from '$lib/components/ui/progress';
@@ -42,9 +43,7 @@
 									: 'Background tasks'}
 							>
 								{#if running > 0}
-									<!-- Spin a wrapper span, not the svg: WKWebView rotates SVGs
-									     around a viewBox-derived origin, so they orbit. -->
-									<span class="inline-flex animate-spin"><LoaderCircle /></span>
+									<Spinner />
 									<span
 										class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-brand text-[9px] font-semibold leading-none text-brand-foreground"
 									>
@@ -70,9 +69,7 @@
 					<div class="flex items-start gap-2 rounded-md p-2 transition-colors hover:bg-secondary">
 						<div class="mt-0.5 flex-shrink-0">
 							{#if task.status === 'running'}
-								<span class="inline-flex animate-spin text-muted-foreground">
-									<LoaderCircle class="size-4" />
-								</span>
+								<Spinner class="size-4 text-muted-foreground" />
 							{:else if task.status === 'done'}
 								<CheckCircle2 class="size-4 text-success" />
 							{:else}
