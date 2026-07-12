@@ -1123,6 +1123,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         summary::chat::chat_history,
         summary::chat::chat_clear,
         summary::chat::chat_recent,
+        summary::global_chat::global_chat_ask::<tauri::Wry>,
         summary::template_commands::api_list_templates::<tauri::Wry>,
         summary::template_commands::api_get_template_details::<tauri::Wry>,
         summary::template_commands::api_validate_template::<tauri::Wry>,

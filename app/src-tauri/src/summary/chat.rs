@@ -72,7 +72,7 @@ pub struct ChatTurn {
     pub content: String,
 }
 
-fn register_cancellation(gen_id: &str) -> CancellationToken {
+pub(crate) fn register_cancellation(gen_id: &str) -> CancellationToken {
     let token = CancellationToken::new();
     if let Ok(mut registry) = CHAT_CANCELLATION_REGISTRY.lock() {
         registry.insert(gen_id.to_string(), token.clone());
@@ -88,7 +88,7 @@ fn clear_cancellation(gen_id: &str) {
 
 /// Removes a generation's cancellation entry on drop, so an early-returning or
 /// dropped `chat_ask` future can never leak a token into the registry.
-struct CancelGuard<'a>(&'a str);
+pub(crate) struct CancelGuard<'a>(pub(crate) &'a str);
 impl Drop for CancelGuard<'_> {
     fn drop(&mut self) {
         clear_cancellation(self.0);
@@ -176,6 +176,58 @@ fn format_transcript(
     joined
 }
 
+/// Loads a saved meeting's title and speaker-labeled transcript (empty strings
+/// when the meeting is missing). Shared by the per-meeting chat and the global
+/// chat's `read_meeting` tool.
+pub(crate) async fn load_meeting_context(
+    pool: &sqlx::SqlitePool,
+    meeting_id: &str,
+) -> (String, String) {
+    match MeetingsRepository::get_meeting(pool, meeting_id).await {
+        Ok(Some(details)) => {
+            let names =
+                crate::database::repositories::speaker_names::SpeakerNamesRepository::get_for_meeting(
+                    pool, meeting_id,
+                )
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|n| (n.speaker_id, n.name))
+                .collect::<std::collections::HashMap<_, _>>();
+            let self_name =
+                crate::database::repositories::calendar::CalendarEventsRepository::get(
+                    pool, meeting_id,
+                )
+                .await
+                .ok()
+                .flatten()
+                .and_then(|e| {
+                    crate::calendar::context::snapshot_attendees(&e)
+                        .into_iter()
+                        .find(|a| a.is_self)
+                        .and_then(|a| a.name)
+                });
+            (
+                details.title,
+                format_transcript(&details.transcripts, &names, self_name.as_deref()),
+            )
+        }
+        Ok(None) | Err(_) => (String::new(), String::new()),
+    }
+}
+
+/// The stored AI summary for a meeting, extracted to readable text (empty when
+/// none exists). Shared by the per-meeting chat and the global chat.
+pub(crate) async fn load_meeting_summary(pool: &sqlx::SqlitePool, meeting_id: &str) -> String {
+    SummaryProcessesRepository::get_summary_data(pool, meeting_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|s| s.result)
+        .map(|r| extract_summary(Some(&r)))
+        .unwrap_or_default()
+}
+
 /// Best-effort extraction of the human-readable summary from the stored summary
 /// process `result` (JSON). Falls back to the raw string, or empty.
 fn extract_summary(result: Option<&str>) -> String {
@@ -253,7 +305,7 @@ or 'Me:'/'Them:'; use them to attribute statements, but never copy those prefixe
 /// Strip one leaked leading role/answer label ("Assistant:", "AI:", "Answer:")
 /// that small local models sometimes emit by continuing the conversation-format
 /// pattern from the prompt, so the label never reaches the UI or persistence.
-fn strip_leading_role_label(answer: &str) -> &str {
+pub(crate) fn strip_leading_role_label(answer: &str) -> &str {
     let trimmed = answer.trim_start();
     for label in ["assistant:", "ai:", "answer:"] {
         if trimmed.len() >= label.len() && trimmed[..label.len()].eq_ignore_ascii_case(label) {
@@ -314,47 +366,9 @@ pub async fn chat_ask<R: Runtime>(
             .unwrap_or_default();
         (title, live_text)
     } else {
-        match MeetingsRepository::get_meeting(&pool, &meeting_id).await {
-            Ok(Some(details)) => {
-                let names = crate::database::repositories::speaker_names::SpeakerNamesRepository::get_for_meeting(
-                    &pool, &meeting_id,
-                )
-                .await
-                .unwrap_or_default()
-                .into_iter()
-                .map(|n| (n.speaker_id, n.name))
-                .collect::<std::collections::HashMap<_, _>>();
-                let self_name = crate::database::repositories::calendar::CalendarEventsRepository::get(
-                    &pool, &meeting_id,
-                )
-                .await
-                .ok()
-                .flatten()
-                .and_then(|e| {
-                    crate::calendar::context::snapshot_attendees(&e)
-                        .into_iter()
-                        .find(|a| a.is_self)
-                        .and_then(|a| a.name)
-                });
-                (
-                    details.title,
-                    format_transcript(
-                        &details.transcripts,
-                        &names,
-                        self_name.as_deref(),
-                    ),
-                )
-            }
-            Ok(None) | Err(_) => (String::new(), String::new()),
-        }
+        load_meeting_context(&pool, &meeting_id).await
     };
-    let summary = SummaryProcessesRepository::get_summary_data(&pool, &meeting_id)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|s| s.result)
-        .map(|r| extract_summary(Some(&r)))
-        .unwrap_or_default();
+    let summary = load_meeting_summary(&pool, &meeting_id).await;
 
     let (system_prompt, user_prompt) =
         build_prompts(&title, &transcript, &summary, &history, &question);

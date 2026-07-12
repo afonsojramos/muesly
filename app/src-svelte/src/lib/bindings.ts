@@ -380,6 +380,8 @@ export const commands = {
 	 *  "Recent chats" list.
 	 */
 	chatRecent: () => typedError<RecentChatThread[], string>(__TAURI_INVOKE("chat_recent")),
+	/**  Streams an agentic answer to a question about the whole meeting library. */
+	globalChatAsk: (question: string, history: ChatTurn[], model: string, modelName: string, genId: string, onEvent: Channel<GlobalChatEvent>) => typedError<null, string>(__TAURI_INVOKE("global_chat_ask", { question, history, model, modelName, genId, onEvent })),
 	/**
 	 *  Lists all available templates
 	 * 
@@ -961,6 +963,33 @@ export type Folder = {
 	favorited: boolean,
 	created_at: string,
 };
+
+/**
+ *  Events streamed to the frontend. Mirrors `ChatStreamEvent`, plus the agent's
+ *  visible progress steps.
+ */
+export type GlobalChatEvent = { event: "started"; data: {
+	gen_id: string,
+} } | 
+/**  A tool action began (shown as an in-progress step). */
+{ event: "action"; data: {
+	id: number,
+	label: string,
+} } | 
+/**  The action finished; `detail` summarizes the outcome ("4 meetings"). */
+{ event: "action_done"; data: {
+	id: number,
+	detail: string,
+} } | 
+/**  Incremental final-answer text. */
+{ event: "token"; data: {
+	text: string,
+} } | { event: "done"; data: {
+	gen_id: string,
+	full: string,
+} } | { event: "error"; data: {
+	message: string,
+} };
 
 export type GlobalShortcutInfo = {
 	accelerator: string,
