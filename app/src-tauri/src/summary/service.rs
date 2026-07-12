@@ -356,6 +356,19 @@ impl SummaryService {
         false
     }
 
+    /// True while `gen` is still the registered generation for `meeting_id`. A
+    /// newer regenerate replaces the registry entry with a higher gen, so an older
+    /// job sees `false` and must not write its terminal status (completed / failed /
+    /// cancelled) over the newer run's — the bug that let a stale job clobber a
+    /// live one's result.
+    fn is_current_generation(meeting_id: &str, gen: u64) -> bool {
+        CANCELLATION_REGISTRY
+            .lock()
+            .ok()
+            .and_then(|r| r.get(meeting_id).map(|(g, _)| *g == gen))
+            .unwrap_or(false)
+    }
+
     /// Cleans up the cancellation token after processing completes.
     /// Only removes the entry when the generation still matches so a newer
     /// regenerate's token is never wiped by a finishing older job.
@@ -659,6 +672,18 @@ impl SummaryService {
         let duration = start_time.elapsed().as_secs_f64();
 
         // Cancellation token is cleaned up by `_cancel_guard` on drop.
+
+        // If a newer regenerate has superseded this run, it now owns the meeting's
+        // summary row. Writing our terminal status here would clobber the newer
+        // run's state (e.g. stamp `cancelled`/`failed` over a live generation), so
+        // bail before any DB write once we're no longer the current generation.
+        if !Self::is_current_generation(&meeting_id, cancel_gen) {
+            info!(
+                "Summary generation for meeting {} was superseded; skipping terminal DB write",
+                meeting_id
+            );
+            return;
+        }
 
         match result {
             Ok((mut final_markdown, _english_markdown, num_chunks)) => {
