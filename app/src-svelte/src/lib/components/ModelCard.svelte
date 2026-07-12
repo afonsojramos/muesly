@@ -79,7 +79,7 @@
 		)}
 	>
 		{#if isRecommended}
-			<Badge class="bg-brand text-brand-foreground absolute -right-2 -top-2">Recommended</Badge>
+			<Badge class="bg-brand text-brand-foreground absolute -left-2 -top-2">Recommended</Badge>
 		{/if}
 
 		<div class="flex items-start justify-between gap-4">
@@ -90,9 +90,6 @@
 					{#if tagline}
 						<span class="text-sm text-muted-foreground">•</span>
 						<span class="text-sm text-muted-foreground">{tagline}</span>
-					{/if}
-					{#if isSelected && isAvailable}
-						<Badge class="bg-brand text-brand-foreground">✓</Badge>
 					{/if}
 					{#if perfBadge}
 						<Badge class={perfBadge.class}>{perfBadge.label}</Badge>
