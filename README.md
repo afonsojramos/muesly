@@ -7,7 +7,7 @@
 <a href="https://github.com/afonsojramos/muesly/releases/"><img src="https://img.shields.io/badge/Pre_Release-Link-brightgreen" alt="Pre-Release"></a>
 <a href="https://github.com/afonsojramos/muesly/releases"><img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/afonsojramos/muesly?style=flat"></a>
 <a href="https://github.com/afonsojramos/muesly/releases"><img alt="GitHub Downloads" src="https://img.shields.io/github/downloads/afonsojramos/muesly/total?style=flat"></a>
-<a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-blue" alt="License"></a>
+<a href="LICENSE.md"><img src="https://img.shields.io/badge/License-PolyForm_Noncommercial-blue" alt="License"></a>
 <a href="https://github.com/afonsojramos/muesly/releases"><img src="https://img.shields.io/badge/Supported_OS-macOS,_Windows,_Linux-white" alt="Supported OS"></a>
 <a href="https://github.com/afonsojramos/muesly/releases"><img alt="GitHub Tag" src="https://img.shields.io/github/v/tag/afonsojramos/muesly?include_prereleases&color=yellow"></a>
 
@@ -65,7 +65,7 @@ Import & enhance was contributed by [Jeremi Joslin](https://github.com/jeremi) a
 
 ## License
 
-[MIT](LICENSE.md)
+[PolyForm Noncommercial 1.0.0](LICENSE.md). Free for personal and noncommercial use; commercial use requires a separate license from the author.
 
 ## Acknowledgments
 

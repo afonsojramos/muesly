@@ -1,14 +1,14 @@
 # muesly Terms of Service
 
-*Last updated: 2026-07-07*
+*Last updated: 2026-07-12*
 
 ## Overview
 
-muesly is free, open-source software that captures, transcribes, and summarizes your speech on your own device. By downloading or using muesly, you agree to these terms. If you do not agree, do not use the app.
+muesly is free, source-available software that captures, transcribes, and summarizes your speech on your own device. By downloading or using muesly, you agree to these terms. If you do not agree, do not use the app.
 
 ## License
 
-muesly is released under the [MIT License](https://github.com/afonsojramos/muesly/blob/main/LICENSE.md). You are free to use, copy, modify, and distribute the software subject to that license. These terms describe how the official builds are provided and do not restrict any rights granted to you by the MIT License.
+muesly is released under the [PolyForm Noncommercial License 1.0.0](https://github.com/afonsojramos/muesly/blob/main/LICENSE.md). You are free to use, copy, modify, and distribute the software for any noncommercial purpose, subject to that license. Commercial use requires a separate license from the author. These terms describe how the official builds are provided and do not restrict any rights granted to you by the license.
 
 ## No Warranty
 

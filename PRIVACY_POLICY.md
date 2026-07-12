@@ -4,7 +4,7 @@
 
 ## Our Privacy Commitment
 
-muesly is built on a simple principle: everything you say stays yours. It captures, transcribes, and summarizes your speech entirely on your own device. This policy explains exactly how your data is handled in this open-source app.
+muesly is built on a simple principle: everything you say stays yours. It captures, transcribes, and summarizes your speech entirely on your own device. This policy explains exactly how your data is handled in this source-available app.
 
 ## Local-First Processing
 
@@ -39,7 +39,7 @@ Official builds include anonymized usage analytics (via PostHog) to help us find
 - Data is retained for a maximum of 12 months, then automatically deleted
 - Data is encrypted in transit
 - Access is limited to core maintainers
-- The full analytics implementation is open source and available for review
+- The full analytics implementation is public source code, available for review
 
 ## Cloud LLM Providers (Optional)
 
