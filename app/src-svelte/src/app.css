@@ -84,15 +84,6 @@
 		border-color: var(--border);
 	}
 
-	/* WKWebView resolves SVG transform-origin against the viewBox instead of
-	   the CSS border box, so animate-spin icons whose CSS size differs from
-	   their intrinsic size (lucide: 24px viewBox drawn at 16px) orbit instead
-	   of rotating in place. Pin the spec-default box + center origin. */
-	svg.animate-spin {
-		transform-box: border-box;
-		transform-origin: center;
-	}
-
 	/* Themed keyboard-focus indicator instead of the UA blue ring. Drawn
 	   inset (negative offset) so it survives overflow-clipping scrollports.
 	   Components that set their own focus-visible ring also set outline-none,

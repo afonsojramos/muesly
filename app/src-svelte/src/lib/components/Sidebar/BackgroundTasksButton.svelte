@@ -42,7 +42,9 @@
 									: 'Background tasks'}
 							>
 								{#if running > 0}
-									<LoaderCircle class="animate-spin" />
+									<!-- Spin a wrapper span, not the svg: WKWebView rotates SVGs
+									     around a viewBox-derived origin, so they orbit. -->
+									<span class="inline-flex animate-spin"><LoaderCircle /></span>
 									<span
 										class="absolute -right-0.5 -top-0.5 flex size-3.5 items-center justify-center rounded-full bg-brand text-[9px] font-semibold leading-none text-brand-foreground"
 									>
@@ -68,7 +70,9 @@
 					<div class="flex items-start gap-2 rounded-md p-2 transition-colors hover:bg-secondary">
 						<div class="mt-0.5 flex-shrink-0">
 							{#if task.status === 'running'}
-								<LoaderCircle class="size-4 animate-spin text-muted-foreground" />
+								<span class="inline-flex animate-spin text-muted-foreground">
+									<LoaderCircle class="size-4" />
+								</span>
 							{:else if task.status === 'done'}
 								<CheckCircle2 class="size-4 text-success" />
 							{:else}

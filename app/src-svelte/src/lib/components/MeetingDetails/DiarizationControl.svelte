@@ -109,7 +109,9 @@
 							aria-label="Identify speakers"
 							onclick={identifySpeakers}
 						>
-							<UsersIcon data-icon="inline-start" />
+							<!-- No data-icon: the label hides below @[30rem] and inline-start
+							     padding would leave the lone icon off-center. -->
+							<UsersIcon />
 							<span class="hidden @[30rem]:inline">{diarizing ? 'Identifying…' : 'Speakers'}</span>
 						</Button>
 					{/snippet}
@@ -131,7 +133,7 @@
 							aria-label="Download speaker models"
 							onclick={downloadModels}
 						>
-							<UsersIcon data-icon="inline-start" />
+							<UsersIcon />
 							<span class="hidden @[30rem]:inline">{downloading ? `${progress}%` : 'Speakers'}</span
 							>
 						</Button>

@@ -105,7 +105,9 @@
 									showRetranscribeDialog = true;
 								}}
 							>
-								<RefreshCwIcon data-icon="inline-start" />
+								<!-- No data-icon: the label hides below @[30rem] and inline-start
+								     padding would leave the lone icon off-center. -->
+								<RefreshCwIcon />
 								<span class="hidden @[30rem]:inline">Enhance</span>
 							</Button>
 						{/snippet}
