@@ -1,0 +1,23 @@
+{
+	"name": "muesly-bars-api",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"db:generate": "drizzle-kit generate",
+		"db:migrate": "wrangler d1 migrations apply muesly --remote",
+		"db:migrate:local": "wrangler d1 migrations apply muesly --local",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"drizzle-orm": "^0.36.4"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20241106.0",
+		"drizzle-kit": "^0.28.1",
+		"typescript": "^5.6.3",
+		"wrangler": "^3.90.0"
+	}
+}

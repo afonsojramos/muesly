@@ -1,0 +1,21 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "muesly-api",
+	"main": "src/index.ts",
+	"compatibility_date": "2024-11-01",
+	"observability": { "enabled": true },
+	// One shared app database (feature tables live inside, e.g. bar_usage).
+	// Run `wrangler d1 create muesly` and paste the returned database_id here.
+	// Drizzle writes migrations into `drizzle/`; applied with `wrangler d1 migrations apply`.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "muesly",
+			"database_id": "REPLACE_WITH_D1_DATABASE_ID",
+			"migrations_dir": "drizzle"
+		}
+	]
+	// Optional: serve on the API domain the app trusts (matches the app CSP +
+	// default BARS_API_URL). Add after `wrangler deploy`:
+	// "routes": [{ "pattern": "api.muesly.ai", "custom_domain": true }]
+}
