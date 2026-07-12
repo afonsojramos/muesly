@@ -209,9 +209,25 @@ pub fn start_transcription_task<R: Runtime>(
                                     // Check confidence threshold (or accept if no confidence provided)
                                     let meets_threshold = confidence_opt.map_or(true, |c| c >= confidence_threshold);
 
+                                    // Quality gate: silence hallucinations and repetition loops.
+                                    let quality_drop = if !transcript.trim().is_empty() && meets_threshold {
+                                        super::segment_filter::should_drop_segment(&transcript, confidence_opt)
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(reason) = &quality_drop {
+                                        info!(
+                                            "🚮 Worker {} dropped segment ({:?}): '{}'",
+                                            worker_id, reason, transcript
+                                        );
+                                    }
+
                                     // Drop mic segments that duplicate a recent, overlapping
                                     // system segment (speaker playback picked up by the mic).
-                                    let admitted = if !transcript.trim().is_empty() && meets_threshold {
+                                    let admitted = if !transcript.trim().is_empty()
+                                        && meets_threshold
+                                        && quality_drop.is_none()
+                                    {
                                         let mut filter = crosstalk_clone.lock().await;
                                         filter.admit(
                                             chunk_source == "mic",
@@ -229,7 +245,11 @@ pub fn start_transcription_task<R: Runtime>(
                                         );
                                     }
 
-                                    if !transcript.trim().is_empty() && meets_threshold && admitted {
+                                    if !transcript.trim().is_empty()
+                                        && meets_threshold
+                                        && quality_drop.is_none()
+                                        && admitted
+                                    {
                                         // PERFORMANCE: Only log transcription results, not every processing step
                                         info!("✅ Worker {} transcribed: {} (confidence: {}, partial: {})",
                                               worker_id, transcript, confidence_str, is_partial);

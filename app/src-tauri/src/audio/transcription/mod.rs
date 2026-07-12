@@ -4,6 +4,7 @@
 
 pub mod crosstalk;
 pub mod provider;
+pub mod segment_filter;
 pub mod whisper_provider;
 pub mod parakeet_provider;
 pub mod engine;
