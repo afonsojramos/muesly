@@ -6,6 +6,7 @@ pub mod dictation_preset;
 pub mod folders;
 pub mod meeting;
 pub mod notes;
+pub mod bars;
 pub mod setting;
 pub mod speaker_names;
 pub mod summary;

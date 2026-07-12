@@ -382,6 +382,12 @@ export const commands = {
 	chatRecent: () => typedError<RecentChatThread[], string>(__TAURI_INVOKE("chat_recent")),
 	/**  Streams an agentic answer to a question about the whole meeting library. */
 	globalChatAsk: (question: string, history: ChatTurn[], model: string, modelName: string, genId: string, onEvent: Channel<GlobalChatEvent>) => typedError<null, string>(__TAURI_INVOKE("global_chat_ask", { question, history, model, modelName, genId, onEvent })),
+	/**  All saved user bars, most recently edited first. */
+	barsList: () => typedError<UserBar[], string>(__TAURI_INVOKE("bars_list")),
+	/**  Create a new bar or update an existing one (when `input.id` is set). */
+	barsUpsert: (input: BarInput) => typedError<UserBar, string>(__TAURI_INVOKE("bars_upsert", { input })),
+	/**  Delete a user bar by id. */
+	barsDelete: (id: string) => typedError<null, string>(__TAURI_INVOKE("bars_delete", { id })),
 	/**
 	 *  Lists all available templates
 	 * 
@@ -765,6 +771,16 @@ export type BackendInfo = {
 	id: string,
 	name: string,
 	description: string,
+};
+
+/**  Create/update payload. `id` present = edit; absent/empty = create. */
+export type BarInput = {
+	id: string | null,
+	title: string,
+	description: string,
+	prompt: string,
+	scopes: string[],
+	icon: string,
 };
 
 /**
@@ -1504,6 +1520,18 @@ export type TranscriptionStatus = {
 	chunks_in_queue: number,
 	is_processing: boolean,
 	last_activity_ms: number,
+};
+
+/**  A saved bar, with `scopes` split back into a list for the frontend. */
+export type UserBar = {
+	id: string,
+	title: string,
+	description: string,
+	prompt: string,
+	scopes: string[],
+	icon: string,
+	created_at: string,
+	updated_at: string,
 };
 
 export type VocabularyEntry = {

@@ -4,6 +4,7 @@ pub mod folders;
 pub mod settings;
 pub mod commands;
 pub mod people;
+pub mod bars;
 pub mod nl_search;
 
 pub use types::*;
