@@ -240,23 +240,22 @@
 	let deleteConfirmOpen = $state(false);
 	let deleting = $state(false);
 
-	// Closing the actions menu restores focus to the trigger, which the tooltip
-	// treats as a reason to open. Gate it: ignore open requests while the menu
-	// is open or just closed; a fresh hover (pointerenter) re-arms it.
+	// Opening the actions menu, and the focus restore when it closes, both make
+	// the tooltip open (or stick). bits-ui components own their state unless
+	// bind:open is used, so bind both and force the tooltip shut while the menu
+	// is open or was just closed; a fresh hover (pointerenter) re-arms.
 	let actionsMenuOpen = $state(false);
 	let actionsTooltipOpen = $state(false);
 	let suppressActionsTooltip = $state(false);
 
-	function handleActionsMenuOpenChange(open: boolean): void {
-		actionsMenuOpen = open;
-		actionsTooltipOpen = false;
-		if (!open) suppressActionsTooltip = true;
-	}
-
-	function handleActionsTooltipOpenChange(open: boolean): void {
-		if (open && (actionsMenuOpen || suppressActionsTooltip)) return;
-		actionsTooltipOpen = open;
-	}
+	$effect(() => {
+		if (actionsMenuOpen) suppressActionsTooltip = true;
+	});
+	$effect(() => {
+		if (actionsTooltipOpen && (actionsMenuOpen || suppressActionsTooltip)) {
+			actionsTooltipOpen = false;
+		}
+	});
 
 	async function handleDeleteMeeting(): Promise<void> {
 		if (deleting) return;
@@ -481,12 +480,9 @@
 						</Tooltip.Root>
 					</Tooltip.Provider>
 					<div class="ml-auto flex items-center gap-1">
-						<DropdownMenu.Root open={actionsMenuOpen} onOpenChange={handleActionsMenuOpenChange}>
+						<DropdownMenu.Root bind:open={actionsMenuOpen}>
 							<Tooltip.Provider delayDuration={300}>
-								<Tooltip.Root
-									open={actionsTooltipOpen}
-									onOpenChange={handleActionsTooltipOpenChange}
-								>
+								<Tooltip.Root bind:open={actionsTooltipOpen}>
 									<Tooltip.Trigger>
 										{#snippet child({ props: tooltipProps })}
 											<DropdownMenu.Trigger>

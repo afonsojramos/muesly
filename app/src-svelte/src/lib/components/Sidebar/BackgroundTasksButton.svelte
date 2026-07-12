@@ -22,28 +22,25 @@
 		void goto(`/meeting-details?id=${task.meetingId}`);
 	}
 
-	// Closing the popover restores focus to the trigger, which the tooltip
-	// treats as a reason to open. Gate it: ignore open requests while the
-	// popover is open or just closed; a fresh hover (pointerenter) re-arms it.
+	// Opening the popover, and the focus restore when it closes, both make the
+	// tooltip open (or stick). bits-ui components own their state unless
+	// bind:open is used, so bind both and force the tooltip shut while the
+	// popover is open or was just closed; a fresh hover (pointerenter) re-arms.
 	let popoverOpen = $state(false);
 	let tooltipOpen = $state(false);
 	let suppressTooltip = $state(false);
 
-	function handlePopoverOpenChange(open: boolean): void {
-		popoverOpen = open;
-		tooltipOpen = false;
-		if (!open) suppressTooltip = true;
-	}
-
-	function handleTooltipOpenChange(open: boolean): void {
-		if (open && (popoverOpen || suppressTooltip)) return;
-		tooltipOpen = open;
-	}
+	$effect(() => {
+		if (popoverOpen) suppressTooltip = true;
+	});
+	$effect(() => {
+		if (tooltipOpen && (popoverOpen || suppressTooltip)) tooltipOpen = false;
+	});
 </script>
 
-<Popover.Root open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
+<Popover.Root bind:open={popoverOpen}>
 	<Tooltip.Provider delayDuration={300}>
-		<Tooltip.Root open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
+		<Tooltip.Root bind:open={tooltipOpen}>
 			<Tooltip.Trigger>
 				{#snippet child({ props: tooltipProps })}
 					<Popover.Trigger>
