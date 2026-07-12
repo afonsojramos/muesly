@@ -327,16 +327,21 @@
 					</Button>
 				{/snippet}
 			</Dialog.Trigger>
-			<Dialog.Content class="sm:max-w-lg">
+			<!-- Cap height and scroll the body: the built-in model list is long and
+			     would otherwise overflow the viewport (Dialog.Content is centered
+			     with no intrinsic height). Matches AnalyticsDataModal. -->
+			<Dialog.Content class="flex max-h-[85vh] flex-col sm:max-w-lg">
 				<Dialog.Title class="sr-only">Model Settings</Dialog.Title>
-				<ModelSettingsModal
-					{modelConfig}
-					{setModelConfig}
-					onSave={async (config) => {
-						await onSaveModelConfig(config);
-						settingsDialogOpen = false;
-					}}
-				/>
+				<div class="min-h-0 flex-1 overflow-y-auto">
+					<ModelSettingsModal
+						{modelConfig}
+						{setModelConfig}
+						onSave={async (config) => {
+							await onSaveModelConfig(config);
+							settingsDialogOpen = false;
+						}}
+					/>
+				</div>
 			</Dialog.Content>
 		</Dialog.Root>
 
