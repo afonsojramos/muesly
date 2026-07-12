@@ -11,7 +11,7 @@
 		{
 			"binding": "DB",
 			"database_name": "muesly",
-			"database_id": "REPLACE_WITH_D1_DATABASE_ID",
+			"database_id": "af5c8dd2-e894-4960-a5f5-8e75bfef549e",
 			"migrations_dir": "drizzle"
 		}
 	]
