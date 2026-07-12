@@ -240,6 +240,24 @@
 	let deleteConfirmOpen = $state(false);
 	let deleting = $state(false);
 
+	// Closing the actions menu restores focus to the trigger, which the tooltip
+	// treats as a reason to open. Gate it: ignore open requests while the menu
+	// is open or just closed; a fresh hover (pointerenter) re-arms it.
+	let actionsMenuOpen = $state(false);
+	let actionsTooltipOpen = $state(false);
+	let suppressActionsTooltip = $state(false);
+
+	function handleActionsMenuOpenChange(open: boolean): void {
+		actionsMenuOpen = open;
+		actionsTooltipOpen = false;
+		if (!open) suppressActionsTooltip = true;
+	}
+
+	function handleActionsTooltipOpenChange(open: boolean): void {
+		if (open && (actionsMenuOpen || suppressActionsTooltip)) return;
+		actionsTooltipOpen = open;
+	}
+
 	async function handleDeleteMeeting(): Promise<void> {
 		if (deleting) return;
 		deleting = true;
@@ -463,15 +481,20 @@
 						</Tooltip.Root>
 					</Tooltip.Provider>
 					<div class="ml-auto flex items-center gap-1">
-						<DropdownMenu.Root>
+						<DropdownMenu.Root open={actionsMenuOpen} onOpenChange={handleActionsMenuOpenChange}>
 							<Tooltip.Provider delayDuration={300}>
-								<Tooltip.Root>
+								<Tooltip.Root
+									open={actionsTooltipOpen}
+									onOpenChange={handleActionsTooltipOpenChange}
+								>
 									<Tooltip.Trigger>
 										{#snippet child({ props: tooltipProps })}
 											<DropdownMenu.Trigger>
 												{#snippet child({ props: menuProps })}
 													<Button
-														{...mergeProps(tooltipProps, menuProps)}
+														{...mergeProps(tooltipProps, menuProps, {
+															onpointerenter: () => (suppressActionsTooltip = false),
+														})}
 														variant="ghost"
 														size="icon-sm"
 														class="text-muted-foreground hover:text-foreground"

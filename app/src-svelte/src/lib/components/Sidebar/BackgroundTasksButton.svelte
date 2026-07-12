@@ -21,11 +21,29 @@
 	function openTask(task: BackgroundTask): void {
 		void goto(`/meeting-details?id=${task.meetingId}`);
 	}
+
+	// Closing the popover restores focus to the trigger, which the tooltip
+	// treats as a reason to open. Gate it: ignore open requests while the
+	// popover is open or just closed; a fresh hover (pointerenter) re-arms it.
+	let popoverOpen = $state(false);
+	let tooltipOpen = $state(false);
+	let suppressTooltip = $state(false);
+
+	function handlePopoverOpenChange(open: boolean): void {
+		popoverOpen = open;
+		tooltipOpen = false;
+		if (!open) suppressTooltip = true;
+	}
+
+	function handleTooltipOpenChange(open: boolean): void {
+		if (open && (popoverOpen || suppressTooltip)) return;
+		tooltipOpen = open;
+	}
 </script>
 
-<Popover.Root>
+<Popover.Root open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
 	<Tooltip.Provider delayDuration={300}>
-		<Tooltip.Root>
+		<Tooltip.Root open={tooltipOpen} onOpenChange={handleTooltipOpenChange}>
 			<Tooltip.Trigger>
 				{#snippet child({ props: tooltipProps })}
 					<Popover.Trigger>
@@ -34,7 +52,9 @@
 							     popover props clobber the tooltip's (plain double-spread breaks
 							     the tooltip). -->
 							<Button
-								{...mergeProps(tooltipProps, popoverProps)}
+								{...mergeProps(tooltipProps, popoverProps, {
+									onpointerenter: () => (suppressTooltip = false),
+								})}
 								variant="ghost"
 								size="icon-sm"
 								class="relative text-muted-foreground/70"
