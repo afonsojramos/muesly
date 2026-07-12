@@ -298,8 +298,11 @@ impl RecordingManager {
                 debug!("Recording not saved (auto-save disabled or no audio data)");
             }
             Err(e) => {
+                // Streams are already stopped above, so recording *did* halt — but
+                // the audio never made it to disk. Surface that instead of reporting
+                // success, or the user believes a lost recording was saved.
                 error!("Failed to save recording: {}", e);
-                // Don't fail the stop operation if saving fails
+                return Err(anyhow::anyhow!("Failed to save recording: {e}"));
             }
         }
 
@@ -337,8 +340,10 @@ impl RecordingManager {
                 info!("Recording not saved (auto-save disabled or no audio data)");
             }
             Err(e) => {
+                // Streams are already stopped above; the recording halted but the
+                // audio was never written. Report the failure rather than Ok(()).
                 error!("Failed to save recording: {}", e);
-                // Don't fail the stop operation if saving fails
+                return Err(anyhow::anyhow!("Failed to save recording: {e}"));
             }
         }
 
