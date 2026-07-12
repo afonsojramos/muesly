@@ -4,6 +4,7 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy, onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
+	import { mergeProps } from 'bits-ui';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import DownloadIcon from '@lucide/svelte/icons/download';
@@ -470,8 +471,7 @@
 											<DropdownMenu.Trigger>
 												{#snippet child({ props: menuProps })}
 													<Button
-														{...tooltipProps}
-														{...menuProps}
+														{...mergeProps(tooltipProps, menuProps)}
 														variant="ghost"
 														size="icon-sm"
 														class="text-muted-foreground hover:text-foreground"

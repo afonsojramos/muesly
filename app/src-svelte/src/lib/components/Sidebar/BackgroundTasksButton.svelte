@@ -3,6 +3,8 @@
 	import { CheckCircle2, ListChecks, LoaderCircle, TriangleAlert, X } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
+	import { mergeProps } from 'bits-ui';
+
 	import { backgroundTasks, type BackgroundTask } from '$lib/stores/background-tasks.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
@@ -27,9 +29,11 @@
 				{#snippet child({ props: tooltipProps })}
 					<Popover.Trigger>
 						{#snippet child({ props: popoverProps })}
+							<!-- mergeProps chains shared handlers/attrs instead of letting the
+							     popover props clobber the tooltip's (plain double-spread breaks
+							     the tooltip). -->
 							<Button
-								{...tooltipProps}
-								{...popoverProps}
+								{...mergeProps(tooltipProps, popoverProps)}
 								variant="ghost"
 								size="icon-sm"
 								class="relative text-muted-foreground/70"
