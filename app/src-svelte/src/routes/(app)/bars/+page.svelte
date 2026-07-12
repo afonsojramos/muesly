@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { Check, Copy, Pencil, Plus, Search, Send, Trash2 } from '@lucide/svelte';
+	import { Check, Copy, Pencil, Plus, Search, Send, Sparkles, Trash2 } from '@lucide/svelte';
 
 	import { cn } from '$lib/utils';
 	import { navigate } from '$lib/navigation';
@@ -30,16 +30,28 @@
 
 	onMount(() => {
 		void bars.ensureLoaded();
+		void bars.loadPopular();
 	});
+
+	/** Compact usage count, e.g. 1700 -> "1.7k". */
+	function formatUses(n: number): string {
+		if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '')}k`;
+		return `${n}`;
+	}
 
 	const source = $derived(tab === 'mine' ? bars.mine : bars.catalog);
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		return source.filter((b) => {
+		const list = source.filter((b) => {
 			if (scenarioFilter !== 'all' && !b.scenarios.includes(scenarioFilter)) return false;
 			if (!q) return true;
 			return b.title.toLowerCase().includes(q) || b.description.toLowerCase().includes(q);
 		});
+		// Discover surfaces the community's most-used bars first (stable otherwise).
+		if (tab === 'discover') {
+			return [...list].sort((a, b) => bars.usesFor(b.id) - bars.usesFor(a.id));
+		}
+		return list;
 	});
 
 	const SCENARIO_FILTERS: { value: ScenarioFilter; label: string }[] = [
@@ -66,6 +78,7 @@
 
 	function runInHome(bar: Bar): void {
 		detail = null;
+		bars.track(bar);
 		void navigate('/');
 		void globalChat.send(bar.prompt);
 	}
@@ -177,15 +190,26 @@
 							<Card.Content class="flex flex-1 flex-col">
 								<h3 class="text-sm font-medium">{bar.title}</h3>
 								<p class="mt-1 line-clamp-2 text-sm text-muted-foreground">{bar.description}</p>
-								<div class="mt-3 flex flex-wrap items-center gap-1.5">
-									{#if bar.source === 'user'}
-										<Badge variant="secondary">Yours</Badge>
+								<div class="mt-3 flex items-center justify-between gap-2">
+									<div class="flex min-w-0 flex-wrap items-center gap-1.5">
+										{#if bar.source === 'user'}
+											<Badge variant="secondary">Yours</Badge>
+										{/if}
+										{#each bar.scenarios as scenario (scenario)}
+											<Badge variant="outline" class="text-muted-foreground">
+												{scenarioLabel(scenario)}
+											</Badge>
+										{/each}
+									</div>
+									{#if bars.usesFor(bar.id) > 0}
+										<span
+											class="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+											title={`${bars.usesFor(bar.id)} uses`}
+										>
+											<Sparkles class="size-3" />
+											{formatUses(bars.usesFor(bar.id))}
+										</span>
 									{/if}
-									{#each bar.scenarios as scenario (scenario)}
-										<Badge variant="outline" class="text-muted-foreground">
-											{scenarioLabel(scenario)}
-										</Badge>
-									{/each}
 								</div>
 							</Card.Content>
 						</Card.Root>

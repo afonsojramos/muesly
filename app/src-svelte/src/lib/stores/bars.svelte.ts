@@ -13,6 +13,7 @@ import {
 	type BarScenario,
 	type ChatSurface,
 } from '$lib/bars/catalog';
+import { fetchPopularBars, trackBarUsage } from '$lib/bars/popularity';
 import { toast } from '$lib/toast';
 
 const SCENARIOS: BarScenario[] = ['before', 'during', 'after', 'across'];
@@ -35,6 +36,8 @@ function toBar(u: UserBar): Bar {
 class BarsStore {
 	#user = $state<Bar[]>([]);
 	#loaded = false;
+	/** Community usage counts (catalog bars), `bar id -> uses`. */
+	#popular = $state<Record<string, number>>({});
 
 	/** User bars first (most recently edited), then the static catalog. */
 	get all(): Bar[] {
@@ -67,6 +70,22 @@ class BarsStore {
 	/** Load user bars once (built-in + imported are always available). */
 	async ensureLoaded(): Promise<void> {
 		if (!this.#loaded) await this.load();
+	}
+
+	/** Community usage count for a bar (0 if unknown / not a catalog bar). */
+	usesFor(id: string): number {
+		return this.#popular[id] ?? 0;
+	}
+
+	/** Fetch community popularity counts (best-effort; safe to call repeatedly). */
+	async loadPopular(): Promise<void> {
+		this.#popular = await fetchPopularBars();
+	}
+
+	/** Record a catalog bar being run (fire-and-forget; user bars are ignored). */
+	track(bar: Bar): void {
+		if (bar.source === 'user') return;
+		void trackBarUsage([bar.id]);
 	}
 
 	async save(input: BarInput): Promise<Bar | null> {

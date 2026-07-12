@@ -45,6 +45,7 @@
 	function runBar(bar: Bar, open: () => void): void {
 		barsOpen = false;
 		open();
+		bars.track(bar);
 		void chat.send(bar.prompt);
 	}
 

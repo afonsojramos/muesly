@@ -46,7 +46,7 @@
                 "default-src": "'self'",
                 "style-src": "'self' 'unsafe-inline'",
                 "img-src": "'self' asset: https://asset.localhost data:",
-                "connect-src": "'self' http://localhost:11434 https://api.ollama.ai"
+                "connect-src": "'self' http://localhost:11434 https://api.ollama.ai https://api.muesly.ai"
             },
             "assetProtocol": {
                 "enable": true,

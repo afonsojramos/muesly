@@ -28,6 +28,7 @@
 	function runBar(bar: Bar, open: () => void): void {
 		barsOpen = false;
 		open();
+		bars.track(bar);
 		void globalChat.send(bar.prompt);
 	}
 </script>
