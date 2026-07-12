@@ -1,6 +1,7 @@
 pub mod calendar;
 pub mod calendar_accounts;
 pub mod calendar_event_rules;
+pub mod chat_messages;
 pub mod dictation_preset;
 pub mod folders;
 pub mod meeting;
