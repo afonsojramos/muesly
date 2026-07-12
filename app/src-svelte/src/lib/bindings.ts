@@ -779,7 +779,7 @@ export type BarInput = {
 	title: string,
 	description: string,
 	prompt: string,
-	scopes: string[],
+	scenarios: string[],
 	icon: string,
 };
 
@@ -1522,13 +1522,13 @@ export type TranscriptionStatus = {
 	last_activity_ms: number,
 };
 
-/**  A saved bar, with `scopes` split back into a list for the frontend. */
+/**  A saved bar, with `scenarios` split back into a list for the frontend. */
 export type UserBar = {
 	id: string,
 	title: string,
 	description: string,
 	prompt: string,
-	scopes: string[],
+	scenarios: string[],
 	icon: string,
 	created_at: string,
 	updated_at: string,
