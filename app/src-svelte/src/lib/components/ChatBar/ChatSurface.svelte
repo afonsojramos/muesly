@@ -50,6 +50,9 @@
 		messageLeading?: Snippet<[ChatSurfaceMessage]>;
 		/** True while any wrapper-owned overlay (popover/dialog) is open. */
 		overlayActive?: boolean;
+		/** Whether the message panel is expanded. Bindable so wrappers can control
+		 *  it (e.g. collapse per meeting). Defaults open for the global chat. */
+		open?: boolean;
 	}
 
 	let {
@@ -65,9 +68,9 @@
 		rail,
 		messageLeading,
 		overlayActive = false,
+		open = $bindable(true),
 	}: Props = $props();
 
-	let panelOpen = $state(true);
 	let rootEl = $state<HTMLElement | null>(null);
 	let viewportRef = $state<HTMLElement | null>(null);
 
@@ -86,7 +89,7 @@
 	// Portaled layers (popovers, dialogs) render outside the root, so clicks
 	// inside them must not count as "outside".
 	function onDocumentPointerDown(event: PointerEvent): void {
-		if (!panelOpen || !hasMessages) return;
+		if (!open || !hasMessages) return;
 		const target = event.target as Element | null;
 		if (!target) return;
 		if (rootEl?.contains(target)) return;
@@ -97,7 +100,7 @@
 		) {
 			return;
 		}
-		panelOpen = false;
+		open = false;
 	}
 
 	function onWindowKeydown(event: KeyboardEvent): void {
@@ -105,7 +108,7 @@
 		// including the same keypress that just closed one (bits-ui updates state
 		// before this window-level handler runs, so also honor defaultPrevented).
 		if (event.key !== 'Escape' || event.defaultPrevented || overlayActive) return;
-		if (panelOpen && hasMessages) panelOpen = false;
+		if (open && hasMessages) open = false;
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {
@@ -117,7 +120,7 @@
 
 	async function submit(): Promise<void> {
 		if (controller.isStreaming || !controller.draft.trim()) return;
-		panelOpen = true;
+		open = true;
 		await controller.send();
 	}
 </script>
@@ -126,7 +129,7 @@
 <svelte:window onkeydown={onWindowKeydown} />
 
 <div bind:this={rootEl} class="flex w-[min(42rem,calc(100vw-3rem))] flex-col gap-2">
-	{#if hasMessages && panelOpen}
+	{#if hasMessages && open}
 		<div
 			class="flex max-h-[min(60vh,32rem)] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 		>
@@ -137,7 +140,7 @@
 					<Button
 						variant="ghost"
 						size="icon-sm"
-						onclick={() => (panelOpen = false)}
+						onclick={() => (open = false)}
 						aria-label="Collapse conversation"
 					>
 						<ChevronDown data-icon />
@@ -187,27 +190,27 @@
 	<div
 		class="flex items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 	>
-		{#if hasMessages && !panelOpen}
+		{#if hasMessages && !open}
 			<Button
 				variant="ghost"
 				size="icon"
 				class="shrink-0 rounded-full text-muted-foreground"
-				onclick={() => (panelOpen = true)}
+				onclick={() => (open = true)}
 				aria-label="Show conversation"
 			>
 				<MessagesSquare data-icon />
 			</Button>
 		{/if}
 
-		{@render rail?.({ open: () => (panelOpen = true) })}
+		{@render rail?.({ open: () => (open = true) })}
 
 		<Textarea
 			bind:value={controller.draft}
 			onkeydown={handleKeydown}
 			onfocus={() => {
-				if (hasMessages) panelOpen = true;
+				if (hasMessages) open = true;
 			}}
-			placeholder={hasMessages && !panelOpen ? collapsedPlaceholder : placeholder}
+			placeholder={hasMessages && !open ? collapsedPlaceholder : placeholder}
 			aria-label={ariaLabel}
 			rows={1}
 			class="max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"

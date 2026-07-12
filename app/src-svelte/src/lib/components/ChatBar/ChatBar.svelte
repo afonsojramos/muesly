@@ -16,6 +16,9 @@
 	let recentOpen = $state(false);
 	let clearConfirmOpen = $state(false);
 	let recentThreads = $state<RecentChatThread[]>([]);
+	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
+	// expanded, so opening a meeting isn't dominated by the chat panel.
+	let chatOpen = $state(false);
 
 	// Load the meeting's persisted thread on mount and whenever the meeting
 	// changes, so a conversation survives collapse, close, and navigation.
@@ -25,6 +28,9 @@
 		const id = chat.meetingId;
 		if (id !== lastMeetingId) {
 			lastMeetingId = id;
+			// Collapse when switching meetings: this component persists across
+			// /meeting-details navigations, so each opened meeting starts closed.
+			chatOpen = false;
 			void chat.loadFor(id);
 		}
 	});
@@ -52,6 +58,7 @@
 </script>
 
 <ChatSurface
+	bind:open={chatOpen}
 	controller={chat}
 	title="Ask anything"
 	placeholder="Ask anything about this meeting…"
