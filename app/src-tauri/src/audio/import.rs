@@ -307,6 +307,32 @@ pub async fn start_import<R: Runtime>(
     result
 }
 
+/// Removes the import's meeting folder on drop unless `disarm()`ed on success.
+/// Previously only explicit cancellation cleaned up; a genuine failure (decode,
+/// resample, VAD, transcribe, or DB error) returned `Err` via `?` and orphaned
+/// the folder together with the copied source audio.
+struct FolderCleanup<'a> {
+    path: &'a std::path::Path,
+    armed: bool,
+}
+
+impl<'a> FolderCleanup<'a> {
+    fn new(path: &'a std::path::Path) -> Self {
+        Self { path, armed: true }
+    }
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for FolderCleanup<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_dir_all(self.path);
+        }
+    }
+}
+
 /// Internal function to run import
 async fn run_import<R: Runtime>(
     app: AppHandle<R>,
@@ -345,6 +371,9 @@ async fn run_import<R: Runtime>(
     // Create meeting folder
     let base_folder = get_default_recordings_folder();
     let meeting_folder = create_meeting_folder(&base_folder, &title, false)?;
+    // Arm cleanup: any early return past this point (cancel OR failure) removes the
+    // folder. Disarmed only once the meeting row is committed and files are written.
+    let mut folder_guard = FolderCleanup::new(&meeting_folder);
 
     // Copy audio file to meeting folder
     emit_progress(&app, "copying", 10, "Copying audio file...");
@@ -648,6 +677,10 @@ async fn run_import<R: Runtime>(
         meeting_folder.to_string_lossy().to_string(),
     )
     .await?;
+
+    // The meeting row now references this folder — keep it even if the auxiliary
+    // json writes below fail (they only warn).
+    folder_guard.disarm();
 
     // Write transcripts.json and metadata.json to the meeting folder
     emit_progress(&app, "saving", 90, "Writing transcript files...");
