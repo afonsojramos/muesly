@@ -34,6 +34,7 @@
 	} from '$lib/stores/sidebar.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
+	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import BackgroundTasksButton from './BackgroundTasksButton.svelte';
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte';
 	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
@@ -408,6 +409,19 @@
 				>
 					<Home class="size-4" />
 					<span>Home</span>
+				</button>
+				<button
+					type="button"
+					onclick={() => navigate('/bars')}
+					class={cn(
+						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+						pathname === '/bars'
+							? 'bg-secondary font-medium text-foreground'
+							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+					)}
+				>
+					<MueslyBar class="size-4" />
+					<span>Muesly bars</span>
 				</button>
 			</div>
 

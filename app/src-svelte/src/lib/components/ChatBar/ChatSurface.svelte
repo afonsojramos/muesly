@@ -44,7 +44,7 @@
 		hideEmptyBubbleWhileStreaming?: boolean;
 		/** Extra buttons in the panel header, before the collapse control. */
 		headerActions?: Snippet;
-		/** Leading buttons in the input pill (recipes, recents, …). */
+		/** Leading buttons in the input pill (bars, recents, …). */
 		rail?: Snippet<[{ open: () => void }]>;
 		/** Extra content above an assistant bubble (the agent's tool steps). */
 		messageLeading?: Snippet<[ChatSurfaceMessage]>;

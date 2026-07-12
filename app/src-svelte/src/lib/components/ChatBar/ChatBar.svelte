@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { History, Sparkles, Trash2 } from '@lucide/svelte';
+	import { onMount } from 'svelte';
+	import { History, Trash2 } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
 	import type { RecentChatThread } from '$lib/bindings';
@@ -8,11 +9,17 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Popover from '$lib/components/ui/popover';
 	import { chat } from '$lib/stores/chat.svelte';
+	import { bars } from '$lib/stores/bars.svelte';
+	import { barIcon, type Bar } from '$lib/bars/catalog';
+	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 
 	import ChatSurface from './ChatSurface.svelte';
-	import { RECIPES, type Recipe } from './recipes';
 
-	let recipesOpen = $state(false);
+	onMount(() => {
+		void bars.ensureLoaded();
+	});
+
+	let barsOpen = $state(false);
 	let recentOpen = $state(false);
 	let clearConfirmOpen = $state(false);
 	let recentThreads = $state<RecentChatThread[]>([]);
@@ -35,10 +42,10 @@
 		}
 	});
 
-	function runRecipe(recipe: Recipe, open: () => void): void {
-		recipesOpen = false;
+	function runBar(bar: Bar, open: () => void): void {
+		barsOpen = false;
 		open();
-		void chat.send(recipe.prompt);
+		void chat.send(bar.prompt);
 	}
 
 	async function onRecentOpenChange(isOpen: boolean): Promise<void> {
@@ -64,7 +71,7 @@
 	placeholder="Ask anything about this meeting…"
 	collapsedPlaceholder="Continue chat"
 	ariaLabel="Ask anything about this meeting"
-	overlayActive={recipesOpen || recentOpen || clearConfirmOpen}
+	overlayActive={barsOpen || recentOpen || clearConfirmOpen}
 >
 	{#snippet headerActions()}
 		<Button
@@ -120,7 +127,7 @@
 			</Popover.Content>
 		</Popover.Root>
 
-		<Popover.Root bind:open={recipesOpen}>
+		<Popover.Root bind:open={barsOpen}>
 			<Popover.Trigger>
 				{#snippet child({ props })}
 					<Button
@@ -129,20 +136,22 @@
 						size="icon"
 						disabled={chat.isStreaming}
 						class="shrink-0 rounded-full text-muted-foreground"
-						aria-label="Prompt recipes"
+						aria-label="Muesly bars"
 					>
-						<Sparkles data-icon />
+						<MueslyBar class="size-4" />
 					</Button>
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content align="start" side="top" class="w-64 p-0">
 				<Command.Root>
 					<Command.List>
-						<Command.Group heading="Recipes">
-							{#each RECIPES as recipe (recipe.id)}
-								<Command.Item value={recipe.label} onSelect={() => runRecipe(recipe, open)}>
-									<recipe.icon class="size-4 text-muted-foreground" />
-									<span>{recipe.label}</span>
+						<Command.Empty>No bars yet.</Command.Empty>
+						<Command.Group heading="Muesly bars">
+							{#each bars.forScope('meeting') as bar (bar.id)}
+								{@const Icon = barIcon(bar.icon)}
+								<Command.Item value={bar.title} onSelect={() => runBar(bar, open)}>
+									<Icon class="size-4 text-muted-foreground" />
+									<span>{bar.title}</span>
 								</Command.Item>
 							{/each}
 						</Command.Group>
