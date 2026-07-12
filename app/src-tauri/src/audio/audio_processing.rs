@@ -39,8 +39,18 @@ pub fn create_meeting_folder(
 ) -> Result<PathBuf> {
     let timestamp = Utc::now().format("%Y-%m-%d_%H-%M").to_string();
     let sanitized_name = sanitize_filename(meeting_name);
-    let folder_name = format!("{}_{}", sanitized_name, timestamp);
-    let meeting_folder = base_path.join(folder_name);
+    let base_name = format!("{}_{}", sanitized_name, timestamp);
+
+    // The timestamp is only minute-granular and `create_dir_all` succeeds on an
+    // existing directory, so two recordings with the same title within one minute
+    // would otherwise share a folder and overwrite each other's audio/transcripts.
+    // Append a numeric suffix until we find a free path.
+    let mut meeting_folder = base_path.join(&base_name);
+    let mut suffix = 2;
+    while meeting_folder.exists() {
+        meeting_folder = base_path.join(format!("{}_{}", base_name, suffix));
+        suffix += 1;
+    }
 
     // Create main meeting folder
     std::fs::create_dir_all(&meeting_folder)?;
