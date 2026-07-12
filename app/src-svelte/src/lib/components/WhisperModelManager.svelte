@@ -263,7 +263,7 @@
 				<ModelCard
 					{...whisperCardDisplay(model)}
 					isSelected={selectedModel === model.name}
-					isRecommended={model.name === 'base'}
+					isRecommended={model.name === 'large-v3-turbo'}
 					onSelect={() => model.status === 'Available' && selectModel(model.name)}
 					onDownload={() => downloadModel(model.name)}
 					onCancel={() => cancelDownload(model.name)}
