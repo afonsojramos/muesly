@@ -5,11 +5,19 @@
  */
 
 import { commands, type BarInput, type UserBar } from '$lib/bindings';
-import { CATALOG_BARS, type Bar, type BarScope } from '$lib/bars/catalog';
+import {
+	catalogForSurface,
+	CATALOG_BARS,
+	SCENARIOS_BY_SURFACE,
+	type Bar,
+	type BarScenario,
+	type ChatSurface,
+} from '$lib/bars/catalog';
 import { toast } from '$lib/toast';
 
-function isScope(s: string): s is BarScope {
-	return s === 'meeting' || s === 'global';
+const SCENARIOS: BarScenario[] = ['before', 'during', 'after', 'across'];
+function isScenario(s: string): s is BarScenario {
+	return (SCENARIOS as string[]).includes(s);
 }
 
 function toBar(u: UserBar): Bar {
@@ -18,8 +26,7 @@ function toBar(u: UserBar): Bar {
 		title: u.title,
 		description: u.description,
 		prompt: u.prompt,
-		scopes: u.scopes.filter(isScope),
-		author: null,
+		scenarios: u.scenarios.filter(isScenario),
 		icon: u.icon,
 		source: 'user',
 	};
@@ -44,8 +51,11 @@ class BarsStore {
 		return CATALOG_BARS;
 	}
 
-	forScope(scope: BarScope): Bar[] {
-		return this.all.filter((r) => r.scopes.includes(scope));
+	/** Bars a chat surface offers: matching user bars first, then the catalog. */
+	forSurface(surface: ChatSurface): Bar[] {
+		const scenarios = SCENARIOS_BY_SURFACE[surface];
+		const mine = this.#user.filter((b) => b.scenarios.some((s) => scenarios.includes(s)));
+		return [...mine, ...catalogForSurface(surface)];
 	}
 
 	async load(): Promise<void> {

@@ -6,7 +6,7 @@
 	import { cn } from '$lib/utils';
 	import { navigate } from '$lib/navigation';
 	import { toast } from '$lib/toast';
-	import { barIcon, type Bar, type BarScope } from '$lib/bars/catalog';
+	import { barIcon, BAR_SCENARIOS, type Bar, type BarScenario } from '$lib/bars/catalog';
 	import { bars } from '$lib/stores/bars.svelte';
 	import { globalChat } from '$lib/stores/global-chat.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
@@ -18,11 +18,11 @@
 	import BarEditor from '$lib/components/bars/BarEditor.svelte';
 
 	type Tab = 'discover' | 'mine';
-	type ScopeFilter = 'all' | BarScope;
+	type ScenarioFilter = 'all' | BarScenario;
 
 	let tab = $state<Tab>('discover');
 	let query = $state('');
-	let scopeFilter = $state<ScopeFilter>('all');
+	let scenarioFilter = $state<ScenarioFilter>('all');
 
 	let editorOpen = $state(false);
 	let editingBar = $state<Bar | null>(null);
@@ -35,22 +35,18 @@
 	const source = $derived(tab === 'mine' ? bars.mine : bars.catalog);
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
-		return source.filter((r) => {
-			if (scopeFilter !== 'all' && !r.scopes.includes(scopeFilter)) return false;
+		return source.filter((b) => {
+			if (scenarioFilter !== 'all' && !b.scenarios.includes(scenarioFilter)) return false;
 			if (!q) return true;
-			return (
-				r.title.toLowerCase().includes(q) ||
-				r.description.toLowerCase().includes(q) ||
-				(r.author?.toLowerCase().includes(q) ?? false)
-			);
+			return b.title.toLowerCase().includes(q) || b.description.toLowerCase().includes(q);
 		});
 	});
 
-	const SCOPE_FILTERS: { value: ScopeFilter; label: string }[] = [
+	const SCENARIO_FILTERS: { value: ScenarioFilter; label: string }[] = [
 		{ value: 'all', label: 'All' },
-		{ value: 'meeting', label: 'In a meeting' },
-		{ value: 'global', label: 'Across meetings' },
+		...BAR_SCENARIOS.map((s) => ({ value: s.value as ScenarioFilter, label: s.label })),
 	];
+	const scenarioLabels = new Map(BAR_SCENARIOS.map((s) => [s.value, s.label]));
 
 	function openCreate(): void {
 		editingBar = null;
@@ -80,8 +76,8 @@
 		toast.success('Bar deleted');
 	}
 
-	function scopeLabel(scope: BarScope): string {
-		return scope === 'meeting' ? 'In a meeting' : 'Across meetings';
+	function scenarioLabel(scenario: BarScenario): string {
+		return scenarioLabels.get(scenario) ?? scenario;
 	}
 </script>
 
@@ -130,13 +126,13 @@
 
 				<div class="flex items-center gap-2">
 					<div class="flex items-center gap-1">
-						{#each SCOPE_FILTERS as f (f.value)}
+						{#each SCENARIO_FILTERS as f (f.value)}
 							<button
 								type="button"
-								onclick={() => (scopeFilter = f.value)}
+								onclick={() => (scenarioFilter = f.value)}
 								class={cn(
 									'rounded-full border px-2.5 py-1 text-xs transition-colors',
-									scopeFilter === f.value
+									scenarioFilter === f.value
 										? 'border-foreground/20 bg-secondary text-foreground'
 										: 'border-transparent text-muted-foreground hover:text-foreground',
 								)}
@@ -181,14 +177,15 @@
 							<Card.Content class="flex flex-1 flex-col">
 								<h3 class="text-sm font-medium">{bar.title}</h3>
 								<p class="mt-1 line-clamp-2 text-sm text-muted-foreground">{bar.description}</p>
-								<div class="mt-3 flex items-center gap-2">
-									{#if bar.author}
-										<span class="text-xs text-muted-foreground">{bar.author}</span>
-									{:else if bar.source === 'user'}
+								<div class="mt-3 flex flex-wrap items-center gap-1.5">
+									{#if bar.source === 'user'}
 										<Badge variant="secondary">Yours</Badge>
-									{:else if bar.source === 'builtin'}
-										<span class="text-xs text-muted-foreground">muesly</span>
 									{/if}
+									{#each bar.scenarios as scenario (scenario)}
+										<Badge variant="outline" class="text-muted-foreground">
+											{scenarioLabel(scenario)}
+										</Badge>
+									{/each}
 								</div>
 							</Card.Content>
 						</Card.Root>
@@ -212,17 +209,14 @@
 				</div>
 				<div class="min-w-0">
 					<Dialog.Title>{detail.title}</Dialog.Title>
-					{#if detail.author}
-						<p class="text-xs text-muted-foreground">by {detail.author}</p>
-					{/if}
 				</div>
 			</div>
 
 			<Dialog.Description>{detail.description}</Dialog.Description>
 
 			<div class="flex flex-wrap gap-1.5">
-				{#each detail.scopes as scope (scope)}
-					<Badge variant="outline">{scopeLabel(scope)}</Badge>
+				{#each detail.scenarios as scenario (scenario)}
+					<Badge variant="outline">{scenarioLabel(scenario)}</Badge>
 				{/each}
 			</div>
 
@@ -255,7 +249,7 @@
 						<Copy data-icon />
 						Copy
 					</Button>
-					{#if detail.scopes.includes('global')}
+					{#if detail.scenarios.some((s) => s === 'across' || s === 'before')}
 						<Button size="sm" onclick={() => detail && runInHome(detail)}>
 							<Send data-icon />
 							Ask in Home

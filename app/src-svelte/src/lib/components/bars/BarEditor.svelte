@@ -1,7 +1,13 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import type { BarInput } from '$lib/bindings';
-	import { BAR_ICON_NAMES, barIcon, type Bar, type BarScope } from '$lib/bars/catalog';
+	import {
+		BAR_ICON_NAMES,
+		BAR_SCENARIOS,
+		barIcon,
+		type Bar,
+		type BarScenario,
+	} from '$lib/bars/catalog';
 	import { bars } from '$lib/stores/bars.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -23,8 +29,7 @@
 	let description = $state('');
 	let prompt = $state('');
 	let icon = $state('sparkles');
-	let inMeeting = $state(true);
-	let inGlobal = $state(false);
+	let scenarios = $state<Set<BarScenario>>(new Set(['after']));
 	let saving = $state(false);
 
 	// Reset the form whenever the dialog opens (create = blank, edit = prefill).
@@ -35,29 +40,32 @@
 			description = bar?.description ?? '';
 			prompt = bar?.prompt ?? '';
 			icon = bar?.icon ?? 'sparkles';
-			inMeeting = bar ? bar.scopes.includes('meeting') : true;
-			inGlobal = bar ? bar.scopes.includes('global') : false;
+			scenarios = new Set(bar ? bar.scenarios : ['after']);
 		}
 		lastOpen = open;
 	});
 
+	function toggleScenario(value: BarScenario, checked: boolean): void {
+		const next = new Set(scenarios);
+		if (checked) next.add(value);
+		else next.delete(value);
+		scenarios = next;
+	}
+
 	const canSave = $derived(
-		title.trim().length > 0 && prompt.trim().length > 0 && (inMeeting || inGlobal),
+		title.trim().length > 0 && prompt.trim().length > 0 && scenarios.size > 0,
 	);
 
 	async function save(): Promise<void> {
 		if (!canSave || saving) return;
 		saving = true;
-		const scopes: BarScope[] = [];
-		if (inMeeting) scopes.push('meeting');
-		if (inGlobal) scopes.push('global');
 		const input: BarInput = {
 			// Only reuse the id when editing an existing *user* bar.
 			id: bar?.source === 'user' ? bar.id : null,
 			title: title.trim(),
 			description: description.trim(),
 			prompt: prompt.trim(),
-			scopes,
+			scenarios: [...scenarios],
 			icon,
 		};
 		const saved = await bars.save(input);
@@ -103,16 +111,17 @@
 			</div>
 
 			<div class="flex flex-col gap-1.5">
-				<Label>Where it appears</Label>
+				<Label>Scenario</Label>
 				<div class="flex flex-col gap-2">
-					<label class="flex items-center gap-2 text-sm">
-						<Checkbox bind:checked={inMeeting} />
-						In a meeting's chat
-					</label>
-					<label class="flex items-center gap-2 text-sm">
-						<Checkbox bind:checked={inGlobal} />
-						In the Home chat (across meetings)
-					</label>
+					{#each BAR_SCENARIOS as scenario (scenario.value)}
+						<label class="flex items-center gap-2 text-sm">
+							<Checkbox
+								checked={scenarios.has(scenario.value)}
+								onCheckedChange={(c) => toggleScenario(scenario.value, c === true)}
+							/>
+							{scenario.label}
+						</label>
+					{/each}
 				</div>
 			</div>
 

@@ -147,7 +147,7 @@
 					<Command.List>
 						<Command.Empty>No bars yet.</Command.Empty>
 						<Command.Group heading="Muesly bars">
-							{#each bars.forScope('meeting') as bar (bar.id)}
+							{#each bars.forSurface('meeting') as bar (bar.id)}
 								{@const Icon = barIcon(bar.icon)}
 								<Command.Item value={bar.title} onSelect={() => runBar(bar, open)}>
 									<Icon class="size-4 text-muted-foreground" />

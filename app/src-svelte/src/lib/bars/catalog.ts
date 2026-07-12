@@ -17,11 +17,26 @@ import type { Component } from 'svelte';
 import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 
 /**
- * Where a bar makes sense: inside a single meeting's chat (`meeting`) or the
- * Home "ask your meetings" chat that spans everything (`global`). A bar may
- * fit both.
+ * When a bar is useful, in Granola's terms: before / during / after a single
+ * meeting, or across meetings. A bar can span several. Drives grouping and
+ * filtering on the Bars page and which chat surface offers it.
  */
-export type BarScope = 'meeting' | 'global';
+export type BarScenario = 'before' | 'during' | 'after' | 'across';
+
+/** Scenario display metadata, in natural (meeting-lifecycle) order. */
+export const BAR_SCENARIOS: { value: BarScenario; label: string }[] = [
+	{ value: 'before', label: 'Before a meeting' },
+	{ value: 'during', label: 'During a meeting' },
+	{ value: 'after', label: 'After a meeting' },
+	{ value: 'across', label: 'Across meetings' },
+];
+
+/** The two chat surfaces that run bars, and which scenarios each offers. */
+export type ChatSurface = 'meeting' | 'global';
+export const SCENARIOS_BY_SURFACE: Record<ChatSurface, BarScenario[]> = {
+	meeting: ['during', 'after'],
+	global: ['before', 'across'],
+};
 
 /** Plain data shape (also what the gitignored imported file provides). */
 export interface ImportedBar {
@@ -29,8 +44,7 @@ export interface ImportedBar {
 	title: string;
 	description: string;
 	prompt: string;
-	scopes: BarScope[];
-	author: string | null;
+	scenarios: BarScenario[];
 	icon: string;
 }
 
@@ -73,8 +87,7 @@ const BUILTIN_BARS: Bar[] = [
 		title: 'Summarize',
 		description: 'A concise summary of the meeting.',
 		prompt: 'Give me a concise summary of this meeting.',
-		scopes: ['meeting'],
-		author: null,
+		scenarios: ['after'],
 		icon: 'scroll-text',
 		source: 'builtin',
 	},
@@ -84,8 +97,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'To-dos with owners and due dates where mentioned.',
 		prompt:
 			'List the action items from this meeting, with owners and due dates where mentioned. Keep each item concrete and actionable.',
-		scopes: ['meeting'],
-		author: null,
+		scenarios: ['after'],
 		icon: 'list-checks',
 		source: 'builtin',
 	},
@@ -94,8 +106,7 @@ const BUILTIN_BARS: Bar[] = [
 		title: 'Key decisions',
 		description: 'The decisions made, and what is still open.',
 		prompt: 'What key decisions were made in this meeting, and what is still unresolved?',
-		scopes: ['meeting'],
-		author: null,
+		scenarios: ['after'],
 		icon: 'git-branch',
 		source: 'builtin',
 	},
@@ -105,8 +116,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'A short recap email with next steps.',
 		prompt:
 			'Draft a short, friendly follow-up email summarizing this meeting and the agreed next steps. Use placeholders like [name] where you are missing details.',
-		scopes: ['meeting'],
-		author: null,
+		scenarios: ['after'],
 		icon: 'mail',
 		source: 'builtin',
 	},
@@ -116,8 +126,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'Catch up on the last few minutes.',
 		prompt:
 			'I stepped away for a bit. In 1-3 bullets, what did I miss and what are the key takeaways so far?',
-		scopes: ['meeting'],
-		author: null,
+		scenarios: ['during'],
 		icon: 'help-circle',
 		source: 'builtin',
 	},
@@ -127,8 +136,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'Outstanding to-dos across recent meetings.',
 		prompt:
 			'List my outstanding to-dos across recent meetings, grouped by urgency. For each, note the meeting it came from.',
-		scopes: ['global'],
-		author: null,
+		scenarios: ['across'],
 		icon: 'list-checks',
 		source: 'builtin',
 	},
@@ -138,8 +146,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'What happened across meetings this week.',
 		prompt:
 			'Summarize what happened across my meetings in the last 7 days: what shipped, what got decided, and what is still open. Keep it tight.',
-		scopes: ['global'],
-		author: null,
+		scenarios: ['across'],
 		icon: 'scroll-text',
 		source: 'builtin',
 	},
@@ -149,8 +156,7 @@ const BUILTIN_BARS: Bar[] = [
 		description: 'Decisions still awaiting a call.',
 		prompt:
 			'Across my recent meetings, what important decisions are still unresolved or waiting on someone? Note who owns each.',
-		scopes: ['global'],
-		author: null,
+		scenarios: ['across'],
 		icon: 'git-branch',
 		source: 'builtin',
 	},
@@ -163,12 +169,14 @@ const importedModules = import.meta.glob<{ IMPORTED_BARS?: ImportedBar[] }>(
 	{ eager: true },
 );
 const IMPORTED_BARS: Bar[] = Object.values(importedModules).flatMap((mod) =>
-	(mod.IMPORTED_BARS ?? []).map((r) => ({ ...r, source: 'imported' as const })),
+	(mod.IMPORTED_BARS ?? []).map((b) => ({ ...b, source: 'imported' as const })),
 );
 
 /** Built-in + imported bars. User-created bars come from the DB separately. */
 export const CATALOG_BARS: Bar[] = [...BUILTIN_BARS, ...IMPORTED_BARS];
 
-export function catalogForScope(scope: BarScope): Bar[] {
-	return CATALOG_BARS.filter((r) => r.scopes.includes(scope));
+/** Bars offered by a chat surface (per-meeting chat vs the Home chat). */
+export function catalogForSurface(surface: ChatSurface): Bar[] {
+	const scenarios = SCENARIOS_BY_SURFACE[surface];
+	return CATALOG_BARS.filter((b) => b.scenarios.some((s) => scenarios.includes(s)));
 }
