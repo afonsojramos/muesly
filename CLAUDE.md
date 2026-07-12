@@ -34,6 +34,8 @@ The root `package.json` is script-delegation only (no workspace — lockfiles st
 
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 
+Seed fake data into the app's dev database for UI testing (folders, favorites, subfolders, meetings, transcripts, summaries, attendees, notes): `pnpm seed` (re-runnable/idempotent, all rows `seed-` prefixed), `pnpm seed:clear` to remove it. Source: `app/src-tauri/examples/seed-dev-data.rs`. Navigate away and back in the app to pick up changes.
+
 Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in `app/src-svelte/vite.config.ts` under the `lint` / `fmt` keys (Tailwind linting via `eslint-plugin-better-tailwindcss` as an Oxlint JS plugin, pointed at `src/app.css`). Requires the `vp` CLI on PATH. The shadcn-svelte primitives in `src/lib/components/ui/**` are excluded from lint (verbatim registry source).
 
 ## Architecture Notes

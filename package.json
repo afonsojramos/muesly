@@ -11,6 +11,8 @@
 		"format": "pnpm -C app/src-svelte format",
 		"format:check": "pnpm -C app/src-svelte format:check",
 		"test": "pnpm -C app/src-svelte test",
+		"seed": "cargo run -q -p muesly --example seed-dev-data",
+		"seed:clear": "cargo run -q -p muesly --example seed-dev-data -- --clear",
 		"eval:wer": "node app/scripts/eval/wer.mjs",
 		"eval:rubric": "node app/scripts/eval/summary-rubric.mjs",
 		"eval:real": "node app/scripts/eval/real-run.mjs",
