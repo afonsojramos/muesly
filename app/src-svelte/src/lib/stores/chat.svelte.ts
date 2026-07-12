@@ -9,7 +9,7 @@
 
 import { Channel } from '@tauri-apps/api/core';
 
-import { commands, type ChatStreamEvent } from '$lib/bindings';
+import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bindings';
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 
@@ -85,11 +85,8 @@ class ChatStore {
 		// Live recording (including paused) uses an ephemeral meeting id that
 		// is not in SQLite yet — send the on-screen transcript instead.
 		const isLive =
-			recordingState.isRecording ||
-			recordingState.status === RecordingStatus.RECORDING;
-		const liveTranscript = isLive
-			? formatTranscriptForLlm(transcripts.transcripts)
-			: null;
+			recordingState.isRecording || recordingState.status === RecordingStatus.RECORDING;
+		const liveTranscript = isLive ? formatTranscriptForLlm(transcripts.transcripts) : null;
 
 		// Backend `chat_ask(model, modelName)`: `model` is the provider kind
 		// (e.g. "ollama"/"builtin-ai"), `modelName` the concrete model id.
@@ -119,6 +116,43 @@ class ChatStore {
 	clear(): void {
 		this.stop();
 		this.messages = [];
+	}
+
+	// Monotonic token so a slow history load can't clobber a newer meeting's
+	// thread (same guard pattern as use-speaker-context).
+	#loadGen = 0;
+
+	/** Replace the conversation with the meeting's persisted thread. Completed
+	 * turns are persisted backend-side, so collapse/navigation never loses them;
+	 * an in-flight stream is cancelled since it belongs to the previous view. */
+	async loadFor(meetingId: string | null): Promise<void> {
+		this.#loadGen += 1;
+		const gen = this.#loadGen;
+		this.clear();
+		if (!meetingId) return;
+		const res = await commands.chatHistory(meetingId);
+		if (gen !== this.#loadGen || res.status !== 'ok') return;
+		this.messages = res.data
+			.filter((m) => m.role === 'user' || m.role === 'assistant')
+			.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content }));
+	}
+
+	/** Delete the conversation, in memory and persisted. */
+	async clearThread(): Promise<void> {
+		const meetingId = this.meetingId;
+		this.#loadGen += 1; // invalidate any in-flight load
+		this.clear();
+		if (!meetingId) return;
+		const res = await commands.chatClear(meetingId);
+		if (res.status === 'error') {
+			toast.error('Failed to clear chat', { description: res.error });
+		}
+	}
+
+	/** Recent chat threads across meetings, for the "Recent chats" list. */
+	async recentThreads(): Promise<RecentChatThread[]> {
+		const res = await commands.chatRecent();
+		return res.status === 'ok' ? res.data : [];
 	}
 
 	#finish(genId: string): void {
