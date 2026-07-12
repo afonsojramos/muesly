@@ -193,20 +193,11 @@ impl RecordingSaver {
                 info!("Recording saver accumulation task started (save_audio: {})", save_audio);
 
                 while let Some(chunk) = receiver.recv().await {
-                    // Check if we should continue
-                    let should_continue = if let Ok(is_saving) = is_saving_clone.lock() {
-                        *is_saving
-                    } else {
-                        false
-                    };
-
-                    if !should_continue {
-                        break;
-                    }
-
-                    // Only process audio chunks if auto_save is enabled
+                    // Persist the chunk we just received *before* honoring a stop
+                    // request. The previous `break`-before-add dropped this chunk
+                    // (and anything already queued) the moment `is_saving` flipped,
+                    // losing trailing audio at the end of every recording.
                     if save_audio {
-                        // Add chunk to incremental saver
                         if let Some(saver_arc) = &incremental_saver_arc {
                             let mut saver_guard = saver_arc.lock().await;
                             if let Err(e) = saver_guard.add_chunk(chunk) {
@@ -215,9 +206,29 @@ impl RecordingSaver {
                         } else {
                             error!("Incremental saver not available while accumulating");
                         }
+                    }
+                    // (auto_save disabled → chunk discarded; transcription already ran upstream.)
+
+                    // Stop requested: drain whatever is still buffered (chunks that
+                    // arrived before the flag flipped) via non-blocking `try_recv`,
+                    // then finish — otherwise those queued chunks would be lost.
+                    let stopped = if let Ok(is_saving) = is_saving_clone.lock() {
+                        !*is_saving
                     } else {
-                        // auto_save is false: discard audio chunk (no-op)
-                        // Transcription already happened in the pipeline before this point
+                        true
+                    };
+                    if stopped {
+                        while let Ok(chunk) = receiver.try_recv() {
+                            if save_audio {
+                                if let Some(saver_arc) = &incremental_saver_arc {
+                                    let mut saver_guard = saver_arc.lock().await;
+                                    if let Err(e) = saver_guard.add_chunk(chunk) {
+                                        error!("Failed to add chunk to incremental saver: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        break;
                     }
                 }
 
