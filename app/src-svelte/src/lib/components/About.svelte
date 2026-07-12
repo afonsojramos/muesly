@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getVersion } from '@tauri-apps/api/app';
-	import { invoke } from '@tauri-apps/api/core';
 	import { CheckCircle2, Cpu, Globe, Loader2, ShieldCheck, Sparkles, Wallet } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
@@ -24,14 +23,6 @@
 		await updates.checkForUpdates(true);
 		if (!updates.updateInfo?.available) {
 			toast.success('You are running the latest version');
-		}
-	}
-
-	async function handleContactClick(): Promise<void> {
-		try {
-			await invoke('open_external_url', { url: 'https://muesly.ai' });
-		} catch (error) {
-			console.error('Failed to open link:', error);
 		}
 	}
 
@@ -123,20 +114,4 @@
 			action tracking, and more.
 		</Alert.Description>
 	</Alert.Root>
-
-	<!-- Contact -->
-	<Card.Root>
-		<Card.Header class="text-center">
-			<Card.Title>Ready to push your business further?</Card.Title>
-			<Card.Description class="mx-auto max-w-md">
-				If you're planning to build privacy-first custom AI agents or a fully tailored product, we
-				can help you build it.
-			</Card.Description>
-		</Card.Header>
-		<Card.Content class="flex justify-center">
-			<Button onclick={handleContactClick}>Chat with the muesly team</Button>
-		</Card.Content>
-	</Card.Root>
-
-	<p class="text-center text-xs text-muted-foreground/60">Built by muesly</p>
 </div>
