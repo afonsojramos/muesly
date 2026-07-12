@@ -93,7 +93,7 @@ pub fn whisper_initial_prompt() -> Option<String> {
     let entries = get_vocabulary();
     let mut terms: Vec<String> = Vec::new();
     let mut total_chars = 0usize;
-    let mut push = |t: &str, terms: &mut Vec<String>, total: &mut usize| {
+    let push = |t: &str, terms: &mut Vec<String>, total: &mut usize| {
         let t = t.trim();
         if t.is_empty() || terms.iter().any(|x| x.eq_ignore_ascii_case(t)) {
             return;
