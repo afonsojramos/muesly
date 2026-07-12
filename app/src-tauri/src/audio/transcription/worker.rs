@@ -102,6 +102,10 @@ pub fn start_transcription_task<R: Runtime>(
         let chunks_completed = Arc::new(AtomicU64::new(0));
         let input_finished = Arc::new(AtomicBool::new(false));
 
+        // Text-level mic/system dedup for speaker-playback echo (see crosstalk.rs).
+        let crosstalk_filter =
+            Arc::new(tokio::sync::Mutex::new(super::crosstalk::CrosstalkFilter::new()));
+
         info!("📊 Starting {} transcription worker{} (serial mode for ordered emission)", NUM_WORKERS, if NUM_WORKERS == 1 { "" } else { "s" });
 
         // Spawn worker tasks
@@ -117,6 +121,7 @@ pub fn start_transcription_task<R: Runtime>(
             let chunks_completed_clone = chunks_completed.clone();
             let input_finished_clone = input_finished.clone();
             let chunks_queued_clone = chunks_queued.clone();
+            let crosstalk_clone = crosstalk_filter.clone();
 
             let worker_handle = tokio::spawn(async move {
                 info!("👷 Worker {} started", worker_id);
@@ -204,7 +209,27 @@ pub fn start_transcription_task<R: Runtime>(
                                     // Check confidence threshold (or accept if no confidence provided)
                                     let meets_threshold = confidence_opt.map_or(true, |c| c >= confidence_threshold);
 
-                                    if !transcript.trim().is_empty() && meets_threshold {
+                                    // Drop mic segments that duplicate a recent, overlapping
+                                    // system segment (speaker playback picked up by the mic).
+                                    let admitted = if !transcript.trim().is_empty() && meets_threshold {
+                                        let mut filter = crosstalk_clone.lock().await;
+                                        filter.admit(
+                                            chunk_source == "mic",
+                                            &transcript,
+                                            chunk_timestamp,
+                                            chunk_timestamp + chunk_duration,
+                                        )
+                                    } else {
+                                        true
+                                    };
+                                    if !admitted {
+                                        info!(
+                                            "🔇 Worker {} dropped mic segment as system cross-talk: '{}'",
+                                            worker_id, transcript
+                                        );
+                                    }
+
+                                    if !transcript.trim().is_empty() && meets_threshold && admitted {
                                         // PERFORMANCE: Only log transcription results, not every processing step
                                         info!("✅ Worker {} transcribed: {} (confidence: {}, partial: {})",
                                               worker_id, transcript, confidence_str, is_partial);
