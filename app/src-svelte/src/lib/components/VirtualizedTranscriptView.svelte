@@ -237,7 +237,7 @@
 	const padBottom = $derived(useWindowing ? win.padBottom : 0);
 </script>
 
-<div bind:this={scrollEl} class="flex h-full flex-col overflow-y-auto px-4 py-2">
+<div bind:this={scrollEl} class="flex h-full flex-col select-text overflow-y-auto px-4 py-2">
 	{#if isRecording}
 		<div class="sticky top-0 z-10 bg-background pb-2">
 			<RecordingStatusBar {isPaused} />

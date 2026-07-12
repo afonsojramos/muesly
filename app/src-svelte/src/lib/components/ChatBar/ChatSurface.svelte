@@ -161,7 +161,7 @@
 								<div class={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
 									<div
 										class={cn(
-											'max-w-[85%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
+											'max-w-[85%] select-text whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
 											message.role === 'user'
 												? 'bg-primary text-primary-foreground'
 												: 'bg-secondary text-secondary-foreground',

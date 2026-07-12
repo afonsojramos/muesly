@@ -176,7 +176,7 @@
 
 <div
 	bind:this={element}
-	class={cn('tiptap-prose', tone === 'ai' && 'tiptap-prose-ai', className)}
+	class={cn('tiptap-prose select-text', tone === 'ai' && 'tiptap-prose-ai', className)}
 	onclick={(e) => {
 		if (!onTimestampClick) return;
 		const t = e.target;

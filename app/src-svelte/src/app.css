@@ -113,6 +113,22 @@
 		font-family: var(--font-sans);
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		/* Native-app feel: window chrome (sidebar, headers, menus, buttons) is not
+		   text-selectable, so the app never behaves like a copyable web page. The
+		   actual content — meeting summary, notes, transcript, and chat answers —
+		   opts back in with the `select-text` utility, which inherits down to its
+		   text. `user-select` is inherited, so a descendant can override this. */
+		-webkit-user-select: none;
+		user-select: none;
+	}
+
+	/* Form controls always stay selectable so typing, double-click-to-select, and
+	   drag-select work inside inputs everywhere (search, settings, chat draft),
+	   regardless of the non-selectable chrome around them. */
+	input,
+	textarea {
+		-webkit-user-select: text;
+		user-select: text;
 	}
 }
 
