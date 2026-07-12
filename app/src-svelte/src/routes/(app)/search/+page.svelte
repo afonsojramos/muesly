@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
+	import { goHome } from '$lib/navigation';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -93,8 +94,10 @@
 		});
 	}
 
+	// Search is a top-level section; "back" returns home rather than retracing
+	// whichever sidebar peers led here (see $lib/navigation).
 	function goBack(): void {
-		history.back();
+		void goHome();
 	}
 
 	onMount(() => {
@@ -215,7 +218,8 @@
 					{#if nlPack}
 						<details class="mt-3 text-xs text-muted-foreground">
 							<summary class="cursor-pointer">Context pack for Ask anything</summary>
-							<pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{nlPack}</pre>
+							<pre
+								class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{nlPack}</pre>
 						</details>
 					{/if}
 				</div>

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { goto } from '$app/navigation';
+	import { navigate } from '$lib/navigation';
 	import FolderIcon from '@lucide/svelte/icons/folder';
 
 	import { Analytics } from '$lib/analytics';
@@ -166,7 +167,7 @@
 								{#if folder}
 									<button
 										type="button"
-										onclick={() => void goto(`/folder?id=${folder.id}`)}
+										onclick={() => void navigate(`/folder?id=${folder.id}`)}
 										aria-label={`Open folder ${folder.name}`}
 										class="relative z-10 inline-flex max-w-40 flex-shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
 									>

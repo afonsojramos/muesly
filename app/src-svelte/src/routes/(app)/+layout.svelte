@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { navigate } from '$lib/navigation';
 	import { page } from '$app/state';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { getCurrentWindow } from '@tauri-apps/api/window';
@@ -81,7 +82,7 @@
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === ',') {
 				e.preventDefault();
-				void goto('/settings');
+				void navigate('/settings');
 			}
 		};
 		window.addEventListener('keydown', handleKeydown);
@@ -445,7 +446,7 @@
 						action: {
 							label: 'Open Settings',
 							onClick: () => {
-								void goto('/settings');
+								void navigate('/settings');
 							},
 						},
 					});
@@ -486,7 +487,7 @@
 						class="ml-2 underline underline-offset-2"
 						onclick={() => {
 							keychainUnavailable = false;
-							void goto('/settings');
+							void navigate('/settings');
 						}}
 					>
 						Open Settings

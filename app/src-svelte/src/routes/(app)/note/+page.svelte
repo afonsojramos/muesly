@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { goto } from '$app/navigation';
+	import { navigate } from '$lib/navigation';
 	import { PanelRightClose, PanelRightOpen } from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
@@ -42,7 +42,7 @@
 			if (message) toast.error('Transcription error', { description: message });
 			return;
 		}
-		void goto('/settings');
+		void navigate('/settings');
 	}
 
 	// `isRecording` lives in the recordingState store (driven by Tauri events), so

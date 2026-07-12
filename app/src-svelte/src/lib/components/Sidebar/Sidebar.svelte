@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { navigate } from '$lib/navigation';
 	import {
 		Ellipsis,
 		Folder,
@@ -150,7 +151,7 @@
 	// the current folder when one is being viewed.
 	function openSearch(): void {
 		const folderId = page.url.pathname === '/folder' ? page.url.searchParams.get('id') : null;
-		void goto(folderId ? `/search?folder=${folderId}` : '/search');
+		void navigate(folderId ? `/search?folder=${folderId}` : '/search');
 	}
 
 	function handleRecordingToggle(): void {
@@ -210,7 +211,7 @@
 
 			if (sidebar.currentMeeting?.id === itemId) {
 				sidebar.setCurrentMeeting({ id: 'intro-call', title: '+ New Call' });
-				void goto('/');
+				void navigate('/');
 			}
 		} catch (error) {
 			console.error('Failed to delete meeting:', error);
@@ -277,7 +278,7 @@
 	// Expose openSettings to window for the Rust tray to call.
 	onMount(() => {
 		(window as unknown as { openSettings?: () => void }).openSettings = () => {
-			void goto('/settings');
+			void navigate('/settings');
 		};
 
 		// Granola-style shortcuts: ⌘S toggles the sidebar, ⌘K opens search.
@@ -397,7 +398,7 @@
 			<!-- Nav -->
 			<div class="flex-shrink-0 px-3 pt-2">
 				<button
-					onclick={() => goto('/')}
+					onclick={() => navigate('/')}
 					class={cn(
 						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 						pathname === '/'
@@ -419,7 +420,7 @@
 						{@const Icon = tab.icon}
 						<button
 							type="button"
-							onclick={() => goto(`/settings?tab=${tab.value}`)}
+							onclick={() => navigate(`/settings?tab=${tab.value}`)}
 							class={cn(
 								'my-px flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors',
 								activeSettingsTab === tab.value
@@ -443,7 +444,7 @@
 							>
 								<button
 									type="button"
-									onclick={() => goto(`/folder?id=${section.id}`)}
+									onclick={() => navigate(`/folder?id=${section.id}`)}
 									onkeydown={handleRovingKeydown}
 									data-roving
 									class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -574,7 +575,7 @@
 					<!-- Trash pinned to the bottom of the settings nav. -->
 					<button
 						type="button"
-						onclick={() => goto(`/settings?tab=${SETTINGS_TRASH.value}`)}
+						onclick={() => navigate(`/settings?tab=${SETTINGS_TRASH.value}`)}
 						class={cn(
 							'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 							activeSettingsTab === SETTINGS_TRASH.value
@@ -596,7 +597,7 @@
 
 					<button
 						type="button"
-						onclick={() => goto('/people')}
+						onclick={() => navigate('/people')}
 						class={cn(
 							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 							pathname === '/people'
@@ -609,7 +610,7 @@
 					</button>
 
 					<button
-						onclick={() => goto('/settings')}
+						onclick={() => navigate('/settings')}
 						class={cn(
 							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
 							pathname === '/settings'

@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
+	import { navigate, goHome } from '$lib/navigation';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
@@ -21,16 +22,15 @@
 	// Recency buckets, newest first; the current week lists freely (no header).
 	const groups = $derived(groupByRecency(meetings, (m) => m.createdAt, clock.now));
 
-	// Folders are flat (no nesting), so "back" moves up to the root rather than
-	// retracing sibling-folder history (e.g. Test -> Test 2 -> Test would otherwise
-	// step back through each visited folder instead of returning home).
+	// A folder is a top-level section; "back" returns home rather than retracing
+	// the folders you clicked through to get here (see $lib/navigation).
 	function goBack(): void {
-		void goto('/');
+		void goHome();
 	}
 
 	// Search scoped to this folder opens the shared main-area search view.
 	function openSearch(): void {
-		if (folderId) void goto(`/search?folder=${folderId}`);
+		if (folderId) void navigate(`/search?folder=${folderId}`);
 	}
 
 	function openMeeting(id: string): void {
@@ -133,7 +133,7 @@
 				<div class="flex flex-col items-center gap-3 py-24 text-center">
 					<Folder class="size-10 text-muted-foreground/40" />
 					<p class="text-sm text-muted-foreground">This folder no longer exists.</p>
-					<Button variant="outline" size="sm" onclick={() => goto('/')}>Go home</Button>
+					<Button variant="outline" size="sm" onclick={() => void goHome()}>Go home</Button>
 				</div>
 			{:else}
 				<header class="mb-5 flex items-center gap-3">

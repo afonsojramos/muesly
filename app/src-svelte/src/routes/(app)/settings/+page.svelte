@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import { ArrowLeft } from '@lucide/svelte';
 
+	import { goHome } from '$lib/navigation';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
@@ -31,8 +32,10 @@
 		[...SETTINGS_TABS, SETTINGS_TRASH].find((t) => t.value === activeTab)?.label ?? 'General',
 	);
 
+	// Settings is a top-level section; "back" (button and ⌘[) returns home
+	// rather than retracing sidebar peers (see $lib/navigation).
 	function goBack(): void {
-		history.back();
+		void goHome();
 	}
 
 	// Standard macOS "back" shortcut, matching the tooltip hint.

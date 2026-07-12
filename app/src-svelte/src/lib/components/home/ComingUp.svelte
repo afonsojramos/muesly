@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SlidersHorizontal } from '@lucide/svelte';
-	import { goto } from '$app/navigation';
+	import { navigate } from '$lib/navigation';
 
 	import { cn } from '$lib/utils';
 	import { groupPreviewEventsByDay } from '$lib/coming-up';
@@ -43,7 +43,7 @@
 								variant="ghost"
 								size="icon-sm"
 								class="text-muted-foreground"
-								onclick={() => goto('/settings?tab=calendar')}
+								onclick={() => navigate('/settings?tab=calendar')}
 								aria-label="Calendar settings"
 							>
 								<SlidersHorizontal />
