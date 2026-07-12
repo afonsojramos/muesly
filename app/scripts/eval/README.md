@@ -39,8 +39,19 @@ pnpm eval:rubric -- path/to/summary.md
 ## Real run (`pnpm eval:real`)
 
 Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
-`fixtures/real-speech.wav` with the `tiny` Whisper model and gates WER against
-`fixtures/real-speech-ref.txt`.
+every audio fixture and gates the results. Fixtures are auto-discovered:
+each `fixtures/<base>.wav` with a sibling `fixtures/<base>-ref.txt`.
+
+- A non-empty reference is a WER run (gated by `--max-wer`, default 10).
+- An empty reference is a hallucination check: the engine should produce
+  (near-)nothing (gated by `--max-hallucinated-words`, default 2).
+  `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
+- `--model <name>` (default `tiny`) A/Bs models on the same fixtures, e.g.
+  `node app/scripts/eval/real-run.mjs --model large-v3-turbo`.
+- `--fixture <base>` limits the run to one fixture.
+
+Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
+`silence` 1 hallucinated word. Re-measure after any decode-path change.
 
 - **First-run costs:** compiles the Rust workspace, downloads FFmpeg during the
   build, and fetches the `tiny` model (~75 MB) into the gitignored dev models
@@ -70,6 +81,7 @@ Fixtures:
 | `meeting-golden-hyp.txt` | Clean hypothesis (expect ~0% WER) |
 | `meeting-golden-hyp-noisy.txt` | ASR-like errors (non-zero WER) |
 | `real-speech.wav` + `real-speech-ref.txt` | Audio + golden for the real-engine run |
+| `silence.wav` + empty `silence-ref.txt` | Near-silence audio for the hallucination check |
 
 Add more fixtures under `fixtures/` as real meetings are curated.
 
