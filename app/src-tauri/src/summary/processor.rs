@@ -5,7 +5,7 @@ use regex::Regex;
 use reqwest::Client;
 use std::path::PathBuf;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 // Compile regex once and reuse (significant performance improvement for repeated calls)
 static THINKING_TAG_REGEX: Lazy<Regex> = Lazy::new(|| {
@@ -55,8 +55,6 @@ pub fn chunk_text(text: &str, chunk_size_tokens: usize, overlap_tokens: usize) -
 
     let mut chunks = Vec::new();
     let mut start_char = 0;
-    // Step is the size of the non-overlapping part of the window
-    let step = chunk_size_chars.saturating_sub(overlap_chars).max(1);
 
     while start_char < total_chars {
         let end_char = (start_char + chunk_size_chars).min(total_chars);
@@ -65,13 +63,16 @@ pub fn chunk_text(text: &str, chunk_size_tokens: usize, overlap_tokens: usize) -
         let start_byte: usize = chars[..start_char].iter().map(|c| c.len_utf8()).sum();
         let mut end_byte: usize = chars[..end_char].iter().map(|c| c.len_utf8()).sum();
 
-        // Try to break at sentence or word boundary for cleaner chunks
+        // Try to break at a sentence or word boundary for cleaner chunks — but only
+        // when the boundary sits in the latter half of the window. Accepting one
+        // near the window start would shrink the chunk to almost nothing and, with
+        // the actual-end advance below, stall forward progress to ~1 char per chunk.
         if end_char < total_chars {
             let slice = &text[start_byte..end_byte];
-            // Look for sentence boundary (period followed by space)
-            if let Some(last_period) = slice.rfind(". ") {
+            let min_end = slice.len() / 2;
+            if let Some(last_period) = slice.rfind(". ").filter(|&p| p + 2 >= min_end) {
                 end_byte = start_byte + last_period + 2;
-            } else if let Some(last_space) = slice.rfind(' ') {
+            } else if let Some(last_space) = slice.rfind(' ').filter(|&p| p + 1 >= min_end) {
                 // Fall back to word boundary (space)
                 end_byte = start_byte + last_space + 1;
             }
@@ -84,8 +85,15 @@ pub fn chunk_text(text: &str, chunk_size_tokens: usize, overlap_tokens: usize) -
             break;
         }
 
-        // Move to next chunk with overlap (in character units)
-        start_char += step;
+        // Advance from where this chunk ACTUALLY ended. `end_byte` may have been
+        // pulled back to a sentence/word boundary well before `end_char`; advancing
+        // by a fixed step from `start_char` (the old behaviour) skipped the text
+        // between that boundary and the next window whenever the pull-back exceeded
+        // the overlap, dropping mid-transcript content from the summary.
+        let end_char_actual = text[..end_byte].chars().count();
+        let next_start = end_char_actual.saturating_sub(overlap_chars);
+        // Guarantee forward progress so a short chunk + large overlap can't stall.
+        start_char = next_start.max(start_char + 1);
     }
 
     info!("Created {} chunks from text", chunks.len());
@@ -449,6 +457,11 @@ pub async fn generate_meeting_summary(
     let total_tokens = rough_token_count(text);
     info!("Transcript length: {} tokens", total_tokens);
 
+    // Count of transcript chunks that failed and were omitted from the base
+    // summary (multi-chunk path only). Surfaced to the user at the end so a
+    // partial summary is never silently reported as complete.
+    let mut dropped_chunk_count: i64 = 0;
+
     // Pass 1: produce the canonical English base summary. When translating to a
     // non-English target and a cached English summary is available, reuse it and
     // skip pass 1 entirely.
@@ -544,6 +557,7 @@ pub async fn generate_meeting_summary(
                 }
 
                 successful_chunk_count = chunk_summaries.len() as i64;
+                dropped_chunk_count = num_chunks as i64 - successful_chunk_count;
                 info!(
                     "Successfully processed {} out of {} chunks",
                     successful_chunk_count, num_chunks
@@ -674,7 +688,7 @@ pub async fn generate_meeting_summary(
     // Pass 2: translate to the requested output language, or soft-normalize a
     // non-English base into clean English. English-target/English-transcript is
     // a no-op.
-    let final_markdown = match resolve_final_language_action(summary_language, detected_transcript_language) {
+    let mut final_markdown = match resolve_final_language_action(summary_language, detected_transcript_language) {
         FinalLanguageAction::Translate(name) => {
             match translate_markdown(
                 client,
@@ -725,6 +739,21 @@ pub async fn generate_meeting_summary(
         }
         FinalLanguageAction::ReturnEnglish => english_markdown.clone(),
     };
+
+    // A failed chunk was previously skipped and the summary still returned as a
+    // full success. Prepend a visible note so the user knows part of the
+    // transcript is missing rather than silently trusting an incomplete summary.
+    if dropped_chunk_count > 0 {
+        warn!(
+            "{} of {} transcript chunks failed and were omitted from the summary",
+            dropped_chunk_count,
+            dropped_chunk_count + successful_chunk_count
+        );
+        final_markdown = format!(
+            "> ⚠️ {} transcript section(s) could not be summarized and were omitted from this summary.\n\n{}",
+            dropped_chunk_count, final_markdown
+        );
+    }
 
     info!("Summary generation completed successfully");
     Ok((final_markdown, english_markdown, successful_chunk_count))
@@ -811,6 +840,29 @@ mod tests {
                 || last_chunk.trim_end().ends_with("juliet"),
             "last chunk should contain content from the end of the text"
         );
+    }
+
+    #[test]
+    fn chunk_text_no_gap_when_sentence_shrink_exceeds_overlap() {
+        // Regression for the multi-chunk gap: a single early ". " used to pull the
+        // first chunk's end far back, while the next window advanced by a fixed step
+        // from the window *start* — skipping the text in between whenever the
+        // pull-back exceeded the overlap. Markers placed in that gap zone must all
+        // survive in some chunk, and the loop must still make real progress.
+        let filler = "wordword ".repeat(400); // long run containing no ". "
+        let text = format!("Intro. MARKER_ALPHA {filler}MARKER_OMEGA end");
+        let chunks = chunk_text(&text, 100, 10);
+        let joined = chunks.join("");
+        assert!(chunks.len() > 1, "expected multiple chunks");
+        assert!(
+            chunks.len() < text.chars().count(),
+            "must not stall into ~1-char chunks"
+        );
+        assert!(
+            joined.contains("MARKER_ALPHA"),
+            "text right after the early sentence boundary must not be dropped"
+        );
+        assert!(joined.contains("MARKER_OMEGA"), "end marker must be covered");
     }
 
     #[test]
