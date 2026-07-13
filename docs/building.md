@@ -5,6 +5,7 @@ All builds run from the `app/` directory.
 ## Prerequisites
 
 - [Rust](https://www.rust-lang.org/tools/install), [Node.js](https://nodejs.org/), and [pnpm](https://pnpm.io/)
+- [nub](https://nubjs.com/) (`brew install nubjs/tap/nub`) — the auto-GPU `tauri:dev` / `tauri:build` scripts run their TypeScript through it. You can skip it if you only use the explicit GPU variants below.
 - [CMake](https://cmake.org/) and a C/C++ toolchain (whisper.cpp and the llama sidecar compile native code)
 - **Windows only:** Visual Studio Build Tools ("Desktop development with C++") and LLVM. `whisper-rs`'s bindgen needs `libclang`; if it isn't found, set `LIBCLANG_PATH` (e.g. `C:\Program Files\LLVM\bin`).
 - **Optional GPU:** the development SDK for your GPU, see the [GPU Acceleration Guide](gpu-acceleration.md).
