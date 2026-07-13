@@ -84,9 +84,9 @@
 					</p>
 					{#if isMacOS}
 						<ul class="ml-2 flex list-inside list-disc flex-col gap-1 text-sm">
-							<li>Install a virtual audio device (e.g. BlackHole 2ch)</li>
-							<li>Grant Screen Recording permission to muesly</li>
-							<li>Configure routing in Audio MIDI Setup</li>
+							<li>Open System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</li>
+							<li>Enable muesly (or your terminal when running in dev)</li>
+							<li>Start the recording again after granting access</li>
 						</ul>
 					{/if}
 				{/if}
