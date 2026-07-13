@@ -18,6 +18,8 @@ export interface VocabularyEntry {
 	from: string;
 	/** The preferred spelling, also supplied to Whisper as prompt context. */
 	to: string;
+	/** Local observations learned from confidence-improving comparison decodes. */
+	learned_aliases?: Array<{ from: string; observations: number }>;
 }
 
 export interface ModelConfig {

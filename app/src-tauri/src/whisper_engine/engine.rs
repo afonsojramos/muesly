@@ -54,6 +54,45 @@ pub struct WhisperEngine {
     last_segment_text: Arc<RwLock<String>>,
 }
 
+/// A model-context snapshot used for bounded, post-recording vocabulary
+/// comparisons. Holding the `Arc` keeps the model alive without blocking the
+/// live transcription worker or preventing the global engine from unloading.
+pub struct VocabularyLearningDecoder {
+    context: Arc<WhisperContext>,
+    beam_size: usize,
+    temperature: f32,
+}
+
+pub struct VocabularyLearningPrompt {
+    pub initial_prompt: Option<String>,
+    pub preferred_terms: Vec<String>,
+}
+
+impl VocabularyLearningDecoder {
+    pub async fn transcribe(
+        &self,
+        audio_data: Arc<Vec<f32>>,
+        language: String,
+        initial_prompt: Option<String>,
+    ) -> Result<(String, f32)> {
+        let context = Arc::clone(&self.context);
+        let beam_size = self.beam_size;
+        let temperature = self.temperature;
+        tokio::task::spawn_blocking(move || {
+            WhisperEngine::run_full_blocking(
+                &context,
+                &audio_data,
+                Some(language),
+                beam_size,
+                temperature,
+                initial_prompt,
+            )
+        })
+        .await
+        .map_err(|error| anyhow!("Vocabulary comparison task failed: {error}"))?
+    }
+}
+
 impl WhisperEngine {
     /// Drop prior-segment prompt context (call at recording start / retranscribe start).
     pub async fn reset_segment_context(&self) {
@@ -791,6 +830,20 @@ impl WhisperEngine {
 
     /// Transcribe audio with streaming support for partial results and adaptive quality
     pub async fn transcribe_audio_with_confidence(&self, audio_data: Vec<f32>, language: Option<String>) -> Result<(String, f32, bool)> {
+        let (text, confidence, is_partial, _) = self
+            .transcribe_audio_with_learning_context(Arc::new(audio_data), language)
+            .await?;
+        Ok((text, confidence, is_partial))
+    }
+
+    /// The live decode plus the exact prior-segment prompt used for it. The
+    /// latter lets background vocabulary learning remove only the candidate
+    /// term while preserving every other piece of decode context.
+    pub async fn transcribe_audio_with_learning_context(
+        &self,
+        audio_data: Arc<Vec<f32>>,
+        language: Option<String>,
+    ) -> Result<(String, f32, bool, VocabularyLearningPrompt)> {
         *self.last_used.write().await = std::time::Instant::now();
         // Clone the context handle and release the read lock before the blocking
         // inference, so load/unload aren't blocked for the whole transcription.
@@ -818,10 +871,13 @@ impl WhisperEngine {
         };
         let initial_prompt =
             super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
+        let learning_prompt = VocabularyLearningPrompt {
+            initial_prompt: initial_prompt.clone(),
+            preferred_terms: crate::vocabulary::learnable_preferred_terms(),
+        };
 
         // Same temperature ladder family as offline `transcribe_audio`.
         // Arc the buffer so ladder retries don't deep-copy the audio per pass.
-        let audio_data = std::sync::Arc::new(audio_data);
         let mut temperature = temperature;
         let (cleaned_result, avg_confidence) = loop {
             let ctx_c = ctx.clone();
@@ -855,7 +911,25 @@ impl WhisperEngine {
             *self.last_segment_text.write().await = cleaned_result.clone();
         }
 
-        Ok((cleaned_result, avg_confidence, is_partial))
+        Ok((cleaned_result, avg_confidence, is_partial, learning_prompt))
+    }
+
+    pub async fn prepare_vocabulary_learning_decoder(
+        &self,
+    ) -> Result<VocabularyLearningDecoder> {
+        let context = {
+            let ctx_lock = self.current_context.read().await;
+            ctx_lock
+                .as_ref()
+                .ok_or_else(|| anyhow!("No model loaded. Please load a model first."))?
+                .clone()
+        };
+        let adaptive_config = crate::audio::HardwareProfile::detect().get_whisper_config();
+        Ok(VocabularyLearningDecoder {
+            context,
+            beam_size: adaptive_config.beam_size,
+            temperature: adaptive_config.temperature,
+        })
     }
 
     pub async fn transcribe_audio(&self, audio_data: Vec<f32>, language: Option<String>) -> Result<String> {

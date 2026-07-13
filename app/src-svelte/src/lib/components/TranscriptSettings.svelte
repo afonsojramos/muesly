@@ -4,7 +4,9 @@
 
 	import type { TranscriptModelProps } from '$lib/services/config';
 	import * as Card from '$lib/components/ui/card';
+	import * as Accordion from '$lib/components/ui/accordion';
 	import * as Field from '$lib/components/ui/field';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import WhisperModelManager from './WhisperModelManager.svelte';
@@ -20,6 +22,9 @@
 	}
 
 	let { transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: Props = $props();
+	const hasLearnedCorrections = $derived(
+		config.customVocabulary.some((entry) => (entry.learned_aliases?.length ?? 0) > 0),
+	);
 
 	// Post-meeting quality pass: batch re-transcription of the saved audio.
 	let qualityPassEnabled = $state(false);
@@ -67,10 +72,10 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Custom vocabulary</Card.Title>
+			<Card.Title class="text-balance">Custom dictionary</Card.Title>
 			<Card.Description>
-				Add names, jargon, and acronyms in their preferred spelling. Whisper uses every preferred
-				term as context; optional mishearings correct common recognition mistakes.
+				Add the spelling you want. Muesly uses it as context and privately learns recurring
+				mishearings from your recordings.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
@@ -81,42 +86,34 @@
 					</p>
 				{/if}
 				{#each config.customVocabulary as entry, i}
-					<div
-						class="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.5rem]"
-					>
-						<Field.Field class="col-span-2 sm:col-span-1">
+					<div class="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-3">
+						<Field.Field>
 							<Field.FieldLabel for={`vocabulary-term-${i}`}>Preferred term</Field.FieldLabel>
 							<Input
 								id={`vocabulary-term-${i}`}
 								value={entry.to}
 								placeholder="Kubernetes"
 								oninput={(e) => {
+									const preferred = e.currentTarget.value;
 									const updated = config.customVocabulary.map((v, idx) =>
-										idx === i ? { ...v, to: e.currentTarget.value } : v,
+										idx === i
+											? {
+													...v,
+													to: preferred,
+													learned_aliases: preferred === v.to ? v.learned_aliases : [],
+												}
+											: v,
 									);
 									config.setCustomVocabulary(updated);
 								}}
-							/>
-						</Field.Field>
-						<Field.Field>
-							<Field.FieldLabel for={`vocabulary-aliases-${i}`}>Misheard as</Field.FieldLabel>
-							<Input
-								id={`vocabulary-aliases-${i}`}
-								value={entry.from}
-								placeholder="cubernetes, cooper netties"
-								oninput={(e) => {
-									const updated = config.customVocabulary.map((v, idx) =>
-										idx === i ? { ...v, from: e.currentTarget.value } : v,
-									);
-									config.setCustomVocabulary(updated);
-								}}
+								onblur={config.flushCustomVocabulary}
 							/>
 						</Field.Field>
 						<Button
 							variant="ghost"
 							size="icon"
 							class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
-							aria-label="Remove term"
+							aria-label={`Remove ${entry.to.trim() || 'empty preferred term'}`}
 							onclick={() => {
 								const updated = config.customVocabulary.filter((_, idx) => idx !== i);
 								config.setCustomVocabulary(updated);
@@ -126,21 +123,110 @@
 						</Button>
 					</div>
 				{/each}
-				<p class="text-pretty text-xs text-muted-foreground">
-					Separate multiple mishearings with commas. Matching ignores case, respects word
-					boundaries, and prefers the longest matching phrase.
-				</p>
 				<Button
 					variant="outline"
 					size="sm"
 					class="h-10 self-start transition-transform active:scale-[0.96]"
 					onclick={() => {
-						config.setCustomVocabulary([...config.customVocabulary, { from: '', to: '' }]);
+						config.setCustomVocabulary([
+							...config.customVocabulary,
+							{ from: '', to: '', learned_aliases: [] },
+						]);
 					}}
 				>
 					<Plus data-icon="inline-start" />
 					Add term
 				</Button>
+
+				{#if config.customVocabulary.length > 0}
+					<Accordion.Root type="single" class="pt-1">
+						<Accordion.Item value="advanced-corrections">
+							<Accordion.Trigger>Advanced corrections</Accordion.Trigger>
+							<Accordion.Content>
+								<div class="flex flex-col gap-4 pt-3">
+									<p class="text-pretty text-sm text-muted-foreground">
+										Manual corrections apply to future transcription without a learning period and
+										pause automatic learning for that term. Otherwise, Muesly retains one likely
+										recurring mishearing after observing it in two separate recordings.
+									</p>
+									{#each config.customVocabulary as entry, i}
+										{#if entry.to.trim()}
+											<div class="flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
+												<p class="font-medium">{entry.to}</p>
+												<Field.Field>
+													<Field.FieldLabel for={`vocabulary-aliases-${i}`}>
+														Manual corrections <span class="font-normal text-muted-foreground"
+															>(optional)</span
+														>
+													</Field.FieldLabel>
+													<Input
+														id={`vocabulary-aliases-${i}`}
+														value={entry.from}
+														placeholder="cubernetes, cooper netties"
+														oninput={(e) => {
+															const updated = config.customVocabulary.map((v, idx) =>
+																idx === i ? { ...v, from: e.currentTarget.value } : v,
+															);
+															config.setCustomVocabulary(updated);
+														}}
+														onblur={config.flushCustomVocabulary}
+													/>
+													<Field.FieldDescription>
+														Separate multiple phrases with commas.
+													</Field.FieldDescription>
+												</Field.Field>
+
+												{#if (entry.learned_aliases?.length ?? 0) > 0}
+													<div class="flex flex-col gap-2">
+														<p class="text-xs font-medium text-muted-foreground">Learned locally</p>
+														{#each entry.learned_aliases ?? [] as learned}
+															<div
+																class="flex min-h-10 items-center justify-between gap-3 rounded-md bg-background px-3 py-1.5"
+															>
+																<span class="min-w-0 truncate text-sm">{learned.from}</span>
+																<div class="flex shrink-0 items-center gap-2">
+																	<Badge
+																		variant={learned.observations >= 2 ? 'default' : 'secondary'}
+																	>
+																		<span class="tabular-nums">
+																			{learned.observations >= 2
+																				? 'Active'
+																				: `${learned.observations}/2 learning`}
+																		</span>
+																	</Badge>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
+																		aria-label={`Remove learned correction ${learned.from}`}
+																		onclick={() => {
+																			void config.removeLearnedVocabularyAlias(
+																				entry.to,
+																				learned.from,
+																			);
+																		}}
+																	>
+																		<X data-icon />
+																	</Button>
+																</div>
+															</div>
+														{/each}
+													</div>
+												{/if}
+											</div>
+										{/if}
+									{/each}
+									{#if !hasLearnedCorrections}
+										<p class="text-pretty text-xs text-muted-foreground">
+											No learned corrections yet. They will appear here after Muesly finds a likely
+											recurring mishearing.
+										</p>
+									{/if}
+								</div>
+							</Accordion.Content>
+						</Accordion.Item>
+					</Accordion.Root>
+				{/if}
 			</div>
 		</Card.Content>
 	</Card.Root>

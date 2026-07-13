@@ -59,6 +59,17 @@ pub struct TranscriptUpdate {
     pub duration: f64,          // Segment duration in seconds (e.g., 3.3)
 }
 
+struct VocabularyLearningCandidate {
+    audio: Arc<Vec<f32>>,
+    prompted: String,
+    prompted_confidence: f32,
+    preferred: String,
+    language: String,
+    baseline_prompt: Option<String>,
+}
+
+const MAX_VOCABULARY_LEARNING_CANDIDATES: usize = 2;
+
 // NOTE: get_transcript_history and get_recording_meeting_name functions
 // have been moved to recording_commands.rs where they have access to RECORDING_MANAGER
 
@@ -89,6 +100,8 @@ pub fn start_transcription_task<R: Runtime>(
 
         // New recording session: do not carry prior-meeting text into Whisper prompts.
         transcription_engine.reset_segment_context().await;
+        let vocabulary_learning_session = uuid::Uuid::new_v4().to_string();
+        let vocabulary_learning_candidates = Arc::new(tokio::sync::Mutex::new(Vec::new()));
 
         // Bound the worker handoff so a slow model cannot create a second,
         // unbounded copy of the pending audio. The dispatcher awaits capacity
@@ -120,6 +133,7 @@ pub fn start_transcription_task<R: Runtime>(
             let input_finished_clone = input_finished.clone();
             let chunks_queued_clone = chunks_queued.clone();
             let crosstalk_clone = crosstalk_filter.clone();
+            let learning_candidates_clone = Arc::clone(&vocabulary_learning_candidates);
 
             let worker_handle = tokio::spawn(async move {
                 info!("👷 Worker {} started", worker_id);
@@ -209,7 +223,7 @@ pub fn start_transcription_task<R: Runtime>(
                                 first_attempt
                             };
                             match result {
-                                Ok((transcript, confidence_opt, is_partial)) => {
+                                Ok((transcript, confidence_opt, is_partial, learning_candidate)) => {
                                     let confidence_threshold = 0.3;
 
                                     let confidence_str = match confidence_opt {
@@ -258,6 +272,17 @@ pub fn start_transcription_task<R: Runtime>(
                                         && quality_drop.is_none()
                                         && admitted
                                     {
+                                        if let Some(candidate) = learning_candidate {
+                                            let mut candidates = learning_candidates_clone.lock().await;
+                                            if candidates.len() < MAX_VOCABULARY_LEARNING_CANDIDATES
+                                                && !candidates.iter().any(|saved: &VocabularyLearningCandidate| {
+                                                    saved.preferred.eq_ignore_ascii_case(&candidate.preferred)
+                                                })
+                                            {
+                                                candidates.push(candidate);
+                                            }
+                                        }
+
                                         // PERFORMANCE: Only log transcription results, not every processing step
                                         info!("✅ Worker {} transcribed {} characters (confidence: {}, partial: {})",
                                               worker_id, transcript.chars().count(), confidence_str, is_partial);
@@ -450,6 +475,57 @@ pub fn start_transcription_task<R: Runtime>(
             }
         }
 
+        let learning_candidates = {
+            let mut candidates = vocabulary_learning_candidates.lock().await;
+            std::mem::take(&mut *candidates)
+        };
+        if !learning_candidates.is_empty() {
+            match transcription_engine.prepare_vocabulary_learning_decoder().await {
+                Ok(decoder) => {
+                    for candidate in learning_candidates {
+                        match decoder
+                            .transcribe(
+                                candidate.audio,
+                                candidate.language,
+                                candidate.baseline_prompt,
+                            )
+                            .await
+                        {
+                            Ok((baseline, baseline_confidence)) => {
+                                if let Some(observation) = crate::vocabulary::infer_learning_observation_for(
+                                    &candidate.preferred,
+                                    &candidate.prompted,
+                                    candidate.prompted_confidence,
+                                    baseline.trim(),
+                                    baseline_confidence,
+                                ) {
+                                    if observation.preferred.eq_ignore_ascii_case(&candidate.preferred) {
+                                        if let Err(error) = crate::vocabulary::record_learning_observation(
+                                            &app,
+                                            &vocabulary_learning_session,
+                                            observation,
+                                        )
+                                        .await
+                                        {
+                                            warn!("Could not persist a vocabulary learning observation: {}", error);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(error) => log::debug!(
+                                "Vocabulary comparison decode skipped after error: {}",
+                                error
+                            ),
+                        }
+                    }
+                }
+                Err(error) => log::debug!(
+                    "Vocabulary learning skipped because the model context was unavailable: {}",
+                    error
+                ),
+            }
+        }
+
         // Final verification with retry logic to catch any stragglers
         let mut verification_attempts = 0;
         const MAX_VERIFICATION_ATTEMPTS: u32 = 10;
@@ -502,7 +578,10 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
     _app: &AppHandle<R>,
-) -> std::result::Result<(String, Option<f32>, bool), TranscriptionError> {
+) -> std::result::Result<
+    (String, Option<f32>, bool, Option<VocabularyLearningCandidate>),
+    TranscriptionError,
+> {
     // Convert to 16kHz mono for transcription. Propagate failures instead of
     // silently feeding wrong-rate audio to the model, which would otherwise be
     // transcribed at the wrong speed and produce garbage.
@@ -544,21 +623,50 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
     );
 
     let language = crate::get_language_preference_internal();
+    let speech_samples = Arc::new(speech_samples);
     match engine
-        .transcribe_audio_with_confidence(speech_samples, language)
+        .transcribe_audio_with_learning_context(Arc::clone(&speech_samples), language.clone())
         .await
     {
-        Ok((text, confidence, is_partial)) => {
+        Ok((text, confidence, is_partial, learning_prompt)) => {
             let cleaned_text = text.trim().to_string();
             if cleaned_text.is_empty() {
-                return Ok((String::new(), Some(confidence), is_partial));
+                return Ok((String::new(), Some(confidence), is_partial, None));
             }
+
+            let learning_candidate = (0.45..=0.85)
+                .contains(&confidence)
+                .then(|| {
+                    crate::vocabulary::learnable_preferred_in_text_from(
+                        &cleaned_text,
+                        &learning_prompt.preferred_terms,
+                    )
+                })
+                .flatten()
+                .and_then(|preferred| {
+                    let baseline_prompt = learning_prompt
+                        .initial_prompt
+                        .as_deref()
+                        .and_then(|prompt| {
+                            crate::vocabulary::remove_term_from_initial_prompt(prompt, &preferred)
+                        });
+                    vocabulary_learning_language(language.as_deref()).and_then(|learning_language| {
+                        baseline_prompt.map(|baseline_prompt| VocabularyLearningCandidate {
+                                audio: Arc::clone(&speech_samples),
+                                prompted: cleaned_text.clone(),
+                                prompted_confidence: confidence,
+                                preferred,
+                                language: learning_language,
+                                baseline_prompt: (!baseline_prompt.is_empty()).then_some(baseline_prompt),
+                        })
+                    })
+                });
 
             info!(
                 "Whisper transcription complete for chunk {}: {} characters (confidence: {:.2}, partial: {})",
                 chunk.chunk_id, cleaned_text.chars().count(), confidence, is_partial
             );
-            Ok((cleaned_text, Some(confidence), is_partial))
+            Ok((cleaned_text, Some(confidence), is_partial, learning_candidate))
         }
         Err(error) => {
             error!(
@@ -568,6 +676,17 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
             let transcription_error = TranscriptionError::EngineFailed(error.to_string());
             Err(transcription_error)
         }
+    }
+}
+
+fn vocabulary_learning_language(language: Option<&str>) -> Option<String> {
+    match language {
+        Some("en") => Some("en".to_string()),
+        Some("auto") | None => crate::whisper_engine::lang_lock::current_stable()
+            .and_then(whisper_rs::get_lang_str)
+            .filter(|detected| *detected == "en")
+            .map(str::to_string),
+        _ => None,
     }
 }
 

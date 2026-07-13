@@ -676,22 +676,18 @@ async fn get_transcription_language<R: Runtime>(
 async fn set_custom_vocabulary<R: Runtime>(
     app: AppHandle<R>,
     entries: Vec<vocabulary::VocabularyEntry>,
-) -> Result<(), String> {
-    let entries = vocabulary::normalize_vocabulary(entries);
-    vocabulary::set_vocabulary(entries.clone());
-    if let Some(state) = app.try_state::<state::AppState>() {
-        match serde_json::to_string(&entries) {
-            Ok(json) => {
-                if let Err(e) = crate::database::repositories::setting::SettingsRepository::set_custom_vocabulary(
-                    state.db_manager.pool(), &json,
-                ).await {
-                    log_warn!("Failed to persist custom vocabulary: {}", e);
-                }
-            }
-            Err(e) => log_warn!("Failed to serialize custom vocabulary: {}", e),
-        }
-    }
-    Ok(())
+) -> Result<Vec<vocabulary::VocabularyEntry>, String> {
+    vocabulary::save_user_vocabulary(&app, entries).await
+}
+
+#[tauri::command]
+#[specta::specta]
+async fn remove_learned_vocabulary_alias<R: Runtime>(
+    app: AppHandle<R>,
+    preferred: String,
+    alias: String,
+) -> Result<Vec<vocabulary::VocabularyEntry>, String> {
+    vocabulary::remove_learned_alias(&app, &preferred, &alias).await
 }
 
 #[tauri::command]
@@ -699,29 +695,7 @@ async fn set_custom_vocabulary<R: Runtime>(
 async fn get_custom_vocabulary<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<Vec<vocabulary::VocabularyEntry>, String> {
-    match app.try_state::<state::AppState>() {
-        Some(state) => {
-            let json = crate::database::repositories::setting::SettingsRepository::get_custom_vocabulary(
-                state.db_manager.pool(),
-            ).await.map_err(|e| format!("Failed to read custom vocabulary: {}", e))?;
-            match json {
-                Some(j) => {
-                    let entries: Vec<vocabulary::VocabularyEntry> = serde_json::from_str(&j)
-                        .map_err(|e| format!("Invalid vocabulary JSON: {}", e))?;
-                    let entries = vocabulary::normalize_vocabulary(entries);
-                    // Loading settings must also hydrate the Rust-side cache. Previously,
-                    // persisted vocabulary only became active after the user edited a row.
-                    vocabulary::set_vocabulary(entries.clone());
-                    Ok(entries)
-                }
-                None => {
-                    vocabulary::set_vocabulary(Vec::new());
-                    Ok(Vec::new())
-                }
-            }
-        }
-        None => Ok(Vec::new()),
-    }
+    vocabulary::load_vocabulary(&app).await
 }
 
 /// Default global recording shortcut. Uses Alt/Option (not Shift) to avoid
@@ -1160,6 +1134,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         set_language_preference::<tauri::Wry>,
         get_transcription_language::<tauri::Wry>,
         set_custom_vocabulary::<tauri::Wry>,
+        remove_learned_vocabulary_alias::<tauri::Wry>,
         get_custom_vocabulary::<tauri::Wry>,
         set_recording_shortcut_enabled::<tauri::Wry>,
         set_dictation_shortcut_enabled::<tauri::Wry>,

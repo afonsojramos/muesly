@@ -68,6 +68,11 @@ export interface NotificationSettings {
 	};
 }
 
+interface VocabularyLearningUpdate {
+	preferred: string;
+	alias: { from: string; observations: number };
+}
+
 export type ProviderApiKeys = {
 	claude: string | null;
 	groq: string | null;
@@ -156,6 +161,9 @@ class ConfigStore {
 	#preferencesLoading = false;
 	#unsubscribers: UnlistenFn[] = [];
 	#started = false;
+	#vocabularySaveTimer: ReturnType<typeof setTimeout> | undefined;
+	#vocabularySaveGeneration = 0;
+	#pendingVocabularyEntries: VocabularyEntry[] | undefined;
 
 	async start(): Promise<() => void> {
 		if (this.#started) {
@@ -170,7 +178,6 @@ class ConfigStore {
 		invoke('set_recording_shortcut_enabled', { enabled: this.globalShortcutEnabled }).catch((err) =>
 			console.error('Failed to apply recording shortcut state:', err),
 		);
-		void this.#loadCustomVocabulary();
 		void this.#loadModelConfig();
 		void this.#loadProviderApiKeys();
 		void this.#loadDevicePreferences();
@@ -187,10 +194,43 @@ class ConfigStore {
 			console.error('[ConfigStore] Failed to set up model-config-updated listener:', error);
 		}
 
+		try {
+			const unlistenVocabulary = await listen<VocabularyLearningUpdate>(
+				'vocabulary-learning-updated',
+				(event) => {
+					this.customVocabulary = this.customVocabulary.map((entry) => {
+						if (entry.to.toLocaleLowerCase() !== event.payload.preferred.toLocaleLowerCase()) {
+							return entry;
+						}
+						const learned = entry.learned_aliases ?? [];
+						const existing = learned.findIndex(
+							(alias) =>
+								alias.from.toLocaleLowerCase() === event.payload.alias.from.toLocaleLowerCase(),
+						);
+						return {
+							...entry,
+							learned_aliases:
+								existing === -1
+									? [...learned, event.payload.alias]
+									: learned.map((alias, index) =>
+											index === existing ? event.payload.alias : alias,
+										),
+						};
+					});
+				},
+			);
+			this.#unsubscribers.push(unlistenVocabulary);
+			void this.#loadCustomVocabulary();
+		} catch (error) {
+			console.error('[ConfigStore] Failed to set up vocabulary learning listener:', error);
+			void this.#loadCustomVocabulary();
+		}
+
 		return () => this.#cleanup();
 	}
 
 	#cleanup(): void {
+		this.flushCustomVocabulary();
 		for (const fn of this.#unsubscribers) {
 			fn();
 		}
@@ -247,9 +287,25 @@ class ConfigStore {
 	}
 
 	async #loadCustomVocabulary(): Promise<void> {
+		const generation = this.#vocabularySaveGeneration;
 		try {
 			const entries = await invoke<VocabularyEntry[]>('get_custom_vocabulary');
-			this.customVocabulary = entries ?? [];
+			if (generation !== this.#vocabularySaveGeneration) return;
+			this.customVocabulary = (entries ?? []).map((entry) => {
+				const local = this.customVocabulary.find(
+					(candidate) => candidate.to.toLocaleLowerCase() === entry.to.toLocaleLowerCase(),
+				);
+				if (!local?.learned_aliases?.length) return entry;
+				const learned = [...(entry.learned_aliases ?? [])];
+				for (const alias of local.learned_aliases) {
+					const saved = learned.find(
+						(candidate) => candidate.from.toLocaleLowerCase() === alias.from.toLocaleLowerCase(),
+					);
+					if (saved) saved.observations = Math.max(saved.observations, alias.observations);
+					else learned.push(alias);
+				}
+				return { ...entry, learned_aliases: learned };
+			});
 		} catch (error) {
 			console.error('[ConfigStore] Failed to load custom vocabulary:', error);
 		}
@@ -359,9 +415,46 @@ class ConfigStore {
 
 	setCustomVocabulary = (entries: VocabularyEntry[]): void => {
 		this.customVocabulary = entries;
-		invoke('set_custom_vocabulary', { entries }).catch((err) =>
+		this.#vocabularySaveGeneration += 1;
+		this.#pendingVocabularyEntries = entries;
+		if (this.#vocabularySaveTimer) clearTimeout(this.#vocabularySaveTimer);
+		this.#vocabularySaveTimer = setTimeout(() => {
+			this.flushCustomVocabulary();
+		}, 300);
+	};
+
+	flushCustomVocabulary = (): void => {
+		if (this.#vocabularySaveTimer) clearTimeout(this.#vocabularySaveTimer);
+		this.#vocabularySaveTimer = undefined;
+		const entries = this.#pendingVocabularyEntries;
+		this.#pendingVocabularyEntries = undefined;
+		if (!entries) return;
+		void invoke<VocabularyEntry[]>('set_custom_vocabulary', { entries }).catch((err) =>
 			console.error('Failed to sync custom vocabulary to Rust:', err),
 		);
+	};
+
+	removeLearnedVocabularyAlias = async (preferred: string, alias: string): Promise<void> => {
+		const generation = this.#vocabularySaveGeneration;
+		this.customVocabulary = this.customVocabulary.map((entry) =>
+			entry.to.toLocaleLowerCase() === preferred.toLocaleLowerCase()
+				? {
+						...entry,
+						learned_aliases: (entry.learned_aliases ?? []).filter(
+							(learned) => learned.from.toLocaleLowerCase() !== alias.toLocaleLowerCase(),
+						),
+					}
+				: entry,
+		);
+		try {
+			await invoke<VocabularyEntry[]>('remove_learned_vocabulary_alias', {
+				preferred,
+				alias,
+			});
+		} catch (error) {
+			console.error('Failed to remove learned vocabulary correction:', error);
+			if (generation === this.#vocabularySaveGeneration) void this.#loadCustomVocabulary();
+		}
 	};
 
 	toggleConfidenceIndicator = (checked: boolean): void => {

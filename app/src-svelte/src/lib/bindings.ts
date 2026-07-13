@@ -477,8 +477,9 @@ export const commands = {
 	 *  one-time migration of the legacy localStorage value.
 	 */
 	getTranscriptionLanguage: () => typedError<string | null, string>(__TAURI_INVOKE("get_transcription_language")),
-	setCustomVocabulary: (entries: VocabularyEntry[]) => typedError<null, string>(__TAURI_INVOKE("set_custom_vocabulary", { entries })),
-	getCustomVocabulary: () => typedError<VocabularyEntry[], string>(__TAURI_INVOKE("get_custom_vocabulary")),
+	setCustomVocabulary: (entries: VocabularyEntry_Deserialize[]) => typedError<VocabularyEntry_Serialize[], string>(__TAURI_INVOKE("set_custom_vocabulary", { entries })),
+	removeLearnedVocabularyAlias: (preferred: string, alias: string) => typedError<VocabularyEntry_Serialize[], string>(__TAURI_INVOKE("remove_learned_vocabulary_alias", { preferred, alias })),
+	getCustomVocabulary: () => typedError<VocabularyEntry_Serialize[], string>(__TAURI_INVOKE("get_custom_vocabulary")),
 	setRecordingShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_recording_shortcut_enabled", { enabled })),
 	setDictationShortcutEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_shortcut_enabled", { enabled })),
 	getRecordingShortcut: () => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("get_recording_shortcut")),
@@ -1022,6 +1023,13 @@ export type ImportStarted = {
 	message: string,
 };
 
+export type LearnedAlias = {
+	/**  The phrase Whisper produced without preferred-term context. */
+	from: string,
+	/**  Independent confidence-improving observations. Two activate correction. */
+	observations: number,
+};
+
 export type Meeting = Meeting_Serialize | Meeting_Deserialize;
 
 export type MeetingDetails = MeetingDetails_Serialize | MeetingDetails_Deserialize;
@@ -1539,11 +1547,30 @@ export type UserBar = {
 	updated_at: string,
 };
 
-export type VocabularyEntry = {
+export type VocabularyEntry = VocabularyEntry_Serialize | VocabularyEntry_Deserialize;
+
+export type VocabularyEntry_Deserialize = {
 	/**  Comma/newline-separated forms the engine tends to produce. */
 	from: string,
 	/**  The preferred spelling, also supplied to Whisper as prompt context. */
 	to: string,
+	/**
+	 *  Locally observed aliases. Kept separate from manual overrides so the UI
+	 *  can explain and remove learned behavior without exposing it by default.
+	 */
+	learned_aliases?: LearnedAlias[],
+};
+
+export type VocabularyEntry_Serialize = {
+	/**  Comma/newline-separated forms the engine tends to produce. */
+	from: string,
+	/**  The preferred spelling, also supplied to Whisper as prompt context. */
+	to: string,
+	/**
+	 *  Locally observed aliases. Kept separate from manual overrides so the UI
+	 *  can explain and remove learned behavior without exposing it by default.
+	 */
+	learned_aliases?: LearnedAlias[],
 };
 
 export type WhisperModelInfo = {
