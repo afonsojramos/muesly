@@ -146,7 +146,8 @@ export const commands = {
 	getActiveAudioOutput: () => typedError<AudioOutputInfo, string>(__TAURI_INVOKE("get_active_audio_output")),
 	/**
 	 *  Enable or disable the dictation feature. While enabled the transcription
-	 *  model is kept warm so a push-to-talk burst doesn't pay a cold reload.
+	 *  model is kept warm so a push-to-talk burst doesn't pay a cold reload. Persisted
+	 *  so the setting survives a restart (previously it reset to off each launch).
 	 */
 	setDictationEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_dictation_enabled", { enabled })),
 	/**  Whether the dictation feature is currently enabled. */

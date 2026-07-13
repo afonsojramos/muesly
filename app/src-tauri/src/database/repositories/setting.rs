@@ -62,6 +62,36 @@ impl SettingsRepository {
         Ok(())
     }
 
+    /// Whether push-to-talk dictation is enabled (persisted so it survives a
+    /// restart; the in-memory atomic is seeded from this at startup).
+    pub async fn get_dictation_enabled(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let value: Option<i64> =
+            sqlx::query_scalar("SELECT dictation_enabled FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
+        Ok(value.unwrap_or(0) != 0)
+    }
+
+    pub async fn set_dictation_enabled(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, dictation_enabled)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                dictation_enabled = excluded.dictation_enabled
+            "#,
+        )
+        .bind(enabled as i64)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
     /// Whether to re-transcribe each finished meeting with the batch pipeline
     /// (merged VAD windows). Default off (extra compute per meeting).
     pub async fn get_post_meeting_quality_pass(

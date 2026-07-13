@@ -132,13 +132,29 @@ pub(crate) fn dictation_enabled() -> bool {
     DICTATION_ENABLED.load(Ordering::SeqCst)
 }
 
+/// Seed the in-memory flag from the persisted setting at startup, so the
+/// keep-the-model-warm behavior matches the user's saved preference immediately
+/// (before any command touches it).
+pub(crate) fn init_dictation_enabled(enabled: bool) {
+    DICTATION_ENABLED.store(enabled, Ordering::SeqCst);
+}
+
 /// Enable or disable the dictation feature. While enabled the transcription
-/// model is kept warm so a push-to-talk burst doesn't pay a cold reload.
+/// model is kept warm so a push-to-talk burst doesn't pay a cold reload. Persisted
+/// so the setting survives a restart (previously it reset to off each launch).
 #[tauri::command]
 #[specta::specta]
-pub async fn set_dictation_enabled(enabled: bool) -> Result<(), String> {
+pub async fn set_dictation_enabled(
+    state: tauri::State<'_, crate::state::AppState>,
+    enabled: bool,
+) -> Result<(), String> {
     DICTATION_ENABLED.store(enabled, Ordering::SeqCst);
-    Ok(())
+    crate::database::repositories::setting::SettingsRepository::set_dictation_enabled(
+        state.db_manager.pool(),
+        enabled,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Whether the dictation feature is currently enabled.

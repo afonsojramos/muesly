@@ -1433,6 +1433,24 @@ pub fn run() {
                 }
             });
 
+            // Seed the in-memory dictation-enabled flag from its persisted value so
+            // the keep-the-model-warm behavior matches the saved preference on boot.
+            let app_for_dictation_flag = _app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Some(state) = app_for_dictation_flag.try_state::<state::AppState>() {
+                    match database::repositories::setting::SettingsRepository::get_dictation_enabled(
+                        state.db_manager.pool(),
+                    )
+                    .await
+                    {
+                        Ok(enabled) => {
+                            audio::recording_commands::init_dictation_enabled(enabled)
+                        }
+                        Err(e) => log::error!("Failed to read dictation-enabled setting: {}", e),
+                    }
+                }
+            });
+
             // Free model RAM after periods of inactivity (never during recording).
             crate::model_idle::spawn_idle_unload_watcher();
 
