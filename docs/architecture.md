@@ -14,7 +14,6 @@ graph TD
         B[Tauri Commands]
         C[Audio Engine<br/>cpal + VAD + pro mixer]
         D[Whisper Engine<br/>whisper-rs + GPU features]
-        P[Parakeet Engine<br/>ONNX Runtime]
         F[Summary Engine<br/>llama-helper sidecar + cloud providers]
         FF[ffmpeg<br/>bundled sidecar binary]
     end
@@ -26,7 +25,6 @@ graph TD
     A -- invoke(...) --> B
     B --> C
     B --> D
-    B --> P
     B --> F
     B --> E
     C --> FF
@@ -41,11 +39,10 @@ graph TD
 
 ### Rust Core
 
-* **Tauri Commands:** Single IPC entrypoint. Commands are organised by domain (`api`, `audio`, `whisper_engine`, `parakeet_engine`, `summary`, `providers`, `database`, etc.) and registered in `app/src-tauri/src/lib.rs`.
+* **Tauri Commands:** Single IPC entrypoint. Commands are organised by domain (`api`, `audio`, `whisper_engine`, `summary`, `providers`, `database`, etc.) and registered in `app/src-tauri/src/lib.rs`.
 * **Audio Engine** (`audio/`): Captures the microphone via `cpal`, and system audio through platform-specific capture: WASAPI loopback on Windows, a CoreAudio process tap on macOS (14.4+, requires the System Audio Recording permission), and ALSA/PulseAudio on Linux. Performs RMS-based ducking, professional mixing, and VAD-filtered chunking before handing audio to the transcription engine. Live VAD bridges 900 ms pauses on macOS and 400 ms elsewhere; the optional post-meeting quality pass reprocesses the mixed recording with 2,000 ms context and maps each replacement segment back to the dominant mic/system source on the original timeline. ffmpeg ships as a Tauri sidecar binary (downloaded at build time via `ffmpeg-sidecar`).
 * **Whisper Engine** (`whisper_engine/`): `whisper-rs` (bindings to whisper.cpp) running in-process. GPU acceleration via Cargo features: Metal/CoreML (macOS), CUDA/Vulkan/HIPBLAS (Windows/Linux). Falls back to CPU. Preferred custom-vocabulary terms and calendar meeting terms are supplied as local prompt context.
-* **Parakeet Engine** (`parakeet_engine/`): NVIDIA Parakeet TDT 0.6B v3 ONNX via ONNX Runtime, optimized for low-latency live transcription. Parakeet does not expose token confidence or accept prompt bias; custom-vocabulary aliases are therefore applied as deterministic post-transcription corrections.
-* **Custom Vocabulary** (`vocabulary.rs`): Durable preferred terms optionally carry comma-separated mishearings. Matching is case-insensitive and boundary-aware, longer aliases win, and corrections apply to both local engines without cascading. Loading the setting hydrates the in-process cache before transcription starts. Each recording's `metadata.json` records the exact transcription provider/model, whether the quality pass was enabled, and its segment-count/duration distribution for later quality diagnosis.
+* **Custom Vocabulary** (`vocabulary.rs`): Durable preferred terms optionally carry comma-separated mishearings. Matching is case-insensitive and boundary-aware, longer aliases win, and corrections apply without cascading. Loading the setting hydrates the in-process cache before transcription starts. Each recording's `metadata.json` records the exact transcription provider/model, whether the quality pass was enabled, and its segment-count/duration distribution for later quality diagnosis.
 * **Summary Engine** (`summary/`): Generates meeting summaries with either a local model (Qwen 3.5 2B/4B or Gemma 3 1B/4B GGUF, run via the `llama-helper` workspace sidecar binary backed by `llama-cpp-2`) or another provider (Ollama, Anthropic Claude, OpenAI, Groq, xAI Grok, OpenRouter, or a custom OpenAI-compatible endpoint). The user's in-meeting notes are folded into the generation `custom_prompt` (wrapped in `<user_context>`) so the summary is shaped by what the user wrote, not just the transcript. Generation is two-pass: a canonical English base summary, then an optional translation to a user-selected output language (or a soft English normalization when a non-English transcript is summarized in English). Transcript language is auto-detected with `whatlang`, and the per-meeting summary-language override is persisted in the meeting's `metadata.json`.
 * **Meeting Chat** (`summary/chat.rs`): the "Ask anything" bar. `chat_ask` streams an answer about a meeting (context: transcript + summary + title, tag-wrapped with a prompt-injection-resistant system prompt) over a `tauri::ipc::Channel` as `started`/`token`/`done`/`error` events; `chat_cancel` aborts by `gen_id` (chat-owned cancellation registry, separate from summaries). Every provider streams real tokens: the local model emits per-token lines over the sidecar stdio protocol (`stream: true` requests, with a stop-token holdback so partial stop tokens never reach the UI), cloud/Ollama providers via SSE (`llm_client::generate_summary_streaming`). The frontend store treats `done`'s full text as authoritative. Conversations are ephemeral (per session, reset on meeting change); nothing is persisted.
 * **Calendar** (`calendar/`): multi-source calendar integration. Sources are listed in `calendar_accounts` (the local macOS EventKit source plus any connected Google accounts) and each can be enabled independently. At record time every enabled source is fetched, the results are de-duplicated across sources (`dedup.rs`, before the matcher so a meeting present in both Google and its EventKit mirror doesn't downgrade confidence), and the pure platform-free scorer (`matching.rs`) picks the meeting "now"; high-confidence matches title the recording and a redacted snapshot is stored in `calendar_events` and injected into the summary as a `<meeting_context>` block.

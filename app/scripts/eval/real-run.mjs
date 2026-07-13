@@ -13,10 +13,9 @@
  *     should produce (near-)nothing; gated by --max-hallucinated-words.
  *
  * Usage: node real-run.mjs [--max-wer <pct>] [--max-hallucinated-words <n>]
- *                          [--provider whisper|parakeet]
  *                          [--model <name>] [--fixture <base>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
- * 0.00%), --max-hallucinated-words 2, Whisper + tiny (Parakeet selects v3 int8).
+ * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -48,16 +47,7 @@ function strFlag(args, name, fallback) {
 const args = process.argv.slice(2);
 const maxWerPct = numFlag(args, '--max-wer', 10);
 const maxHallucinatedWords = numFlag(args, '--max-hallucinated-words', 2);
-const provider = strFlag(args, '--provider', 'whisper');
-if (provider !== 'whisper' && provider !== 'parakeet') {
-	console.error('--provider requires whisper or parakeet');
-	process.exit(2);
-}
-const model = strFlag(
-	args,
-	'--model',
-	provider === 'parakeet' ? 'parakeet-tdt-0.6b-v3-int8' : 'tiny',
-);
+const model = strFlag(args, '--model', 'tiny');
 const onlyFixture = strFlag(args, '--fixture', null);
 
 // Discover <base>.wav + <base>-ref.txt pairs.
@@ -98,7 +88,7 @@ try {
 }
 
 console.error(
-	`running real ${provider} transcription with model '${model}' on ${fixtures.length} fixture(s)` +
+	`running real Whisper transcription with model '${model}' on ${fixtures.length} fixture(s)` +
 		' (first run compiles + downloads the model)...',
 );
 
@@ -117,8 +107,7 @@ for (const base of fixtures) {
 			'--example',
 			'transcribe-fixture',
 			'--',
-			'--provider',
-			provider,
+			'--vad',
 			audio,
 			model,
 		],

@@ -1,11 +1,7 @@
 //! Types shared by the Whisper engine and frontend.
 //!
-//! The two engines manage models with genuinely different on-disk layouts
-//! (Whisper models are single GGML `.bin` files),
-//! so their download/discovery I/O is intentionally NOT shared. What they DO
-//! share — and what lives here — is the model lifecycle status type, kept as a
-//! single definition so the two engines (and the frontend that deserializes it)
-//! can never drift apart.
+//! Whisper models are single GGML `.bin` files. This module keeps the model
+//! lifecycle status shared by the engine commands and the frontend bindings.
 
 use serde::{Deserialize, Serialize};
 

@@ -1,6 +1,6 @@
 //! Headless transcription of an audio file with a real local ASR engine.
 //!
-//! Dev-only entry point for the eval harness (`pnpm eval:real`): no Tauri
+//! Dev-only entry point for the eval harness (`nub run eval:real`): no Tauri
 //! runtime, no app state. Downloads the model on first use, then decodes the
 //! given audio file and prints the transcript — transcript text is the ONLY
 //! stdout output (logs go to stderr) so a caller can capture it directly.
@@ -77,32 +77,32 @@ async fn main() {
     let samples = decoded.to_whisper_format();
     let engine = WhisperEngine::new_with_models_dir(models_dir)
         .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
-        let models = engine
-            .discover_models()
-            .await
-            .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
-        let needs_download = models
-            .iter()
-            .find(|model| model.name == model_name)
-            .map(|model| !matches!(model.status, ModelStatus::Available))
-            .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-        if needs_download {
-            download_whisper_model(&engine, &model_name).await;
-        }
-        engine
-            .load_model(&model_name)
-            .await
-            .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
-        if let Some(prompt) = prompt {
-            set_meeting_prompt_terms(
-                prompt
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|term| !term.is_empty())
-                    .map(str::to_string)
-                    .collect(),
-            );
-        }
+    let models = engine
+        .discover_models()
+        .await
+        .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
+    let needs_download = models
+        .iter()
+        .find(|model| model.name == model_name)
+        .map(|model| !matches!(model.status, ModelStatus::Available))
+        .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
+    if needs_download {
+        download_whisper_model(&engine, &model_name).await;
+    }
+    engine
+        .load_model(&model_name)
+        .await
+        .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
+    if let Some(prompt) = prompt {
+        set_meeting_prompt_terms(
+            prompt
+                .split(',')
+                .map(str::trim)
+                .filter(|term| !term.is_empty())
+                .map(str::to_string)
+                .collect(),
+        );
+    }
     let text = if use_vad {
             let segments = get_speech_chunks(&samples, 2000)
                 .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
@@ -113,7 +113,7 @@ async fn main() {
                     continue;
                 }
                 eprintln!("transcribing VAD segment {}", index + 1);
-                let (text, _, _) = engine
+                let (text, confidence, _) = engine
                     .transcribe_audio_with_confidence(segment.samples, language.clone())
                     .await
                     .unwrap_or_else(|e| {
@@ -122,16 +122,22 @@ async fn main() {
                             index + 1
                         ))
                     });
-                if !text.trim().is_empty() {
+                let drop_reason = app_lib::audio::transcription::segment_filter::should_drop_segment(
+                    &text,
+                    Some(confidence),
+                );
+                if let Some(reason) = drop_reason {
+                    eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
+                } else if !text.trim().is_empty() {
                     transcripts.push(text.trim().to_string());
                 }
             }
             transcripts.join(" ")
     } else {
-            engine
-                .transcribe_audio(samples, language)
-                .await
-                .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+        engine
+            .transcribe_audio(samples, language)
+            .await
+            .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
     };
     println!("{}", text.trim());
 }

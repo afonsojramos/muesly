@@ -27,7 +27,7 @@ Capture, transcribe, and summarize everything you say, entirely on your own mach
 
 ## Features
 
-- **Local transcription** using Whisper or Parakeet models, GPU-accelerated and in-process.
+- **Local transcription** using Whisper models, GPU-accelerated and in-process, with a model selected for your hardware.
 - **Real-time transcript** as you speak, with optional named speaker labels after diarization.
 - **Dual audio capture** of microphone and system audio at once, with professional mixing (ducking, clipping prevention) and voice-activity filtering so only speech reaches the transcription engine.
 - **AI summaries and Ask anything chat** generated locally by default, with optional translation and cloud BYOK.
@@ -51,7 +51,7 @@ nub run tauri:build
 muesly is a single, self-contained Tauri 2 desktop app:
 
 - **UI:** SvelteKit + Svelte 5 + Tailwind (TypeScript)
-- **Core:** Rust, audio capture (cpal), transcription (whisper-rs + Parakeet ONNX), summarization (local Qwen / Gemma via the `llama-helper` sidecar, plus optional cloud providers)
+- **Core:** Rust, audio capture (cpal), transcription (whisper-rs), summarization (local Qwen / Gemma via the `llama-helper` sidecar, plus optional cloud providers)
 - **Storage:** local SQLite via sqlx
 - **No backend service, no Docker, no Python.** Everything runs in one process.
 
@@ -70,4 +70,3 @@ Import & enhance was contributed by [Jeremi Joslin](https://github.com/jeremi) a
 ## Acknowledgments
 
 - Code borrowed from [whisper.cpp](https://github.com/ggerganov/whisper.cpp), [Screenpipe](https://github.com/mediar-ai/screenpipe), and [transcribe-rs](https://crates.io/crates/transcribe-rs).
-- The **Parakeet** model by **NVIDIA**, with the [ONNX conversion by istupakov](https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx).
