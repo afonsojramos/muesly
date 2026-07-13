@@ -17,7 +17,9 @@ import { Analytics } from '$lib/analytics';
 const isBrowser = typeof window !== 'undefined';
 
 class AnalyticsConsentStore {
-	optedIn = $state(true);
+	// Opt-out by default contradicts a "fully local / private" product: analytics
+	// stays off until the user explicitly opts in.
+	optedIn = $state(false);
 	#initialized = false;
 	#beforeunloadRegistered = false;
 
@@ -29,13 +31,13 @@ class AnalyticsConsentStore {
 		try {
 			const store = await load('analytics.json', {
 				autoSave: false,
-				defaults: { analyticsOptedIn: true },
+				defaults: { analyticsOptedIn: false },
 			});
 			if (!(await store.has('analyticsOptedIn'))) {
-				await store.set('analyticsOptedIn', true);
+				await store.set('analyticsOptedIn', false);
 				await store.save();
 			}
-			this.optedIn = (await store.get<boolean>('analyticsOptedIn')) ?? true;
+			this.optedIn = (await store.get<boolean>('analyticsOptedIn')) ?? false;
 			if (this.optedIn) await this.#enable(false);
 		} catch (error) {
 			console.error('Failed to initialise analytics consent:', error);
