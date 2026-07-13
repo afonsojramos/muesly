@@ -10,6 +10,7 @@
  * meeting, model config, and selected template.
  */
 
+import { onDestroy } from 'svelte';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
@@ -167,6 +168,10 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 		phaseUnlisten?.();
 		phaseUnlisten = null;
 	}
+
+	// Unmounting mid-generation (stopSummaryPolling clears the interval, so the
+	// terminal teardown never runs) otherwise leaks the `summary-phase` listener.
+	onDestroy(teardownPhaseListener);
 
 	async function bindPhaseListener(meetingId: string): Promise<void> {
 		teardownPhaseListener();
