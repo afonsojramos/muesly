@@ -42,7 +42,10 @@ export function useUpdateCheck(options: UseUpdateCheckOptions = {}): UseUpdateCh
 	};
 
 	onMount(() => {
-		if (!checkOnMount) return;
+		// A dev binary cannot install GitHub release artifacts and the latest
+		// endpoint is often absent between releases. Keep manual checks available,
+		// but don't turn that expected response into a startup error.
+		if (!checkOnMount || import.meta.env.DEV) return;
 		const timer = setTimeout(() => {
 			void checkForUpdates(false);
 		}, 2000);
