@@ -276,6 +276,9 @@
 								await sidebar.refetchMeetings();
 							} catch (error) {
 								console.error('Failed to restore meeting:', error);
+								toast.error('Failed to restore meeting', {
+									description: error instanceof Error ? error.message : String(error),
+								});
 							}
 						})();
 					},
