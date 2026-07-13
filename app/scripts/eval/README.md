@@ -6,7 +6,7 @@ Two tiers:
 - **Dry-run** (`nub run eval`, CI): scores pre-written hypothesis text against golden
   references — proves the scoring scripts, not the engine.
 - **Real run** (`nub run eval:real`, dev machines only): transcribes a checked-in audio
-  fixture with the actual Whisper engine and gates its WER against the golden.
+  fixture with the actual Whisper or Parakeet engine and gates its WER against the golden.
 
 ## Layout
 
@@ -46,8 +46,10 @@ each `fixtures/<base>.wav` with a sibling `fixtures/<base>-ref.txt`.
 - An empty reference is a hallucination check: the engine should produce
   (near-)nothing (gated by `--max-hallucinated-words`, default 2).
   `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
-- `--model <name>` (default `tiny`) A/Bs models on the same fixtures, e.g.
+- `--model <name>` (Whisper default `tiny`) A/Bs models on the same fixtures, e.g.
   `node app/scripts/eval/real-run.mjs --model large-v3-turbo`.
+- `--provider whisper|parakeet` selects the real local engine. Parakeet defaults to
+  `parakeet-tdt-0.6b-v3-int8`, so the same fixture can measure engine and segmentation changes.
 - `--fixture <base>` limits the run to one fixture.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
