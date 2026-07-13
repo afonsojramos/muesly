@@ -3,7 +3,6 @@
 // Parallel transcription worker pool and chunk processing logic.
 
 use super::engine::TranscriptionEngine;
-// TranscriptionEngine is used for Whisper context reset at session start.
 use super::provider::TranscriptionError;
 use crate::audio::AudioChunk;
 use log::{error, info, warn};
@@ -74,7 +73,7 @@ pub fn start_transcription_task<R: Runtime>(
         // Reset module-level progress counters for this session.
         reset_transcription_progress();
 
-        // Initialize transcription engine (Whisper or Parakeet based on config)
+        // Initialize the local Whisper engine.
         let transcription_engine = match super::engine::get_or_init_transcription_engine(&app).await {
             Ok(engine) => engine,
             Err(e) => {
@@ -89,9 +88,7 @@ pub fn start_transcription_task<R: Runtime>(
         };
 
         // New recording session: do not carry prior-meeting text into Whisper prompts.
-        if let TranscriptionEngine::Whisper(w) = &transcription_engine {
-            w.reset_segment_context().await;
-        }
+        transcription_engine.reset_segment_context().await;
 
         // Create parallel workers for faster processing while preserving ALL chunks
         const NUM_WORKERS: usize = 1; // Serial processing ensures transcripts emit in chronological order
@@ -112,11 +109,7 @@ pub fn start_transcription_task<R: Runtime>(
         // Spawn worker tasks
         let mut worker_handles = Vec::new();
         for worker_id in 0..NUM_WORKERS {
-            let engine_clone = match &transcription_engine {
-                TranscriptionEngine::Whisper(e) => TranscriptionEngine::Whisper(e.clone()),
-                TranscriptionEngine::Parakeet(e) => TranscriptionEngine::Parakeet(e.clone()),
-                TranscriptionEngine::Provider(p) => TranscriptionEngine::Provider(p.clone()),
-            };
+            let engine_clone = transcription_engine.clone();
             let app_clone = app.clone();
             let work_receiver_clone = work_receiver.clone();
             let chunks_completed_clone = chunks_completed.clone();
@@ -134,15 +127,13 @@ pub fn start_transcription_task<R: Runtime>(
                     .await
                     .unwrap_or_else(|| "unknown".to_string());
 
-                let engine_name = engine_clone.provider_name();
-
                 if initial_model_loaded {
                     info!(
-                        "✅ Worker {} pre-validation: {} model '{}' is loaded and ready",
-                        worker_id, engine_name, current_model
+                        "✅ Worker {} pre-validation: Whisper model '{}' is loaded and ready",
+                        worker_id, current_model
                     );
                 } else {
-                    warn!("⚠️ Worker {} pre-validation: {} model not loaded - chunks may be skipped", worker_id, engine_name);
+                    warn!("⚠️ Worker {} pre-validation: Whisper model not loaded - chunks may be skipped", worker_id);
                 }
 
                 loop {
@@ -184,8 +175,7 @@ pub fn start_transcription_task<R: Runtime>(
                                 crate::audio::recording_state::DeviceType::System => "system",
                             };
 
-                            // Transcribe with provider-agnostic approach
-                            match transcribe_chunk_with_provider(
+                            match transcribe_chunk_with_whisper(
                                 &engine_clone,
                                 chunk,
                                 &app_clone,
@@ -193,11 +183,7 @@ pub fn start_transcription_task<R: Runtime>(
                             .await
                             {
                                 Ok((transcript, confidence_opt, is_partial)) => {
-                                    // Provider-aware confidence threshold
-                                    let confidence_threshold = match &engine_clone {
-                                        TranscriptionEngine::Whisper(_) | TranscriptionEngine::Provider(_) => 0.3,
-                                        TranscriptionEngine::Parakeet(_) => 0.0, // Parakeet has no confidence, accept all
-                                    };
+                                    let confidence_threshold = 0.3;
 
                                     let confidence_str = match confidence_opt {
                                         Some(c) => format!("{:.2}", c),
@@ -483,9 +469,9 @@ pub fn start_transcription_task<R: Runtime>(
     })
 }
 
-/// Transcribe audio chunk using the appropriate provider (Whisper, Parakeet, or trait-based)
+/// Transcribe an audio chunk with local Whisper.
 /// Returns: (text, confidence Option, is_partial)
-async fn transcribe_chunk_with_provider<R: Runtime>(
+async fn transcribe_chunk_with_whisper<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
     app: &AppHandle<R>,
@@ -530,132 +516,38 @@ async fn transcribe_chunk_with_provider<R: Runtime>(
         energy
     );
 
-    // Transcribe using the appropriate engine (with improved error handling)
-    match engine {
-        TranscriptionEngine::Whisper(whisper_engine) => {
-            // Get language preference from global state
-            let language = crate::get_language_preference_internal();
-
-            match whisper_engine
-                .transcribe_audio_with_confidence(speech_samples, language)
-                .await
-            {
-                Ok((text, confidence, is_partial)) => {
-                    let cleaned_text = text.trim().to_string();
-                    if cleaned_text.is_empty() {
-                        return Ok((String::new(), Some(confidence), is_partial));
-                    }
-
-                    info!(
-                        "Whisper transcription complete for chunk {}: {} characters (confidence: {:.2}, partial: {})",
-                        chunk.chunk_id, cleaned_text.chars().count(), confidence, is_partial
-                    );
-
-                    Ok((cleaned_text, Some(confidence), is_partial))
-                }
-                Err(e) => {
-                    error!(
-                        "Whisper transcription failed for chunk {}: {}",
-                        chunk.chunk_id, e
-                    );
-
-                    let transcription_error = TranscriptionError::EngineFailed(e.to_string());
-                    let _ = app.emit(
-                        "transcription-error",
-                        &serde_json::json!({
-                            "error": transcription_error.to_string(),
-                            "userMessage": format!("Transcription failed: {}", transcription_error),
-                            "actionable": false
-                        }),
-                    );
-
-                    Err(transcription_error)
-                }
+    let language = crate::get_language_preference_internal();
+    match engine
+        .transcribe_audio_with_confidence(speech_samples, language)
+        .await
+    {
+        Ok((text, confidence, is_partial)) => {
+            let cleaned_text = text.trim().to_string();
+            if cleaned_text.is_empty() {
+                return Ok((String::new(), Some(confidence), is_partial));
             }
+
+            info!(
+                "Whisper transcription complete for chunk {}: {} characters (confidence: {:.2}, partial: {})",
+                chunk.chunk_id, cleaned_text.chars().count(), confidence, is_partial
+            );
+            Ok((cleaned_text, Some(confidence), is_partial))
         }
-        TranscriptionEngine::Parakeet(parakeet_engine) => {
-            match parakeet_engine.transcribe_audio(speech_samples).await {
-                Ok(text) => {
-                    let cleaned_text = text.trim().to_string();
-                    if cleaned_text.is_empty() {
-                        return Ok((String::new(), None, false));
-                    }
-
-                    info!(
-                        "Parakeet transcription complete for chunk {}: {} characters",
-                        chunk.chunk_id, cleaned_text.chars().count()
-                    );
-
-                    // Parakeet doesn't provide confidence or partial results
-                    Ok((cleaned_text, None, false))
-                }
-                Err(e) => {
-                    error!(
-                        "Parakeet transcription failed for chunk {}: {}",
-                        chunk.chunk_id, e
-                    );
-
-                    let transcription_error = TranscriptionError::EngineFailed(e.to_string());
-                    let _ = app.emit(
-                        "transcription-error",
-                        &serde_json::json!({
-                            "error": transcription_error.to_string(),
-                            "userMessage": format!("Transcription failed: {}", transcription_error),
-                            "actionable": false
-                        }),
-                    );
-
-                    Err(transcription_error)
-                }
-            }
-        }
-        TranscriptionEngine::Provider(provider) => {
-            // NEW: Trait-based provider (clean, unified interface)
-            let language = crate::get_language_preference_internal();
-
-            match provider.transcribe(speech_samples, language).await {
-                Ok(result) => {
-                    let cleaned_text = result.text.trim().to_string();
-                    if cleaned_text.is_empty() {
-                        return Ok((String::new(), result.confidence, result.is_partial));
-                    }
-
-                    let confidence_str = match result.confidence {
-                        Some(c) => format!("confidence: {:.2}", c),
-                        None => "no confidence".to_string(),
-                    };
-
-                    info!(
-                        "{} transcription complete for chunk {}: {} characters ({}, partial: {})",
-                        provider.provider_name(),
-                        chunk.chunk_id,
-                        cleaned_text.chars().count(),
-                        confidence_str,
-                        result.is_partial
-                    );
-
-                    Ok((cleaned_text, result.confidence, result.is_partial))
-                }
-                Err(e) => {
-                    error!(
-                        "{} transcription failed for chunk {}: {}",
-                        provider.provider_name(),
-                        chunk.chunk_id,
-                        e
-                    );
-
-                    let _ = app.emit(
-                        "transcription-error",
-                        &serde_json::json!({
-                            "error": e.to_string(),
-                            "userMessage": format!("Transcription failed: {}", e),
-                            "actionable": false
-                        }),
-                    );
-
-                    Err(e)
-                }
-            }
+        Err(error) => {
+            error!(
+                "Whisper transcription failed for chunk {}: {}",
+                chunk.chunk_id, error
+            );
+            let transcription_error = TranscriptionError::EngineFailed(error.to_string());
+            let _ = app.emit(
+                "transcription-error",
+                &serde_json::json!({
+                    "error": transcription_error.to_string(),
+                    "userMessage": format!("Transcription failed: {}", transcription_error),
+                    "actionable": false
+                }),
+            );
+            Err(transcription_error)
         }
     }
 }

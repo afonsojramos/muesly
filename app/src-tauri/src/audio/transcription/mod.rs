@@ -1,19 +1,15 @@
 // audio/transcription/mod.rs
 //
-// Transcription module: Provider abstraction, engine management, and worker pool.
+// Transcription module: Whisper engine management and worker pool.
 
 pub mod crosstalk;
 pub mod provider;
 pub mod segment_filter;
-pub mod whisper_provider;
-pub mod parakeet_provider;
 pub mod engine;
 pub mod worker;
 
 // Re-export commonly used types
-pub use provider::{TranscriptionError, TranscriptionProvider, TranscriptResult};
-pub use whisper_provider::WhisperProvider;
-pub use parakeet_provider::ParakeetProvider;
+pub use provider::TranscriptionError;
 pub use engine::{
     TranscriptionEngine,
     validate_transcription_model_ready,
