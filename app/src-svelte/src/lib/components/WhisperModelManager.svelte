@@ -1,6 +1,4 @@
 <script lang="ts" module>
-	const BASIC_MODEL_NAMES = ['small', 'medium-q5_0', 'large-v3-q5_0', 'large-v3-turbo', 'large-v3'];
-
 	const DISPLAY_NAMES: Record<string, string> = {
 		small: 'Small',
 		'medium-q5_0': 'Medium',
@@ -10,9 +8,7 @@
 	};
 
 	export function whisperDisplayName(modelName: string): string {
-		return BASIC_MODEL_NAMES.includes(modelName)
-			? (DISPLAY_NAMES[modelName] ?? modelName)
-			: `Whisper ${modelName}`;
+		return DISPLAY_NAMES[modelName] ?? `Whisper ${modelName}`;
 	}
 </script>
 
@@ -57,15 +53,57 @@
 	const downloadingModels = new SvelteSet<string>();
 	const progressThrottle = new Map<string, { progress: number; timestamp: number }>();
 
-	const basicModels = $derived(
-		models
-			.filter((m) => BASIC_MODEL_NAMES.includes(m.name) && m.name !== recommendedModel)
-			.sort((a, b) => BASIC_MODEL_NAMES.indexOf(a.name) - BASIC_MODEL_NAMES.indexOf(b.name)),
+	const fasterModel = $derived(
+		recommendedModel === 'large-v3-turbo-q5_0'
+			? 'small-q5_1'
+			: recommendedModel === 'small-q5_1'
+				? 'base-q5_1'
+				: 'tiny-q5_1',
 	);
-	const recommended = $derived(models.find((m) => m.name === recommendedModel));
+	const profileDefinitions = $derived([
+		{
+			modelName: recommendedModel,
+			title: 'Automatic',
+			icon: '✨',
+			tagline: 'Best balance for this computer',
+			recommended: true,
+		},
+		{
+			modelName: fasterModel,
+			title: 'Faster',
+			icon: '⚡',
+			tagline: 'Lower memory use and quicker results',
+			recommended: false,
+		},
+		{
+			modelName: 'large-v3-q5_0',
+			title: 'Highest quality',
+			icon: '🎯',
+			tagline: 'Best for difficult audio and important meetings',
+			recommended: false,
+		},
+	]);
+	const profileCards = $derived(
+		profileDefinitions.flatMap((profile) => {
+			const model = models.find((candidate) => candidate.name === profile.modelName);
+			return model ? [{ profile, model }] : [];
+		}),
+	);
 	const advancedModels = $derived(
-		models.filter((m) => !BASIC_MODEL_NAMES.includes(m.name) && m.name !== recommendedModel),
+		models.filter(
+			(model) =>
+				!profileDefinitions.some((profile) => profile.modelName === model.name) &&
+				(model.status === 'Available' || model.name === selectedModel),
+		),
 	);
+	const selectedProfile = $derived(
+		profileDefinitions.find((profile) => profile.modelName === selectedModel),
+	);
+
+	function modelDisplayName(modelName: string): string {
+		const profile = profileDefinitions.find((candidate) => candidate.modelName === modelName);
+		return profile ? `${profile.title} model` : whisperDisplayName(modelName);
+	}
 
 	function setModelStatus(modelName: string, status: ModelStatus): void {
 		models = models.map((m) => (m.name === modelName ? { ...m, status } : m));
@@ -85,7 +123,7 @@
 
 	async function downloadModel(modelName: string): Promise<void> {
 		if (downloadingModels.has(modelName)) return;
-		const displayName = whisperDisplayName(modelName);
+		const displayName = modelDisplayName(modelName);
 		try {
 			downloadingModels.add(modelName);
 			setModelStatus(modelName, { Downloading: 0 });
@@ -107,7 +145,7 @@
 			downloadingModels.delete(modelName);
 			setModelStatus(modelName, 'Missing');
 			progressThrottle.delete(modelName);
-			toast.info(`${whisperDisplayName(modelName)} download cancelled`, { duration: 3000 });
+			toast.info(`${modelDisplayName(modelName)} download cancelled`, { duration: 3000 });
 		} catch (err) {
 			console.error('Failed to cancel download:', err);
 			toast.error('Failed to cancel download', {
@@ -119,11 +157,11 @@
 	async function selectModel(modelName: string): Promise<void> {
 		onModelSelect?.(modelName);
 		if (autoSave) await saveModelSelection(modelName);
-		toast.success(`Switched to ${whisperDisplayName(modelName)}`, { duration: 3000 });
+		toast.success(`Switched to ${modelDisplayName(modelName)}`, { duration: 3000 });
 	}
 
 	async function deleteModel(modelName: string): Promise<void> {
-		const displayName = whisperDisplayName(modelName);
+		const displayName = modelDisplayName(modelName);
 		try {
 			await WhisperAPI.deleteCorruptedModel(modelName);
 			models = await WhisperAPI.getAvailableModels();
@@ -189,7 +227,7 @@
 					downloadingModels.delete(modelName);
 					progressThrottle.delete(modelName);
 					toast.success(
-						`${getModelIcon(model?.accuracy ?? 'Good')} ${whisperDisplayName(modelName)} ready!`,
+						`${getModelIcon(model?.accuracy ?? 'Good')} ${modelDisplayName(modelName)} ready!`,
 						{
 							description: 'Model downloaded and ready to use',
 							duration: 4000,
@@ -205,7 +243,7 @@
 					setModelStatus(modelName, { Error: errMsg });
 					downloadingModels.delete(modelName);
 					progressThrottle.delete(modelName);
-					toast.error(`Failed to download ${whisperDisplayName(modelName)}`, {
+					toast.error(`Failed to download ${modelDisplayName(modelName)}`, {
 						description: errMsg,
 						duration: 6000,
 					});
@@ -232,12 +270,12 @@
 	}
 
 	// Map a Whisper model to the shared ModelCard's display props.
-	function whisperCardDisplay(model: ModelInfo) {
+	function whisperCardDisplay(model: ModelInfo, profile?: (typeof profileDefinitions)[number]) {
 		const { status, downloadProgress } = normalizeModelStatus(model.status);
 		return {
-			title: whisperDisplayName(model.name),
-			icon: getModelIcon(model.accuracy),
-			tagline: getModelTagline(model.name, model.speed, model.accuracy),
+			title: profile?.title ?? whisperDisplayName(model.name),
+			icon: profile?.icon ?? getModelIcon(model.accuracy),
+			tagline: profile?.tagline ?? getModelTagline(model.name, model.speed, model.accuracy),
 			sizeLabel: formatFileSize(model.size_mb),
 			accuracyLabel: `${model.accuracy} accuracy`,
 			speedLabel: `${model.speed} processing`,
@@ -266,22 +304,11 @@
 {:else}
 	<div class={cn('flex flex-col gap-3', className)}>
 		<div class="flex flex-col gap-3">
-			{#if recommended}
+			{#each profileCards as { profile, model } (profile.title)}
 				<ModelCard
-					{...whisperCardDisplay(recommended)}
-					isSelected={selectedModel === recommended.name}
-					isRecommended={true}
-					onSelect={() => recommended.status === 'Available' && selectModel(recommended.name)}
-					onDownload={() => downloadModel(recommended.name)}
-					onCancel={() => cancelDownload(recommended.name)}
-					onDelete={() => deleteModel(recommended.name)}
-				/>
-			{/if}
-			{#each basicModels as model (model.name)}
-				<ModelCard
-					{...whisperCardDisplay(model)}
+					{...whisperCardDisplay(model, profile)}
 					isSelected={selectedModel === model.name}
-					isRecommended={false}
+					isRecommended={profile.recommended}
 					onSelect={() => model.status === 'Available' && selectModel(model.name)}
 					onDownload={() => downloadModel(model.name)}
 					onCancel={() => cancelDownload(model.name)}
@@ -293,9 +320,12 @@
 		{#if advancedModels.length > 0}
 			<Accordion.Root type="single">
 				<Accordion.Item value="advanced-models">
-					<Accordion.Trigger>Advanced Models</Accordion.Trigger>
+					<Accordion.Trigger>Advanced models</Accordion.Trigger>
 					<Accordion.Content>
-						<div class="flex flex-col gap-3 pt-4">
+						<div class="flex flex-col gap-3 pt-3">
+							<p class="text-pretty text-sm text-muted-foreground">
+								Downloaded and legacy models remain available here.
+							</p>
 							{#each advancedModels as model (model.name)}
 								<ModelCard
 									{...whisperCardDisplay(model)}
@@ -315,7 +345,7 @@
 
 		{#if selectedModel}
 			<div in:fly={{ y: -5 }} class="pt-2 text-center text-xs text-muted-foreground">
-				Using {whisperDisplayName(selectedModel)} for transcription
+				Using {selectedProfile?.title ?? whisperDisplayName(selectedModel)} for transcription
 			</div>
 		{/if}
 	</div>

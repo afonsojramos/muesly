@@ -51,9 +51,9 @@
 <div class="flex flex-col gap-4">
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Whisper transcription</Card.Title>
+			<Card.Title class="text-balance">Transcription quality</Card.Title>
 			<Card.Description>
-				Speech stays on your device. Choose the accuracy and speed profile that fits this computer.
+				Speech stays on your device. Muesly recommends the best profile for this computer.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
