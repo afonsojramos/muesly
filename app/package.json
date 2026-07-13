@@ -5,8 +5,8 @@
     "type": "module",
     "scripts": {
         "tauri": "tauri",
-        "tauri:dev": "node scripts/tauri-auto.ts dev",
-        "tauri:build": "node scripts/tauri-auto.ts build",
+        "tauri:dev": "nub scripts/tauri-auto.ts dev",
+        "tauri:build": "nub scripts/tauri-auto.ts build",
         "tauri:dev:cpu": "tauri dev",
         "tauri:dev:cuda": "tauri dev -- --features cuda",
         "tauri:dev:vulkan": "tauri dev -- --features vulkan",
@@ -21,7 +21,7 @@
         "tauri:build:coreml": "tauri build -- --features coreml",
         "tauri:build:openblas": "tauri build -- --features openblas",
         "tauri:build:hipblas": "tauri build -- --features hipblas",
-        "inject-transcript": "node scripts/inject-transcript.ts"
+        "inject-transcript": "nub scripts/inject-transcript.ts"
     },
     "devDependencies": {
         "@tauri-apps/cli": "^2.11.4"
