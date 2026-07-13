@@ -71,7 +71,9 @@
 			summaryStatus === 'regenerating',
 	);
 
-	const hasModel = $derived(modelConfig.provider !== null && modelConfig.model !== null);
+	// Truthiness, not `!== null`: `model` is typed `string` and defaults to '', so
+	// the null check never fired and hasModel was effectively always true.
+	const hasModel = $derived(!!modelConfig.provider && !!modelConfig.model);
 </script>
 
 <div class="flex flex-1 min-w-0 flex-col overflow-hidden bg-background">
