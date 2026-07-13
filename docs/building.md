@@ -16,13 +16,13 @@ Installing these toolchains is out of scope here; follow each project's own inst
 
 ```bash
 cd app
-nub install && nub install --cwd src-svelte   # frontend deps install separately (pnpm works too)
+nub install && nub --cwd src-svelte install   # frontend deps install separately (pnpm works too)
 
-pnpm tauri:dev      # development, with hot reload
-pnpm tauri:build    # production build
+nub run tauri:dev      # development, with hot reload
+nub run tauri:build    # production build
 ```
 
-Both commands auto-detect your GPU and build with the matching acceleration backend. To force one, use an explicit variant (`pnpm tauri:build:cuda`, `:vulkan`, `:metal`, `:coreml`, `:openblas`, `:hipblas`, `:cpu`) or set `TAURI_GPU_FEATURE`. See the [GPU Acceleration Guide](gpu-acceleration.md).
+Both commands auto-detect your GPU and build with the matching acceleration backend. To force one, use an explicit variant (`nub run tauri:build:cuda`, `:vulkan`, `:metal`, `:coreml`, `:openblas`, `:hipblas`, `:cpu`) or set `TAURI_GPU_FEATURE`. See the [GPU Acceleration Guide](gpu-acceleration.md).
 
 ## Output
 

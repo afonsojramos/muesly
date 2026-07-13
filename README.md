@@ -42,8 +42,8 @@ Download the latest build for your platform from [Releases](https://github.com/a
 ```bash
 git clone https://github.com/afonsojramos/muesly
 cd muesly/app
-pnpm install && pnpm -C src-svelte install
-pnpm tauri:build
+nub install && nub --cwd src-svelte install
+nub run tauri:build
 ```
 
 ## Architecture

@@ -10,9 +10,9 @@
  * Uses only Node builtins (incl. `node:sqlite`, stable since Node 24), so it
  * runs the same way as the other scripts in this folder:
  *
- *   node scripts/inject-transcript.ts --csv transcript.csv --title "Test Meeting"
- *   node scripts/inject-transcript.ts --csv transcript.csv --db /path/to/db.sqlite
- *   pnpm inject-transcript --csv transcript.csv
+ *   nub scripts/inject-transcript.ts --csv transcript.csv --title "Test Meeting"
+ *   nub scripts/inject-transcript.ts --csv transcript.csv --db /path/to/db.sqlite
+ *   nub scripts/inject-transcript.ts --csv transcript.csv
  *
  * CSV format (minimal — only a `text` column is required; an optional `speaker`
  * column may hold `mic` or `system` to attribute each line):

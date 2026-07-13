@@ -193,7 +193,7 @@ Add the following to `REGISTRY` and route their call sites:
 - `auto_save_recording_toggled`, `default_devices_changed`, `recording_notification_preference_changed` (in `RecordingSettings.svelte`)
 - `user_activated` (in `use-recording-stop.svelte.ts`)
 
-Each migration verifies: `pnpm -C src-svelte check` passes; no new properties added; conformance test still green.
+Each migration verifies: `nub --cwd src-svelte run check` passes; no new properties added; conformance test still green.
 
 ### Phase 3: Button-click and page-view families
 

@@ -3,9 +3,9 @@
 Offline checks for ASR/summary quality so model and pipeline changes are measurable.
 Two tiers:
 
-- **Dry-run** (`pnpm eval`, CI): scores pre-written hypothesis text against golden
+- **Dry-run** (`nub run eval`, CI): scores pre-written hypothesis text against golden
   references — proves the scoring scripts, not the engine.
-- **Real run** (`pnpm eval:real`, dev machines only): transcribes a checked-in audio
+- **Real run** (`nub run eval:real`, dev machines only): transcribes a checked-in audio
   fixture with the actual Whisper engine and gates its WER against the golden.
 
 ## Layout
@@ -22,8 +22,8 @@ app/scripts/eval/
 
 ```bash
 # From the repo root:
-pnpm eval                 # multi-utterance golden (clean + noisy hyp)
-pnpm eval:wer -- app/scripts/eval/fixtures/sample-ref.txt \
+nub run eval              # multi-utterance golden (clean + noisy hyp)
+nub run eval:wer app/scripts/eval/fixtures/sample-ref.txt \
   app/scripts/eval/fixtures/sample-hyp.txt
 
 # Or call node directly; --max-wer <pct> makes the run fail above a threshold:
@@ -33,10 +33,10 @@ node app/scripts/eval/wer.mjs \
   --max-wer 0
 
 # Rubric: counts required sections in a summary markdown
-pnpm eval:rubric -- path/to/summary.md
+nub run eval:rubric path/to/summary.md
 ```
 
-## Real run (`pnpm eval:real`)
+## Real run (`nub run eval:real`)
 
 Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
 every audio fixture and gates the results. Fixtures are auto-discovered:

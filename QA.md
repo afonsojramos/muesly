@@ -2,10 +2,10 @@
 
 The floating pill is a native, always-on-top, transparent OS window. It cannot be
 exercised by the unit/type/lint checks or by browser automation, so it needs a real
-**bundled build** (`pnpm tauri:build`, or `pnpm tauri:dev` for most checks) on a machine
+**bundled build** (`nub run tauri:build`, or `nub run tauri:dev` for most checks) on a machine
 with a display and microphone/screen-recording permissions granted.
 
-> macOS gotcha (from CLAUDE.md): `pnpm tauri:dev` binaries attribute TCC permissions to the
+> macOS gotcha (from CLAUDE.md): `nub run tauri:dev` binaries attribute TCC permissions to the
 > terminal, and the float-above-fullscreen behaviour only re-asserts reliably in a bundled
 > build. Verify the fullscreen/Spaces items (✱) on a bundled build, not just dev.
 

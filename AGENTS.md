@@ -10,7 +10,7 @@
 
 Detailed docs: [docs/architecture.md](docs/architecture.md), [docs/building.md](docs/building.md), [docs/gpu-acceleration.md](docs/gpu-acceleration.md).
 
-The marketing website (muesly.ai) is a separate static Astro project in `site/`, with its own lockfile and deploy. See [site/README.md](site/README.md). Run it with `pnpm -C site install && pnpm -C site dev`; build/check/test with `pnpm -C site build` / `check` / `test`.
+The marketing website (muesly.ai) is a separate static Astro project in `site/`, with its own lockfile and deploy. See [site/README.md](site/README.md). Run it with `nub --cwd site install && nub --cwd site run dev`; build/check/test with `nub --cwd site run build` / `check` / `test`.
 
 The `api/` directory is a small Cloudflare Worker + D1 (schema managed with Drizzle) at `api.muesly.ai`. It stores only anonymous, aggregate "muesly bar" popularity counts (public `builtin:`/`imported:` catalog ids, never user data). See [api/README.md](api/README.md); it deploys via GitHub Actions on push to `main`, or `nub run release` from `api/`.
 
@@ -28,7 +28,7 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 | `pnpm install` | `nub install` |
 | `pnpm add` / `remove <p>` | `nub add` / `remove <p>` |
 
-`pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (provisioned by mise); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
+From `app/`, `nub run tauri:dev` / `tauri:build` run the GPU auto-detect TypeScript (`scripts/tauri-auto.ts`); the explicit `:cpu`/`:metal`/… variants skip it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
 
 **nub is the installer for all three projects** (`nub install` / `nub add`). It reads and writes the same `pnpm-lock.yaml`, so pnpm stays a drop-in fallback. CI provisions the toolchain with `jdx/mise-action` (from `mise.toml`) and installs with `nub install --frozen-lockfile`. One caveat lives in `site/`: nub's default `isolated` (pnpm-style) node_modules layout doesn't dedupe astro's peer types the way pnpm's does, so `astro-icon`'s `<Icon>` loses its HTML-attribute props and `astro check` fails. The fix is committed as `node-linker=hoisted` in `site/.npmrc`, which both nub and pnpm honor, so `nub install` in `site/` just works. `api/` and `app/src-svelte/` use nub's default isolated layout.
 
@@ -37,24 +37,24 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 Run from `app/` (frontend deps install separately in `app/src-svelte/`, each has its own lockfile):
 
 ```bash
-pnpm install && pnpm -C src-svelte install
+nub install && nub --cwd src-svelte install
 
-pnpm tauri:dev          # dev mode, auto-detects GPU (scripts/tauri-auto.ts)
-pnpm tauri:build        # production build, auto-detects GPU
-pnpm tauri:dev:cpu      # explicit backend: cpu, metal, coreml, cuda, vulkan, openblas, hipblas
-                        # (same suffixes exist for tauri:build:*)
+nub run tauri:dev          # dev mode, auto-detects GPU (scripts/tauri-auto.ts)
+nub run tauri:build        # production build, auto-detects GPU
+nub run tauri:dev:cpu      # explicit backend: cpu, metal, coreml, cuda, vulkan, openblas, hipblas
+                           # (same suffixes exist for tauri:build:*)
 
-pnpm -C src-svelte dev    # frontend only (Vite, port 1420, strict)
-pnpm -C src-svelte check  # svelte-check + TypeScript
-pnpm -C src-svelte lint   # Oxlint + eslint-plugin-better-tailwindcss (via Vite+ `vp`)
-pnpm -C src-svelte format # Oxfmt (via Vite+ `vp`); `format:check` verifies without writing
+nub --cwd src-svelte run dev    # frontend only (Vite, port 1420, strict)
+nub --cwd src-svelte run check  # svelte-check + TypeScript
+nub --cwd src-svelte run lint   # Oxlint + eslint-plugin-better-tailwindcss (via Vite+ `vp`)
+nub --cwd src-svelte run format # Oxfmt (via Vite+ `vp`); `format:check` verifies without writing
 ```
 
-The root `package.json` is script-delegation only (no workspace — each of `app/src-svelte`, `site`, and `api` keeps its own lockfile; `pnpm setup` installs all three). From the repo root, `pnpm check` / `lint` / `format` / `format:check` fan out to app + `site` + `api` (`api`'s `check` is `typecheck`), and `pnpm test` to app + `site`; `pnpm dev` / `build` target the app. Lint/format everywhere is oxlint + oxfmt via `vp` (Vite+); `site`/`api` carry a small `vite.config.ts` with the shared `fmt`/`lint` config (oxfmt can't format `.astro`, so site's components are hand-maintained).
+The root `package.json` is script-delegation only (no workspace — each of `app/src-svelte`, `site`, and `api` keeps its own lockfile; `nub run setup` installs all three). From the repo root, `nub run check` / `lint` / `format` / `format:check` fan out to app + `site` + `api` (`api`'s `check` is `typecheck`), and `nub run test` to app + `site`; `nub run dev` / `build` target the app. Lint/format everywhere is oxlint + oxfmt via `vp` (Vite+); `site`/`api` carry a small `vite.config.ts` with the shared `fmt`/`lint` config (oxfmt can't format `.astro`, so site's components are hand-maintained).
 
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 
-Seed fake data into the app's dev database for UI testing (folders, favorites, subfolders, meetings, transcripts, summaries, attendees, notes): `pnpm seed` (re-runnable/idempotent, all rows `seed-` prefixed), `pnpm seed:clear` to remove it. Source: `app/src-tauri/examples/seed-dev-data.rs`. Navigate away and back in the app to pick up changes.
+Seed fake data into the app's dev database for UI testing (folders, favorites, subfolders, meetings, transcripts, summaries, attendees, notes): `nub run seed` (re-runnable/idempotent, all rows `seed-` prefixed), `nub run seed:clear` to remove it. Source: `app/src-tauri/examples/seed-dev-data.rs`. Navigate away and back in the app to pick up changes.
 
 Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in `app/src-svelte/vite.config.ts` under the `lint` / `fmt` keys (Tailwind linting via `eslint-plugin-better-tailwindcss` as an Oxlint JS plugin, pointed at `src/app.css`). Requires the `vp` CLI on PATH. The shadcn-svelte primitives in `src/lib/components/ui/**` are excluded from lint (verbatim registry source).
 
@@ -76,7 +76,7 @@ Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in
 
 ## Gotchas
 
-- **macOS system audio**: capture uses a CoreAudio process tap (macOS 14.4+) and requires the **System Audio Recording** permission (System Settings → Privacy & Security → Screen & System Audio Recording). Without it the tap silently records zeros, no error, no segments. `pnpm tauri:dev` binaries do not trigger the consent prompt (TCC attributes CLI-launched processes to the terminal), so grant the permission to your terminal app or test with a bundled build. The backend preflights via TCC SPI and emits `system-audio-permission-missing` at recording start when denied.
+- **macOS system audio**: capture uses a CoreAudio process tap (macOS 14.4+) and requires the **System Audio Recording** permission (System Settings → Privacy & Security → Screen & System Audio Recording). Without it the tap silently records zeros, no error, no segments. `nub run tauri:dev` binaries do not trigger the consent prompt (TCC attributes CLI-launched processes to the terminal), so grant the permission to your terminal app or test with a bundled build. The backend preflights via TCC SPI and emits `system-audio-permission-missing` at recording start when denied.
 - **Sample rate**: the pipeline expects 48kHz throughout; resampling happens at capture time.
 - **Model caching**: Whisper/Parakeet models load once and stay cached; switching models requires unload/reload. Models live in the app data dir in production and a local dir in dev (see `whisper_engine.rs::new_with_models_dir`).
 - **Windows**: WASAPI exclusive mode can conflict with other apps; system capture uses WASAPI loopback.
@@ -84,8 +84,8 @@ Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in
 ## Debugging
 
 ```bash
-RUST_LOG=debug pnpm tauri:dev               # all Rust logs
-RUST_LOG=app_lib::audio=debug pnpm tauri:dev  # audio pipeline only
+RUST_LOG=debug nub run tauri:dev               # all Rust logs
+RUST_LOG=app_lib::audio=debug nub run tauri:dev  # audio pipeline only
 ```
 
 DevTools: `Cmd+Shift+I` (macOS) / `Ctrl+Shift+I` (Windows). The app shows real-time audio metrics while recording.

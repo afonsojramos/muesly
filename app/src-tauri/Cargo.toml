@@ -31,7 +31,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 #            cargo build --release --features hipblas (AMD GPU with ROCm)
 #            cargo build --release --features vulkan  (Other GPUs)
 #
-# QUICK START: from app/, `pnpm tauri:dev` / `pnpm tauri:build` auto-detect the GPU backend.
+# QUICK START: from app/, `nub run tauri:dev` / `nub run tauri:build` auto-detect the GPU backend.
 #
 [features]
 default = ["platform-default"]  # Automatically enables best backend per platform

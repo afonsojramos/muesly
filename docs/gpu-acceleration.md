@@ -12,7 +12,7 @@ Transcription (`whisper-rs`) and local summarization (the llama sidecar) share t
 
 ## Auto-detection
 
-`pnpm tauri:dev` and `pnpm tauri:build` run `app/scripts/tauri-auto.ts`, which detects your GPU (via `app/scripts/auto-detect-gpu.ts`) and builds with the matching `--features` flag. On macOS, Metal and Core ML are always enabled. On Windows/Linux, detection runs in priority order:
+`nub run tauri:dev` and `nub run tauri:build` run `app/scripts/tauri-auto.ts`, which detects your GPU (via `app/scripts/auto-detect-gpu.ts`) and builds with the matching `--features` flag. On macOS, Metal and Core ML are always enabled. On Windows/Linux, detection runs in priority order:
 
 | Priority | Backend | Detected when | Feature |
 | --- | --- | --- | --- |
@@ -27,8 +27,8 @@ GPU drivers alone are not enough: the development SDK (CUDA Toolkit, ROCm, or Vu
 ## Forcing a backend
 
 ```bash
-pnpm tauri:build:cuda          # also: vulkan, metal, coreml, openblas, hipblas, cpu
-TAURI_GPU_FEATURE=vulkan pnpm tauri:build
+nub run tauri:build:cuda       # also: vulkan, metal, coreml, openblas, hipblas, cpu
+TAURI_GPU_FEATURE=vulkan nub run tauri:build
 ```
 
 ## Build environment variables

@@ -27,7 +27,7 @@ protection.
    export MUESLY_GOOGLE_CLIENT_ID="…apps.googleusercontent.com"
    export MUESLY_GOOGLE_CLIENT_SECRET="…"
    ```
-   Then run `pnpm tauri:dev` (or a bundled build - the macOS consent prompt only
+   Then run `nub run tauri:dev` (or a bundled build - the macOS consent prompt only
    attaches correctly to a bundled build, same TCC caveat as the audio/calendar
    permissions).
 
