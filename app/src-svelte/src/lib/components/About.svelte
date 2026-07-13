@@ -10,7 +10,7 @@
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { toast } from '$lib/toast';
 
-	let currentVersion = $state('0.1.0');
+	let currentVersion = $state('0.1.1');
 	const updates = useUpdateCheck({ checkOnMount: false });
 
 	onMount(() => {
