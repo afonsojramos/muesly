@@ -2,12 +2,12 @@
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { navigate } from '$lib/navigation';
-	import { PanelRightClose, PanelRightOpen } from '@lucide/svelte';
 
 	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
 	import { notes } from '$lib/stores/notes.svelte';
 	import { recordingState, RecordingStatus } from '$lib/stores/recording-state.svelte';
+	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
 
 	import { usePermissionCheck } from '$lib/hooks/use-permission-check.svelte';
 	import { useRecordingStart } from '$lib/hooks/use-recording-start.svelte';
@@ -18,14 +18,6 @@
 	import PermissionWarning from '$lib/components/PermissionWarning.svelte';
 	import TranscriptPanel from '$lib/components/home/TranscriptPanel.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import * as Tooltip from '$lib/components/ui/tooltip';
-
-	// Transcript side panel: open by default only on wide windows, matching the
-	// saved-meeting view. The notes editor is the primary surface.
-	let showTranscript = $state(
-		typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches,
-	);
 
 	// Non-reactive snapshot of the notes so the editor isn't re-seeded on every
 	// keystroke. Reads the store on (re)mount so notes survive navigating away and
@@ -65,7 +57,7 @@
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 't') {
 				e.preventDefault();
-				showTranscript = !showTranscript;
+				liveTranscriptPanel.toggle();
 			}
 		};
 		window.addEventListener('keydown', handleKeydown);
@@ -78,40 +70,8 @@
 		<!-- Primary surface: the notes editor. The live transcript is secondary,
 		     in a toggleable side panel (⌘T), mirroring the saved-meeting view. -->
 		<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
-			<div
-				data-tauri-drag-region="deep"
-				class="flex flex-shrink-0 items-center justify-end px-8 pb-1 pt-7"
-			>
-				<Tooltip.Provider delayDuration={300}>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							{#snippet child({ props })}
-								<Button
-									{...props}
-									variant="ghost"
-									size="icon"
-									class="shrink-0 text-muted-foreground"
-									onclick={() => (showTranscript = !showTranscript)}
-									aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
-								>
-									{#if showTranscript}
-										<PanelRightClose />
-									{:else}
-										<PanelRightOpen />
-									{/if}
-								</Button>
-							{/snippet}
-						</Tooltip.Trigger>
-						<Tooltip.Content>
-							{showTranscript ? 'Hide transcript' : 'Show transcript'}
-							<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
-						</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
-			</div>
-
 			<div class="flex-1 overflow-y-auto">
-				<div class="mx-auto w-2/3 max-w-[750px] px-2 pb-40 pt-2">
+				<div class="mx-auto w-2/3 max-w-[750px] px-2 pb-40 pt-9">
 					{#if !recordingState.isRecording && !permissions.isChecking && !platform.isLinux}
 						<div class="mb-6">
 							<PermissionWarning
@@ -137,7 +97,7 @@
 			</div>
 		</div>
 
-		{#if showTranscript}
+		{#if liveTranscriptPanel.open}
 			<aside
 				class="flex w-2/5 min-w-[340px] max-w-[460px] flex-col overflow-hidden border-l border-border"
 			>

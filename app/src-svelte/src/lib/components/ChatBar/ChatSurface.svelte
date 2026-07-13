@@ -1,4 +1,6 @@
 <script lang="ts" module>
+	import type { Component } from 'svelte';
+
 	export interface ChatSurfaceMessage {
 		id: string;
 		role: 'user' | 'assistant';
@@ -6,6 +8,7 @@
 		barId?: string;
 		barTitle?: string;
 		barPrompt?: string;
+		barContext?: string;
 	}
 
 	/**
@@ -20,6 +23,15 @@
 		send(text?: string): void | Promise<void>;
 		rerun?(message: ChatSurfaceMessage): void;
 		stop(): void;
+	}
+
+	export interface ChatSlashCommand {
+		id: string;
+		slug: string;
+		label: string;
+		description: string;
+		icon: Component;
+		run: (open: () => void, additionalInstructions?: string) => void;
 	}
 </script>
 
@@ -36,9 +48,11 @@
 	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils';
+	import { parseBarCommandDraft } from '$lib/bars/execution';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
+	import ChatRailButton from './ChatRailButton.svelte';
 
 	interface Props {
 		controller: ChatSurfaceController;
@@ -63,6 +77,8 @@
 		messageLeading?: Snippet<[ChatSurfaceMessage]>;
 		/** True while any wrapper-owned overlay (popover/dialog) is open. */
 		overlayActive?: boolean;
+		/** Commands offered when the draft starts with `/`. */
+		slashCommands?: ChatSlashCommand[];
 		/** Whether the message panel is expanded. Bindable so wrappers can control
 		 *  it (e.g. collapse per meeting). Defaults open for the global chat. */
 		open?: boolean;
@@ -81,14 +97,51 @@
 		rail,
 		messageLeading,
 		overlayActive = false,
+		slashCommands = [],
 		open = $bindable(true),
 	}: Props = $props();
 
 	let rootEl = $state<HTMLElement | null>(null);
 	let viewportRef = $state<HTMLElement | null>(null);
 	let copiedMessageId = $state<string | null>(null);
+	let activeSlashIndex = $state(0);
+	let slashDismissed = $state(false);
+	const componentId = $props.id();
+	const slashListboxId = `${componentId}-bar-commands`;
 
 	const hasMessages = $derived(controller.messages.length > 0);
+	const slashQuery = $derived.by(() => {
+		const draft = controller.draft.trimStart();
+		if (!draft.startsWith('/') || draft.includes('\n')) return null;
+		const query = draft.slice(1);
+		// Once the command token is complete, the rest belongs to the user's
+		// additional instructions and the discovery menu should get out of the way.
+		if (/\s/.test(query)) return null;
+		return query.toLowerCase();
+	});
+	const matchingSlashCommands = $derived.by(() => {
+		if (slashQuery === null) return [];
+		return (
+			slashCommands
+				.filter((command) =>
+					`${command.slug} ${command.label} ${command.description}`
+						.toLowerCase()
+						.includes(slashQuery),
+				)
+				// Keep every keyboard-reachable option visible while focus remains in
+				// the textarea. Typing another character narrows larger catalogs quickly.
+				.slice(0, 5)
+		);
+	});
+	const slashMenuOpen = $derived(
+		!slashDismissed && !controller.isStreaming && matchingSlashCommands.length > 0,
+	);
+
+	$effect(() => {
+		void slashQuery;
+		activeSlashIndex = 0;
+		slashDismissed = false;
+	});
 
 	// Keep the newest content in view as tokens stream / turns are added — but only
 	// when the user is already near the bottom, so scrolling up to read earlier
@@ -133,6 +186,29 @@
 	}
 
 	function handleKeydown(event: KeyboardEvent): void {
+		if (slashMenuOpen && !event.isComposing) {
+			if (event.key === 'ArrowDown') {
+				event.preventDefault();
+				activeSlashIndex = (activeSlashIndex + 1) % matchingSlashCommands.length;
+				return;
+			}
+			if (event.key === 'ArrowUp') {
+				event.preventDefault();
+				activeSlashIndex =
+					(activeSlashIndex - 1 + matchingSlashCommands.length) % matchingSlashCommands.length;
+				return;
+			}
+			if ((event.key === 'Enter' && !event.shiftKey) || (event.key === 'Tab' && !event.shiftKey)) {
+				event.preventDefault();
+				completeSlashCommand(matchingSlashCommands[activeSlashIndex]);
+				return;
+			}
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				slashDismissed = true;
+				return;
+			}
+		}
 		if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
 			event.preventDefault();
 			void submit();
@@ -141,8 +217,22 @@
 
 	async function submit(): Promise<void> {
 		if (controller.isStreaming || !controller.draft.trim()) return;
+		const parsedCommand = parseBarCommandDraft(controller.draft);
+		if (parsedCommand) {
+			const command = slashCommands.find((candidate) => candidate.slug === parsedCommand.slug);
+			if (command) {
+				controller.draft = '';
+				command.run(() => (open = true), parsedCommand.additionalInstructions);
+				return;
+			}
+		}
 		open = true;
 		await controller.send();
+	}
+
+	function completeSlashCommand(command: ChatSlashCommand | undefined): void {
+		if (!command) return;
+		controller.draft = `/${command.slug} `;
 	}
 
 	async function copyMessage(message: ChatSurfaceMessage): Promise<void> {
@@ -207,10 +297,15 @@
 									>
 										{#if message.content}
 											{#if message.role === 'user' && message.barTitle}
+											<div class="flex flex-col gap-0.5">
 												<span class="flex items-center gap-1.5 font-medium">
-													<MueslyBar class="size-3.5" />
+													<MueslyBar class="size-3.5 shrink-0" />
 													{message.barTitle}
 												</span>
+												{#if message.barContext}
+													<span class="font-normal opacity-80">{message.barContext}</span>
+												{/if}
+											</div>
 											{:else}
 												{message.content}
 											{/if}
@@ -261,18 +356,53 @@
 	     axis in every state (a grown multiline draft included) — never the
 	     bottom-pinned look. -->
 	<div
-		class="flex items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
+		class="relative flex items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 	>
-		{#if hasMessages && !open}
-			<Button
-				variant="ghost"
-				size="icon"
-				class="shrink-0 rounded-full text-muted-foreground"
-				onclick={() => (open = true)}
-				aria-label="Show conversation"
+		{#if slashMenuOpen}
+			<div
+				id={slashListboxId}
+				class="absolute inset-x-2 bottom-full z-50 mb-2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_8px_30px_rgb(0,0,0,0.14)]"
+				role="listbox"
+				aria-label="Muesly bar commands"
 			>
+				<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+					Muesly bars
+				</div>
+				<div class="max-h-72 overflow-y-auto p-1.5">
+					{#each matchingSlashCommands as command, index (command.id)}
+						{@const Icon = command.icon}
+						<button
+							id={`${slashListboxId}-${index}`}
+							type="button"
+							role="option"
+							aria-selected={index === activeSlashIndex}
+							class={cn(
+								'flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
+								index === activeSlashIndex
+									? 'bg-accent text-accent-foreground'
+									: 'hover:bg-accent/60',
+							)}
+							onpointerenter={() => (activeSlashIndex = index)}
+							onmousedown={(event) => event.preventDefault()}
+							onclick={() => completeSlashCommand(command)}
+						>
+							<Icon class="size-4 shrink-0 text-muted-foreground" />
+							<span class="min-w-0 flex-1">
+								<span class="block truncate text-sm font-medium">{command.label}</span>
+								<span class="block truncate text-xs text-muted-foreground"
+									>{command.description}</span
+								>
+							</span>
+							<code class="shrink-0 text-xs text-muted-foreground">/{command.slug}</code>
+						</button>
+					{/each}
+				</div>
+			</div>
+		{/if}
+		{#if hasMessages && !open}
+			<ChatRailButton tooltip="Show conversation" onclick={() => (open = true)}>
 				<MessagesSquare data-icon />
-			</Button>
+			</ChatRailButton>
 		{/if}
 
 		{@render rail?.({ open: () => (open = true) })}
@@ -285,6 +415,12 @@
 			}}
 			placeholder={hasMessages && !open ? collapsedPlaceholder : placeholder}
 			aria-label={ariaLabel}
+			role="combobox"
+			aria-autocomplete="list"
+			aria-haspopup="listbox"
+			aria-expanded={slashMenuOpen}
+			aria-controls={slashMenuOpen ? slashListboxId : undefined}
+			aria-activedescendant={slashMenuOpen ? `${slashListboxId}-${activeSlashIndex}` : undefined}
 			rows={1}
 			class="max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
 		/>

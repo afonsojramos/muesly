@@ -75,6 +75,42 @@ export interface Bar extends ImportedBar {
 	source: BarSource;
 }
 
+/** Stable, typeable command name for a bar (`Recent to-dos` -> `recent-todos`).
+ * Catalog IDs win so renamed display titles do not break familiar commands. */
+export function barCommandSlug(bar: Bar): string {
+	const idSlug = bar.id.includes(':') ? bar.id.split(':').at(-1) : null;
+	const slug = (idSlug || bar.title)
+		.toLowerCase()
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+	return slug || `bar-${stableCommandSuffix(bar.id)}`;
+}
+
+function stableCommandSuffix(value: string): string {
+	let hash = 2166136261;
+	for (const character of value) {
+		hash ^= character.codePointAt(0) ?? 0;
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(36).slice(0, 6);
+}
+
+/** Resolve title collisions without making every command noisy. Unique bars keep
+ * their readable slug; collisions gain a deterministic suffix derived from id. */
+export function barCommandSlugs(items: Bar[]): Map<string, string> {
+	const bases = items.map((bar) => barCommandSlug(bar));
+	const counts = new Map<string, number>();
+	for (const base of bases) counts.set(base, (counts.get(base) ?? 0) + 1);
+	return new Map(
+		items.map((bar, index) => {
+			const base = bases[index]!;
+			return [bar.id, counts.get(base) === 1 ? base : `${base}-${stableCommandSuffix(bar.id)}`];
+		}),
+	);
+}
+
 const CATEGORY_IDS: Partial<Record<BarCategory, string[]>> = {
 	'follow-up': ['email', 'todo', 'action', 'outstanding', 'owe', 'recap-next', 'schedule'],
 	planning: ['prep', 'agenda', 'calendar', 'topics', 'backstory', 'catch-me-up'],

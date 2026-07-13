@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Clock3, History, Pin, Settings2, Trash2 } from '@lucide/svelte';
+	import {
+		AudioLines,
+		Clock3,
+		History,
+		Pin,
+		Settings2,
+		Trash2,
+	} from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	import type { RecentChatThread } from '$lib/bindings';
 	import { Button } from '$lib/components/ui/button';
@@ -10,12 +18,16 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { chat } from '$lib/stores/chat.svelte';
 	import { bars } from '$lib/stores/bars.svelte';
-	import { barIcon, type Bar } from '$lib/bars/catalog';
+	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
+	import { sidePanelState } from '$lib/stores/side-panel.svelte';
+	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
+	import { addBarInstructions } from '$lib/bars/execution';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 
 	import ChatSurface from './ChatSurface.svelte';
+	import ChatRailButton from './ChatRailButton.svelte';
 
 	onMount(() => {
 		void bars.ensureLoaded();
@@ -27,11 +39,33 @@
 	let runDialogOpen = $state(false);
 	let pendingBar = $state<Bar | null>(null);
 	let pendingOpen: (() => void) | null = null;
+	let pendingAdditionalInstructions = '';
 	let recentThreads = $state<RecentChatThread[]>([]);
 	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
 	// expanded, so opening a meeting isn't dominated by the chat panel.
 	let chatOpen = $state(false);
 	const barGroups = $derived(bars.groupsForSurface('meeting'));
+	const slashCommands = $derived.by(() => {
+		const items = bars.forSurface('meeting');
+		const slugs = barCommandSlugs(items);
+		return items.map((bar) => ({
+			id: bar.id,
+			slug: slugs.get(bar.id)!,
+			label: bar.title,
+			description: bar.description,
+			icon: barIcon(bar.icon),
+			run: (open: () => void, additionalInstructions?: string) =>
+				runBar(bar, open, additionalInstructions),
+		}));
+	});
+	const isLiveNote = $derived(page.url.pathname === '/note');
+	const transcriptPanelOpen = $derived(isLiveNote ? liveTranscriptPanel.open : sidePanelState.open);
+	const transcriptPanelLabel = $derived(isLiveNote ? 'transcript' : 'transcript & notes');
+
+	function toggleTranscriptPanel(): void {
+		if (isLiveNote) liveTranscriptPanel.toggle();
+		else sidePanelState.toggle();
+	}
 
 	// Load the meeting's persisted thread on mount and whenever the meeting
 	// changes, so a conversation survives collapse, close, and navigation.
@@ -48,22 +82,33 @@
 		}
 	});
 
-	function runBar(bar: Bar, open: () => void): void {
+	function runBar(bar: Bar, open: () => void, additionalInstructions?: string): void {
 		if (barVariables(bar.prompt).length > 0) {
 			barsOpen = false;
 			pendingBar = bar;
 			pendingOpen = open;
+			pendingAdditionalInstructions = additionalInstructions ?? '';
 			runDialogOpen = true;
 			return;
 		}
-		executeBar(bar, bar.prompt, open);
+		executeBar(bar, addBarInstructions(bar.prompt, additionalInstructions), open, additionalInstructions);
 	}
 
-	function executeBar(bar: Bar, prompt: string, open: () => void): void {
+	function executeBar(
+		bar: Bar,
+		prompt: string,
+		open: () => void,
+		additionalInstructions?: string,
+	): void {
 		barsOpen = false;
 		open();
 		bars.recordRun(bar);
-		void chat.send(prompt, { barId: bar.id, barTitle: bar.title, barPrompt: prompt });
+		void chat.send(prompt, {
+			barId: bar.id,
+			barTitle: bar.title,
+			barPrompt: prompt,
+			barContext: additionalInstructions?.trim() || undefined,
+		});
 	}
 
 	async function onRecentOpenChange(isOpen: boolean): Promise<void> {
@@ -89,6 +134,7 @@
 	placeholder="Ask anything about this meeting…"
 	collapsedPlaceholder="Continue chat"
 	ariaLabel="Ask anything about this meeting"
+	{slashCommands}
 	overlayActive={barsOpen || recentOpen || clearConfirmOpen || runDialogOpen}
 >
 	{#snippet headerActions()}
@@ -104,18 +150,30 @@
 	{/snippet}
 
 	{#snippet rail({ open })}
+		<ChatRailButton
+			tooltip={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+			ariaLabel={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+			shortcut="⌘T"
+			pressed={transcriptPanelOpen}
+			onclick={toggleTranscriptPanel}
+		>
+			<AudioLines
+				data-icon
+				class="transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand"
+			/>
+		</ChatRailButton>
+
 		<Popover.Root bind:open={recentOpen} onOpenChange={(o) => void onRecentOpenChange(o)}>
 			<Popover.Trigger>
 				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="icon"
-						class="shrink-0 rounded-full text-muted-foreground"
-						aria-label="Recent chats"
+					<ChatRailButton
+						triggerProps={props}
+						tooltip="Recent meeting chats"
+						ariaLabel="Recent chats"
+						overlayOpen={recentOpen}
 					>
 						<History data-icon />
-					</Button>
+					</ChatRailButton>
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content align="start" side="top" class="w-80 p-0">
@@ -148,16 +206,15 @@
 		<Popover.Root bind:open={barsOpen}>
 			<Popover.Trigger>
 				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="icon"
+					<ChatRailButton
+						triggerProps={props}
+						tooltip="Run a reusable Muesly bar"
+						ariaLabel="Muesly bars"
 						disabled={chat.isStreaming}
-						class="shrink-0 rounded-full text-muted-foreground"
-						aria-label="Muesly bars"
+						overlayOpen={barsOpen}
 					>
 						<MueslyBar class="size-4" />
-					</Button>
+					</ChatRailButton>
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content align="start" side="top" class="w-64 p-0">
@@ -213,5 +270,46 @@
 <RunBarDialog
 	bind:open={runDialogOpen}
 	bar={pendingBar}
-	onRun={(prompt) => pendingBar && executeBar(pendingBar, prompt, pendingOpen ?? (() => {}))}
+	onRun={(prompt) =>
+		pendingBar &&
+		executeBar(
+			pendingBar,
+			addBarInstructions(prompt, pendingAdditionalInstructions),
+			pendingOpen ?? (() => {}),
+			pendingAdditionalInstructions,
+		)}
 />
+
+<style>
+	:global(.transcript-audio-lines path) {
+		transform-box: fill-box;
+		transform-origin: center;
+	}
+
+	:global(.group:hover .transcript-audio-lines path) {
+		animation: transcript-audio-bar 500ms ease-in-out infinite alternate;
+	}
+
+	:global(.group:hover .transcript-audio-lines path:nth-child(2n)) {
+		animation-delay: -250ms;
+	}
+
+	:global(.group:hover .transcript-audio-lines path:nth-child(3n)) {
+		animation-delay: -125ms;
+	}
+
+	@keyframes transcript-audio-bar {
+		from {
+			transform: scaleY(0.55);
+		}
+		to {
+			transform: scaleY(1);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.group:hover .transcript-audio-lines path) {
+			animation: none;
+		}
+	}
+</style>

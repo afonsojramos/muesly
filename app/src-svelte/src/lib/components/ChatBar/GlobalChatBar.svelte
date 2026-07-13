@@ -10,17 +10,33 @@
 	import * as Popover from '$lib/components/ui/popover';
 	import { globalChat, type GlobalChatMessage } from '$lib/stores/global-chat.svelte';
 	import { bars } from '$lib/stores/bars.svelte';
-	import { barIcon, type Bar } from '$lib/bars/catalog';
+	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
+	import { addBarInstructions } from '$lib/bars/execution';
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 
 	import ChatSurface, { type ChatSurfaceMessage } from './ChatSurface.svelte';
+	import ChatRailButton from './ChatRailButton.svelte';
 
 	let barsOpen = $state(false);
 	let runDialogOpen = $state(false);
 	let pendingBar = $state<Bar | null>(null);
 	let pendingOpen: (() => void) | null = null;
+	let pendingAdditionalInstructions = '';
 	const barGroups = $derived(bars.groupsForSurface('global'));
+	const slashCommands = $derived.by(() => {
+		const items = bars.forSurface('global');
+		const slugs = barCommandSlugs(items);
+		return items.map((bar) => ({
+			id: bar.id,
+			slug: slugs.get(bar.id)!,
+			label: bar.title,
+			description: bar.description,
+			icon: barIcon(bar.icon),
+			run: (open: () => void, additionalInstructions?: string) =>
+				runBar(bar, open, additionalInstructions),
+		}));
+	});
 
 	onMount(() => {
 		void bars.ensureLoaded();
@@ -32,22 +48,33 @@
 		return (message as GlobalChatMessage).actions ?? [];
 	}
 
-	function runBar(bar: Bar, open: () => void): void {
+	function runBar(bar: Bar, open: () => void, additionalInstructions?: string): void {
 		if (barVariables(bar.prompt).length > 0) {
 			barsOpen = false;
 			pendingBar = bar;
 			pendingOpen = open;
+			pendingAdditionalInstructions = additionalInstructions ?? '';
 			runDialogOpen = true;
 			return;
 		}
-		executeBar(bar, bar.prompt, open);
+		executeBar(bar, addBarInstructions(bar.prompt, additionalInstructions), open, additionalInstructions);
 	}
 
-	function executeBar(bar: Bar, prompt: string, open: () => void): void {
+	function executeBar(
+		bar: Bar,
+		prompt: string,
+		open: () => void,
+		additionalInstructions?: string,
+	): void {
 		barsOpen = false;
 		open();
 		bars.recordRun(bar);
-		void globalChat.send(prompt, { barId: bar.id, barTitle: bar.title, barPrompt: prompt });
+		void globalChat.send(prompt, {
+			barId: bar.id,
+			barTitle: bar.title,
+			barPrompt: prompt,
+			barContext: additionalInstructions?.trim() || undefined,
+		});
 	}
 </script>
 
@@ -57,6 +84,7 @@
 	placeholder="Ask across all your meetings…"
 	collapsedPlaceholder="Ask your meetings"
 	ariaLabel="Ask across all your meetings"
+	{slashCommands}
 	emptyLabel="No answer produced."
 	overlayActive={barsOpen || runDialogOpen}
 	hideEmptyBubbleWhileStreaming
@@ -78,16 +106,15 @@
 		<Popover.Root bind:open={barsOpen}>
 			<Popover.Trigger>
 				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="icon"
+					<ChatRailButton
+						triggerProps={props}
+						tooltip="Run a reusable Muesly bar"
+						ariaLabel="Muesly bars"
 						disabled={globalChat.isStreaming}
-						class="shrink-0 rounded-full text-muted-foreground"
-						aria-label="Muesly bars"
+						overlayOpen={barsOpen}
 					>
 						<MueslyBar class="size-4" />
-					</Button>
+					</ChatRailButton>
 				{/snippet}
 			</Popover.Trigger>
 			<Popover.Content align="start" side="top" class="w-64 p-0">
@@ -153,5 +180,12 @@
 <RunBarDialog
 	bind:open={runDialogOpen}
 	bar={pendingBar}
-	onRun={(prompt) => pendingBar && executeBar(pendingBar, prompt, pendingOpen ?? (() => {}))}
+	onRun={(prompt) =>
+		pendingBar &&
+			executeBar(
+			pendingBar,
+			addBarInstructions(prompt, pendingAdditionalInstructions),
+			pendingOpen ?? (() => {}),
+			pendingAdditionalInstructions,
+		)}
 />
