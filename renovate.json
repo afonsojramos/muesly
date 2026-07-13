@@ -1,0 +1,36 @@
+{
+	"$schema": "https://docs.renovatebot.com/renovate-schema.json",
+	"extends": [
+		"config:recommended",
+		":semanticCommits",
+		":dependencyDashboard",
+		"schedule:weekly"
+	],
+	"packageRules": [
+		{
+			"description": "Coordinate shared JS dev tooling to the same version across app, site, and api (one grouped PR).",
+			"matchManagers": ["npm"],
+			"matchDepTypes": ["devDependencies"],
+			"matchPackageNames": [
+				"typescript",
+				"vitest",
+				"vite-plus",
+				"wrangler",
+				"@types/node",
+				"drizzle-kit"
+			],
+			"groupName": "js dev tooling"
+		},
+		{
+			"description": "Group Rust (Cargo) minor/patch updates.",
+			"matchManagers": ["cargo"],
+			"matchUpdateTypes": ["minor", "patch"],
+			"groupName": "cargo minor/patch"
+		},
+		{
+			"description": "Group GitHub Actions updates.",
+			"matchManagers": ["github-actions"],
+			"groupName": "github actions"
+		}
+	]
+}
