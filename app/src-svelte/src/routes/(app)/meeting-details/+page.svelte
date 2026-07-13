@@ -182,7 +182,9 @@
 			if (hasGemma) {
 				await invoke('api_save_model_config', {
 					provider: 'ollama',
-					model: '',
+					// The model `checkForGemmaModel` just verified — persisting an empty
+					// name here made auto-summary save a config it could never run.
+					model: 'gemma3:1b',
 					whisperModel: 'large-v3',
 					apiKey: null,
 					ollamaEndpoint: null,
