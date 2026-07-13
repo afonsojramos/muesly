@@ -568,7 +568,7 @@ jobs:
 
       - name: Build with Tauri (signed)
         if: inputs.sign-binaries
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Analytics ingest key, baked into the binary at compile time (option_env!).
@@ -587,6 +587,10 @@ jobs:
           WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
         with:
           projectPath: app
+          # The repo intentionally provisions nub rather than pnpm. Without an
+          # explicit script, tauri-action sees pnpm-lock.yaml and tries to spawn
+          # a pnpm binary that is not installed on the runner.
+          tauriScript: nub exec tauri
           tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
@@ -594,7 +598,7 @@ jobs:
 
       - name: Build with Tauri (unsigned)
         if: ${{ !inputs.sign-binaries }}
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Analytics ingest key, baked into the binary at compile time (option_env!).
@@ -607,6 +611,7 @@ jobs:
           WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && 'ON' || '' }}
         with:
           projectPath: app
+          tauriScript: nub exec tauri
           # Same release wiring as the signed step, so unsigned platforms
           # (e.g. Windows under option B) still upload to the release and get a
           # latest.json entry. Without releaseId, tauri-action builds but never uploads.

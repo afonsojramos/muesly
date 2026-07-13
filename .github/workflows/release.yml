@@ -210,7 +210,7 @@ jobs:
         run: cargo install posthog-cli --locked
 
       - name: Build Tauri app (deb + AppImage)
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Analytics ingest key, baked into the binary at compile time (option_env!).
@@ -222,6 +222,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: app
+          tauriScript: nub exec tauri
           # No releaseId: build only, we upload the stripped artifacts ourselves.
           args: --target x86_64-unknown-linux-gnu --features openblas --bundles deb,appimage
 
