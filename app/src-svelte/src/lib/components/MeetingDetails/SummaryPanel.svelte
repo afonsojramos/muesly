@@ -155,7 +155,9 @@
 				isGenerating={isSummaryLoading}
 			/>
 		</div>
-	{:else if transcripts.length > 0}
+	{:else}
+		<!-- Show the summary whenever one exists — gating on transcripts hid a valid
+		     summary when its rows failed to load or were deleted. -->
 		<div class="min-h-0 flex-1 overflow-y-auto">
 			<div class="w-full px-8 py-4">
 				<SummaryView
