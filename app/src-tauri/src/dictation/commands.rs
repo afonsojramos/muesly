@@ -28,6 +28,16 @@ const DICTATION_SAMPLE_RATE: u32 = 16_000;
 /// `!Send` cpal stream it owns never crosses this boundary.
 static DICTATION_CAPTURE: Mutex<Option<DictationCapture>> = Mutex::new(None);
 
+/// Releases the dictation single-flight claim on drop, so the claim is held for
+/// the entire stop → transcribe → inject burst. Releasing eagerly (before
+/// injection finished) let a fresh burst be claimed mid-injection.
+struct DictationClaimGuard;
+impl Drop for DictationClaimGuard {
+    fn drop(&mut self) {
+        release_dictation_claim();
+    }
+}
+
 /// Start a push-to-talk dictation burst (mic-only). Rejected while a meeting is
 /// recording or a dictation burst is already active.
 #[tauri::command]
@@ -53,7 +63,10 @@ pub async fn stop_dictation<R: Runtime>(app: AppHandle<R>) -> Result<String, Str
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .take();
-    release_dictation_claim();
+    // Hold the claim until the whole burst finishes: this guard drops at function
+    // exit (including every early return below). Releasing here — before transcribe
+    // and inject — let a new burst start while this one was still injecting.
+    let _claim = DictationClaimGuard;
     let capture = capture.ok_or_else(|| "no dictation in progress".to_string())?;
 
     let (samples, sample_rate) = capture
@@ -80,6 +93,11 @@ pub async fn stop_dictation<R: Runtime>(app: AppHandle<R>) -> Result<String, Str
     // Best-effort insertion into the focused app (clipboard + synthesized paste,
     // on a blocking thread). The text is also emitted so the UI can surface it or
     // a permission prompt when injection isn't possible.
+    // Track whether the text actually landed in the focused app. A failure here
+    // (e.g. Accessibility not granted) previously vanished into a log line; report
+    // it on the event so the UI can tell the user and let them copy the text.
+    let mut injected = true;
+    let mut inject_error: Option<String> = None;
     if !text.is_empty() {
         let app_for_inject = app.clone();
         let text_for_inject = text.clone();
@@ -89,12 +107,23 @@ pub async fn stop_dictation<R: Runtime>(app: AppHandle<R>) -> Result<String, Str
         .await
         {
             Ok(Ok(())) => {}
-            Ok(Err(e)) => log::warn!("Dictation injection failed: {e}"),
-            Err(e) => log::warn!("Dictation injection task error: {e}"),
+            Ok(Err(e)) => {
+                log::warn!("Dictation injection failed: {e}");
+                injected = false;
+                inject_error = Some(e.to_string());
+            }
+            Err(e) => {
+                log::warn!("Dictation injection task error: {e}");
+                injected = false;
+                inject_error = Some(e.to_string());
+            }
         }
     }
 
-    let _ = app.emit("dictation-text", serde_json::json!({ "text": text }));
+    let _ = app.emit(
+        "dictation-text",
+        serde_json::json!({ "text": text, "injected": injected, "error": inject_error }),
+    );
     Ok(text)
 }
 
