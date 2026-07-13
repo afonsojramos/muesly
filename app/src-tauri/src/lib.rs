@@ -1106,6 +1106,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         api::api_get_meeting::<tauri::Wry>,
         api::api_get_meeting_metadata::<tauri::Wry>,
         api::api_get_meeting_transcripts::<tauri::Wry>,
+        api::api_restore_latest_transcript_revision,
         api::api_save_meeting_title::<tauri::Wry>,
         api::api_save_meeting_notes::<tauri::Wry>,
         api::api_get_meeting_notes::<tauri::Wry>,

@@ -11,4 +11,5 @@ pub mod setting;
 pub mod speaker_names;
 pub mod summary;
 pub mod transcript;
+pub mod transcript_revision;
 pub mod transcript_chunk;

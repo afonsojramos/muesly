@@ -57,6 +57,16 @@
 		error: string;
 	}
 
+	async function undoRetranscription(): Promise<void> {
+		const restored = await invoke<boolean>('api_restore_latest_transcript_revision', {
+			meetingId,
+		});
+		if (restored) {
+			toast.success('Previous transcript restored');
+			onComplete?.();
+		}
+	}
+
 	let isProcessing = $state(false);
 	let progress = $state<RetranscriptionProgress | null>(null);
 	let error = $state<string | null>(null);
@@ -122,6 +132,10 @@
 						isProcessing = false;
 						toast.success(
 							`Retranscription complete! ${event.payload.segments_count} segments created.`,
+							{
+								duration: 10_000,
+								action: { label: 'Undo', onClick: () => void undoRetranscription() },
+							},
 						);
 						onComplete?.();
 						onOpenChange(false);

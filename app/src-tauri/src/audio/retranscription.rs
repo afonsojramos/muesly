@@ -435,7 +435,11 @@ async fn run_retranscription<R: Runtime>(
 
         // Skip empty transcripts
         let trimmed = text.trim();
-        if !trimmed.is_empty() {
+        let drop_reason = crate::audio::transcription::segment_filter::should_drop_segment(
+            trimmed,
+            Some(conf),
+        );
+        if !trimmed.is_empty() && drop_reason.is_none() {
             debug!(
                 "Segment {}/{}: {:.1}s, conf={:.2}, text='{}'",
                 i + 1, processable_count, segment_duration_sec, conf,
@@ -444,7 +448,13 @@ async fn run_retranscription<R: Runtime>(
             all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
             total_confidence += conf;
         } else {
-            debug!("Segment {}/{}: {:.1}s — empty transcription", i + 1, processable_count, segment_duration_sec);
+            debug!(
+                "Segment {}/{}: {:.1}s — skipped ({:?})",
+                i + 1,
+                processable_count,
+                segment_duration_sec,
+                drop_reason
+            );
         }
     }
 
@@ -470,12 +480,44 @@ async fn run_retranscription<R: Runtime>(
     // Create transcript segments with proper timestamps from VAD
     let mut segments = create_transcript_segments(&all_transcripts);
 
+    let (previous_segments, previous_characters): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), COALESCE(SUM(LENGTH(transcript)), 0) FROM transcripts WHERE meeting_id = ?",
+    )
+    .bind(&meeting_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| anyhow!("Failed to measure the existing transcript: {}", e))?;
+    let new_characters = segments.iter().map(|segment| segment.text.chars().count()).sum();
+    if let Some(reason) = refinement_rejection(
+        previous_segments as usize,
+        previous_characters as usize,
+        segments.len(),
+        new_characters,
+        avg_confidence,
+    ) {
+        warn!("Rejected retranscription for meeting {}: {}", meeting_id, reason);
+        return Err(anyhow!(
+            "The refinement looked less complete than the current transcript, so muesly kept the original ({reason})."
+        ));
+    }
+
     // Save to database
     // Wrap delete+insert+update in a transaction to prevent data loss
     let mut conn = pool.acquire().await.map_err(|e| anyhow!("DB error: {}", e))?;
     let mut tx = sqlx::Connection::begin(&mut *conn)
         .await
         .map_err(|e| anyhow!("Failed to start transaction: {}", e))?;
+
+    crate::database::repositories::transcript_revision::TranscriptRevisionRepository::snapshot_current(
+        &mut tx,
+        &meeting_id,
+        "retranscription",
+        model.as_deref(),
+        language.as_deref(),
+        Some(avg_confidence),
+    )
+    .await
+    .map_err(|e| anyhow!("Failed to preserve the current transcript: {}", e))?;
 
     // The batch pass works from the mixed recording, but its timestamps still
     // align with the original live mic/system segments. Carry the dominant
@@ -585,6 +627,36 @@ fn emit_progress<R: Runtime>(
             message: message.to_string(),
         },
     );
+}
+
+/// Conservative whole-transcript gate. It only rejects clear regressions so
+/// accents, concise phrasing, and better segmentation do not get penalized.
+fn refinement_rejection(
+    previous_segments: usize,
+    previous_characters: usize,
+    new_segments: usize,
+    new_characters: usize,
+    average_confidence: f32,
+) -> Option<&'static str> {
+    if new_segments == 0 || new_characters == 0 {
+        return Some("no speech was recovered");
+    }
+    if average_confidence < 0.18 {
+        return Some("recognition confidence was extremely low");
+    }
+    if previous_characters >= 200 && new_characters * 100 < previous_characters * 55 {
+        return Some("more than 45% of the existing transcript disappeared");
+    }
+    if previous_characters >= 200
+        && new_characters > previous_characters.saturating_mul(3)
+        && average_confidence < 0.45
+    {
+        return Some("the result expanded abnormally at low confidence");
+    }
+    if previous_segments >= 3 && new_segments > previous_segments.saturating_mul(6) {
+        return Some("segment count expanded abnormally");
+    }
+    None
 }
 
 /// Get or initialize the Whisper engine, auto-loading the model if needed
@@ -948,5 +1020,27 @@ mod tests {
         // Non-audio formats
         assert!(!AUDIO_EXTENSIONS.contains(&"txt"));
         assert!(!AUDIO_EXTENSIONS.contains(&"pdf"));
+    }
+
+    #[test]
+    fn refinement_gate_rejects_clear_regressions() {
+        assert_eq!(
+            refinement_rejection(20, 2_000, 8, 900, 0.7),
+            Some("more than 45% of the existing transcript disappeared")
+        );
+        assert_eq!(
+            refinement_rejection(20, 2_000, 25, 7_000, 0.3),
+            Some("the result expanded abnormally at low confidence")
+        );
+        assert_eq!(
+            refinement_rejection(20, 2_000, 0, 0, 0.8),
+            Some("no speech was recovered")
+        );
+    }
+
+    #[test]
+    fn refinement_gate_allows_conservative_improvements() {
+        assert_eq!(refinement_rejection(20, 2_000, 18, 1_700, 0.62), None);
+        assert_eq!(refinement_rejection(2, 120, 1, 70, 0.55), None);
     }
 }

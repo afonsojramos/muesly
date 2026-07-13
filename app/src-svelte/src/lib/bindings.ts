@@ -262,6 +262,7 @@ export const commands = {
 	apiGetMeetingMetadata: (meetingId: string) => typedError<MeetingMetadata_Serialize, string>(__TAURI_INVOKE("api_get_meeting_metadata", { meetingId })),
 	/**  Get paginated transcripts for a meeting */
 	apiGetMeetingTranscripts: (meetingId: string, limit: number, offset: number) => typedError<PaginatedTranscriptsResponse_Serialize, string>(__TAURI_INVOKE("api_get_meeting_transcripts", { meetingId, limit, offset })),
+	apiRestoreLatestTranscriptRevision: (meetingId: string) => typedError<boolean, string>(__TAURI_INVOKE("api_restore_latest_transcript_revision", { meetingId })),
 	apiSaveMeetingTitle: (meetingId: string, title: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_save_meeting_title", { meetingId, title, authToken })),
 	/**  Persist the user's in-meeting notes (markdown) for a meeting. */
 	apiSaveMeetingNotes: (meetingId: string, notesMarkdown: string, authToken: string | null) => typedError<any, string>(__TAURI_INVOKE("api_save_meeting_notes", { meetingId, notesMarkdown, authToken })),
@@ -571,10 +572,10 @@ export const commands = {
 	version: string,
 	completed: boolean,
 	current_step: number,
-	model_status: ModelStatus,
+	model_status: ModelStatus_Serialize,
 	last_updated: string,
 } | null, string>(__TAURI_INVOKE("get_onboarding_status")),
-	saveOnboardingStatusCmd: (status: OnboardingStatus) => typedError<null, string>(__TAURI_INVOKE("save_onboarding_status_cmd", { status })),
+	saveOnboardingStatusCmd: (status: OnboardingStatus_Deserialize) => typedError<null, string>(__TAURI_INVOKE("save_onboarding_status_cmd", { status })),
 	resetOnboardingStatusCmd: () => typedError<null, string>(__TAURI_INVOKE("reset_onboarding_status_cmd")),
 	completeOnboarding: (model: string) => typedError<null, string>(__TAURI_INVOKE("complete_onboarding", { model })),
 	/**  Opens macOS System Settings to a specific privacy preference pane */
@@ -1149,7 +1150,17 @@ export type ModelConfig = {
 	ollamaEndpoint: string | null,
 };
 
-export type ModelStatus = {
+export type ModelStatus = ModelStatus_Serialize | ModelStatus_Deserialize;
+
+export type ModelStatus_Deserialize = {
+	summary: string,
+} & {
+	whisper: string,
+} | {
+	parakeet: string,
+};
+
+export type ModelStatus_Serialize = {
 	whisper: string,
 	summary: string,
 };
@@ -1255,11 +1266,21 @@ export type OllamaModel = {
 	modified: string,
 };
 
-export type OnboardingStatus = {
+export type OnboardingStatus = OnboardingStatus_Serialize | OnboardingStatus_Deserialize;
+
+export type OnboardingStatus_Deserialize = {
 	version: string,
 	completed: boolean,
 	current_step: number,
-	model_status: ModelStatus,
+	model_status: ModelStatus_Deserialize,
+	last_updated: string,
+};
+
+export type OnboardingStatus_Serialize = {
+	version: string,
+	completed: boolean,
+	current_step: number,
+	model_status: ModelStatus_Serialize,
 	last_updated: string,
 };
 

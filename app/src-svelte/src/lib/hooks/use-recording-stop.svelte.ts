@@ -85,6 +85,20 @@ async function runQualityPass(meetingId: string, folderPath: string): Promise<vo
 	await completion;
 }
 
+async function autoDiarizeIfReady(meetingId: string): Promise<void> {
+	try {
+		const speakers = await commands.getMeetingSpeakers(meetingId);
+		const hasAttendees = speakers.status === 'ok' && speakers.data.shortlist.length > 0;
+		if (!hasAttendees) return;
+		const ready = await commands.diarizationModelsReady();
+		if (ready.status === 'ok' && ready.data) {
+			await commands.diarizeMeeting(meetingId);
+		}
+	} catch (error) {
+		console.error('Failed to auto-identify speakers:', error);
+	}
+}
+
 declare global {
 	interface Window {
 		handleRecordingStop?: (callApi?: boolean) => void;
@@ -234,14 +248,17 @@ export function useRecordingStop(
 						console.error('Failed to attach calendar event:', calendarError);
 					}
 
-					// Optional post-meeting quality pass: replace the live segments with
-					// a batch re-transcription of the saved audio. Awaited so speaker
-					// identification below labels the final segments, and gated to
-					// local engines (never re-bills a cloud provider). Best-effort.
+					// Optional quality pass runs after save without holding the stop UI.
+					// Speaker identification is chained behind it so both background jobs
+					// cannot rewrite the same transcript concurrently.
+					let qualityPassStarted = false;
 					try {
 						const qp = await commands.getPostMeetingQualityPassEnabled();
 						if (qp.status === 'ok' && qp.data && folderPath) {
-							await runQualityPass(meetingId, folderPath);
+							qualityPassStarted = true;
+							void runQualityPass(meetingId, folderPath)
+								.then(() => autoDiarizeIfReady(meetingId))
+								.catch((error) => console.error('Post-meeting quality pass failed:', error));
 						}
 					} catch (qualityError) {
 						console.error('Post-meeting quality pass failed:', qualityError);
@@ -252,17 +269,8 @@ export function useRecordingStop(
 					// download mid-flow). Best-effort and backgrounded: it must never
 					// block or fail the stop. The manual "Speakers" button covers the
 					// rest (no attendees, or model not yet downloaded).
-					try {
-						const speakers = await commands.getMeetingSpeakers(meetingId);
-						const hasAttendees = speakers.status === 'ok' && speakers.data.shortlist.length > 0;
-						if (hasAttendees) {
-							const ready = await commands.diarizationModelsReady();
-							if (ready.status === 'ok' && ready.data) {
-								void commands.diarizeMeeting(meetingId);
-							}
-						}
-					} catch (diarizeError) {
-						console.error('Failed to auto-identify speakers:', diarizeError);
+					if (!qualityPassStarted) {
+						void autoDiarizeIfReady(meetingId);
 					}
 
 					// If this recording was started from a specific calendar event (the

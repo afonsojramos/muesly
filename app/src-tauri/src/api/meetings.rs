@@ -17,6 +17,20 @@ use super::types::*;
 
 #[tauri::command]
 #[specta::specta]
+pub async fn api_restore_latest_transcript_revision(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<bool, String> {
+    crate::database::repositories::transcript_revision::TranscriptRevisionRepository::restore_latest(
+        state.db_manager.pool(),
+        &meeting_id,
+    )
+    .await
+    .map_err(|error| format!("restore transcript revision: {error}"))
+}
+
+#[tauri::command]
+#[specta::specta]
 pub async fn api_get_meetings<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,
@@ -707,4 +721,3 @@ pub async fn open_external_url(url: String) -> Result<(), String> {
 }
 
 // ===== CUSTOM OPENAI API COMMANDS =====
-
