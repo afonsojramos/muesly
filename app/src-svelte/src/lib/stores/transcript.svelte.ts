@@ -48,6 +48,7 @@ class TranscriptStore {
 	#buffer = new Map<number, Transcript>();
 	#lastProcessedSequence = 0;
 	#processingTimer: ReturnType<typeof setTimeout> | null = null;
+	#disposeEffectRoot: (() => void) | null = null;
 
 	async start(): Promise<() => void> {
 		if (this.#started) {
@@ -79,7 +80,8 @@ class TranscriptStore {
 
 		// Reload-sync: if a recording is already active when this store starts
 		// (e.g. webview reloaded mid-recording), pull history from the backend.
-		$effect.root(() => {
+		// Capture the disposer so each start/stop cycle doesn't leak a root effect.
+		this.#disposeEffectRoot = $effect.root(() => {
 			$effect(() => {
 				if (recordingState.isRecording && this.transcripts.length === 0) {
 					void this.#syncFromBackend();
@@ -360,6 +362,8 @@ class TranscriptStore {
 			fn();
 		}
 		this.#unsubscribers = [];
+		this.#disposeEffectRoot?.();
+		this.#disposeEffectRoot = null;
 		this.#started = false;
 	}
 }
