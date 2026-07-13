@@ -11,6 +11,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { onMount } from 'svelte';
 
 import { Analytics } from '$lib/analytics';
+import { toast } from '$lib/toast';
 
 export interface AudioFileInfo {
 	path: string;
@@ -37,7 +38,13 @@ export interface ImportError {
 	error: string;
 }
 
-export type ImportStatus = 'idle' | 'validating' | 'processing' | 'complete' | 'error';
+export type ImportStatus =
+	| 'idle'
+	| 'validating'
+	| 'processing'
+	| 'cancelling'
+	| 'complete'
+	| 'error';
 
 export interface UseImportAudioOptions {
 	onComplete?: (result: ImportResult) => void;
@@ -94,7 +101,14 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 				else unsubscribers.push(unlistenProgress);
 
 				const unlistenComplete = await listen<ImportResult>('import-complete', async (event) => {
-					if (isCancelled) return;
+					if (isCancelled) {
+						// The backend finished winding down after a cancel: now it's safe
+						// to return to idle (the in-progress lock is released).
+						status = 'idle';
+						progress = null;
+						isCancelled = false;
+						return;
+					}
 					await Analytics.track('import_audio_completed', {
 						success: 'true',
 						duration_seconds: event.payload.duration_seconds.toString(),
@@ -108,7 +122,15 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 				else unsubscribers.push(unlistenComplete);
 
 				const unlistenError = await listen<ImportError>('import-error', async (event) => {
-					if (isCancelled) return;
+					if (isCancelled) {
+						// A user-cancelled import surfaces as an error from the backend;
+						// treat it as a clean return to idle, not a failure.
+						status = 'idle';
+						progress = null;
+						error = null;
+						isCancelled = false;
+						return;
+					}
 					await Analytics.trackError('import_audio_failed', event.payload.error);
 					status = 'error';
 					error = event.payload.error;
@@ -116,6 +138,20 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 				});
 				if (cancelled) unlistenError();
 				else unsubscribers.push(unlistenError);
+
+				// Non-fatal warnings (e.g. no speech detected): the import still
+				// completes, so surface them without failing the flow.
+				const unlistenWarning = await listen<{ warning: string; details?: string | null }>(
+					'import-warning',
+					(event) => {
+						if (isCancelled) return;
+						toast.info(event.payload.warning, {
+							description: event.payload.details ?? undefined,
+						});
+					},
+				);
+				if (cancelled) unlistenWarning();
+				else unsubscribers.push(unlistenWarning);
 			} catch (err) {
 				console.error('[useImportAudio] Failed to set up listeners:', err);
 			}
@@ -206,10 +242,13 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 
 	const cancelImport = async (): Promise<void> => {
 		isCancelled = true;
+		// Stay in a distinct 'cancelling' state rather than jumping straight to idle:
+		// the backend only stops at its next checkpoint and holds the in-progress
+		// lock until then, so an immediate idle let the user start an import that the
+		// backend rejects. The terminal import event resets us to idle.
+		status = 'cancelling';
 		try {
 			await invoke('cancel_import_command');
-			status = 'idle';
-			progress = null;
 		} catch (err) {
 			console.error('Failed to cancel import:', err);
 		}
@@ -240,7 +279,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 			return status === 'processing';
 		},
 		get isBusy() {
-			return status === 'processing' || status === 'validating';
+			return status === 'processing' || status === 'validating' || status === 'cancelling';
 		},
 		selectFile,
 		validateFile,
