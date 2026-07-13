@@ -114,7 +114,54 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 	let summaryStatus = $state<SummaryStatus>('idle');
 	let summaryError = $state<string | null>(null);
 	let originalTranscript = '';
+	// Remembered so Regenerate can reuse the user's steering instead of dropping it.
+	let lastCustomPrompt = '';
 	let phaseUnlisten: UnlistenFn | null = null;
+
+	// Steer the model to keep a few bracketed timestamps so the summary UI can turn
+	// them into clickable transcript jumps.
+	const TIMESTAMP_HINT =
+		'When referencing a moment, include a bracketed timestamp like [01:05] from the transcript lines.';
+
+	// A generation is already in flight — used to block a concurrent trigger (the
+	// backend single-flights too, but this avoids a redundant round-trip).
+	const isGenerating = (): boolean =>
+		summaryStatus === 'processing' ||
+		summaryStatus === 'cleanup' ||
+		summaryStatus === 'summarizing' ||
+		summaryStatus === 'regenerating';
+
+	/** Fetch + speaker-label + timestamp-format the meeting's full transcript. */
+	async function buildFullTranscript(meetingId: string): Promise<string> {
+		const allTranscripts = await fetchAllTranscripts(meetingId);
+		if (allTranscripts.length === 0) return '';
+
+		// Prefer named speakers when the meeting has them (loaded best-effort).
+		let speakerNames: Map<number, string> | undefined;
+		let selfName: string | undefined;
+		try {
+			const res = await commands.getMeetingSpeakers(meetingId);
+			if (res.status === 'ok') {
+				speakerNames = new Map(
+					res.data.speakers
+						.filter((s): s is { speaker_id: number; name: string } => s.name != null)
+						.map((s) => [s.speaker_id, s.name]),
+				);
+				selfName = res.data.self_name ?? undefined;
+			}
+		} catch {
+			// Non-fatal: fall back to Me/Them labels.
+		}
+
+		const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
+		return formatTranscriptForLlm(allTranscripts, {
+			names: speakerNames,
+			selfName,
+			includeTimestamps: true,
+			formatTime: (start, ts) =>
+				formatTime(typeof start === 'number' ? start : undefined, typeof ts === 'string' ? ts : ''),
+		});
+	}
 
 	function teardownPhaseListener(): void {
 		phaseUnlisten?.();
@@ -538,6 +585,7 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 	}
 
 	const handleGenerateSummary = async (customPrompt = ''): Promise<void> => {
+		if (isGenerating()) return;
 		if (getIsModelConfigLoading()) {
 			toast.info('Loading model configuration, please wait...');
 			return;
@@ -546,8 +594,8 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 		const meeting = getMeeting();
 		const modelConfig = getModelConfig();
 
-		const allTranscripts = await fetchAllTranscripts(meeting.id);
-		if (allTranscripts.length === 0) {
+		const fullTranscript = await buildFullTranscript(meeting.id);
+		if (!fullTranscript) {
 			toast.error('No transcripts available for summary');
 			return;
 		}
@@ -560,54 +608,33 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 			if (!(await validateBuiltInAIModel(modelConfig))) return;
 		}
 
-		// Prefer named speakers when the meeting has them (loaded best-effort).
-		let speakerNames: Map<number, string> | undefined;
-		let selfName: string | undefined;
-		try {
-			const res = await commands.getMeetingSpeakers(meeting.id);
-			if (res.status === 'ok') {
-				speakerNames = new Map(
-					res.data.speakers
-						.filter((s): s is { speaker_id: number; name: string } => s.name != null)
-						.map((s) => [s.speaker_id, s.name]),
-				);
-				selfName = res.data.self_name ?? undefined;
-			}
-		} catch {
-			// Non-fatal: fall back to Me/Them labels.
-		}
-
-		const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
-		// Always prefix lines with `[mm:ss]` so the model can cite moments that
-		// the summary UI turns into clickable transcript jumps.
-		const fullTranscript = formatTranscriptForLlm(allTranscripts, {
-			names: speakerNames,
-			selfName,
-			includeTimestamps: true,
-			formatTime: (start, ts) =>
-				formatTime(typeof start === 'number' ? start : undefined, typeof ts === 'string' ? ts : ''),
-		});
-		// Steer the model to keep a few bracketed timestamps in the markdown.
-		const timestampHint =
-			'When referencing a moment, include a bracketed timestamp like [01:05] from the transcript lines.';
-
+		lastCustomPrompt = customPrompt;
 		await processSummary({
 			transcriptText: fullTranscript,
 			customPrompt: buildGenerationContext(
-				[customPrompt, timestampHint].filter((s) => s.trim()).join('\n\n'),
+				[customPrompt, TIMESTAMP_HINT].filter((s) => s.trim()).join('\n\n'),
 			),
 		});
 	};
 
 	const handleRegenerateSummary = async (): Promise<void> => {
-		if (!originalTranscript.trim()) {
-			console.error('No original transcript available for regeneration');
+		if (isGenerating()) return;
+		const meeting = getMeeting();
+		// After a remount `originalTranscript` is empty; rebuild from the meeting
+		// instead of silently no-opping the Regenerate button.
+		const transcript = originalTranscript.trim() || (await buildFullTranscript(meeting.id));
+		if (!transcript.trim()) {
+			toast.error('No transcript available to regenerate');
 			return;
 		}
 		await processSummary({
-			transcriptText: originalTranscript,
+			transcriptText: transcript,
 			isRegeneration: true,
-			customPrompt: buildGenerationContext(''),
+			// Reuse the last custom prompt + timestamp hint so regenerate keeps the
+			// user's steering instead of dropping it.
+			customPrompt: buildGenerationContext(
+				[lastCustomPrompt, TIMESTAMP_HINT].filter((s) => s.trim()).join('\n\n'),
+			),
 		});
 	};
 
