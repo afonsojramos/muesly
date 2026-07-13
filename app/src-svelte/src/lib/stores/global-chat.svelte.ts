@@ -11,6 +11,7 @@ import { Channel } from '@tauri-apps/api/core';
 
 import { commands, type GlobalChatEvent } from '$lib/bindings';
 import { toast } from '$lib/toast';
+import type { BarExecution } from '$lib/bars/execution';
 
 import { config } from './config.svelte';
 
@@ -27,6 +28,9 @@ export interface GlobalChatMessage {
 	content: string;
 	/** The agent's visible tool steps (assistant messages only). */
 	actions: GlobalChatAction[];
+	barId?: string;
+	barTitle?: string;
+	barPrompt?: string;
 }
 
 function uid(): string {
@@ -39,14 +43,21 @@ class GlobalChatStore {
 	isStreaming = $state(false);
 	#genId: string | null = null;
 
-	async send(text?: string): Promise<void> {
+	async send(text?: string, execution?: BarExecution): Promise<void> {
 		const question = (text ?? this.draft).trim();
 		if (!question || this.isStreaming) return;
 
 		this.draft = '';
 		const history = this.messages.map((m) => ({ role: m.role, content: m.content }));
-		this.messages.push({ id: uid(), role: 'user', content: question, actions: [] });
-		this.messages.push({ id: uid(), role: 'assistant', content: '', actions: [] });
+		const metadata = execution
+			? {
+					barId: execution.barId,
+					barTitle: execution.barTitle,
+					barPrompt: execution.barPrompt,
+				}
+			: {};
+		this.messages.push({ id: uid(), role: 'user', content: question, actions: [], ...metadata });
+		this.messages.push({ id: uid(), role: 'assistant', content: '', actions: [], ...metadata });
 		// Reactive proxy reference so action/token updates re-render.
 		const assistant = this.messages[this.messages.length - 1]!;
 
@@ -91,6 +102,15 @@ class GlobalChatStore {
 			toast.error('Chat failed', { description: res.error });
 			this.#finish(genId);
 		}
+	}
+
+	rerun(message: GlobalChatMessage): void {
+		if (!message.barPrompt || !message.barId || !message.barTitle) return;
+		void this.send(message.barPrompt, {
+			barId: message.barId,
+			barTitle: message.barTitle,
+			barPrompt: message.barPrompt,
+		});
 	}
 
 	stop(): void {

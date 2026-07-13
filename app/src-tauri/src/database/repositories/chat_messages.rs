@@ -10,6 +10,8 @@ pub struct ChatMessageRow {
     pub meeting_id: String,
     pub role: String,
     pub content: String,
+    pub bar_id: Option<String>,
+    pub display_text: Option<String>,
     pub created_at: String,
 }
 
@@ -33,7 +35,7 @@ impl ChatMessagesRepository {
         meeting_id: &str,
     ) -> Result<Vec<ChatMessageRow>, sqlx::Error> {
         sqlx::query_as::<_, ChatMessageRow>(
-            "SELECT id, meeting_id, role, content, created_at FROM chat_messages \
+            "SELECT id, meeting_id, role, content, bar_id, display_text, created_at FROM chat_messages \
              WHERE meeting_id = ? ORDER BY created_at, rowid",
         )
         .bind(meeting_id)
@@ -50,6 +52,17 @@ impl ChatMessagesRepository {
         role: &str,
         content: &str,
     ) -> Result<bool, sqlx::Error> {
+        Self::append_with_metadata(pool, meeting_id, role, content, None, None).await
+    }
+
+    pub async fn append_with_metadata(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        role: &str,
+        content: &str,
+        bar_id: Option<&str>,
+        display_text: Option<&str>,
+    ) -> Result<bool, sqlx::Error> {
         let meeting_exists: bool = sqlx::query("SELECT 1 FROM meetings WHERE id = ?")
             .bind(meeting_id)
             .fetch_optional(pool)
@@ -59,13 +72,15 @@ impl ChatMessagesRepository {
             return Ok(false);
         }
         sqlx::query(
-            "INSERT INTO chat_messages (id, meeting_id, role, content, created_at) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO chat_messages (id, meeting_id, role, content, bar_id, display_text, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(format!("chatmsg-{}", uuid::Uuid::new_v4()))
         .bind(meeting_id)
         .bind(role)
         .bind(content)
+        .bind(bar_id)
+        .bind(display_text)
         .bind(Utc::now().to_rfc3339())
         .execute(pool)
         .await?;
@@ -89,7 +104,7 @@ impl ChatMessagesRepository {
     ) -> Result<Vec<RecentChatThread>, sqlx::Error> {
         sqlx::query_as::<_, RecentChatThread>(
             "SELECT c.meeting_id, m.title AS meeting_title, \
-                    (SELECT content FROM chat_messages f \
+                    (SELECT COALESCE(display_text, content) FROM chat_messages f \
                      WHERE f.meeting_id = c.meeting_id AND f.role = 'user' \
                      ORDER BY f.created_at, f.rowid LIMIT 1) AS first_question, \
                     COUNT(*) AS message_count, \
@@ -158,6 +173,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preserves_bar_metadata_on_both_turns() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1", "Sync").await;
+        for (role, content) in [("user", "Full prompt"), ("assistant", "Result")] {
+            ChatMessagesRepository::append_with_metadata(
+                &pool,
+                "m1",
+                role,
+                content,
+                Some("builtin:summary"),
+                Some("Summarize"),
+            )
+            .await
+            .expect("append metadata");
+        }
+
+        let thread = ChatMessagesRepository::list_for_meeting(&pool, "m1")
+            .await
+            .unwrap();
+        assert!(thread
+            .iter()
+            .all(|row| row.bar_id.as_deref() == Some("builtin:summary")));
+        assert!(thread
+            .iter()
+            .all(|row| row.display_text.as_deref() == Some("Summarize")));
+    }
+
+    #[tokio::test]
     async fn append_to_missing_meeting_writes_nothing() {
         let pool = test_pool().await;
         // Ephemeral live-recording id: not in `meetings` yet.
@@ -210,7 +253,16 @@ mod tests {
 
         ChatMessagesRepository::append(&pool, "m1", "user", "First question?").await.expect("a");
         ChatMessagesRepository::append(&pool, "m1", "assistant", "Answer.").await.expect("b");
-        ChatMessagesRepository::append(&pool, "m2", "user", "Other question?").await.expect("c");
+        ChatMessagesRepository::append_with_metadata(
+            &pool,
+            "m2",
+            "user",
+            "A long reusable prompt",
+            Some("builtin:summary"),
+            Some("Summarize"),
+        )
+        .await
+        .expect("c");
         ChatMessagesRepository::append(&pool, "m3", "user", "Ghost?").await.expect("d");
 
         let recent = ChatMessagesRepository::recent_threads(&pool, 10)
@@ -219,7 +271,7 @@ mod tests {
         assert_eq!(recent.len(), 2, "trashed meeting excluded");
         // m2 has the newest activity.
         assert_eq!(recent[0].meeting_id, "m2");
-        assert_eq!(recent[0].first_question, "Other question?");
+        assert_eq!(recent[0].first_question, "Summarize");
         assert_eq!(recent[1].meeting_id, "m1");
         assert_eq!(recent[1].message_count, 2);
         assert_eq!(recent[1].meeting_title, "Sync");

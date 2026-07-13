@@ -12,6 +12,7 @@ import { Channel } from '@tauri-apps/api/core';
 import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bindings';
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
+import type { BarExecution } from '$lib/bars/execution';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -22,6 +23,9 @@ export interface ChatMessage {
 	id: string;
 	role: 'user' | 'assistant';
 	content: string;
+	barId?: string;
+	barTitle?: string;
+	barPrompt?: string;
 }
 
 function uid(): string {
@@ -39,7 +43,7 @@ class ChatStore {
 		return transcripts.currentMeetingId ?? sidebar.currentMeeting?.id ?? null;
 	}
 
-	async send(text?: string): Promise<void> {
+	async send(text?: string, execution?: BarExecution): Promise<void> {
 		const question = (text ?? this.draft).trim();
 		if (!question || this.isStreaming) return;
 
@@ -52,8 +56,15 @@ class ChatStore {
 		this.draft = '';
 		// History is the prior turns only; the new question is sent separately.
 		const history = this.messages.map((m) => ({ role: m.role, content: m.content }));
-		this.messages.push({ id: uid(), role: 'user', content: question });
-		this.messages.push({ id: uid(), role: 'assistant', content: '' });
+		const metadata = execution
+			? {
+					barId: execution.barId,
+					barTitle: execution.barTitle,
+					barPrompt: execution.barPrompt,
+				}
+			: {};
+		this.messages.push({ id: uid(), role: 'user', content: question, ...metadata });
+		this.messages.push({ id: uid(), role: 'assistant', content: '', ...metadata });
 		// Reference the reactive proxy so token appends re-render (just pushed above).
 		const assistant = this.messages[this.messages.length - 1]!;
 
@@ -93,7 +104,11 @@ class ChatStore {
 		const { provider, model } = config.modelConfig;
 		const res = await commands.chatAsk(
 			meetingId,
-			question,
+			{
+				content: question,
+				bar_id: execution?.barId ?? null,
+				display_text: execution?.barTitle ?? null,
+			},
 			history,
 			provider,
 			model,
@@ -105,6 +120,15 @@ class ChatStore {
 		if (res.status === 'error' && this.#genId === genId) {
 			this.#fail(genId, assistant, res.error);
 		}
+	}
+
+	rerun(message: ChatMessage): void {
+		if (!message.barPrompt || !message.barId || !message.barTitle) return;
+		void this.send(message.barPrompt, {
+			barId: message.barId,
+			barTitle: message.barTitle,
+			barPrompt: message.barPrompt,
+		});
 	}
 
 	stop(): void {
@@ -132,9 +156,18 @@ class ChatStore {
 		if (!meetingId) return;
 		const res = await commands.chatHistory(meetingId);
 		if (gen !== this.#loadGen || res.status !== 'ok') return;
-		this.messages = res.data
-			.filter((m) => m.role === 'user' || m.role === 'assistant')
-			.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content }));
+		const rows = res.data.filter((m) => m.role === 'user' || m.role === 'assistant');
+		this.messages = rows.map((m, index) => {
+			const prompt = m.role === 'user' ? m.content : rows[index - 1]?.content;
+			return {
+				id: m.id,
+				role: m.role as 'user' | 'assistant',
+				content: m.content,
+				barId: m.bar_id ?? undefined,
+				barTitle: m.display_text ?? undefined,
+				barPrompt: m.bar_id ? prompt : undefined,
+			};
+		});
 	}
 
 	/** Delete the conversation, in memory and persisted. */

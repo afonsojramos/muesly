@@ -108,6 +108,10 @@
 					rows={6}
 					class="resize-y"
 				/>
+				<p class="text-xs text-muted-foreground">
+					Use <code class="rounded bg-muted px-1 py-0.5">{'{{variable}}'}</code> to ask for a value when
+					the bar runs.
+				</p>
 			</div>
 
 			<div class="flex flex-col gap-1.5">

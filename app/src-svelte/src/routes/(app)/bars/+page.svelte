@@ -1,12 +1,35 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
-	import { Check, Copy, Pencil, Plus, Search, Send, Sparkles, Trash2 } from '@lucide/svelte';
+	import {
+		ArrowDown,
+		ArrowUp,
+		Check,
+		Copy,
+		Pencil,
+		Pin,
+		PinOff,
+		Plus,
+		Search,
+		Send,
+		Sparkles,
+		Trash2,
+	} from '@lucide/svelte';
 
 	import { cn } from '$lib/utils';
 	import { navigate } from '$lib/navigation';
 	import { toast } from '$lib/toast';
-	import { barIcon, BAR_SCENARIOS, type Bar, type BarScenario } from '$lib/bars/catalog';
+	import {
+		barCategory,
+		BAR_CATEGORIES,
+		barIcon,
+		BAR_SCENARIOS,
+		isFeaturedBar,
+		type Bar,
+		type BarCategory,
+		type BarScenario,
+	} from '$lib/bars/catalog';
+	import { barVariables } from '$lib/bars/variables';
 	import { bars } from '$lib/stores/bars.svelte';
 	import { globalChat } from '$lib/stores/global-chat.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
@@ -15,19 +38,25 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
+	import * as Select from '$lib/components/ui/select';
 	import BarEditor from '$lib/components/bars/BarEditor.svelte';
+	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 
-	type Tab = 'discover' | 'mine';
+	type Tab = 'discover' | 'menu' | 'mine';
 	type ScenarioFilter = 'all' | BarScenario;
+	type CategoryFilter = 'all' | 'featured' | BarCategory;
 
 	let tab = $state<Tab>('discover');
 	let query = $state('');
 	let scenarioFilter = $state<ScenarioFilter>('all');
+	let categoryFilter = $state<CategoryFilter>('featured');
 
 	let editorOpen = $state(false);
 	let editingBar = $state<Bar | null>(null);
 	let detail = $state<Bar | null>(null);
 	let confirmingDelete = $state<Bar | null>(null);
+	let runningBar = $state<Bar | null>(null);
+	let runDialogOpen = $state(false);
 
 	onMount(() => {
 		void bars.ensureLoaded();
@@ -40,11 +69,15 @@
 		return `${n}`;
 	}
 
-	const source = $derived(tab === 'mine' ? bars.mine : bars.catalog);
+	const source = $derived(tab === 'mine' ? bars.mine : tab === 'menu' ? bars.menu : bars.catalog);
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		const list = source.filter((b) => {
 			if (scenarioFilter !== 'all' && !b.scenarios.includes(scenarioFilter)) return false;
+			if (tab === 'discover' && categoryFilter === 'featured' && !isFeaturedBar(b)) return false;
+			if (tab === 'discover' && categoryFilter !== 'all' && categoryFilter !== 'featured') {
+				if (barCategory(b) !== categoryFilter) return false;
+			}
 			if (!q) return true;
 			return b.title.toLowerCase().includes(q) || b.description.toLowerCase().includes(q);
 		});
@@ -60,6 +93,16 @@
 		...BAR_SCENARIOS.map((s) => ({ value: s.value as ScenarioFilter, label: s.label })),
 	];
 	const scenarioLabels = new Map(BAR_SCENARIOS.map((s) => [s.value, s.label]));
+	const categoryLabels = new Map(
+		BAR_CATEGORIES.map((category) => [category.value, category.label]),
+	);
+	const categoryFilterLabel = $derived(
+		categoryFilter === 'all'
+			? 'All collections'
+			: categoryFilter === 'featured'
+				? 'Recommended'
+				: (categoryLabels.get(categoryFilter) ?? categoryFilter),
+	);
 
 	function openCreate(): void {
 		editingBar = null;
@@ -77,11 +120,24 @@
 		toast.success('Prompt copied');
 	}
 
-	function runInHome(bar: Bar): void {
+	function requestRunInHome(bar: Bar): void {
+		if (barVariables(bar.prompt).length > 0) {
+			runningBar = bar;
+			runDialogOpen = true;
+			return;
+		}
+		runInHome(bar, bar.prompt);
+	}
+
+	function runInHome(bar: Bar, prompt: string): void {
 		detail = null;
-		bars.track(bar);
+		bars.recordRun(bar);
 		void navigate('/');
-		void globalChat.send(bar.prompt);
+		void globalChat.send(prompt, {
+			barId: bar.id,
+			barTitle: bar.title,
+			barPrompt: prompt,
+		});
 	}
 
 	async function remove(bar: Bar): Promise<void> {
@@ -92,6 +148,16 @@
 
 	function scenarioLabel(scenario: BarScenario): string {
 		return scenarioLabels.get(scenario) ?? scenario;
+	}
+
+	function toggleInMenu(event: MouseEvent, bar: Bar): void {
+		event.stopPropagation();
+		bars.toggleInMenu(bar);
+	}
+
+	function togglePinned(event: MouseEvent, bar: Bar): void {
+		event.stopPropagation();
+		bars.togglePinned(bar);
 	}
 </script>
 
@@ -122,7 +188,7 @@
 			<!-- Tabs + toolbar -->
 			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 				<div class="flex items-center gap-1 rounded-full bg-secondary p-1">
-					{#each [{ value: 'discover', label: 'Discover' }, { value: 'mine', label: 'My bars' }] as t (t.value)}
+					{#each [{ value: 'discover', label: 'Discover' }, { value: 'menu', label: 'My menu' }, { value: 'mine', label: 'My bars' }] as t (t.value)}
 						<button
 							type="button"
 							onclick={() => (tab = t.value as Tab)}
@@ -139,6 +205,26 @@
 				</div>
 
 				<div class="flex items-center gap-2">
+					{#if tab === 'discover'}
+						<Select.Root
+							type="single"
+							value={categoryFilter}
+							onValueChange={(value) => value && (categoryFilter = value as CategoryFilter)}
+						>
+							<Select.Trigger class="w-40">{categoryFilterLabel}</Select.Trigger>
+							<Select.Content>
+								<Select.Group>
+									<Select.Item value="featured" label="Recommended">Recommended</Select.Item>
+									<Select.Item value="all" label="All collections">All collections</Select.Item>
+									{#each BAR_CATEGORIES as category (category.value)}
+										<Select.Item value={category.value} label={category.label}
+											>{category.label}</Select.Item
+										>
+									{/each}
+								</Select.Group>
+							</Select.Content>
+						</Select.Root>
+					{/if}
 					<div class="flex items-center gap-1">
 						{#each SCENARIO_FILTERS as f (f.value)}
 							<button
@@ -169,6 +255,8 @@
 				<div class="py-20 text-center text-sm text-muted-foreground">
 					{#if tab === 'mine'}
 						No bars yet. Create one to reuse a prompt across meetings.
+					{:else if tab === 'menu'}
+						No bars are currently shown in your menu.
 					{:else}
 						No bars match your search.
 					{/if}
@@ -178,7 +266,7 @@
 					{#each filtered as bar (bar.id)}
 						{@const Icon = barIcon(bar.icon)}
 						<Card.Root
-							class="flex cursor-pointer flex-col transition-colors hover:border-foreground/20"
+							class="min-h-52 cursor-pointer transition-[box-shadow] hover:ring-foreground/20"
 							onclick={() => (detail = bar)}
 						>
 							<Card.Header>
@@ -187,11 +275,46 @@
 								>
 									<Icon class="size-4" />
 								</div>
+								{#if tab === 'menu'}
+									<Card.Action>
+										<Button
+											variant={bars.isPinned(bar) ? 'secondary' : 'ghost'}
+											size="icon"
+											class="size-10 text-muted-foreground"
+											onclick={(event) => togglePinned(event, bar)}
+											aria-label={`${bars.isPinned(bar) ? 'Unpin' : 'Pin'} ${bar.title}`}
+											aria-pressed={bars.isPinned(bar)}
+										>
+											{#if bars.isPinned(bar)}<PinOff data-icon />{:else}<Pin data-icon />{/if}
+										</Button>
+									</Card.Action>
+								{:else if bar.source !== 'user'}
+									<Card.Action>
+										<Button
+											variant={bars.isInMenu(bar) ? 'secondary' : 'ghost'}
+											size="sm"
+											class={cn('h-10', !bars.isInMenu(bar) && 'text-muted-foreground')}
+											onclick={(event) => toggleInMenu(event, bar)}
+											aria-pressed={bars.isInMenu(bar)}
+											aria-label={`${bars.isInMenu(bar) ? 'Remove' : 'Add'} ${bar.title} ${bars.isInMenu(bar) ? 'from' : 'to'} Muesly bar menus`}
+										>
+											{#if bars.isInMenu(bar)}
+												<Check data-icon />
+												In menu
+											{:else}
+												<Plus data-icon />
+												Add
+											{/if}
+										</Button>
+									</Card.Action>
+								{/if}
 							</Card.Header>
 							<Card.Content class="flex flex-1 flex-col">
-								<h3 class="text-sm font-medium">{bar.title}</h3>
-								<p class="mt-1 line-clamp-2 text-sm text-muted-foreground">{bar.description}</p>
-								<div class="mt-3 flex items-center justify-between gap-2">
+								<h3 class="text-wrap-balance text-sm font-medium">{bar.title}</h3>
+								<p class="mt-1 line-clamp-2 text-pretty text-sm text-muted-foreground">
+									{bar.description}
+								</p>
+								<div class="mt-auto flex items-end justify-between gap-2 pt-5">
 									<div class="flex min-w-0 flex-wrap items-center gap-1.5">
 										{#if bar.source === 'user'}
 											<Badge variant="secondary">Yours</Badge>
@@ -204,7 +327,7 @@
 									</div>
 									{#if bars.usesFor(bar.id) > 0}
 										<span
-											class="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+											class="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground"
 											title={`${bars.usesFor(bar.id)} uses`}
 										>
 											<Sparkles class="size-3" />
@@ -240,6 +363,7 @@
 			<Dialog.Description>{detail.description}</Dialog.Description>
 
 			<div class="flex flex-wrap gap-1.5">
+				<Badge variant="secondary">{categoryLabels.get(barCategory(detail))}</Badge>
 				{#each detail.scenarios as scenario (scenario)}
 					<Badge variant="outline">{scenarioLabel(scenario)}</Badge>
 				{/each}
@@ -267,15 +391,51 @@
 							<Trash2 data-icon />
 							Delete
 						</Button>
+					{:else}
+						<Button variant="outline" size="sm" onclick={() => detail && openEdit(detail)}>
+							<Pencil data-icon />
+							Customize
+						</Button>
 					{/if}
 				</div>
 				<div class="flex items-center gap-2">
+					{#if bars.isInMenu(detail)}
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-10"
+							onclick={() => detail && bars.moveInMenu(detail, -1)}
+							aria-label="Move earlier in menu"
+						>
+							<ArrowUp data-icon />
+						</Button>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="size-10"
+							onclick={() => detail && bars.moveInMenu(detail, 1)}
+							aria-label="Move later in menu"
+						>
+							<ArrowDown data-icon />
+						</Button>
+					{/if}
+					{#if detail.source !== 'user'}
+						<Button variant="outline" size="sm" onclick={() => detail && bars.toggleInMenu(detail)}>
+							{#if bars.isInMenu(detail)}
+								<Check data-icon />
+								In menu
+							{:else}
+								<Plus data-icon />
+								Add to menu
+							{/if}
+						</Button>
+					{/if}
 					<Button variant="outline" size="sm" onclick={() => detail && void copyPrompt(detail)}>
 						<Copy data-icon />
 						Copy
 					</Button>
 					{#if detail.scenarios.some((s) => s === 'across' || s === 'before')}
-						<Button size="sm" onclick={() => detail && runInHome(detail)}>
+						<Button size="sm" onclick={() => detail && requestRunInHome(detail)}>
 							<Send data-icon />
 							Ask in Home
 						</Button>
@@ -309,3 +469,8 @@
 </Dialog.Root>
 
 <BarEditor bind:open={editorOpen} bar={editingBar} />
+<RunBarDialog
+	bind:open={runDialogOpen}
+	bar={runningBar}
+	onRun={(prompt) => runningBar && runInHome(runningBar, prompt)}
+/>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { History, Trash2 } from '@lucide/svelte';
+	import { Clock3, History, Pin, Settings2, Trash2 } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
 	import type { RecentChatThread } from '$lib/bindings';
@@ -11,7 +11,9 @@
 	import { chat } from '$lib/stores/chat.svelte';
 	import { bars } from '$lib/stores/bars.svelte';
 	import { barIcon, type Bar } from '$lib/bars/catalog';
+	import { barVariables } from '$lib/bars/variables';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
+	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 
 	import ChatSurface from './ChatSurface.svelte';
 
@@ -22,10 +24,14 @@
 	let barsOpen = $state(false);
 	let recentOpen = $state(false);
 	let clearConfirmOpen = $state(false);
+	let runDialogOpen = $state(false);
+	let pendingBar = $state<Bar | null>(null);
+	let pendingOpen: (() => void) | null = null;
 	let recentThreads = $state<RecentChatThread[]>([]);
 	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
 	// expanded, so opening a meeting isn't dominated by the chat panel.
 	let chatOpen = $state(false);
+	const barGroups = $derived(bars.groupsForSurface('meeting'));
 
 	// Load the meeting's persisted thread on mount and whenever the meeting
 	// changes, so a conversation survives collapse, close, and navigation.
@@ -43,10 +49,21 @@
 	});
 
 	function runBar(bar: Bar, open: () => void): void {
+		if (barVariables(bar.prompt).length > 0) {
+			barsOpen = false;
+			pendingBar = bar;
+			pendingOpen = open;
+			runDialogOpen = true;
+			return;
+		}
+		executeBar(bar, bar.prompt, open);
+	}
+
+	function executeBar(bar: Bar, prompt: string, open: () => void): void {
 		barsOpen = false;
 		open();
-		bars.track(bar);
-		void chat.send(bar.prompt);
+		bars.recordRun(bar);
+		void chat.send(prompt, { barId: bar.id, barTitle: bar.title, barPrompt: prompt });
 	}
 
 	async function onRecentOpenChange(isOpen: boolean): Promise<void> {
@@ -72,7 +89,7 @@
 	placeholder="Ask anything about this meeting…"
 	collapsedPlaceholder="Continue chat"
 	ariaLabel="Ask anything about this meeting"
-	overlayActive={barsOpen || recentOpen || clearConfirmOpen}
+	overlayActive={barsOpen || recentOpen || clearConfirmOpen || runDialogOpen}
 >
 	{#snippet headerActions()}
 		<Button
@@ -145,16 +162,33 @@
 			</Popover.Trigger>
 			<Popover.Content align="start" side="top" class="w-64 p-0">
 				<Command.Root>
+					<Command.Input placeholder="Search bars…" />
 					<Command.List>
 						<Command.Empty>No bars yet.</Command.Empty>
-						<Command.Group heading="Muesly bars">
-							{#each bars.forSurface('meeting') as bar (bar.id)}
-								{@const Icon = barIcon(bar.icon)}
-								<Command.Item value={bar.title} onSelect={() => runBar(bar, open)}>
-									<Icon class="size-4 text-muted-foreground" />
-									<span>{bar.title}</span>
-								</Command.Item>
-							{/each}
+						{#each [{ label: 'Pinned', items: barGroups.pinned }, { label: 'Recent', items: barGroups.recent }, { label: 'Muesly bars', items: barGroups.all }] as group (group.label)}
+							{#if group.items.length > 0}
+								<Command.Group heading={group.label}>
+									{#each group.items as bar (bar.id)}
+										{@const Icon = barIcon(bar.icon)}
+										<Command.Item value={bar.title} onSelect={() => runBar(bar, open)}>
+											<Icon class="size-4 text-muted-foreground" />
+											<span>{bar.title}</span>
+											{#if bars.isPinned(bar)}
+												<Pin class="ml-auto size-3 text-muted-foreground" />
+											{:else if bars.isRecent(bar)}
+												<Clock3 class="ml-auto size-3 text-muted-foreground" />
+											{/if}
+										</Command.Item>
+									{/each}
+								</Command.Group>
+							{/if}
+						{/each}
+						<Command.Separator />
+						<Command.Group>
+							<Command.Item value="Manage Muesly bars" onSelect={() => void goto('/bars')}>
+								<Settings2 class="size-4 text-muted-foreground" />
+								<span>Manage bars</span>
+							</Command.Item>
 						</Command.Group>
 					</Command.List>
 				</Command.Root>
@@ -175,3 +209,9 @@
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<RunBarDialog
+	bind:open={runDialogOpen}
+	bar={pendingBar}
+	onRun={(prompt) => pendingBar && executeBar(pendingBar, prompt, pendingOpen ?? (() => {}))}
+/>

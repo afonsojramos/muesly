@@ -320,13 +320,20 @@ pub(crate) fn strip_leading_role_label(answer: &str) -> &str {
 /// `live_transcript`, when non-empty, is used as the transcript context instead
 /// of loading from SQLite. The frontend passes this during an in-progress
 /// recording (ephemeral meeting ids are not in SQLite yet).
+#[derive(Debug, Clone, Deserialize, specta::Type)]
+pub struct ChatQuestion {
+    pub content: String,
+    pub bar_id: Option<String>,
+    pub display_text: Option<String>,
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn chat_ask<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
     meeting_id: String,
-    question: String,
+    question: ChatQuestion,
     history: Vec<ChatTurn>,
     model: String,
     model_name: String,
@@ -334,6 +341,11 @@ pub async fn chat_ask<R: Runtime>(
     live_transcript: Option<String>,
     on_event: Channel<ChatStreamEvent>,
 ) -> Result<(), String> {
+    let ChatQuestion {
+        content: question,
+        bar_id,
+        display_text,
+    } = question;
     if question.trim().is_empty() {
         return Err("Question cannot be empty".to_string());
     }
@@ -426,11 +438,26 @@ pub async fn chat_ask<R: Runtime>(
             // navigation (best-effort: a live-recording meeting id is not in
             // SQLite yet, and `append` skips it silently; a DB error must not
             // fail an answer the user already has on screen).
-            match ChatMessagesRepository::append(&pool, &meeting_id, "user", &question).await {
+            match ChatMessagesRepository::append_with_metadata(
+                &pool,
+                &meeting_id,
+                "user",
+                &question,
+                bar_id.as_deref(),
+                display_text.as_deref(),
+            )
+            .await
+            {
                 Ok(true) => {
-                    if let Err(e) =
-                        ChatMessagesRepository::append(&pool, &meeting_id, "assistant", &answer)
-                            .await
+                    if let Err(e) = ChatMessagesRepository::append_with_metadata(
+                        &pool,
+                        &meeting_id,
+                        "assistant",
+                        &answer,
+                        bar_id.as_deref(),
+                        display_text.as_deref(),
+                    )
+                    .await
                     {
                         warn!("chat_ask: persisting assistant turn failed: {e}");
                     }

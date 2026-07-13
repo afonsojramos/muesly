@@ -3,6 +3,9 @@
 		id: string;
 		role: 'user' | 'assistant';
 		content: string;
+		barId?: string;
+		barTitle?: string;
+		barPrompt?: string;
 	}
 
 	/**
@@ -15,17 +18,27 @@
 		draft: string;
 		isStreaming: boolean;
 		send(text?: string): void | Promise<void>;
+		rerun?(message: ChatSurfaceMessage): void;
 		stop(): void;
 	}
 </script>
 
 <script lang="ts">
-	import { ArrowUp, ChevronDown, MessagesSquare, Square } from '@lucide/svelte';
+	import {
+		ArrowUp,
+		Check,
+		ChevronDown,
+		Copy,
+		MessagesSquare,
+		RotateCcw,
+		Square,
+	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 
 	interface Props {
 		controller: ChatSurfaceController;
@@ -73,6 +86,7 @@
 
 	let rootEl = $state<HTMLElement | null>(null);
 	let viewportRef = $state<HTMLElement | null>(null);
+	let copiedMessageId = $state<string | null>(null);
 
 	const hasMessages = $derived(controller.messages.length > 0);
 
@@ -130,6 +144,14 @@
 		open = true;
 		await controller.send();
 	}
+
+	async function copyMessage(message: ChatSurfaceMessage): Promise<void> {
+		await navigator.clipboard.writeText(message.content);
+		copiedMessageId = message.id;
+		setTimeout(() => {
+			if (copiedMessageId === message.id) copiedMessageId = null;
+		}, 1500);
+	}
 </script>
 
 <svelte:document onpointerdown={onDocumentPointerDown} />
@@ -164,28 +186,68 @@
 			>
 				<div class="flex flex-col gap-3 p-4" aria-live="polite" aria-atomic="false">
 					{#each controller.messages as message (message.id)}
-						<div class="flex flex-col gap-1.5">
+						<div class="group/message flex flex-col gap-1.5">
 							{#if message.role === 'assistant'}
 								{@render messageLeading?.(message)}
 							{/if}
 							{#if !(hideEmptyBubbleWhileStreaming && message.role === 'assistant' && !message.content && controller.isStreaming)}
-								<div class={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
+								<div
+									class={cn(
+										'flex items-start',
+										message.role === 'user' ? 'justify-end' : 'justify-start',
+									)}
+								>
 									<div
 										class={cn(
-											'max-w-[85%] select-text whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
+											'select-text whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
 											message.role === 'user'
-												? 'bg-primary text-primary-foreground'
-												: 'bg-secondary text-secondary-foreground',
+												? 'max-w-[85%] bg-primary text-primary-foreground'
+												: 'max-w-[75%] bg-secondary text-secondary-foreground',
 										)}
 									>
 										{#if message.content}
-											{message.content}
+											{#if message.role === 'user' && message.barTitle}
+												<span class="flex items-center gap-1.5 font-medium">
+													<MueslyBar class="size-3.5" />
+													{message.barTitle}
+												</span>
+											{:else}
+												{message.content}
+											{/if}
 										{:else if controller.isStreaming}
 											<span class="text-muted-foreground">{thinkingLabel}</span>
 										{:else}
 											<span class="text-muted-foreground">{emptyLabel}</span>
 										{/if}
 									</div>
+									{#if message.role === 'assistant' && message.content}
+										<div
+											class="flex items-center gap-1 px-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-within:opacity-100"
+										>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="size-10 text-muted-foreground"
+												onclick={() => void copyMessage(message)}
+												aria-label="Copy response"
+											>
+												{#if copiedMessageId === message.id}<Check data-icon />{:else}<Copy
+														data-icon
+													/>{/if}
+											</Button>
+											{#if message.barPrompt && controller.rerun}
+												<Button
+													variant="ghost"
+													size="icon"
+													class="size-10 text-muted-foreground"
+													onclick={() => controller.rerun?.(message)}
+													aria-label="Run bar again"
+												>
+													<RotateCcw data-icon />
+												</Button>
+											{/if}
+										</div>
+									{/if}
 								</div>
 							{/if}
 						</div>

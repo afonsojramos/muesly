@@ -2,7 +2,7 @@ import {
 	Calendar,
 	FileText,
 	GitBranch,
-	HelpCircle,
+	CircleQuestionMark,
 	ListChecks,
 	Mail,
 	Radar,
@@ -22,6 +22,27 @@ import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
  * filtering on the Bars page and which chat surface offers it.
  */
 export type BarScenario = 'before' | 'during' | 'after' | 'across';
+
+export type BarCategory =
+	| 'essentials'
+	| 'follow-up'
+	| 'planning'
+	| 'leadership'
+	| 'product'
+	| 'sales'
+	| 'people'
+	| 'personal';
+
+export const BAR_CATEGORIES: { value: BarCategory; label: string }[] = [
+	{ value: 'essentials', label: 'Essentials' },
+	{ value: 'follow-up', label: 'Follow-up' },
+	{ value: 'planning', label: 'Planning' },
+	{ value: 'leadership', label: 'Leadership' },
+	{ value: 'product', label: 'Product & engineering' },
+	{ value: 'sales', label: 'Sales & customers' },
+	{ value: 'people', label: 'People & hiring' },
+	{ value: 'personal', label: 'Personal' },
+];
 
 /** Scenario display metadata, in natural (meeting-lifecycle) order. */
 export const BAR_SCENARIOS: { value: BarScenario; label: string }[] = [
@@ -54,6 +75,47 @@ export interface Bar extends ImportedBar {
 	source: BarSource;
 }
 
+const CATEGORY_IDS: Partial<Record<BarCategory, string[]>> = {
+	'follow-up': ['email', 'todo', 'action', 'outstanding', 'owe', 'recap-next', 'schedule'],
+	planning: ['prep', 'agenda', 'calendar', 'topics', 'backstory', 'catch-me-up'],
+	leadership: [
+		'decision',
+		'leadership',
+		'company-health',
+		'supergoal',
+		'culture',
+		'help-me-decide',
+	],
+	product: ['prd', 'linear', 'replit', 'help-doc', 'product-feedback', 'devrel'],
+	sales: ['sales', 'pipeline', 'pain-point', 'someone-new'],
+	people: ['talent', '1-1', 'how-i-like', 'company-culture'],
+	personal: ['state-of-me', 'affirm', 'joke', 'roast', 'catchphrase', 'surprise', 'changed'],
+};
+
+const FEATURED_IDS = new Set([
+	'builtin:summary',
+	'builtin:actions',
+	'builtin:decisions',
+	'builtin:email',
+	'builtin:missed',
+	'builtin:recent-todos',
+	'builtin:weekly-recap',
+	'imported:recap-next-steps',
+]);
+
+export function barCategory(bar: Bar): BarCategory {
+	if (bar.source === 'user') return 'personal';
+	const key = `${bar.id} ${bar.title}`.toLowerCase();
+	for (const [category, needles] of Object.entries(CATEGORY_IDS) as [BarCategory, string[]][]) {
+		if (needles.some((needle) => key.includes(needle))) return category;
+	}
+	return 'essentials';
+}
+
+export function isFeaturedBar(bar: Bar): boolean {
+	return FEATURED_IDS.has(bar.id);
+}
+
 /** Icon key -> component. Bars reference an icon by name (string) so the
  *  generated/persisted data stays serialisable; the UI resolves it here. */
 const BAR_ICONS: Record<string, Component> = {
@@ -62,7 +124,7 @@ const BAR_ICONS: Record<string, Component> = {
 	'list-checks': ListChecks,
 	sparkles: Sparkles,
 	mail: Mail,
-	'help-circle': HelpCircle,
+	'help-circle': CircleQuestionMark,
 	calendar: Calendar,
 	users: Users,
 	search: Search,
@@ -115,7 +177,7 @@ const BUILTIN_BARS: Bar[] = [
 		title: 'Follow-up email',
 		description: 'A short recap email with next steps.',
 		prompt:
-			'Draft a short, friendly follow-up email summarizing this meeting and the agreed next steps. Use placeholders like [name] where you are missing details.',
+			'Draft a {{tone}} follow-up email for {{recipient}} summarizing this meeting and the agreed next steps. Use placeholders where details are missing.',
 		scenarios: ['after'],
 		icon: 'mail',
 		source: 'builtin',

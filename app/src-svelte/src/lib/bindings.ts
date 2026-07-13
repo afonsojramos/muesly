@@ -371,7 +371,7 @@ export const commands = {
 	 *  of loading from SQLite. The frontend passes this during an in-progress
 	 *  recording (ephemeral meeting ids are not in SQLite yet).
 	 */
-	chatAsk: (meetingId: string, question: string, history: ChatTurn[], model: string, modelName: string, genId: string, liveTranscript: string | null, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, liveTranscript, onEvent })),
+	chatAsk: (meetingId: string, question: ChatQuestion, history: ChatTurn[], model: string, modelName: string, genId: string, liveTranscript: string | null, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, liveTranscript, onEvent })),
 	/**  Cancels an in-flight chat generation by `gen_id`. Returns whether one was found. */
 	chatCancel: (genId: string) => __TAURI_INVOKE<boolean>("chat_cancel", { genId }),
 	/**  The persisted chat thread for a meeting, in conversation order. */
@@ -865,6 +865,8 @@ export type ChatMessageRow = {
 	meeting_id: string,
 	role: string,
 	content: string,
+	bar_id: string | null,
+	display_text: string | null,
 	created_at: string,
 };
 
@@ -899,6 +901,12 @@ export type ChatTurn = {
 	/**  `"user"` or `"assistant"`. */
 	role: string,
 	content: string,
+};
+
+export type ChatQuestion = {
+	content: string,
+	bar_id: string | null,
+	display_text: string | null,
 };
 
 /**
@@ -1569,4 +1577,3 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
         return { status: "error", error: e as any };
     }
 }
-
