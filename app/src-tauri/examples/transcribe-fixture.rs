@@ -6,14 +6,17 @@
 //! stdout output (logs go to stderr) so a caller can capture it directly.
 //!
 //! Usage: cargo run -p muesly --example transcribe-fixture --
-//!        [--provider whisper|parakeet] <audio> [model] [models_dir]
+//!        [--provider whisper|parakeet] [--language en] [--vad]
+//!        [--prompt "term one, term two"] <audio> [model] [models_dir]
 
 use std::io::Write as _;
 use std::path::PathBuf;
 
 use app_lib::audio::decoder::decode_audio_file;
+use app_lib::audio::vad::get_speech_chunks;
 use app_lib::parakeet_engine::engine::ParakeetEngine;
 use app_lib::transcription_models::ModelStatus;
+use app_lib::vocabulary::set_meeting_prompt_terms;
 use app_lib::whisper_engine::engine::WhisperEngine;
 
 fn fail(msg: String) -> ! {
@@ -23,35 +26,60 @@ fn fail(msg: String) -> ! {
 
 #[tokio::main]
 async fn main() {
-    let mut args = std::env::args().skip(1);
-    let first = args.next();
-    let (provider, audio_arg) = if first.as_deref() == Some("--provider") {
-        let provider = args
-            .next()
-            .unwrap_or_else(|| fail("--provider requires whisper or parakeet".to_string()));
-        (provider, args.next())
-    } else {
-        ("whisper".to_string(), first)
-    };
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let mut provider = "whisper".to_string();
+    let mut language = None;
+    let mut use_vad = false;
+    let mut prompt = None;
+    let mut positional = Vec::new();
+    let mut index = 0;
+    while index < raw_args.len() {
+        match raw_args[index].as_str() {
+            "--provider" => {
+                index += 1;
+                provider = raw_args
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| fail("--provider requires whisper or parakeet".to_string()));
+            }
+            "--language" => {
+                index += 1;
+                language =
+                    Some(raw_args.get(index).cloned().unwrap_or_else(|| {
+                        fail("--language requires a language code".to_string())
+                    }));
+            }
+            "--vad" => use_vad = true,
+            "--prompt" => {
+                index += 1;
+                prompt = Some(raw_args.get(index).cloned().unwrap_or_else(|| {
+                    fail("--prompt requires comma-separated terms".to_string())
+                }));
+            }
+            argument if argument.starts_with("--") => fail(format!("unknown option: {argument}")),
+            argument => positional.push(argument.to_string()),
+        }
+        index += 1;
+    }
     if provider != "whisper" && provider != "parakeet" {
         fail(format!(
             "unknown provider '{provider}'; expected whisper or parakeet"
         ));
     }
-    let Some(audio_path) = audio_arg.map(PathBuf::from) else {
+    let Some(audio_path) = positional.first().map(PathBuf::from) else {
         fail(
-            "usage: transcribe-fixture [--provider whisper|parakeet] <audio> [model] [models_dir]"
+            "usage: transcribe-fixture [--provider whisper|parakeet] [--language en] [--vad] [--prompt terms] <audio> [model] [models_dir]"
                 .to_string(),
         );
     };
-    let model_name = args.next().unwrap_or_else(|| {
+    let model_name = positional.get(1).cloned().unwrap_or_else(|| {
         if provider == "parakeet" {
             "parakeet-tdt-0.6b-v3-int8".to_string()
         } else {
             "tiny".to_string()
         }
     });
-    let models_dir = args.next().map(PathBuf::from);
+    let models_dir = positional.get(2).map(PathBuf::from);
 
     if !audio_path.exists() {
         fail(format!("audio file not found: {}", audio_path.display()));
@@ -109,10 +137,46 @@ async fn main() {
             .load_model(&model_name)
             .await
             .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
-        engine
-            .transcribe_audio(samples, None)
-            .await
-            .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+        if let Some(prompt) = prompt {
+            set_meeting_prompt_terms(
+                prompt
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|term| !term.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            );
+        }
+        if use_vad {
+            let segments = get_speech_chunks(&samples, 2000)
+                .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
+            eprintln!("VAD detected {} speech segments", segments.len());
+            let mut transcripts = Vec::with_capacity(segments.len());
+            for (index, segment) in segments.into_iter().enumerate() {
+                if segment.samples.len() < 1600 {
+                    continue;
+                }
+                eprintln!("transcribing VAD segment {}", index + 1);
+                let (text, _, _) = engine
+                    .transcribe_audio_with_confidence(segment.samples, language.clone())
+                    .await
+                    .unwrap_or_else(|e| {
+                        fail(format!(
+                            "transcription failed on segment {}: {e}",
+                            index + 1
+                        ))
+                    });
+                if !text.trim().is_empty() {
+                    transcripts.push(text.trim().to_string());
+                }
+            }
+            transcripts.join(" ")
+        } else {
+            engine
+                .transcribe_audio(samples, language)
+                .await
+                .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+        }
     };
     println!("{}", text.trim());
 }
