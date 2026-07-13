@@ -2,6 +2,12 @@ name: "Release"
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish after every build and release validation succeeds"
+        required: true
+        default: false
+        type: boolean
 
 # Prevent duplicate releases
 concurrency:
@@ -23,47 +29,23 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all tags
 
-      - name: Get version from tauri.conf.json and check for existing tags
+      - name: Validate version from tauri.conf.json
         id: get-version
         shell: bash
         run: |
-          BASE_VERSION=$(grep -o '"version": "[^"]*"' app/src-tauri/tauri.conf.json | cut -d'"' -f4)
-          echo "Base version from tauri.conf.json: $BASE_VERSION"
+          VERSION=$(grep -o '"version": "[^"]*"' app/src-tauri/tauri.conf.json | cut -d'"' -f4)
+          echo "Version from tauri.conf.json: $VERSION"
 
-          # Fetch all tags
           git fetch --tags
-
-          # Check if base version tag exists
-          if git tag -l "v${BASE_VERSION}" | grep -q .; then
-            echo "Tag v${BASE_VERSION} already exists, looking for minor updates..."
-
-            # Find all existing minor versions (e.g., 0.1.1.1, 0.1.1.2, etc.)
-            LATEST_MINOR=0
-            for i in $(seq 1 100); do
-              if git tag -l "v${BASE_VERSION}.${i}" | grep -q .; then
-                LATEST_MINOR=$i
-              else
-                break
-              fi
-            done
-
-            # Increment to next minor version
-            NEXT_MINOR=$((LATEST_MINOR + 1))
-
-            if [ $NEXT_MINOR -gt 100 ]; then
-              echo "ERROR: Maximum minor version (100) reached for ${BASE_VERSION}"
-              echo "Please update the version in tauri.conf.json"
-              exit 1
-            fi
-
-            VERSION="${BASE_VERSION}.${NEXT_MINOR}"
-            echo "Using minor update version: $VERSION"
-          else
-            VERSION="${BASE_VERSION}"
-            echo "Using base version: $VERSION"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Release version must be plain SemVer (X.Y.Z), got: $VERSION"
+            exit 1
+          fi
+          if git tag -l "v${VERSION}" | grep -q .; then
+            echo "::error::Tag v${VERSION} already exists. Bump app/src-tauri/tauri.conf.json before releasing."
+            exit 1
           fi
 
-          echo "Final version: $VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create Draft Release
@@ -71,10 +53,35 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
+            const tag = `v${{ steps.get-version.outputs.version }}`
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            })
+            const existingDraft = releases.find((release) => release.draft && release.tag_name === tag)
+            if (existingDraft) {
+              console.log(`Reusing draft release ${existingDraft.id} for ${tag}`)
+              const assets = await github.paginate(github.rest.repos.listReleaseAssets, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: existingDraft.id,
+                per_page: 100
+              })
+              for (const asset of assets) {
+                await github.rest.repos.deleteReleaseAsset({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  asset_id: asset.id
+                })
+              }
+              console.log(`Removed ${assets.length} stale assets before rebuilding the draft`)
+              return existingDraft.id
+            }
             const { data } = await github.rest.repos.createRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag_name: `v${{ steps.get-version.outputs.version }}`,
+              tag_name: tag,
               name: `muesly v${{ steps.get-version.outputs.version }}`,
               draft: true,
               prerelease: false,
@@ -259,8 +266,14 @@ jobs:
           APPIMAGE=$(find target/x86_64-unknown-linux-gnu/release/bundle/appimage -name "*.AppImage" | head -1)
           APPIMAGE_NAME=$(basename "$APPIMAGE")
 
+          cp "$DEB" muesly-linux-x86_64.deb
+          cp "$APPIMAGE" muesly-linux-x86_64.AppImage
+
           echo "Uploading .deb (download), stripped .AppImage + .sig (download + updater)..."
-          gh release upload "v${VERSION}" "$DEB" "$APPIMAGE" "${APPIMAGE}.sig" --clobber
+          gh release upload "v${VERSION}" \
+            "$DEB" "$APPIMAGE" "${APPIMAGE}.sig" \
+            muesly-linux-x86_64.deb muesly-linux-x86_64.AppImage \
+            --clobber
 
           # Add linux-x86_64 to latest.json, which the mac/win matrix already wrote.
           echo "Adding linux-x86_64 to latest.json..."
@@ -285,6 +298,45 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Publish stable download names and checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          mkdir release-assets public-downloads
+
+          gh release download "v${VERSION}" --dir release-assets \
+            --pattern "muesly_*_aarch64.dmg" \
+            --pattern "muesly_*_x64-setup.exe" \
+            --pattern "muesly-linux-x86_64.deb" \
+            --pattern "muesly-linux-x86_64.AppImage" \
+            --pattern "latest.json"
+
+          MACOS=$(find release-assets -name 'muesly_*_aarch64.dmg' | head -1)
+          WINDOWS=$(find release-assets -name 'muesly_*_x64-setup.exe' | head -1)
+          test -f "$MACOS" || { echo "::error::macOS DMG is missing"; exit 1; }
+          test -f "$WINDOWS" || { echo "::error::Windows installer is missing"; exit 1; }
+          test -f release-assets/muesly-linux-x86_64.deb || { echo "::error::Linux DEB is missing"; exit 1; }
+          test -f release-assets/muesly-linux-x86_64.AppImage || { echo "::error::Linux AppImage is missing"; exit 1; }
+
+          cp "$MACOS" public-downloads/muesly-macos-arm64.dmg
+          cp "$WINDOWS" public-downloads/muesly-windows-x64-setup.exe
+          cp release-assets/muesly-linux-x86_64.deb public-downloads/
+          cp release-assets/muesly-linux-x86_64.AppImage public-downloads/
+
+          jq -e '
+            .platforms["darwin-aarch64"] and
+            .platforms["windows-x86_64"] and
+            .platforms["linux-x86_64"]
+          ' release-assets/latest.json >/dev/null || {
+            echo "::error::latest.json is missing a supported updater platform"
+            exit 1
+          }
+
+          cd public-downloads
+          sha256sum ./* > SHA256SUMS.txt
+          gh release upload "v${VERSION}" ./* --clobber
+
       - name: Get release assets and latest.json
         id: release-info
         run: |
@@ -318,7 +370,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Download all as ZIP:** https://github.com/${{ github.repository }}/archive/refs/tags/v${VERSION}.zip" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Manual S3 upload:** Download latest.json from release and upload to \`s3://muesly-updates/latest.json\`" >> $GITHUB_STEP_SUMMARY
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -332,7 +383,7 @@ jobs:
           echo ""
           echo "Uploaded assets:"
           echo "  - macOS: DMG installer + app.tar.gz (for updater) + .sig"
-          echo "  - Windows: MSI + NSIS installers (SIGNED via signCommand) + .sig files"
+          echo "  - Windows: MSI + NSIS installers (unsigned publisher; updater-signed) + .sig files"
           echo "  - Linux: .deb + AppImage (stripped, re-signed) + .sig for updater"
           echo "  - Updater manifest: latest.json (mac/win via tauri-action; linux-x86_64 added by build-linux)"
           echo ""
@@ -354,7 +405,7 @@ jobs:
           echo "| Platform | Assets |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| **macOS** | DMG installer, app.tar.gz (updater), .sig |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Windows** | MSI installer (SIGNED), NSIS installer (SIGNED), .sig files |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Windows** | MSI + NSIS installers (unsigned publisher; updater-signed), .sig files |" >> $GITHUB_STEP_SUMMARY
           echo "| **Linux** | .deb, AppImage (stripped + re-signed), .sig |" >> $GITHUB_STEP_SUMMARY
           echo "| **Updater** | latest.json (darwin + windows + linux-x86_64) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -364,3 +415,34 @@ jobs:
           echo "2. Edit release notes if needed" >> $GITHUB_STEP_SUMMARY
           echo "3. Publish the release when ready" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+  # STEP 4: Optionally publish only after every platform and release gate passes.
+  # The default workflow behavior remains a draft so the release can be reviewed.
+  publish-release:
+    if: ${{ inputs.publish }}
+    needs: [create-release, release-summary]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish validated release
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const releaseId = Number(`${{ needs.create-release.outputs.release-id }}`)
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId
+            })
+            if (!release.draft) {
+              core.notice(`Release ${release.tag_name} is already published`)
+              return
+            }
+            const { data: published } = await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              draft: false
+            })
+            core.notice(`Published ${published.tag_name}: ${published.html_url}`)

@@ -1,6 +1,6 @@
 # GitHub Actions Workflows
 
-Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-check.yml` and `audit.yml`, which run automatically on pull requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
+Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-check.yml`, `audit.yml`, and `site-check.yml`, which run automatically on relevant pull requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
 
 ## Workflows at a Glance
 
@@ -12,7 +12,9 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 | `build-linux.yml` | Linux standalone build | Linux | Optional | 30 days |
 | `build-test.yml` | Pre-release builds, signed | All | ON | 30 days |
 | `build.yml` | Reusable build / sign / verify workflow (called by every `build-*` and `release` workflow) | - | - | - |
-| `release.yml` | Production release (draft GitHub Release) | macOS + Windows + Linux | macOS only | Permanent |
+| `release.yml` | Validated production release (draft by default, optional publish) | macOS + Windows + Linux | macOS only | Permanent |
+| `deploy-site.yml` | Manual verified deployment of muesly.ai | Site | - | - |
+| `site-check.yml` | Auto: format, lint, type, test, build, smoke, and dependency gates for muesly.ai | Site | - | - |
 | `pr-main-check.yml` | Version/config validation, no builds | - | - | - |
 | `rust-check.yml` | Auto: test / clippy / fmt on PR + push to `main` | - | - | - |
 | `audit.yml` | Auto: `cargo audit` on PR + push + weekly cron | - | - | - |
@@ -49,9 +51,12 @@ Required secrets:
 ## Releases (`release.yml`)
 
 - Version comes from `tauri.conf.json` and must be plain `X.Y.Z` (no pre-release suffixes; Windows MSI rejects them)
-- If the version tag already exists, the workflow auto-increments: `0.1.1` → `0.1.1.1` → ... up to `.100`
+- If the version tag already exists, update the plain `X.Y.Z` version in `tauri.conf.json` before releasing.
 - Creates a **draft** GitHub Release with installers (macOS signed + notarized, Windows unsigned) and a `latest.json` updater manifest
-- **Linux** ships a `.deb` and an AppImage as downloads, and the AppImage auto-updates: its bundled `libwayland-client.so` is stripped for Wayland compatibility, then the AppImage is re-signed (so the updater signature matches) and a `linux-x86_64` entry is added to `latest.json`
+- **Linux** ships a `.deb` and AppImage as first-class downloads, and the AppImage auto-updates: its bundled `libwayland-client.so` is stripped for Wayland compatibility, then the AppImage is re-signed (so the updater signature matches) and a `linux-x86_64` entry is added to `latest.json`.
+- Stable download aliases are uploaded for macOS, Windows, Linux AppImage, and Linux DEB so the website can link through `releases/latest/download/...` without embedding a version. `SHA256SUMS.txt` covers those public installers, and the release fails if any expected installer or updater platform is missing.
+- Re-running the workflow reuses an existing draft for the same version. A published Git tag requires a normal `X.Y.Z` version bump in `tauri.conf.json`; the workflow never invents four-part versions.
+- The `publish` workflow input defaults to `false`. Enable it only when the run should publish automatically after every build, artifact, checksum, and updater validation succeeds; otherwise the validated release remains a draft for manual review.
 
 ## CI Hardware Acceleration
 
