@@ -11,13 +11,13 @@ const variants: Record<ButtonVariant, string> = {
 	accent: 'bg-accent text-accent-foreground hover:bg-accent/90',
 	outline: 'border border-border bg-transparent text-foreground hover:bg-secondary',
 	ghost: 'bg-transparent text-foreground hover:bg-secondary',
-	link: 'bg-transparent text-accent underline-offset-4 hover:underline'
+	link: 'bg-transparent text-accent underline-offset-4 hover:underline',
 };
 
 const sizes: Record<ButtonSize, string> = {
 	default: 'h-10 px-4 text-sm',
 	lg: 'h-12 px-6 text-base',
-	icon: 'h-10 w-10'
+	icon: 'h-10 w-10',
 };
 
 /** Compose the class string for a marketing button (no CVA dependency). */

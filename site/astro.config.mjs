@@ -12,6 +12,6 @@ export default defineConfig({
 	compressHTML: true,
 	integrations: [icon(), sitemap()],
 	vite: {
-		plugins: [tailwindcss()]
-	}
+		plugins: [tailwindcss()],
+	},
 });

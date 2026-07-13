@@ -10,7 +10,7 @@ const contentDir = resolve(import.meta.dirname, '..', 'src/lib/content');
 
 const docs = [
 	['PRIVACY_POLICY.md', 'privacy-policy.md'],
-	['TERMS_OF_SERVICE.md', 'terms-of-service.md']
+	['TERMS_OF_SERVICE.md', 'terms-of-service.md'],
 ];
 
 for (const [srcName, destName] of docs) {

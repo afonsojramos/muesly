@@ -28,6 +28,8 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 
 `pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (`brew install nubjs/tap/nub`); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
 
+**Exception — installs in `site/`:** use `pnpm install` / `pnpm add` there, not `nub install`. nub's dependency resolution breaks Astro's type tree (astro-icon's `<Icon>` types fail `astro check`); pnpm resolves it cleanly. Running files/scripts with nub, and `nub install` in `app/*` and `api/`, are all fine.
+
 ## Commands
 
 Run from `app/` (frontend deps install separately in `app/src-svelte/`, each has its own lockfile):
@@ -46,7 +48,7 @@ pnpm -C src-svelte lint   # Oxlint + eslint-plugin-better-tailwindcss (via Vite+
 pnpm -C src-svelte format # Oxfmt (via Vite+ `vp`); `format:check` verifies without writing
 ```
 
-The root `package.json` is script-delegation only (no workspace — each of `app/src-svelte`, `site`, and `api` keeps its own lockfile). From the repo root: `pnpm dev` / `build` / `lint` / `format` target the app; `pnpm check` fans out to app + `site` + `api` (typecheck), and `pnpm test` to app + `site`.
+The root `package.json` is script-delegation only (no workspace — each of `app/src-svelte`, `site`, and `api` keeps its own lockfile; `pnpm setup` installs all three). From the repo root, `pnpm check` / `lint` / `format` / `format:check` fan out to app + `site` + `api` (`api`'s `check` is `typecheck`), and `pnpm test` to app + `site`; `pnpm dev` / `build` target the app. Lint/format everywhere is oxlint + oxfmt via `vp` (Vite+); `site`/`api` carry a small `vite.config.ts` with the shared `fmt`/`lint` config (oxfmt can't format `.astro`, so site's components are hand-maintained).
 
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 

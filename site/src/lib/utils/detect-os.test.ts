@@ -3,7 +3,9 @@ import { detectOS } from './detect-os';
 
 describe('detectOS', () => {
 	it('detects macOS from user agent and platform', () => {
-		expect(detectOS({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' })).toBe('macos');
+		expect(detectOS({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' })).toBe(
+			'macos',
+		);
 		expect(detectOS({ platform: 'MacIntel' })).toBe('macos');
 	});
 
@@ -25,7 +27,7 @@ describe('detectOS', () => {
 
 	it('does not misclassify iOS as macOS', () => {
 		expect(detectOS({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' })).toBe(
-			'unknown'
+			'unknown',
 		);
 	});
 });

@@ -3,16 +3,15 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
-	"packageManager": "pnpm@10.33.0",
-	"engines": {
-		"node": "24"
-	},
 	"scripts": {
 		"dev": "node scripts/copy-legal-docs.mjs && astro dev",
 		"build": "node scripts/copy-legal-docs.mjs && astro build",
 		"preview": "astro preview",
 		"sync": "node scripts/copy-legal-docs.mjs && astro sync",
 		"check": "node scripts/copy-legal-docs.mjs && astro check",
+		"lint": "vp lint",
+		"format": "vp fmt . --write",
+		"format:check": "vp fmt . --check",
 		"test": "vitest run",
 		"deploy": "node scripts/copy-legal-docs.mjs && astro build && wrangler deploy"
 	},
@@ -34,7 +33,12 @@
 		"@types/sanitize-html": "^2.16.1",
 		"tailwindcss": "^4.3.2",
 		"typescript": "^6.0.3",
+		"vite-plus": "^0.2.4",
 		"vitest": "^4.1.9",
 		"wrangler": "^4.107.0"
-	}
+	},
+	"engines": {
+		"node": "24"
+	},
+	"packageManager": "pnpm@10.33.0"
 }

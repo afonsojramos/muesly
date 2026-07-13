@@ -28,47 +28,47 @@ const sharedRows = (overrides: Partial<Record<string, CompareRow>>): CompareRow[
 			dimension: 'Where your data is processed',
 			muesly: 'On your device',
 			them: 'In the cloud',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		account: {
 			dimension: 'Account required',
 			muesly: 'No',
 			them: 'Yes',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		openSource: {
 			dimension: 'Source code public',
 			muesly: 'Yes (PolyForm Noncommercial)',
 			them: 'No',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		bot: {
 			dimension: 'Bot joins your call',
 			muesly: 'No, records your audio locally',
 			them: 'Yes',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		price: {
 			dimension: 'Price',
 			muesly: 'Free',
 			them: 'Free tier plus paid plans',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		offline: {
 			dimension: 'Works offline',
 			muesly: 'Yes, with local models',
 			them: 'No',
-			advantage: 'muesly'
+			advantage: 'muesly',
 		},
 		platforms: {
 			dimension: 'Platforms',
 			muesly: 'macOS, Windows, Linux (build from source)',
 			them: 'Cloud, plus apps',
-			advantage: 'neutral'
-		}
+			advantage: 'neutral',
+		},
 	};
 	return Object.values({ ...base, ...overrides }).filter(
-		(row): row is CompareRow => row !== undefined
+		(row): row is CompareRow => row !== undefined,
 	);
 };
 
@@ -85,8 +85,8 @@ export const comparisons: Comparison[] = [
 		theyreBetter: [
 			'Polished mobile apps and real-time collaboration',
 			'Mature integrations and team features',
-			'Cloud sync across every device out of the box'
-		]
+			'Cloud sync across every device out of the box',
+		],
 	},
 	{
 		slug: 'granola',
@@ -101,14 +101,14 @@ export const comparisons: Comparison[] = [
 				dimension: 'Bot joins your call',
 				muesly: 'No',
 				them: 'No',
-				advantage: 'neutral'
-			}
+				advantage: 'neutral',
+			},
 		}),
 		theyreBetter: [
 			'Highly refined, polished interface',
 			'Cloud sync and sharing across devices',
-			'More mature templates and onboarding'
-		]
+			'More mature templates and onboarding',
+		],
 	},
 	{
 		slug: 'fireflies',
@@ -122,9 +122,9 @@ export const comparisons: Comparison[] = [
 		theyreBetter: [
 			'Deep CRM and workflow integrations',
 			'Team conversation analytics and search',
-			'Mobile apps and cloud collaboration'
-		]
-	}
+			'Mobile apps and cloud collaboration',
+		],
+	},
 ];
 
 export function getComparison(slug: string): Comparison | undefined {
