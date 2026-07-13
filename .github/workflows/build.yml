@@ -109,7 +109,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-          key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v2
+          key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v2${{ contains(inputs.platform, 'macos') && '-openssl-v1' || '' }}
 
       - name: Install native dependencies (macOS)
         if: contains(inputs.platform, 'macos')
