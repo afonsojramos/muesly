@@ -13,6 +13,7 @@ import { commands } from '$lib/bindings';
 import type { Summary, Transcript } from '$lib/types';
 import { Analytics } from '$lib/analytics';
 import { formatTranscriptMarkdown } from '$lib/format-transcript-markdown';
+import { formatRecordingTimestamp } from '$lib/utils/format-time';
 import { emptySpeakerContext, speakerContextFrom, type SpeakerContext } from '$lib/speaker-label';
 import { toast } from '$lib/toast';
 
@@ -43,10 +44,7 @@ export interface UseCopyOperations {
 
 function formatTime(seconds: number | undefined, fallback: string | undefined): string {
 	if (seconds === undefined) return fallback ?? '[--:--]';
-	const total = Math.floor(seconds);
-	const mins = Math.floor(total / 60);
-	const secs = total % 60;
-	return `[${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
+	return formatRecordingTimestamp(seconds);
 }
 
 /** Fetch every transcript row for a meeting (total-count probe, then one full

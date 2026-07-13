@@ -14,6 +14,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import type { Transcript, TranscriptUpdate } from '$lib/types';
 import { recordingService } from '$lib/services/recording';
 import { transcriptService } from '$lib/services/transcript';
+import { formatRecordingTimestamp } from '$lib/utils/format-time';
 import { indexedDBService } from '$lib/services/indexed-db';
 import { toast } from '$lib/toast';
 import { recordingState } from './recording-state.svelte';
@@ -29,10 +30,7 @@ function speakerFromSource(source: string | undefined): string | undefined {
 
 function formatRecordingTime(seconds: number | undefined): string {
 	if (seconds === undefined) return '[--:--]';
-	const total = Math.floor(seconds);
-	const mins = Math.floor(total / 60);
-	const secs = total % 60;
-	return `[${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
+	return formatRecordingTimestamp(seconds);
 }
 
 class TranscriptStore {

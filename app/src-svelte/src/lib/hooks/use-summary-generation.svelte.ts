@@ -21,6 +21,7 @@ import { Analytics } from '$lib/analytics';
 import { commands } from '$lib/bindings';
 import { sidebar } from '$lib/stores/sidebar.svelte';
 import { toast } from '$lib/toast';
+import { formatRecordingTimestamp } from '$lib/utils/format-time';
 import { isOllamaNotInstalledError } from '$lib/utils';
 
 export type SummaryStatus =
@@ -583,10 +584,7 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 
 	function formatTime(seconds: number | undefined, fallback: string): string {
 		if (seconds === undefined) return fallback;
-		const total = Math.floor(seconds);
-		const mins = Math.floor(total / 60);
-		const secs = total % 60;
-		return `[${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
+		return formatRecordingTimestamp(seconds);
 	}
 
 	const handleGenerateSummary = async (customPrompt = ''): Promise<void> => {
