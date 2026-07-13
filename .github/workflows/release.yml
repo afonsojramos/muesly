@@ -183,6 +183,17 @@ jobs:
             patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev \
             fuse libfuse2
 
+      - name: Configure OpenBLAS discovery
+        shell: bash
+        run: |
+          BLAS_INCLUDE_DIRS="$(pkg-config --variable=includedir openblas)"
+          if [ -z "$BLAS_INCLUDE_DIRS" ] || [ ! -d "$BLAS_INCLUDE_DIRS" ]; then
+            echo "::error::OpenBLAS did not report a usable include directory"
+            exit 1
+          fi
+          echo "BLAS_INCLUDE_DIRS=$BLAS_INCLUDE_DIRS" >> "$GITHUB_ENV"
+          echo "Using OpenBLAS headers from $BLAS_INCLUDE_DIRS"
+
       - name: Install app dependencies
         run: |
           cd app
