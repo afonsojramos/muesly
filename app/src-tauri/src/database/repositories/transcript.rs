@@ -111,11 +111,9 @@ impl TranscriptsRepository {
                 "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker) ",
             );
             qb.push_values(batch, |mut b, segment| {
-                let transcript_id = if segment.id.is_empty() {
-                    format!("transcript-{}", Uuid::new_v4())
-                } else {
-                    segment.id.clone()
-                };
+                // Client segment IDs are session-local and can repeat after an
+                // app restart or recovery. Database IDs must be globally unique.
+                let transcript_id = format!("transcript-{}", Uuid::new_v4());
                 b.push_bind(transcript_id)
                     .push_bind(meeting_id)
                     .push_bind(&segment.text)
@@ -474,7 +472,6 @@ mod talk_time_tests {
 mod tests {
     use super::*;
     use crate::api::TranscriptSegment;
-    use chrono::Utc;
     use sqlx::sqlite::SqlitePoolOptions;
 
     async fn test_pool() -> SqlitePool {
@@ -576,6 +573,41 @@ mod tests {
                 .await
                 .expect("count");
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn save_transcript_accepts_reused_client_segment_ids() {
+        let pool = test_pool().await;
+        let mut segment = make_segment("Repeated client id", "00:00:01");
+        segment.id = "seg_1".to_string();
+
+        let first = TranscriptsRepository::save_transcript(
+            &pool,
+            "First recording",
+            std::slice::from_ref(&segment),
+            None,
+        )
+        .await
+        .expect("save first recording");
+        let second = TranscriptsRepository::save_transcript(
+            &pool,
+            "Second recording",
+            &[segment],
+            None,
+        )
+        .await
+        .expect("save second recording");
+
+        let ids: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM transcripts WHERE meeting_id IN (?, ?) ORDER BY meeting_id",
+        )
+        .bind(first)
+        .bind(second)
+        .fetch_all(&pool)
+        .await
+        .expect("fetch ids");
+        assert_eq!(ids.len(), 2);
+        assert_ne!(ids[0], ids[1]);
     }
 
     #[tokio::test]
