@@ -736,6 +736,15 @@ static SHORTCUT_ACCELS: std::sync::LazyLock<std::sync::RwLock<ShortcutAccels>> =
         })
     });
 
+/// Serialized push-to-talk events (`true` = pressed, `false` = released). The
+/// global-shortcut handler is synchronous and previously spawned an independent
+/// task per press/release, so a release could run before its own press finished —
+/// leaving the mic capture stuck on. Feeding events into one ordered channel that
+/// a single consumer drains guarantees each press fully starts before its release
+/// stops it. Initialized in `setup`.
+static DICTATION_EVENTS: std::sync::OnceLock<tokio::sync::mpsc::UnboundedSender<bool>> =
+    std::sync::OnceLock::new();
+
 /// Refresh the in-memory accelerators from the settings DB (no-op when the DB
 /// isn't up yet or a value is unset).
 async fn load_shortcut_accels<R: Runtime>(app: &AppHandle<R>) {
@@ -1323,26 +1332,11 @@ pub fn run() {
                     }
                     if is_dictation {
                         // Push-to-talk: hold to dictate, release to transcribe + emit.
-                        let app = app.clone();
-                        match event.state() {
-                            ShortcutState::Pressed => {
-                                tauri::async_runtime::spawn(async move {
-                                    if let Err(e) =
-                                        crate::dictation::commands::start_dictation().await
-                                    {
-                                        log_warn!("Dictation start failed: {}", e);
-                                    }
-                                });
-                            }
-                            ShortcutState::Released => {
-                                tauri::async_runtime::spawn(async move {
-                                    if let Err(e) =
-                                        crate::dictation::commands::stop_dictation(app).await
-                                    {
-                                        log_warn!("Dictation stop failed: {}", e);
-                                    }
-                                });
-                            }
+                        // Forward into the ordered channel so press always fully
+                        // starts before its release stops it (see DICTATION_EVENTS);
+                        // spawning per-event let a release outrun its own press.
+                        if let Some(tx) = DICTATION_EVENTS.get() {
+                            let _ = tx.send(event.state() == ShortcutState::Pressed);
                         }
                     } else if event.state() == ShortcutState::Pressed {
                         // The recording shortcut toggles on key-down.
@@ -1358,6 +1352,29 @@ pub fn run() {
         .manage(summary::summary_engine::ModelManagerState(Arc::new(tokio::sync::Mutex::new(None))))
         .setup(|_app| {
             log::info!("Application setup complete");
+
+            // Single push-to-talk consumer: drains press/release events in arrival
+            // order so start_dictation always completes before the matching
+            // stop_dictation runs (fixes the release-before-start stuck-capture race).
+            {
+                let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<bool>();
+                let app_for_dictation = _app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    while let Some(is_press) = rx.recv().await {
+                        if is_press {
+                            if let Err(e) = crate::dictation::commands::start_dictation().await {
+                                log_warn!("Dictation start failed: {}", e);
+                            }
+                        } else if let Err(e) =
+                            crate::dictation::commands::stop_dictation(app_for_dictation.clone())
+                                .await
+                        {
+                            log_warn!("Dictation stop failed: {}", e);
+                        }
+                    }
+                });
+                let _ = DICTATION_EVENTS.set(tx);
+            }
 
             // Initialize system tray
             if let Err(e) = tray::create_tray(_app.handle()) {
