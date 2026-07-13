@@ -25,11 +25,13 @@ struct MeetingAppDetected {
 /// when a known meeting app becomes frontmost, debounced to once per activation.
 /// A no-op on platforms without a foreground-app API.
 pub fn start<R: Runtime>(app: AppHandle<R>) {
-    if RUNNING.swap(true, Ordering::SeqCst) {
-        return; // already running
-    }
     #[cfg(target_os = "macos")]
     {
+        // Only mark running once we actually spawn the loop; otherwise non-mac
+        // builds would flip RUNNING true with no watcher behind it.
+        if RUNNING.swap(true, Ordering::SeqCst) {
+            return; // already running
+        }
         if let Err(e) = std::thread::Builder::new()
             .name("meeting-detect".into())
             .spawn(move || watch_loop(app))
