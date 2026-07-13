@@ -284,6 +284,30 @@ pub async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String
     start_recording_with_meeting_name(app, None).await
 }
 
+async fn current_transcription_metadata<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Option<crate::audio::recording_saver::TranscriptionMetadata> {
+    let config = crate::api::api_get_transcript_config(
+        app.clone(),
+        app.clone().state(),
+        None,
+    )
+    .await
+    .ok()
+    .flatten()?;
+    let quality_pass = crate::database::repositories::setting::SettingsRepository::get_post_meeting_quality_pass(
+        app.state::<crate::state::AppState>().db_manager.pool(),
+    )
+    .await
+    .unwrap_or(false);
+
+    Some(crate::audio::recording_saver::TranscriptionMetadata {
+        provider: config.provider,
+        model: config.model,
+        post_meeting_quality_pass_enabled: quality_pass,
+    })
+}
+
 /// Start recording with default devices and optional meeting name
 pub async fn start_recording_with_meeting_name<R: Runtime>(
     app: AppHandle<R>,
@@ -322,6 +346,9 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
 
     // Create new recording manager
     let mut manager = RecordingManager::new();
+    if let Some(metadata) = current_transcription_metadata(&app).await {
+        manager.set_transcription_metadata(metadata);
+    }
 
     // Load recording preferences to get auto_save AND device preferences
     let (auto_save, preferred_mic_name, preferred_system_name) =
@@ -653,6 +680,9 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
 
     // Create new recording manager
     let mut manager = RecordingManager::new();
+    if let Some(metadata) = current_transcription_metadata(&app).await {
+        manager.set_transcription_metadata(metadata);
+    }
 
     // Load recording preferences to check auto_save setting
     let auto_save = match super::recording_preferences::load_recording_preferences(&app).await {

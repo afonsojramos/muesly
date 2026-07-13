@@ -52,7 +52,8 @@ pub struct TranscriptUpdate {
     pub sequence_id: u64,
     pub chunk_start_time: f64, // Legacy field, kept for compatibility
     pub is_partial: bool,
-    pub confidence: f32,
+    /// Measured ASR confidence, or `None` when the provider does not expose one.
+    pub confidence: Option<f32>,
     // NEW: Recording-relative timestamps for playback sync
     pub audio_start_time: f64, // Seconds from recording start (e.g., 125.3)
     pub audio_end_time: f64,   // Seconds from recording start (e.g., 128.6)
@@ -292,7 +293,7 @@ pub fn start_transcription_task<R: Runtime>(
                                             sequence_id,
                                             chunk_start_time: chunk_timestamp, // Legacy compatibility
                                             is_partial,
-                                            confidence: confidence_opt.unwrap_or(0.85), // Default for providers without confidence
+                                            confidence: confidence_opt,
                                             // NEW: Recording-relative timestamps for sync
                                             audio_start_time,
                                             audio_end_time,

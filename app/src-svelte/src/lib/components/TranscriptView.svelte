@@ -201,7 +201,7 @@
 							{#if transcript.duration !== undefined}
 								<span class="text-xs text-muted-foreground/70">
 									{transcript.duration.toFixed(1)}s
-									{#if transcript.confidence !== undefined}
+									{#if transcript.confidence != null}
 										<ConfidenceIndicator
 											confidence={transcript.confidence}
 											showIndicator={showConfidence}

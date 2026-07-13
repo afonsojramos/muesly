@@ -51,6 +51,34 @@ impl Drop for RetranscriptionGuard {
 /// speech at every natural sentence/topic pause (500ms-2s)
 const VAD_REDEMPTION_TIME_MS: u32 = 2000;
 
+fn source_for_retranscribed_interval(
+    start: f64,
+    end: f64,
+    prior_segments: &[(f64, f64, Option<String>)],
+) -> Option<String> {
+    let mut microphone_overlap = 0.0;
+    let mut system_overlap = 0.0;
+    for (prior_start, prior_end, source) in prior_segments {
+        let overlap = end.min(*prior_end) - start.max(*prior_start);
+        if overlap <= 0.0 {
+            continue;
+        }
+        match source.as_deref() {
+            Some("mic") => microphone_overlap += overlap,
+            Some("system") => system_overlap += overlap,
+            _ => {}
+        }
+    }
+
+    if microphone_overlap == 0.0 && system_overlap == 0.0 {
+        None
+    } else if microphone_overlap > system_overlap {
+        Some("mic".to_string())
+    } else {
+        Some("system".to_string())
+    }
+}
+
 /// Progress update emitted during retranscription
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionProgress {
@@ -423,7 +451,7 @@ async fn run_retranscription<R: Runtime>(
     emit_progress(&app, &meeting_id, "saving", 80, "Saving transcripts...");
 
     // Create transcript segments with proper timestamps from VAD
-    let segments = create_transcript_segments(&all_transcripts);
+    let mut segments = create_transcript_segments(&all_transcripts);
 
     // Save to database
     let app_state = app
@@ -436,6 +464,23 @@ async fn run_retranscription<R: Runtime>(
     let mut tx = sqlx::Connection::begin(&mut *conn)
         .await
         .map_err(|e| anyhow!("Failed to start transaction: {}", e))?;
+
+    // The batch pass works from the mixed recording, but its timestamps still
+    // align with the original live mic/system segments. Carry the dominant
+    // overlapping source forward instead of erasing speaker attribution.
+    let prior_segments: Vec<(f64, f64, Option<String>)> = sqlx::query_as(
+        "SELECT audio_start_time, audio_end_time, speaker FROM transcripts \
+         WHERE meeting_id = ? AND audio_start_time IS NOT NULL AND audio_end_time IS NOT NULL",
+    )
+    .bind(&meeting_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| anyhow!("Failed to load existing transcript sources: {}", e))?;
+    for segment in &mut segments {
+        if let (Some(start), Some(end)) = (segment.audio_start_time, segment.audio_end_time) {
+            segment.speaker = source_for_retranscribed_interval(start, end, &prior_segments);
+        }
+    }
 
     sqlx::query("DELETE FROM transcripts WHERE meeting_id = ?")
         .bind(&meeting_id)
@@ -453,8 +498,8 @@ async fn run_retranscription<R: Runtime>(
 
     for segment in &segments {
         sqlx::query(
-            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&segment.id)
         .bind(&meeting_id)
@@ -463,6 +508,7 @@ async fn run_retranscription<R: Runtime>(
         .bind(segment.audio_start_time)
         .bind(segment.audio_end_time)
         .bind(segment.duration)
+        .bind(&segment.speaker)
         .execute(&mut *tx)
         .await
         .map_err(|e| anyhow!("Failed to insert transcript: {}", e))?;
@@ -758,6 +804,17 @@ pub async fn is_retranscription_in_progress_command() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retranscription_preserves_dominant_timeline_source() {
+        let prior = vec![
+            (0.0, 4.0, Some("system".to_string())),
+            (4.0, 6.0, Some("mic".to_string())),
+        ];
+        assert_eq!(source_for_retranscribed_interval(1.0, 5.0, &prior).as_deref(), Some("system"));
+        assert_eq!(source_for_retranscribed_interval(4.0, 6.0, &prior).as_deref(), Some("mic"));
+        assert_eq!(source_for_retranscribed_interval(7.0, 8.0, &prior), None);
+    }
 
     #[test]
     fn test_create_transcript_segments_empty() {

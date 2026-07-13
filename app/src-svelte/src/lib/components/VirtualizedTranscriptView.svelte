@@ -304,7 +304,7 @@
 										{/snippet}
 									</Tooltip.Trigger>
 									<Tooltip.Content>
-										{#if segment.confidence !== undefined && showConfidence}
+										{#if segment.confidence != null && showConfidence}
 											<ConfidenceIndicator
 												confidence={segment.confidence}
 												showIndicator={showConfidence}

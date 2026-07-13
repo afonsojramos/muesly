@@ -17,6 +17,14 @@ use super::devices::AudioDevice;
 use super::recording_state::{AudioChunk, AudioError, DeviceType, RecordingState};
 use super::vad::{ContinuousVadProcessor, SpeechSegment};
 
+const fn vad_redemption_time_ms(is_macos: bool) -> u32 {
+    if is_macos { 900 } else { 400 }
+}
+
+fn live_vad_redemption_time_ms() -> u32 {
+    vad_redemption_time_ms(cfg!(target_os = "macos"))
+}
+
 /// Ring buffer for synchronized audio mixing
 /// Accumulates samples from mic and system streams until we have aligned windows
 struct AudioMixerRingBuffer {
@@ -782,12 +790,11 @@ impl AudioPipeline {
             system_device_kind,
         );
 
-        // Create VAD processor with balanced redemption time for speech accumulation
-        // The VAD processor now handles 48kHz->16kHz resampling internally
-        // This bridges natural pauses without excessive fragmentation
-        // For mac os core audio, 900ms, for windows 400ms seems good
-
-        let redemption_time = if cfg!(target_os = "macos") { 400 } else { 400 };
+        // Bridge natural pauses without adding excessive live-caption latency.
+        // CoreAudio commonly exposes shorter discontinuities than the other
+        // capture paths, so macOS needs a longer window to avoid fragmenting
+        // sentences into context-poor ASR requests.
+        let redemption_time = live_vad_redemption_time_ms();
 
         let make_vad = |lane: &str| -> anyhow::Result<ContinuousVadProcessor> {
             match ContinuousVadProcessor::new(sample_rate, redemption_time) {
@@ -1206,6 +1213,12 @@ mod tests {
     fn new_at_48khz_produces_correct_window_size() {
         let buf = AudioMixerRingBuffer::new(SAMPLE_RATE);
         assert_eq!(buf.window_size_samples, expected_window_size());
+    }
+
+    #[test]
+    fn macos_vad_bridges_longer_coreaudio_pauses() {
+        assert_eq!(vad_redemption_time_ms(true), 900);
+        assert_eq!(vad_redemption_time_ms(false), 400);
     }
 
     #[test]

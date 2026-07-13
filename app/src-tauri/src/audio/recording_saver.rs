@@ -20,7 +20,8 @@ pub struct TranscriptSegment {
     pub audio_end_time: f64,   // Seconds from recording start
     pub duration: f64,          // Segment duration in seconds
     pub display_time: String,   // Formatted time for display like "[02:15]"
-    pub confidence: f32,
+    /// Measured ASR confidence; absent for engines such as Parakeet.
+    pub confidence: Option<f32>,
     pub sequence_id: u64,
     /// Audio source: "mic" (the user) or "system" (other participants)
     #[serde(default)]
@@ -41,6 +42,10 @@ pub struct MeetingMetadata {
     pub transcript_file: String,
     pub sample_rate: u32,
     pub status: String,  // "recording", "completed", "error"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription: Option<TranscriptionMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transcription_diagnostics: Option<TranscriptionDiagnostics>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -49,11 +54,26 @@ pub struct DeviceInfo {
     pub system_audio: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct TranscriptionMetadata {
+    pub provider: String,
+    pub model: String,
+    pub post_meeting_quality_pass_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct TranscriptionDiagnostics {
+    pub segment_count: usize,
+    pub segments_under_three_seconds: usize,
+    pub average_segment_seconds: f64,
+}
+
 /// New recording saver using incremental saving strategy
 pub struct RecordingSaver {
     incremental_saver: Option<Arc<AsyncMutex<IncrementalAudioSaver>>>,
     meeting_folder: Option<PathBuf>,
     meeting_name: Option<String>,
+    transcription: Option<TranscriptionMetadata>,
     metadata: Option<MeetingMetadata>,
     transcript_segments: Arc<Mutex<Vec<TranscriptSegment>>>,
     chunk_receiver: Option<mpsc::UnboundedReceiver<AudioChunk>>,
@@ -66,6 +86,7 @@ impl RecordingSaver {
             incremental_saver: None,
             meeting_folder: None,
             meeting_name: None,
+            transcription: None,
             metadata: None,
             transcript_segments: Arc::new(Mutex::new(Vec::new())),
             chunk_receiver: None,
@@ -76,6 +97,15 @@ impl RecordingSaver {
     /// Set the meeting name for this recording session
     pub fn set_meeting_name(&mut self, name: Option<String>) {
         self.meeting_name = name;
+    }
+
+    /// Persist the exact ASR configuration used for this recording. This is set
+    /// before the meeting folder exists and copied into metadata at initialization.
+    pub fn set_transcription_metadata(&mut self, transcription: TranscriptionMetadata) {
+        self.transcription = Some(transcription.clone());
+        if let Some(ref mut metadata) = self.metadata {
+            metadata.transcription = Some(transcription);
+        }
     }
 
     /// Set device information in metadata
@@ -130,7 +160,7 @@ impl RecordingSaver {
             audio_end_time: 0.0,
             duration: 0.0,
             display_time: "[00:00]".to_string(),
-            confidence: 1.0,
+            confidence: None,
             sequence_id: 0,
             speaker: None,
         };
@@ -276,6 +306,8 @@ impl RecordingSaver {
             transcript_file: "transcripts.json".to_string(),
             sample_rate: 48000,
             status: "recording".to_string(),
+            transcription: self.transcription.clone(),
+            transcription_diagnostics: None,
         };
 
         // Write initial metadata.json
@@ -421,6 +453,23 @@ impl RecordingSaver {
                     None
                 }
             });
+
+            if let Ok(segments) = self.transcript_segments.lock() {
+                let segment_count = segments.len();
+                let total_duration: f64 = segments.iter().map(|segment| segment.duration).sum();
+                metadata.transcription_diagnostics = Some(TranscriptionDiagnostics {
+                    segment_count,
+                    segments_under_three_seconds: segments
+                        .iter()
+                        .filter(|segment| segment.duration < 3.0)
+                        .count(),
+                    average_segment_seconds: if segment_count == 0 {
+                        0.0
+                    } else {
+                        total_duration / segment_count as f64
+                    },
+                });
+            }
 
             if let Err(e) = self.write_metadata(folder, &metadata) {
                 error!("❌ Failed to update metadata to completed: {}", e);
