@@ -30,7 +30,7 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 
 `pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (provisioned by mise); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
 
-**Use nub to run code, but `pnpm` to install.** `nub`/`nubx`/`nub run` for executing files, scripts, and CLIs are great. But `nub install` / `nub add` currently produce a node_modules layout this repo's deps don't like — it broke Astro's type tree in `site/` (astro-icon `<Icon>` types fail `astro check`) and left `api/`'s deps in a "missing" state. `pnpm install` / `pnpm add` resolve both cleanly. So: **installs and dependency changes go through `pnpm`.**
+**nub is the installer for all three projects** (`nub install` / `nub add`). It reads and writes the same `pnpm-lock.yaml`, so pnpm stays a drop-in fallback and CI installs with it unchanged. One caveat lives in `site/`: nub's default `isolated` (pnpm-style) node_modules layout doesn't dedupe astro's peer types the way pnpm's does, so `astro-icon`'s `<Icon>` loses its HTML-attribute props and `astro check` fails. The fix is committed as `node-linker=hoisted` in `site/.npmrc`, which both nub and pnpm honor, so `nub install` in `site/` just works. `api/` and `app/src-svelte/` use nub's default isolated layout.
 
 ## Commands
 

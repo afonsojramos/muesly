@@ -16,7 +16,7 @@ Installing these toolchains is out of scope here; follow each project's own inst
 
 ```bash
 cd app
-pnpm install && pnpm -C src-svelte install   # frontend deps install separately
+nub install && nub install --cwd src-svelte   # frontend deps install separately (pnpm works too)
 
 pnpm tauri:dev      # development, with hot reload
 pnpm tauri:build    # production build
