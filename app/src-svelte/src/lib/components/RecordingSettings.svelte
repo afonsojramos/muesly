@@ -194,6 +194,10 @@
 			preferred_mic_device: devices.micDevice,
 			preferred_system_device: devices.systemDevice,
 		};
+		// Apply to the live config too, not just the persisted preference: UI-started
+		// recordings read `config.selectedDevices`, so without this the change didn't
+		// take effect until the next app launch.
+		config.setSelectedDevices(devices);
 		await savePreferences(preferences);
 		Analytics.track('default_devices_changed', {
 			has_preferred_microphone: (!!devices.micDevice).toString(),
