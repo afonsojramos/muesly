@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_store::StoreExt;
 use log::{info, warn, error};
 use anyhow::Result;
@@ -210,8 +210,30 @@ pub async fn complete_onboarding<R: Runtime>(
 
     status.completed = true;
     status.current_step = 4; // Max step (4 on macOS with permissions, 3 on other platforms)
-    status.model_status.parakeet = "downloaded".to_string();
-    status.model_status.summary = "downloaded".to_string();
+
+    // Reflect what's actually on disk rather than assuming a download happened: a
+    // user can finish onboarding before a model completes (e.g. the non-mac
+    // "continue"), and the frontend re-derives availability from disk on load, so a
+    // blanket "downloaded" stamp is at best cosmetic and at worst wrong.
+    let parakeet_ready = crate::parakeet_engine::commands::parakeet_has_available_models()
+        .await
+        .unwrap_or(false);
+    let summary_ready = match app.try_state::<crate::summary::summary_engine::ModelManagerState>() {
+        Some(mm) => {
+            crate::summary::summary_engine::commands::builtin_ai_get_available_summary_model(
+                app.clone(),
+                mm,
+            )
+            .await
+            .map(|m| m.is_some())
+            .unwrap_or(false)
+        }
+        None => false,
+    };
+    status.model_status.parakeet =
+        if parakeet_ready { "downloaded" } else { "not_downloaded" }.to_string();
+    status.model_status.summary =
+        if summary_ready { "downloaded" } else { "not_downloaded" }.to_string();
 
     save_onboarding_status(&app, &status)
         .await
