@@ -227,6 +227,9 @@ impl TranscriptsRepository {
         // multi-token-aware); a literal re-scan of the query string would miss
         // stemmed matches. Column 0 is `transcript`, the vtable's only indexed
         // column; meeting_id / timestamp come from the external-content rowid join.
+        // `snippet()` can't be used under GROUP BY (FTS5 restriction), so fetch the
+        // best-ranked matches with headroom and cap to one row per meeting in Rust —
+        // otherwise a single meeting with many hits could fill all 50 slots.
         let rows = sqlx::query_as::<_, (String, String, String, String)>(
             "SELECT m.id, m.title,
                     snippet(transcripts_fts, 0, '', '', '...', 24),
@@ -236,21 +239,31 @@ impl TranscriptsRepository {
              JOIN meetings m ON m.id = t.meeting_id
              WHERE transcripts_fts MATCH ? AND m.deleted_at IS NULL
              ORDER BY rank
-             LIMIT 50",
+             LIMIT 500",
         )
         .bind(match_q)
         .fetch_all(pool)
         .await?;
 
-        Ok(rows
-            .into_iter()
+        Ok(Self::dedupe_by_meeting(rows))
+    }
+
+    /// Keep only the first (best-ranked) hit per meeting, capped at 50 meetings, so
+    /// one noisy meeting can't monopolize the results.
+    fn dedupe_by_meeting(
+        rows: Vec<(String, String, String, String)>,
+    ) -> Vec<TranscriptSearchResult> {
+        let mut seen = std::collections::HashSet::new();
+        rows.into_iter()
+            .filter(|(id, ..)| seen.insert(id.clone()))
+            .take(50)
             .map(|(id, title, match_context, timestamp)| TranscriptSearchResult {
                 id,
                 title,
                 match_context,
                 timestamp,
             })
-            .collect())
+            .collect()
     }
 
     async fn search_transcripts_like(
@@ -279,7 +292,7 @@ impl TranscriptsRepository {
                LOWER(t.transcript) LIKE ? OR LOWER(t.transcript) LIKE ?
                OR LOWER(t.transcript) LIKE ? OR LOWER(t.transcript) LIKE ?
              )
-             LIMIT 50",
+             LIMIT 500",
         )
         .bind(&tokens[0])
         .bind(&tokens[1])
@@ -288,8 +301,13 @@ impl TranscriptsRepository {
         .fetch_all(pool)
         .await?;
 
+        // One row per meeting (best-effort: first match wins), capped at 50, so a
+        // single meeting with many matches can't crowd out the rest.
+        let mut seen = std::collections::HashSet::new();
         Ok(rows
             .into_iter()
+            .filter(|(id, ..)| seen.insert(id.clone()))
+            .take(50)
             .map(|(id, title, transcript, timestamp)| TranscriptSearchResult {
                 id,
                 title,
