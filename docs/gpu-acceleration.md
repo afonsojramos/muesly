@@ -2,6 +2,9 @@
 
 Transcription (`whisper-rs`) and local summarization (the llama sidecar) share the same acceleration backends:
 
+If a native Whisper GPU backend aborts during model allocation before the normal CPU fallback can run,
+launch with `MUESLY_WHISPER_FORCE_CPU=1` to keep the same model while bypassing GPU context allocation.
+
 | Backend | Hardware |
 | --- | --- |
 | CUDA | NVIDIA GPUs |

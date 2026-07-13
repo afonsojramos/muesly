@@ -296,11 +296,18 @@ impl WhisperEngine {
                 // not the runtime-detected GPU. whisper.cpp's Vulkan backend does not
                 // support flash attention, so a Vulkan build must never enable it even
                 // when the machine reports a CUDA/Metal-class GPU at runtime.
-                let acceleration = whisper_context_acceleration_for(
+                let mut acceleration = whisper_context_acceleration_for(
                     WhisperCompiledBackend::current(),
                     hardware_profile.gpu_type,
                     hardware_profile.performance_tier,
                 );
+                if std::env::var("MUESLY_WHISPER_FORCE_CPU").as_deref() == Ok("1") {
+                    log::warn!(
+                        "MUESLY_WHISPER_FORCE_CPU=1: bypassing {} GPU context allocation",
+                        acceleration.compiled_backend.as_str()
+                    );
+                    acceleration = acceleration.forced_cpu();
+                }
 
                 let context_param = WhisperContextParameters {
                     use_gpu: acceleration.use_gpu,

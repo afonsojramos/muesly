@@ -56,6 +56,17 @@ impl WhisperContextAcceleration {
             (WhisperCompiledBackend::Cpu, _) => "CPU processing only",
         }
     }
+
+    /// Keep the compiled backend available while forcing context allocation and
+    /// inference onto the CPU. This is an explicit escape hatch for native GPU
+    /// backends that abort the process during allocation instead of returning an
+    /// error that the normal fallback path can catch.
+    pub fn forced_cpu(mut self) -> Self {
+        self.use_gpu = false;
+        self.flash_attn = false;
+        self.gpu_device = 0;
+        self
+    }
 }
 
 pub fn whisper_context_acceleration_for(
@@ -140,5 +151,20 @@ mod tests {
             assert!(!params.use_gpu);
             assert!(!params.flash_attn);
         }
+    }
+
+    #[test]
+    fn forced_cpu_disables_gpu_on_a_metal_build() {
+        let params = whisper_context_acceleration_for(
+            WhisperCompiledBackend::Metal,
+            GpuType::Metal,
+            PerformanceTier::Ultra,
+        )
+        .forced_cpu();
+
+        assert_eq!(params.compiled_backend, WhisperCompiledBackend::Metal);
+        assert!(!params.use_gpu);
+        assert!(!params.flash_attn);
+        assert_eq!(params.gpu_device, 0);
     }
 }
