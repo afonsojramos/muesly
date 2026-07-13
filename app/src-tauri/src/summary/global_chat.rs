@@ -6,13 +6,13 @@
 //! answer streams token-by-token. The loop is engineered for small local
 //! models: the first search always runs deterministically (the model never has
 //! to "decide" to search), tool calls must be a single bare JSON object (easy
-//! to emit, strict to parse), rounds are capped, and the last round forces a
-//! plain-text answer.
+//! to emit, strict to parse, with a fenced-JSON compatibility path), rounds are
+//! capped, and the last round forces a plain-text answer.
 //!
 //! Streaming rounds pass through a [`TokenGate`]: output is held until the
 //! first non-whitespace character decides whether this round is a tool call
-//! (`{`) or the final answer (anything else) — so tool JSON never flickers in
-//! the UI and answers still stream live.
+//! (`{` or a Markdown fence) or the final answer (anything else) — so tool JSON
+//! never flickers in the UI and answers still stream live.
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -31,6 +31,7 @@ use crate::summary::summary_engine;
 
 /// Model-driven tool rounds after the deterministic initial search.
 const MAX_TOOL_ROUNDS: usize = 3;
+const TOOL_PROTOCOL_FALLBACK: &str = "I couldn't finish that request. Please try again.";
 /// Search hits offered to the model per search.
 const MAX_SEARCH_HITS: usize = 6;
 /// Top hits read outright after the initial search (small models rarely call
@@ -70,9 +71,21 @@ pub(crate) enum ToolCall {
 }
 
 /// Strictly parse a round's full output as a tool call: it must be exactly one
-/// JSON object (surrounding whitespace allowed) with a known `tool` tag.
+/// JSON object (surrounding whitespace allowed) with a known `tool` tag. Small
+/// models sometimes wrap the object in one `json`/unlabelled Markdown fence;
+/// accept that transport wrapper while still rejecting surrounding prose.
 pub(crate) fn parse_tool_call(output: &str) -> Option<ToolCall> {
-    let trimmed = output.trim();
+    let mut trimmed = output.trim();
+    if trimmed.starts_with("```") {
+        let opening_end = trimmed.find('\n')?;
+        let language = trimmed[3..opening_end].trim();
+        if !language.is_empty() && !language.eq_ignore_ascii_case("json") {
+            return None;
+        }
+        let fenced_body = trimmed[opening_end + 1..].trim_end();
+        let body = fenced_body.strip_suffix("```")?;
+        trimmed = body.trim();
+    }
     if !trimmed.starts_with('{') || !trimmed.ends_with('}') {
         return None;
     }
@@ -105,9 +118,15 @@ impl TokenGate {
             Some(false) => piece.to_string(),
             None => {
                 self.buffer.push_str(piece);
-                match self.buffer.trim_start().chars().next() {
+                let candidate = self.buffer.trim_start();
+                match candidate.chars().next() {
                     None => String::new(), // still whitespace-only
                     Some('{') => {
+                        self.decided = Some(true);
+                        String::new()
+                    }
+                    Some('`') if candidate.len() < 3 => String::new(),
+                    Some('`') if candidate.starts_with("```") => {
                         self.decided = Some(true);
                         String::new()
                     }
@@ -592,8 +611,15 @@ pub async fn global_chat_ask<R: Runtime>(
             Err(message) => break Err(message),
         };
 
-        if !was_tool || force_answer {
+        if !was_tool {
             break Ok(full);
+        }
+
+        // Protocol-looking output is never user-visible. On the forced final
+        // round, or when strict parsing fails, return a friendly recovery
+        // message instead of exposing raw JSON/Markdown in the chat bubble.
+        if force_answer {
+            break Ok(TOOL_PROTOCOL_FALLBACK.to_string());
         }
 
         match parse_tool_call(&full) {
@@ -638,9 +664,9 @@ pub async fn global_chat_ask<R: Runtime>(
                 }
                 executed.push(call);
             }
-            // Looked like JSON but wasn't a valid tool call: treat the text as
-            // the answer rather than looping (it was withheld from the UI).
-            None => break Ok(full),
+            None => {
+                break Ok(TOOL_PROTOCOL_FALLBACK.to_string());
+            }
         }
     };
 
@@ -698,6 +724,22 @@ mod tests {
         assert!(gate.is_tool_call());
     }
 
+    #[test]
+    fn gate_holds_fenced_json_tool_calls_entirely() {
+        let mut gate = TokenGate::new();
+        assert_eq!(gate.push("```json\n"), "");
+        assert_eq!(gate.push("{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"), "");
+        assert!(gate.is_tool_call());
+    }
+
+    #[test]
+    fn gate_streams_answers_that_begin_with_inline_code() {
+        let mut gate = TokenGate::new();
+        assert_eq!(gate.push("`"), "");
+        assert_eq!(gate.push("code` is the answer"), "`code` is the answer");
+        assert!(!gate.is_tool_call());
+    }
+
     // ---- pure: tool-call parsing ----
 
     #[test]
@@ -714,6 +756,20 @@ mod tests {
                 meeting_id: "m1".into()
             })
         );
+        assert_eq!(
+            parse_tool_call(
+                "```json\n{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"
+            ),
+            Some(ToolCall::SearchMeetings {
+                query: "project X".into()
+            })
+        );
+        assert_eq!(
+            parse_tool_call("```\n{\"tool\":\"read_meeting\",\"meeting_id\":\"m1\"}\n```"),
+            Some(ToolCall::ReadMeeting {
+                meeting_id: "m1".into()
+            })
+        );
     }
 
     #[test]
@@ -722,6 +778,18 @@ mod tests {
         assert_eq!(parse_tool_call("{\"tool\":\"unknown\"}"), None);
         assert_eq!(parse_tool_call("{\"tool\":\"search_meetings\"} trailing"), None);
         assert_eq!(parse_tool_call("{broken json"), None);
+        assert_eq!(
+            parse_tool_call(
+                "Here is the call:\n```json\n{\"tool\":\"search_meetings\",\"query\":\"x\"}\n```"
+            ),
+            None
+        );
+        assert_eq!(
+            parse_tool_call(
+                "```javascript\n{\"tool\":\"search_meetings\",\"query\":\"x\"}\n```"
+            ),
+            None
+        );
     }
 
     // ---- pure: search query derivation + id scrubbing ----
