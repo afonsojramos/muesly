@@ -79,6 +79,41 @@ fn source_for_retranscribed_interval(
     }
 }
 
+async fn retranscription_prompt_terms(
+    pool: &sqlx::SqlitePool,
+    meeting_id: &str,
+) -> Result<Vec<String>> {
+    let mut terms = Vec::new();
+    if let Some(title) = sqlx::query_scalar::<_, String>(
+        "SELECT title FROM meetings WHERE id = ?",
+    )
+    .bind(meeting_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        terms.push(title);
+    }
+
+    if let Some(event) =
+        crate::database::repositories::calendar::CalendarEventsRepository::get(pool, meeting_id)
+            .await?
+    {
+        if let Some(title) = event.title.as_deref() {
+            terms.push(title.to_string());
+        }
+        if let Some(organizer) = event.organizer_name.as_deref() {
+            terms.push(organizer.to_string());
+        }
+        terms.extend(
+            crate::calendar::context::snapshot_attendees(&event)
+                .into_iter()
+                .filter_map(|attendee| attendee.name),
+        );
+    }
+
+    Ok(terms)
+}
+
 /// Progress update emitted during retranscription
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RetranscriptionProgress {
@@ -207,6 +242,12 @@ async fn run_retranscription<R: Runtime>(
 ) -> Result<RetranscriptionResult> {
     let folder_path = PathBuf::from(&meeting_folder_path);
     let audio_path = find_audio_file(&folder_path)?;
+    let app_state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| anyhow!("App state not available"))?;
+    let pool = app_state.db_manager.pool().clone();
+    let prompt_terms = retranscription_prompt_terms(&pool, &meeting_id).await?;
+    let _prompt_guard = crate::vocabulary::scoped_meeting_prompt_terms(prompt_terms);
 
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");
@@ -341,6 +382,9 @@ async fn run_retranscription<R: Runtime>(
     } else {
         None
     };
+    if let Some(engine) = &whisper_engine {
+        engine.reset_segment_context().await;
+    }
 
     // Split very long segments at silence boundaries for better transcription quality.
     // Hard cuts at arbitrary sample positions lose words at boundaries. Instead, scan
@@ -454,12 +498,7 @@ async fn run_retranscription<R: Runtime>(
     let mut segments = create_transcript_segments(&all_transcripts);
 
     // Save to database
-    let app_state = app
-        .try_state::<AppState>()
-        .ok_or_else(|| anyhow!("App state not available"))?;
-
     // Wrap delete+insert+update in a transaction to prevent data loss
-    let pool = app_state.db_manager.pool();
     let mut conn = pool.acquire().await.map_err(|e| anyhow!("DB error: {}", e))?;
     let mut tx = sqlx::Connection::begin(&mut *conn)
         .await

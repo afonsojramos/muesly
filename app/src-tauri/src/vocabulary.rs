@@ -46,6 +46,22 @@ pub fn clear_meeting_prompt_terms() {
     }
 }
 
+/// Scope meeting-specific Whisper prompt terms to one recording/import/batch
+/// job. Clearing on drop prevents proper nouns from leaking into the next job
+/// even when the current job fails or is cancelled.
+pub struct MeetingPromptGuard;
+
+impl Drop for MeetingPromptGuard {
+    fn drop(&mut self) {
+        clear_meeting_prompt_terms();
+    }
+}
+
+pub fn scoped_meeting_prompt_terms(terms: Vec<String>) -> MeetingPromptGuard {
+    set_meeting_prompt_terms(terms);
+    MeetingPromptGuard
+}
+
 fn meeting_prompt_terms() -> Vec<String> {
     MEETING_TERMS.read().map(|g| g.clone()).unwrap_or_default()
 }
@@ -206,11 +222,13 @@ pub fn whisper_initial_prompt() -> Option<String> {
         *total += t.len();
         terms.push(t.to_string());
     };
-    for e in &entries {
-        push(&e.to, &mut terms, &mut total_chars);
-    }
+    // The current meeting is the strongest relevance signal. Reserve the
+    // limited prompt budget for its title/attendees before global vocabulary.
     for t in meeting_prompt_terms() {
         push(&t, &mut terms, &mut total_chars);
+    }
+    for e in &entries {
+        push(&e.to, &mut terms, &mut total_chars);
     }
     if terms.is_empty() {
         None
@@ -312,6 +330,16 @@ mod tests {
         clear_meeting_prompt_terms();
         let after = whisper_initial_prompt().unwrap_or_default();
         assert!(!after.contains("Q3 Budget Sync"), "terms must clear on stop: {after}");
+    }
+
+    #[test]
+    fn scoped_meeting_terms_clear_on_drop() {
+        let _lock = MEETING_TERMS_TEST_LOCK.lock().unwrap();
+        {
+            let _scope = scoped_meeting_prompt_terms(vec!["LXP Refinement".into()]);
+            assert!(whisper_initial_prompt().unwrap().contains("LXP Refinement"));
+        }
+        assert!(!whisper_initial_prompt().unwrap_or_default().contains("LXP Refinement"));
     }
 
     #[test]

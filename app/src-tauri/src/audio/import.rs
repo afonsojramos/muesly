@@ -357,6 +357,7 @@ async fn run_import<R: Runtime>(
     // Start each import with a fresh auto-detected language lock so a lock from a
     // previous session (recording/import) never leaks into an `auto` import.
     crate::whisper_engine::reset_session_detected_language();
+    let _prompt_guard = crate::vocabulary::scoped_meeting_prompt_terms(vec![title.clone()]);
 
     // Determine which provider to use (default to whisper)
     let use_parakeet = provider.as_deref() == Some("parakeet");
@@ -551,6 +552,9 @@ async fn run_import<R: Runtime>(
     } else {
         None
     };
+    if let Some(engine) = &whisper_engine {
+        engine.reset_segment_context().await;
+    }
 
     // Split very long segments at silence boundaries for better transcription quality.
     // Hard cuts at arbitrary sample positions lose words at boundaries. Instead, scan
