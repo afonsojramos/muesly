@@ -112,7 +112,6 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 		const wordCount = all.map((t) => t.text.split(/\s+/).length).reduce((a, b) => a + b, 0);
 		await Analytics.track('copy', {
 			type: 'transcript',
-			meeting_id: meeting.id,
 			transcript_length: all.length.toString(),
 			word_count: wordCount.toString(),
 		});
@@ -183,7 +182,6 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 
 			await Analytics.track('copy', {
 				type: 'summary',
-				meeting_id: meeting.id,
 				has_markdown: (!!aiSummary && 'markdown' in aiSummary).toString(),
 			});
 		} catch (error) {
