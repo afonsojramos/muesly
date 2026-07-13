@@ -37,7 +37,6 @@ const QUALITY_PASS_TIMEOUT_MS = 30 * 60 * 1000;
  * identification runs against the final segments. Local engines only.
  */
 async function runQualityPass(meetingId: string, folderPath: string): Promise<void> {
-	const provider = config.transcriptModelConfig?.provider === 'parakeet' ? 'parakeet' : 'whisper';
 	const model = config.transcriptModelConfig?.model ?? null;
 	const langRes = await commands.getTranscriptionLanguage();
 	const language = langRes.status === 'ok' && langRes.data !== 'auto' ? langRes.data : null;
@@ -70,7 +69,6 @@ async function runQualityPass(meetingId: string, folderPath: string): Promise<vo
 		folderPath,
 		language,
 		model,
-		provider,
 	);
 	if (started.status === 'error') {
 		console.error('Quality pass failed to start:', started.error);
@@ -242,9 +240,7 @@ export function useRecordingStop(
 					// local engines (never re-bills a cloud provider). Best-effort.
 					try {
 						const qp = await commands.getPostMeetingQualityPassEnabled();
-						const provider = config.transcriptModelConfig?.provider;
-						const isLocalEngine = provider === 'localWhisper' || provider === 'parakeet';
-						if (qp.status === 'ok' && qp.data && isLocalEngine && folderPath) {
+						if (qp.status === 'ok' && qp.data && folderPath) {
 							await runQualityPass(meetingId, folderPath);
 						}
 					} catch (qualityError) {

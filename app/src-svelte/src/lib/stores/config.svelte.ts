@@ -107,8 +107,8 @@ class ConfigStore {
 	});
 
 	transcriptModelConfig = $state<TranscriptModelProps>({
-		provider: 'parakeet',
-		model: 'parakeet-tdt-0.6b-v3-int8',
+		provider: 'localWhisper',
+		model: 'base-q5_1',
 		apiKey: null,
 	});
 
@@ -214,8 +214,8 @@ class ConfigStore {
 			const config = await configService.getTranscriptConfig();
 			if (config) {
 				this.transcriptModelConfig = {
-					provider: config.provider ?? 'parakeet',
-					model: config.model ?? 'parakeet-tdt-0.6b-v3-int8',
+					provider: 'localWhisper',
+					model: config.model ?? 'base-q5_1',
 					apiKey: config.apiKey ?? null,
 				};
 			}

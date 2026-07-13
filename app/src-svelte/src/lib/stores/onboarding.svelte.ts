@@ -1,7 +1,7 @@
 /**
  * Onboarding store.
  *
- * Drives the multi-step onboarding flow: model downloads (Parakeet + summary),
+ * Drives the multi-step onboarding flow: model downloads (Whisper + summary),
  * permissions, database initialization (with legacy auto-import), and persisted
  * status. Equivalent of the React OnboardingContext.
  */
@@ -12,7 +12,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { OnboardingPermissions, PermissionStatus } from '$lib/types/onboarding';
 import { toast } from '$lib/toast';
 
-const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
 const SAVE_DEBOUNCE_MS = 1000;
 
 export interface ProgressInfo {
@@ -27,7 +26,7 @@ interface OnboardingStatusBlob {
 	completed: boolean;
 	current_step: number;
 	model_status: {
-		parakeet: string;
+		whisper: string;
 		summary: string;
 	};
 	last_updated: string;
@@ -46,9 +45,10 @@ class OnboardingStore {
 	/** True once persisted onboarding status has been loaded from the backend. */
 	statusLoaded = $state<boolean>(false);
 
-	parakeetDownloaded = $state<boolean>(false);
-	parakeetProgress = $state<number>(0);
-	parakeetProgressInfo = $state<ProgressInfo>(emptyProgress());
+	whisperDownloaded = $state<boolean>(false);
+	whisperProgress = $state<number>(0);
+	whisperProgressInfo = $state<ProgressInfo>(emptyProgress());
+	selectedWhisperModel = $state<string>('base-q5_1');
 
 	summaryModelDownloaded = $state<boolean>(false);
 	summaryModelProgress = $state<number>(0);
@@ -93,33 +93,30 @@ class OnboardingStore {
 					total_mb?: number;
 					speed_mbps?: number;
 					status?: string;
-				}>('parakeet-model-download-progress', (event) => {
+				}>('model-download-progress', (event) => {
 					const p = event.payload;
-					if (p.modelName !== PARAKEET_MODEL) return;
-					this.parakeetProgress = p.progress;
-					this.parakeetProgressInfo = {
+					if (p.modelName !== this.selectedWhisperModel) return;
+					this.whisperProgress = p.progress;
+					this.whisperProgressInfo = {
 						percent: p.progress,
 						downloadedMb: p.downloaded_mb ?? 0,
 						totalMb: p.total_mb ?? 0,
 						speedMbps: p.speed_mbps ?? 0,
 					};
 					if (p.status === 'completed' || p.progress >= 100) {
-						this.parakeetDownloaded = true;
+						this.whisperDownloaded = true;
 					}
 				}),
-				await listen<{ modelName: string }>('parakeet-model-download-complete', (event) => {
-					if (event.payload.modelName !== PARAKEET_MODEL) return;
-					this.parakeetDownloaded = true;
-					this.parakeetProgress = 100;
+				await listen<{ modelName: string }>('model-download-complete', (event) => {
+					if (event.payload.modelName !== this.selectedWhisperModel) return;
+					this.whisperDownloaded = true;
+					this.whisperProgress = 100;
 				}),
-				await listen<{ modelName: string; error: string }>(
-					'parakeet-model-download-error',
-					(event) => {
-						if (event.payload.modelName === PARAKEET_MODEL) {
-							console.error('[OnboardingStore] Parakeet download error:', event.payload.error);
-						}
-					},
-				),
+				await listen<{ modelName: string; error: string }>('model-download-error', (event) => {
+					if (event.payload.modelName === this.selectedWhisperModel) {
+						console.error('[OnboardingStore] Whisper download error:', event.payload.error);
+					}
+				}),
 				await listen<{
 					model: string;
 					progress: number;
@@ -178,8 +175,8 @@ class OnboardingStore {
 		this.#scheduleSave();
 	};
 
-	setParakeetDownloaded = (value: boolean): void => {
-		this.parakeetDownloaded = value;
+	setWhisperDownloaded = (value: boolean): void => {
+		this.whisperDownloaded = value;
 		this.#scheduleSave();
 	};
 	setSummaryModelDownloaded = (value: boolean): void => {
@@ -224,9 +221,9 @@ class OnboardingStore {
 		this.isBackgroundDownloading = true;
 
 		try {
-			if (!this.parakeetDownloaded) {
-				invoke('parakeet_download_model', { modelName: PARAKEET_MODEL }).catch((err) =>
-					console.error('[OnboardingStore] Parakeet download failed:', err),
+			if (!this.whisperDownloaded) {
+				invoke('whisper_download_model', { modelName: this.selectedWhisperModel }).catch((err) =>
+					console.error('[OnboardingStore] Whisper download failed:', err),
 				);
 			}
 
@@ -243,8 +240,8 @@ class OnboardingStore {
 		}
 	};
 
-	retryParakeetDownload = async (): Promise<void> => {
-		await invoke('parakeet_retry_download', { modelName: PARAKEET_MODEL });
+	retryWhisperDownload = async (): Promise<void> => {
+		await invoke('whisper_download_model', { modelName: this.selectedWhisperModel });
 	};
 
 	async #loadOnboardingStatus(): Promise<void> {
@@ -256,7 +253,7 @@ class OnboardingStore {
 			const verified = await this.#verifyModelStatus(status);
 			this.currentStep = verified.currentStep;
 			this.completed = verified.completed;
-			this.parakeetDownloaded = verified.parakeetDownloaded;
+			this.whisperDownloaded = verified.whisperDownloaded;
 			this.summaryModelDownloaded = verified.summaryModelDownloaded;
 
 			await this.#checkActiveDownloads();
@@ -268,17 +265,17 @@ class OnboardingStore {
 	async #verifyModelStatus(saved: OnboardingStatusBlob): Promise<{
 		currentStep: number;
 		completed: boolean;
-		parakeetDownloaded: boolean;
+		whisperDownloaded: boolean;
 		summaryModelDownloaded: boolean;
 	}> {
-		let parakeetDownloaded = false;
+		let whisperDownloaded = false;
 		let summaryModelDownloaded = false;
 
 		try {
-			await invoke('parakeet_init');
-			parakeetDownloaded = await invoke<boolean>('parakeet_has_available_models');
+			await invoke('whisper_init');
+			whisperDownloaded = await invoke<boolean>('whisper_has_available_models');
 		} catch (error) {
-			console.warn('[OnboardingStore] Failed to verify Parakeet:', error);
+			console.warn('[OnboardingStore] Failed to verify Whisper:', error);
 		}
 
 		try {
@@ -294,7 +291,7 @@ class OnboardingStore {
 		return {
 			currentStep,
 			completed: saved.completed,
-			parakeetDownloaded,
+			whisperDownloaded,
 			summaryModelDownloaded,
 		};
 	}
@@ -309,7 +306,7 @@ class OnboardingStore {
 					completed: this.completed,
 					current_step: this.currentStep,
 					model_status: {
-						parakeet: this.parakeetDownloaded ? 'downloaded' : 'not_downloaded',
+						whisper: this.whisperDownloaded ? 'downloaded' : 'not_downloaded',
 						summary: this.summaryModelDownloaded ? 'downloaded' : 'not_downloaded',
 					},
 					last_updated: new Date().toISOString(),
@@ -391,11 +388,16 @@ class OnboardingStore {
 		} catch (error) {
 			console.error('[OnboardingStore] Failed to get recommended model:', error);
 		}
+		try {
+			this.selectedWhisperModel = await invoke<string>('whisper_get_recommended_model');
+		} catch (error) {
+			console.error('[OnboardingStore] Failed to get recommended Whisper model:', error);
+		}
 	}
 
 	async #checkActiveDownloads(): Promise<void> {
 		try {
-			const models = await invoke<Array<{ status?: unknown }>>('parakeet_get_available_models');
+			const models = await invoke<Array<{ status?: unknown }>>('whisper_get_available_models');
 			const isDownloading = models.some(
 				(m) =>
 					m.status !== undefined &&

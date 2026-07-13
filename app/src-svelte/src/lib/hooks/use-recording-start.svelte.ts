@@ -44,35 +44,19 @@ export function generateMeetingTitle(): string {
 	return `Meeting ${day}_${month}_${year}_${hours}_${minutes}_${seconds}`;
 }
 
-async function checkParakeetReady(): Promise<boolean> {
+async function checkTranscriptionReady(): Promise<boolean> {
 	try {
-		await invoke('parakeet_init');
-		return await invoke<boolean>('parakeet_has_available_models');
+		await invoke('whisper_init');
+		return await invoke<boolean>('whisper_has_available_models');
 	} catch (error) {
-		console.error('Failed to check Parakeet status:', error);
+		console.error('Failed to check Whisper status:', error);
 		return false;
 	}
 }
 
-// Pre-flight readiness gate. Only Parakeet has a cheap FE availability check;
-// for any other configured provider (e.g. Whisper) the backend validates
-// readiness by provider at start, so don't apply the Parakeet gate and wrongly
-// block those users.
-async function checkTranscriptionReady(): Promise<boolean> {
-	try {
-		const cfg = await invoke<{ provider?: string } | null>('api_get_transcript_config', {
-			authToken: null,
-		});
-		if (cfg?.provider && cfg.provider !== 'parakeet') return true;
-	} catch (error) {
-		console.error('Failed to read transcription config:', error);
-	}
-	return await checkParakeetReady();
-}
-
 async function checkIfModelDownloading(): Promise<boolean> {
 	try {
-		const models = await invoke<ModelStatus[]>('parakeet_get_available_models');
+		const models = await invoke<ModelStatus[]>('whisper_get_available_models');
 		return models.some((m) => {
 			if (!m.status) return false;
 			return typeof m.status === 'object'
@@ -107,8 +91,8 @@ export async function startRecordingWithTitle(
 	pin?: FolderPin,
 ): Promise<boolean> {
 	if (recordingState.isRecording) return false;
-	const parakeetReady = await checkTranscriptionReady();
-	if (!parakeetReady) {
+	const transcriptionReady = await checkTranscriptionReady();
+	if (!transcriptionReady) {
 		toast.error('Transcription model not ready', {
 			description: 'Please download a transcription model before recording.',
 		});
@@ -194,8 +178,8 @@ export function useRecordingStart(
 
 	const handleRecordingStart = async (): Promise<void> => {
 		try {
-			const parakeetReady = await checkTranscriptionReady();
-			if (!parakeetReady) {
+			const transcriptionReady = await checkTranscriptionReady();
+			if (!transcriptionReady) {
 				await notifyModelNotReady('home_page');
 				return;
 			}
@@ -221,8 +205,8 @@ export function useRecordingStart(
 		isAutoStarting = true;
 
 		try {
-			const parakeetReady = await checkTranscriptionReady();
-			if (!parakeetReady) {
+			const transcriptionReady = await checkTranscriptionReady();
+			if (!transcriptionReady) {
 				await notifyModelNotReady(location);
 				return;
 			}

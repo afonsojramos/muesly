@@ -9,7 +9,7 @@
 	// 4-Step Onboarding Flow (system-recommended models):
 	// 1: Welcome — introduce muesly features
 	// 2: Setup Overview — show recommended downloads
-	// 3: Download Progress — download Parakeet + Gemma
+	// 3: Download Progress — download Whisper + the summary model
 	// 4: Permissions — request mic + system audio (macOS only)
 	const platform = usePlatform();
 </script>

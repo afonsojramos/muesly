@@ -74,14 +74,6 @@
 		return models.availableModels.find((m) => m.provider === provider && m.name === name);
 	});
 
-	const isParakeetModel = $derived(selectedModelDetails?.provider === 'parakeet');
-
-	$effect(() => {
-		if (isParakeetModel && selectedLang !== 'auto') {
-			selectedLang = 'auto';
-		}
-	});
-
 	let wasOpen = false;
 	// Reset state only on a closed→open transition.
 	$effect(() => {
@@ -180,9 +172,9 @@
 		progress = null;
 
 		try {
-			const languageToSend = isParakeetModel ? null : selectedLang === 'auto' ? null : selectedLang;
+			const languageToSend = selectedLang === 'auto' ? null : selectedLang;
 			await Analytics.track('enhance_transcript_started', {
-				language: isParakeetModel ? 'auto' : selectedLang === 'auto' ? 'auto' : selectedLang,
+				language: selectedLang === 'auto' ? 'auto' : selectedLang,
 				model_provider: selectedModelDetails?.provider || '',
 				model_name: selectedModelDetails?.name || '',
 			});
@@ -193,7 +185,6 @@
 				meetingFolderPath,
 				language: languageToSend,
 				model: selectedModelDetails?.name || null,
-				provider: selectedModelDetails?.provider || null,
 			});
 		} catch (err) {
 			isProcessing = false;
@@ -267,43 +258,31 @@
 
 		<div class="flex flex-col gap-4 py-4">
 			{#if !isProcessing && !error}
-				{#if !isParakeetModel}
-					<div class="flex flex-col gap-3">
-						<div class="flex items-center gap-2">
-							<GlobeIcon class="size-4 text-muted-foreground" />
-							<span class="text-sm font-medium">Language</span>
-						</div>
-						<Select.Root
-							type="single"
-							value={selectedLang}
-							onValueChange={(v) => {
-								if (v) selectedLang = v;
-							}}
-						>
-							<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
-							<Select.Content>
-								<Select.Group>
-									{#each languageItems as item (item.value)}
-										<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-									{/each}
-								</Select.Group>
-							</Select.Content>
-						</Select.Root>
-						<p class="text-xs text-muted-foreground">
-							Select a specific language to improve accuracy, or use auto-detect
-						</p>
+				<div class="flex flex-col gap-3">
+					<div class="flex items-center gap-2">
+						<GlobeIcon class="size-4 text-muted-foreground" />
+						<span class="text-sm font-medium">Language</span>
 					</div>
-				{:else}
-					<div class="flex flex-col gap-3">
-						<div class="flex items-center gap-2">
-							<GlobeIcon class="size-4 text-muted-foreground" />
-							<span class="text-sm font-medium">Language</span>
-						</div>
-						<p class="text-xs text-muted-foreground">
-							Language selection isn't supported for Parakeet. It always uses automatic detection.
-						</p>
-					</div>
-				{/if}
+					<Select.Root
+						type="single"
+						value={selectedLang}
+						onValueChange={(v) => {
+							if (v) selectedLang = v;
+						}}
+					>
+						<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
+						<Select.Content>
+							<Select.Group>
+								{#each languageItems as item (item.value)}
+									<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
+								{/each}
+							</Select.Group>
+						</Select.Content>
+					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						Select a specific language to improve accuracy, or use auto-detect
+					</p>
+				</div>
 
 				{#if models.availableModels.length > 0}
 					<div class="flex flex-col gap-3">

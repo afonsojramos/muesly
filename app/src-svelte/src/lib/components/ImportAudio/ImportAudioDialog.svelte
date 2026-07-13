@@ -93,8 +93,6 @@
 		return models.availableModels.find((m) => m.provider === provider && m.name === name);
 	});
 
-	const isParakeetModel = $derived(selectedModel?.provider === 'parakeet');
-
 	const languageItems = $derived(LANGUAGES.map((l) => ({ label: l.name, value: l.code })));
 	const modelItems = $derived(
 		models.availableModels.map((m) => ({
@@ -140,13 +138,6 @@
 		}
 	});
 
-	// Parakeet always uses automatic detection.
-	$effect(() => {
-		if (isParakeetModel && selectedLang !== 'auto') {
-			selectedLang = 'auto';
-		}
-	});
-
 	async function handleSelectFile(): Promise<void> {
 		const info = await importer.selectFile();
 		if (info) title = info.filename;
@@ -158,9 +149,8 @@
 		await importer.startImport(
 			fileInfo.path,
 			title || fileInfo.filename,
-			isParakeetModel ? null : selectedLang === 'auto' ? null : selectedLang,
+			selectedLang === 'auto' ? null : selectedLang,
 			selectedModel?.name || null,
-			selectedModel?.provider || null,
 		);
 	}
 
@@ -282,43 +272,30 @@
 
 						{#if showAdvanced}
 							<div class="flex flex-col gap-4 border-t border-border p-3 pt-0">
-								{#if !isParakeetModel}
-									<div class="flex flex-col gap-2">
-										<div class="flex items-center gap-2">
-											<Globe class="size-4 text-muted-foreground" />
-											<span class="text-sm font-medium">Language</span>
-										</div>
-										<Select.Root
-											type="single"
-											value={selectedLang}
-											onValueChange={(v) => {
-												if (v) selectedLang = v;
-											}}
-										>
-											<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
-											<Select.Content>
-												<Select.Group>
-													{#each languageItems as item (item.value)}
-														<Select.Item value={item.value} label={item.label}
-															>{item.label}</Select.Item
-														>
-													{/each}
-												</Select.Group>
-											</Select.Content>
-										</Select.Root>
+								<div class="flex flex-col gap-2">
+									<div class="flex items-center gap-2">
+										<Globe class="size-4 text-muted-foreground" />
+										<span class="text-sm font-medium">Language</span>
 									</div>
-								{:else}
-									<div class="flex flex-col gap-2">
-										<div class="flex items-center gap-2">
-											<Globe class="size-4 text-muted-foreground" />
-											<span class="text-sm font-medium">Language</span>
-										</div>
-										<p class="text-xs text-muted-foreground">
-											Language selection isn't supported for Parakeet. It always uses automatic
-											detection.
-										</p>
-									</div>
-								{/if}
+									<Select.Root
+										type="single"
+										value={selectedLang}
+										onValueChange={(v) => {
+											if (v) selectedLang = v;
+										}}
+									>
+										<Select.Trigger class="w-full">{selectedLangLabel}</Select.Trigger>
+										<Select.Content>
+											<Select.Group>
+												{#each languageItems as item (item.value)}
+													<Select.Item value={item.value} label={item.label}
+														>{item.label}</Select.Item
+													>
+												{/each}
+											</Select.Group>
+										</Select.Content>
+									</Select.Root>
+								</div>
 
 								{#if models.availableModels.length > 0}
 									<div class="flex flex-col gap-2">

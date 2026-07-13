@@ -193,7 +193,7 @@ export function getModelPerformanceBadge(modelName: string): { label: string; co
 	}
 }
 
-// Helper function to get concise tagline for model (similar to Parakeet style)
+// Helper function to get a concise model tagline.
 export function getModelTagline(
 	modelName: string,
 	speed: ProcessingSpeed,

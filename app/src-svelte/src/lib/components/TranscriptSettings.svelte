@@ -1,17 +1,13 @@
 <script lang="ts">
-	import { invoke } from '@tauri-apps/api/core';
 	import { onMount } from 'svelte';
-	import { Eye, EyeOff, Lock, Unlock, Plus, X } from '@lucide/svelte';
+	import { Plus, X } from '@lucide/svelte';
 
 	import type { TranscriptModelProps } from '$lib/services/config';
 	import * as Card from '$lib/components/ui/card';
 	import * as Field from '$lib/components/ui/field';
-	import * as InputGroup from '$lib/components/ui/input-group';
-	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import WhisperModelManager from './WhisperModelManager.svelte';
-	import ParakeetModelManager from './ParakeetModelManager.svelte';
 	import { config } from '$lib/stores/config.svelte';
 	import { commands } from '$lib/bindings';
 	import { Switch } from '$lib/components/ui/switch';
@@ -24,13 +20,6 @@
 	}
 
 	let { transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: Props = $props();
-
-	// svelte-ignore state_referenced_locally
-	let apiKey = $state<string | null>(transcriptModelConfig.apiKey ?? null);
-	let showApiKey = $state(false);
-	let isApiKeyLocked = $state(true);
-	// svelte-ignore state_referenced_locally
-	let uiProvider = $state<TranscriptModelProps['provider']>(transcriptModelConfig.provider);
 
 	// Post-meeting quality pass: batch re-transcription of the saved audio.
 	let qualityPassEnabled = $state(false);
@@ -49,52 +38,6 @@
 		}
 	}
 
-	// Keep the provider dropdown synced with external config changes.
-	$effect(() => {
-		uiProvider = transcriptModelConfig.provider;
-	});
-	$effect(() => {
-		if (
-			transcriptModelConfig.provider === 'localWhisper' ||
-			transcriptModelConfig.provider === 'parakeet'
-		) {
-			apiKey = null;
-		}
-	});
-
-	const providerItems = [
-		{ value: 'parakeet', label: 'Parakeet — Fast, real-time' },
-		{ value: 'localWhisper', label: 'Local Whisper — Best accuracy' },
-	];
-
-	const requiresApiKey = $derived(
-		uiProvider === 'deepgram' ||
-			uiProvider === 'elevenLabs' ||
-			uiProvider === 'openai' ||
-			uiProvider === 'groq',
-	);
-
-	async function fetchApiKey(provider: string): Promise<void> {
-		try {
-			apiKey = ((await invoke('api_get_transcript_api_key', { provider })) as string) || '';
-		} catch (err) {
-			console.error('Error fetching API key:', err);
-			apiKey = null;
-		}
-	}
-
-	const providerLabel = $derived(
-		providerItems.find((item) => item.value === uiProvider)?.label ?? 'Select provider',
-	);
-
-	function handleProviderChange(value: string): void {
-		const provider = (value ?? 'parakeet') as TranscriptModelProps['provider'];
-		uiProvider = provider;
-		if (provider !== 'localWhisper' && provider !== 'parakeet') {
-			void fetchApiKey(provider);
-		}
-	}
-
 	function handleWhisperSelect(modelName: string): void {
 		setTranscriptModelConfig({
 			...transcriptModelConfig,
@@ -103,92 +46,22 @@
 		});
 		onModelSelect?.();
 	}
-
-	function handleParakeetSelect(modelName: string): void {
-		setTranscriptModelConfig({ ...transcriptModelConfig, provider: 'parakeet', model: modelName });
-		onModelSelect?.();
-	}
 </script>
 
 <div class="flex flex-col gap-4">
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Transcription Model</Card.Title>
+			<Card.Title>Whisper transcription</Card.Title>
 			<Card.Description>
-				Choose the engine that converts speech to text. Local models run entirely on your device.
+				Speech stays on your device. Choose the accuracy and speed profile that fits this computer.
 			</Card.Description>
 		</Card.Header>
-		<Card.Content class="flex flex-col gap-4">
-			<Field.Field>
-				<Field.FieldLabel for="transcript-provider">Transcript Model</Field.FieldLabel>
-				<Select.Root type="single" value={uiProvider} onValueChange={handleProviderChange}>
-					<Select.Trigger id="transcript-provider" class="w-full">
-						{providerLabel}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Group>
-							{#each providerItems as item (item.value)}
-								<Select.Item value={item.value} label={item.label}>{item.label}</Select.Item>
-							{/each}
-						</Select.Group>
-					</Select.Content>
-				</Select.Root>
-				<Field.Description>
-					{uiProvider === 'parakeet'
-						? 'Best for low-latency live notes. Short phrases and specialist terms may need vocabulary corrections.'
-						: 'Best for accents, longer context, and specialist terminology; it uses more processing time.'}
-				</Field.Description>
-			</Field.Field>
-
-			{#if uiProvider === 'localWhisper'}
-				<WhisperModelManager
-					selectedModel={transcriptModelConfig.provider === 'localWhisper'
-						? transcriptModelConfig.model
-						: undefined}
-					onModelSelect={handleWhisperSelect}
-					autoSave={true}
-				/>
-			{:else if uiProvider === 'parakeet'}
-				<ParakeetModelManager
-					selectedModel={transcriptModelConfig.provider === 'parakeet'
-						? transcriptModelConfig.model
-						: undefined}
-					onModelSelect={handleParakeetSelect}
-					autoSave={true}
-				/>
-			{/if}
-
-			{#if requiresApiKey}
-				<Field.Field>
-					<Field.FieldLabel for="transcript-api-key">API Key</Field.FieldLabel>
-					<InputGroup.Root>
-						<InputGroup.Input
-							id="transcript-api-key"
-							type={showApiKey ? 'text' : 'password'}
-							value={apiKey ?? ''}
-							disabled={isApiKeyLocked}
-							oninput={(e) => (apiKey = e.currentTarget.value)}
-							placeholder="Enter your API key"
-						/>
-						<InputGroup.Addon align="inline-end">
-							<InputGroup.Button
-								size="icon-xs"
-								aria-label={isApiKeyLocked ? 'Unlock API key' : 'Lock API key'}
-								onclick={() => (isApiKeyLocked = !isApiKeyLocked)}
-							>
-								{#if isApiKeyLocked}<Lock />{:else}<Unlock />{/if}
-							</InputGroup.Button>
-							<InputGroup.Button
-								size="icon-xs"
-								aria-label={showApiKey ? 'Hide API key' : 'Show API key'}
-								onclick={() => (showApiKey = !showApiKey)}
-							>
-								{#if showApiKey}<EyeOff />{:else}<Eye />{/if}
-							</InputGroup.Button>
-						</InputGroup.Addon>
-					</InputGroup.Root>
-				</Field.Field>
-			{/if}
+		<Card.Content>
+			<WhisperModelManager
+				selectedModel={transcriptModelConfig.model}
+				onModelSelect={handleWhisperSelect}
+				autoSave={true}
+			/>
 		</Card.Content>
 	</Card.Root>
 
@@ -197,7 +70,7 @@
 			<Card.Title>Custom vocabulary</Card.Title>
 			<Card.Description>
 				Add names, jargon, and acronyms in their preferred spelling. Whisper uses every preferred
-				term as context; optional mishearings correct the output from either local engine.
+				term as context; optional mishearings correct common recognition mistakes.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>

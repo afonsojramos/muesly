@@ -53,15 +53,19 @@
 	let models = $state<ModelInfo[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+	let recommendedModel = $state('base-q5_1');
 	const downloadingModels = new SvelteSet<string>();
 	const progressThrottle = new Map<string, { progress: number; timestamp: number }>();
 
 	const basicModels = $derived(
 		models
-			.filter((m) => BASIC_MODEL_NAMES.includes(m.name))
+			.filter((m) => BASIC_MODEL_NAMES.includes(m.name) && m.name !== recommendedModel)
 			.sort((a, b) => BASIC_MODEL_NAMES.indexOf(a.name) - BASIC_MODEL_NAMES.indexOf(b.name)),
 	);
-	const advancedModels = $derived(models.filter((m) => !BASIC_MODEL_NAMES.includes(m.name)));
+	const recommended = $derived(models.find((m) => m.name === recommendedModel));
+	const advancedModels = $derived(
+		models.filter((m) => !BASIC_MODEL_NAMES.includes(m.name) && m.name !== recommendedModel),
+	);
 
 	function setModelStatus(modelName: string, status: ModelStatus): void {
 		models = models.map((m) => (m.name === modelName ? { ...m, status } : m));
@@ -140,6 +144,9 @@
 		(async () => {
 			try {
 				loading = true;
+				recommendedModel = await invoke<string>('whisper_get_recommended_model').catch(
+					() => recommendedModel,
+				);
 				await WhisperAPI.init();
 				models = await WhisperAPI.getAvailableModels();
 			} catch (err) {
@@ -259,11 +266,22 @@
 {:else}
 	<div class={cn('flex flex-col gap-3', className)}>
 		<div class="flex flex-col gap-3">
+			{#if recommended}
+				<ModelCard
+					{...whisperCardDisplay(recommended)}
+					isSelected={selectedModel === recommended.name}
+					isRecommended={true}
+					onSelect={() => recommended.status === 'Available' && selectModel(recommended.name)}
+					onDownload={() => downloadModel(recommended.name)}
+					onCancel={() => cancelDownload(recommended.name)}
+					onDelete={() => deleteModel(recommended.name)}
+				/>
+			{/if}
 			{#each basicModels as model (model.name)}
 				<ModelCard
 					{...whisperCardDisplay(model)}
 					isSelected={selectedModel === model.name}
-					isRecommended={model.name === 'large-v3-turbo'}
+					isRecommended={false}
 					onSelect={() => model.status === 'Available' && selectModel(model.name)}
 					onDownload={() => downloadModel(model.name)}
 					onCancel={() => cancelDownload(model.name)}

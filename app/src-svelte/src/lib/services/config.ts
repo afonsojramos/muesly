@@ -8,7 +8,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface TranscriptModelProps {
-	provider: 'localWhisper' | 'parakeet' | 'deepgram' | 'elevenLabs' | 'groq' | 'openai';
+	provider: 'localWhisper';
 	model: string;
 	apiKey?: string | null;
 }

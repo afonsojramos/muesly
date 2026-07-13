@@ -13,8 +13,6 @@
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import OnboardingContainer from '../OnboardingContainer.svelte';
 
-	const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
-
 	type DownloadStatus = 'waiting' | 'downloading' | 'completed' | 'error';
 
 	interface DownloadState {
@@ -29,11 +27,11 @@
 	const platform = usePlatform();
 	let recommendedModel = $state<string>('gemma3:1b');
 
-	let parakeetState = $state<DownloadState>({
-		status: onboarding.parakeetDownloaded ? 'completed' : 'waiting',
-		progress: onboarding.parakeetDownloaded ? 100 : 0,
+	let whisperState = $state<DownloadState>({
+		status: onboarding.whisperDownloaded ? 'completed' : 'waiting',
+		progress: onboarding.whisperDownloaded ? 100 : 0,
 		downloadedMb: 0,
-		totalMb: 670,
+		totalMb: 0,
 		speedMbps: 0,
 	});
 
@@ -54,8 +52,8 @@
 		if (retrying) return;
 		retrying = true;
 
-		parakeetState = {
-			...parakeetState,
+		whisperState = {
+			...whisperState,
 			status: 'waiting',
 			error: undefined,
 			progress: 0,
@@ -64,11 +62,11 @@
 		};
 
 		try {
-			await invoke('parakeet_retry_download', { modelName: PARAKEET_MODEL });
+			await invoke('whisper_download_model', { modelName: onboarding.selectedWhisperModel });
 		} catch (error) {
 			console.error('[DownloadProgressStep] Retry failed:', error);
-			parakeetState = {
-				...parakeetState,
+			whisperState = {
+				...whisperState,
 				status: 'error',
 				error: error instanceof Error ? error.message : 'Retry failed',
 			};
@@ -117,11 +115,11 @@
 	}
 
 	async function startDownloads(): Promise<void> {
-		if (onboarding.parakeetDownloaded && onboarding.summaryModelDownloaded) return;
+		if (onboarding.whisperDownloaded && onboarding.summaryModelDownloaded) return;
 
 		try {
-			if (!onboarding.parakeetDownloaded) {
-				parakeetState = { ...parakeetState, status: 'downloading' };
+			if (!onboarding.whisperDownloaded) {
+				whisperState = { ...whisperState, status: 'downloading' };
 			}
 			if (!onboarding.summaryModelDownloaded) {
 				gemmaState = { ...gemmaState, status: 'downloading' };
@@ -129,8 +127,8 @@
 			await onboarding.startBackgroundDownloads(true);
 		} catch (error) {
 			console.error('Failed to start downloads:', error);
-			if (!onboarding.parakeetDownloaded) {
-				parakeetState = { ...parakeetState, status: 'error', error: String(error) };
+			if (!onboarding.whisperDownloaded) {
+				whisperState = { ...whisperState, status: 'error', error: String(error) };
 			}
 		}
 	}
@@ -138,13 +136,13 @@
 	async function handleContinue(): Promise<void> {
 		// Verify actual model availability (catches state drift).
 		try {
-			await invoke('parakeet_init');
-			const actuallyAvailable = await invoke<boolean>('parakeet_has_available_models');
+			await invoke('whisper_init');
+			const actuallyAvailable = await invoke<boolean>('whisper_has_available_models');
 
-			if (actuallyAvailable && !onboarding.parakeetDownloaded) {
-				onboarding.setParakeetDownloaded(true);
-				parakeetState = { ...parakeetState, status: 'completed', progress: 100 };
-			} else if (!actuallyAvailable && parakeetState.status === 'error') {
+			if (actuallyAvailable && !onboarding.whisperDownloaded) {
+				onboarding.setWhisperDownloaded(true);
+				whisperState = { ...whisperState, status: 'completed', progress: 100 };
+			} else if (!actuallyAvailable && whisperState.status === 'error') {
 				toast.error('Transcription engine required', {
 					description: 'Please retry the download before continuing.',
 				});
@@ -155,7 +153,7 @@
 		}
 
 		const downloadsComplete =
-			parakeetState.status === 'completed' && gemmaState.status === 'completed';
+			whisperState.status === 'completed' && gemmaState.status === 'completed';
 
 		if (!downloadsComplete) {
 			toast.info('Downloads will continue in the background', {
@@ -219,41 +217,41 @@
 					total_mb?: number;
 					speed_mbps?: number;
 					status?: string;
-				}>('parakeet-model-download-progress', (event) => {
+				}>('model-download-progress', (event) => {
 					const { modelName, progress, downloaded_mb, total_mb, speed_mbps, status } =
 						event.payload;
-					if (modelName !== PARAKEET_MODEL) return;
-					parakeetState = {
-						...parakeetState,
+					if (modelName !== onboarding.selectedWhisperModel) return;
+					whisperState = {
+						...whisperState,
 						status: status === 'completed' ? 'completed' : 'downloading',
 						progress,
-						downloadedMb: downloaded_mb ?? parakeetState.downloadedMb,
-						totalMb: total_mb ?? parakeetState.totalMb,
-						speedMbps: speed_mbps ?? parakeetState.speedMbps,
+						downloadedMb: downloaded_mb ?? whisperState.downloadedMb,
+						totalMb: total_mb ?? whisperState.totalMb,
+						speedMbps: speed_mbps ?? whisperState.speedMbps,
 					};
 					if (status === 'completed' || progress >= 100) {
-						onboarding.setParakeetDownloaded(true);
+						onboarding.setWhisperDownloaded(true);
 					}
 				});
 				if (cancelled) unlistenProgress();
 				else unsubscribers.push(unlistenProgress);
 
 				const unlistenComplete = await listen<{ modelName: string }>(
-					'parakeet-model-download-complete',
+					'model-download-complete',
 					(event) => {
-						if (event.payload.modelName !== PARAKEET_MODEL) return;
-						parakeetState = { ...parakeetState, status: 'completed', progress: 100 };
-						onboarding.setParakeetDownloaded(true);
+						if (event.payload.modelName !== onboarding.selectedWhisperModel) return;
+						whisperState = { ...whisperState, status: 'completed', progress: 100 };
+						onboarding.setWhisperDownloaded(true);
 					},
 				);
 				if (cancelled) unlistenComplete();
 				else unsubscribers.push(unlistenComplete);
 
 				const unlistenError = await listen<{ modelName: string; error: string }>(
-					'parakeet-model-download-error',
+					'model-download-error',
 					(event) => {
-						if (event.payload.modelName !== PARAKEET_MODEL) return;
-						parakeetState = { ...parakeetState, status: 'error', error: event.payload.error };
+						if (event.payload.modelName !== onboarding.selectedWhisperModel) return;
+						whisperState = { ...whisperState, status: 'error', error: event.payload.error };
 					},
 				);
 				if (cancelled) unlistenError();
@@ -389,12 +387,16 @@
 	<div class="flex flex-col items-center gap-6">
 		<!-- Download Cards -->
 		<div class="flex w-full max-w-lg flex-col gap-4">
-			{@render downloadCard('Transcription Engine', micIcon, parakeetState, '~670 MB')}
+			{@render downloadCard(
+				'Whisper Transcription',
+				micIcon,
+				whisperState,
+				onboarding.selectedWhisperModel,
+			)}
 			{@render downloadCard('Summary Engine', sparklesIcon, gemmaState, summaryModelSize)}
 		</div>
 
-		<!-- Info Message - Only show when Parakeet is downloaded -->
-		{#if onboarding.parakeetDownloaded && !onboarding.summaryModelDownloaded}
+		{#if onboarding.whisperDownloaded && !onboarding.summaryModelDownloaded}
 			<div class="w-full max-w-lg" transition:fly={{ y: -10, duration: 300 }}>
 				<Alert.Root class="bg-muted">
 					<Download class="text-muted-foreground" />
@@ -408,10 +410,10 @@
 		<div class="w-full max-w-xs">
 			<Button
 				onclick={handleContinue}
-				disabled={!onboarding.parakeetDownloaded || isCompleting}
+				disabled={!onboarding.whisperDownloaded || isCompleting}
 				class="h-11 w-full"
 			>
-				{#if isCompleting || !onboarding.parakeetDownloaded}
+				{#if isCompleting || !onboarding.whisperDownloaded}
 					<Loader2 class="animate-spin" />
 				{:else}
 					Continue

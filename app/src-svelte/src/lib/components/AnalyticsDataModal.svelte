@@ -15,7 +15,7 @@
 		{
 			title: '1. Model Preferences',
 			items: [
-				'Transcription model (e.g. "Whisper large-v3", "Parakeet")',
+				'Transcription model (e.g. "Whisper large-v3")',
 				'Summary model (e.g. "Llama 3.2", "Claude Sonnet")',
 				'Model provider (e.g. "Local", "Ollama", "OpenRouter")',
 			],

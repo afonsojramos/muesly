@@ -1,4 +1,4 @@
-// Normalize the Whisper/Parakeet model status (a string or tagged object from
+// Normalize the Whisper model status (a string or tagged object from
 // Rust) into the flat shape the shared ModelCard expects.
 
 export type ModelCardStatus = 'available' | 'missing' | 'error' | 'corrupted';

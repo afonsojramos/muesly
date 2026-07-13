@@ -28,7 +28,7 @@ export const commands = {
 	/**
 	 *  Download the diarization models on demand, emitting
 	 *  `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
-	 *  the Parakeet model-download flow).
+	 *  the transcription model-download flow).
 	 */
 	downloadDiarizationModels: () => typedError<null, string>(__TAURI_INVOKE("download_diarization_models")),
 	/**
@@ -71,6 +71,7 @@ export const commands = {
 	trackException: (report: ExceptionReport) => typedError<null, string>(__TAURI_INVOKE("track_exception", { report })),
 	whisperInit: () => typedError<null, string>(__TAURI_INVOKE("whisper_init")),
 	whisperGetAvailableModels: () => typedError<WhisperModelInfo[], string>(__TAURI_INVOKE("whisper_get_available_models")),
+	whisperGetRecommendedModel: () => __TAURI_INVOKE<string>("whisper_get_recommended_model"),
 	whisperLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_load_model", { modelName })),
 	whisperGetCurrentModel: () => typedError<string | null, string>(__TAURI_INVOKE("whisper_get_current_model")),
 	whisperIsModelLoaded: () => typedError<boolean, string>(__TAURI_INVOKE("whisper_is_model_loaded")),
@@ -81,21 +82,6 @@ export const commands = {
 	whisperDownloadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_download_model", { modelName })),
 	whisperCancelDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_cancel_download", { modelName })),
 	whisperDeleteCorruptedModel: (modelName: string) => typedError<string, string>(__TAURI_INVOKE("whisper_delete_corrupted_model", { modelName })),
-	parakeetInit: () => typedError<null, string>(__TAURI_INVOKE("parakeet_init")),
-	parakeetGetAvailableModels: () => typedError<ParakeetModelInfo[], string>(__TAURI_INVOKE("parakeet_get_available_models")),
-	parakeetLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_load_model", { modelName })),
-	parakeetGetCurrentModel: () => typedError<string | null, string>(__TAURI_INVOKE("parakeet_get_current_model")),
-	parakeetIsModelLoaded: () => typedError<boolean, string>(__TAURI_INVOKE("parakeet_is_model_loaded")),
-	parakeetHasAvailableModels: () => typedError<boolean, string>(__TAURI_INVOKE("parakeet_has_available_models")),
-	parakeetValidateModelReady: () => typedError<string, string>(__TAURI_INVOKE("parakeet_validate_model_ready")),
-	parakeetTranscribeAudio: (audioData: (number | null)[]) => typedError<string, string>(__TAURI_INVOKE("parakeet_transcribe_audio", { audioData })),
-	parakeetGetModelsDirectory: () => typedError<string, string>(__TAURI_INVOKE("parakeet_get_models_directory")),
-	parakeetDownloadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_download_model", { modelName })),
-	parakeetRetryDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_retry_download", { modelName })),
-	parakeetCancelDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_cancel_download", { modelName })),
-	parakeetDeleteCorruptedModel: (modelName: string) => typedError<string, string>(__TAURI_INVOKE("parakeet_delete_corrupted_model", { modelName })),
-	/**  Open the Parakeet models folder in the system file explorer */
-	openParakeetModelsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_parakeet_models_folder")),
 	getAudioDevices: () => typedError<AudioDevice[], string>(__TAURI_INVOKE("get_audio_devices")),
 	triggerMicrophonePermission: () => typedError<boolean, string>(__TAURI_INVOKE("trigger_microphone_permission")),
 	startRecordingWithDevices: (micDeviceName: string | null, systemDeviceName: string | null) => typedError<null, string>(__TAURI_INVOKE("start_recording_with_devices", { micDeviceName, systemDeviceName })),
@@ -364,13 +350,6 @@ export const commands = {
 	 *  a meeting gets a real title automatically once it ends.
 	 */
 	apiGenerateMeetingTitle: (meetingId: string, text: string, model: string, modelName: string) => typedError<string, string>(__TAURI_INVOKE("api_generate_meeting_title", { meetingId, text, model, modelName })),
-	/**
-	 *  Streams an answer to a question about a meeting.
-	 * 
-	 *  `live_transcript`, when non-empty, is used as the transcript context instead
-	 *  of loading from SQLite. The frontend passes this during an in-progress
-	 *  recording (ephemeral meeting ids are not in SQLite yet).
-	 */
 	chatAsk: (meetingId: string, question: ChatQuestion, history: ChatTurn[], model: string, modelName: string, genId: string, liveTranscript: string | null, onEvent: Channel<ChatStreamEvent>) => typedError<null, string>(__TAURI_INVOKE("chat_ask", { meetingId, question, history, model, modelName, genId, liveTranscript, onEvent })),
 	/**  Cancels an in-flight chat generation by `gen_id`. Returns whether one was found. */
 	chatCancel: (genId: string) => __TAURI_INVOKE<boolean>("chat_cancel", { genId }),
@@ -600,7 +579,7 @@ export const commands = {
 	completeOnboarding: (model: string) => typedError<null, string>(__TAURI_INVOKE("complete_onboarding", { model })),
 	/**  Opens macOS System Settings to a specific privacy preference pane */
 	openSystemSettings: (preferencePane: string) => typedError<null, string>(__TAURI_INVOKE("open_system_settings", { preferencePane })),
-	startRetranscriptionCommand: (meetingId: string, meetingFolderPath: string, language: string | null, model: string | null, provider: string | null) => typedError<RetranscriptionStarted, string>(__TAURI_INVOKE("start_retranscription_command", { meetingId, meetingFolderPath, language, model, provider })),
+	startRetranscriptionCommand: (meetingId: string, meetingFolderPath: string, language: string | null, model: string | null) => typedError<RetranscriptionStarted, string>(__TAURI_INVOKE("start_retranscription_command", { meetingId, meetingFolderPath, language, model })),
 	cancelRetranscriptionCommand: () => typedError<null, string>(__TAURI_INVOKE("cancel_retranscription_command")),
 	isRetranscriptionInProgressCommand: () => __TAURI_INVOKE<boolean>("is_retranscription_in_progress_command"),
 	/**  Select an audio file and validate it */
@@ -614,7 +593,7 @@ export const commands = {
 	/**  Validate an audio file from a given path (for drag-drop) */
 	validateAudioFileCommand: (path: string) => typedError<AudioFileInfo, string>(__TAURI_INVOKE("validate_audio_file_command", { path })),
 	/**  Start importing an audio file (Beta gated using configContext.betaFeatures) */
-	startImportAudioCommand: (sourcePath: string, title: string, language: string | null, model: string | null, provider: string | null) => typedError<ImportStarted, string>(__TAURI_INVOKE("start_import_audio_command", { sourcePath, title, language, model, provider })),
+	startImportAudioCommand: (sourcePath: string, title: string, language: string | null, model: string | null) => typedError<ImportStarted, string>(__TAURI_INVOKE("start_import_audio_command", { sourcePath, title, language, model })),
 	/**  Cancel ongoing import */
 	cancelImportCommand: () => typedError<null, string>(__TAURI_INVOKE("cancel_import_command")),
 	/**  Check if import is in progress */
@@ -871,6 +850,19 @@ export type ChatMessageRow = {
 };
 
 /**
+ *  Streams an answer to a question about a meeting.
+ *
+ *  `live_transcript`, when non-empty, is used as the transcript context instead
+ *  of loading from SQLite. The frontend passes this during an in-progress
+ *  recording (ephemeral meeting ids are not in SQLite yet).
+ */
+export type ChatQuestion = {
+	content: string,
+	bar_id: string | null,
+	display_text: string | null,
+};
+
+/**
  *  Events streamed back to the frontend over the `Channel`. Serde adjacently
  *  tagged so the payload is `{ event, data }`, matching `Channel.onmessage`.
  */
@@ -901,12 +893,6 @@ export type ChatTurn = {
 	/**  `"user"` or `"assistant"`. */
 	role: string,
 	content: string,
-};
-
-export type ChatQuestion = {
-	content: string,
-	bar_id: string | null,
-	display_text: string | null,
 };
 
 /**
@@ -1164,7 +1150,7 @@ export type ModelConfig = {
 };
 
 export type ModelStatus = {
-	parakeet: string,
+	whisper: string,
 	summary: string,
 };
 
@@ -1307,17 +1293,6 @@ export type PaginatedTranscriptsResponse_Serialize = {
 	has_more: boolean,
 };
 
-/**  Information about a Parakeet model */
-export type ParakeetModelInfo = {
-	name: string,
-	path: string,
-	size_mb: number,
-	quantization: QuantizationType,
-	speed: string,
-	status: any,
-	description: string,
-};
-
 export type PersonGroup = {
 	name: string,
 	/**  Best-effort org label from the attendee's email domain, when available. */
@@ -1390,9 +1365,6 @@ export type ProcessTranscriptResponse = {
 	message: string,
 	process_id: string,
 };
-
-/**  Quantization type for Parakeet models */
-export type QuantizationType = "FP32" | "Int8";
 
 /**  A meeting that has a chat thread, for the "Recent chats" list. */
 export type RecentChatThread = {
@@ -1521,6 +1493,7 @@ export type TranscriptSegment = {
 	audio_end_time: number | null,
 	duration: number | null,
 	display_time: string,
+	/**  Measured ASR confidence. */
 	confidence: number | null,
 	sequence_id: number,
 	/**  Audio source: "mic" (the user) or "system" (other participants) */
@@ -1546,9 +1519,9 @@ export type UserBar = {
 };
 
 export type VocabularyEntry = {
-	/**  The text the engine tends to produce (matched case-insensitively). */
+	/**  Comma/newline-separated forms the engine tends to produce. */
 	from: string,
-	/**  The correct replacement (inserted verbatim). */
+	/**  The preferred spelling, also supplied to Whisper as prompt context. */
 	to: string,
 };
 

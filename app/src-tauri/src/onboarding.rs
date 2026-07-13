@@ -19,6 +19,7 @@ pub struct OnboardingStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct ModelStatus {
+    #[serde(alias = "parakeet")]
     pub whisper: String,   // "downloaded" | "not_downloaded" | "downloading"
     pub summary: String,   // Generic field for summary model (gemma3:1b or gemma3:4b)
 }

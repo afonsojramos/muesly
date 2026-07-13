@@ -32,7 +32,7 @@
 	/**
 	 * DownloadProgressToast
 	 *
-	 * Listens for Parakeet and built-in-AI model download events and surfaces
+	 * Listens for Whisper and built-in-AI model download events and surfaces
 	 * them as toasts. Mirrors the React DownloadProgressToastProvider — but
 	 * because the toast abstraction renders text (not a custom progress widget),
 	 * progress is shown in the toast description and only meaningful transitions
@@ -84,53 +84,48 @@
 
 		(async () => {
 			try {
-				const unlistenParakeetProgress = await listen<{
+				const unlistenWhisperProgress = await listen<{
 					modelName: string;
 					progress: number;
-					downloaded_mb?: number;
-					total_mb?: number;
-					status?: string;
-				}>('parakeet-model-download-progress', (event) => {
-					const { modelName, progress, status } = event.payload;
-					const display = 'Transcription Model (Parakeet)';
-					if (status === 'cancelled') {
-						notify(display, 'cancelled', undefined, modelName);
-					} else if (status === 'completed' || progress >= 100) {
+				}>('model-download-progress', (event) => {
+					const { modelName, progress } = event.payload;
+					const display = `Whisper model (${modelName})`;
+					if (progress >= 100) {
 						notify(display, 'completed', undefined, modelName);
 					} else {
 						notify(display, 'downloading', `${Math.round(progress)}%`, modelName);
 					}
 				});
-				if (cancelled) unlistenParakeetProgress();
-				else unsubscribers.push(unlistenParakeetProgress);
+				if (cancelled) unlistenWhisperProgress();
+				else unsubscribers.push(unlistenWhisperProgress);
 
-				const unlistenParakeetComplete = await listen<{ modelName: string }>(
-					'parakeet-model-download-complete',
+				const unlistenWhisperComplete = await listen<{ modelName: string }>(
+					'model-download-complete',
 					(event) => {
 						notify(
-							'Transcription Model (Parakeet)',
+							`Whisper model (${event.payload.modelName})`,
 							'completed',
 							undefined,
 							event.payload.modelName,
 						);
 					},
 				);
-				if (cancelled) unlistenParakeetComplete();
-				else unsubscribers.push(unlistenParakeetComplete);
+				if (cancelled) unlistenWhisperComplete();
+				else unsubscribers.push(unlistenWhisperComplete);
 
-				const unlistenParakeetError = await listen<{ modelName: string; error: string }>(
-					'parakeet-model-download-error',
+				const unlistenWhisperError = await listen<{ modelName: string; error: string }>(
+					'model-download-error',
 					(event) => {
 						notify(
-							'Transcription Model (Parakeet)',
+							`Whisper model (${event.payload.modelName})`,
 							'error',
 							categorizeError(event.payload.error),
 							event.payload.modelName,
 						);
 					},
 				);
-				if (cancelled) unlistenParakeetError();
-				else unsubscribers.push(unlistenParakeetError);
+				if (cancelled) unlistenWhisperError();
+				else unsubscribers.push(unlistenWhisperError);
 
 				const unlistenBuiltin = await listen<{
 					model: string;

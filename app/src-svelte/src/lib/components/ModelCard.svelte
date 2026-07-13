@@ -10,7 +10,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 
 	// Shared, data-agnostic model card used by the transcription managers (Whisper,
-	// Parakeet) and the summary/Ollama list. Callers pass already-derived display
+	// transcription and summary model lists. Callers pass already-derived display
 	// fields plus a normalized status; optional fields (accuracy/speed, download/
 	// delete callbacks) simply hide when absent.
 	type Status = 'available' | 'missing' | 'error' | 'corrupted';
