@@ -28,7 +28,7 @@ jobs:
       - uses: jdx/mise-action@v4
 
       - name: Cache nub store
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.local/share/nub/store
           key: ${{ runner.os }}-nub-store-${{ hashFiles('app/src-svelte/pnpm-lock.yaml') }}
