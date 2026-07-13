@@ -3,7 +3,7 @@
 	// There is no Worker script (`main`) — every route is a static file in dist/,
 	// so Cloudflare serves the assets directly.
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "muesly-web",
+	"name": "muesly",
 	"compatibility_date": "2026-07-13",
 	"assets": {
 		"directory": "./dist",
