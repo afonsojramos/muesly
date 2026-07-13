@@ -76,13 +76,20 @@
 
 	const hasMessages = $derived(controller.messages.length > 0);
 
-	// Keep the newest content in view as tokens stream / turns are added.
+	// Keep the newest content in view as tokens stream / turns are added — but only
+	// when the user is already near the bottom, so scrolling up to read earlier
+	// messages isn't yanked back to the bottom on every streamed token.
+	let atBottom = $state(true);
+	function onViewportScroll(): void {
+		if (!viewportRef) return;
+		atBottom = viewportRef.scrollHeight - viewportRef.scrollTop - viewportRef.clientHeight < 80;
+	}
 	const lastContent = $derived(controller.messages.at(-1)?.content ?? '');
 	$effect(() => {
 		// Track both signals.
 		void lastContent;
 		void controller.messages.length;
-		viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
+		if (atBottom) viewportRef?.scrollTo({ top: viewportRef.scrollHeight });
 	});
 
 	// Clicking outside the bar collapses the panel (it never deletes anything).
@@ -150,7 +157,11 @@
 			<!-- Plain overflow container: ScrollArea's viewport never receives a
 			     height bound inside this flex column, which clipped instead of
 			     scrolling. Native overflow just works. -->
-			<div bind:this={viewportRef} class="min-h-0 flex-1 overflow-y-auto">
+			<div
+				bind:this={viewportRef}
+				onscroll={onViewportScroll}
+				class="min-h-0 flex-1 overflow-y-auto"
+			>
 				<div class="flex flex-col gap-3 p-4" aria-live="polite" aria-atomic="false">
 					{#each controller.messages as message (message.id)}
 						<div class="flex flex-col gap-1.5">
