@@ -14,7 +14,9 @@ The marketing website (muesly.ai) is a separate static Astro project in `site/`,
 
 The `api/` directory is a small Cloudflare Worker + D1 (schema managed with Drizzle) at `api.muesly.ai`. It stores only anonymous, aggregate "muesly bar" popularity counts (public `builtin:`/`imported:` catalog ids, never user data). See [api/README.md](api/README.md); it deploys via GitHub Actions on push to `main`, or `nub run release` from `api/`.
 
-## Tooling: nub
+## Toolchain: mise + nub
+
+The dev toolchain — **node**, **pnpm**, and **nub** — is pinned in `mise.toml`. Run `mise install` (or let mise auto-install on `cd`) to provision it; no separate `brew`/`corepack` setup.
 
 This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, runs scripts, replaces `npx`, manages packages, and provisions Node, all on the project's real Node and reading/writing the existing pnpm lockfiles (nothing migrates; plain `node`/`pnpm` still work). Prefer it for everyday commands:
 
@@ -26,7 +28,7 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 | `pnpm install` | `nub install` |
 | `pnpm add` / `remove <p>` | `nub add` / `remove <p>` |
 
-`pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (`brew install nubjs/tap/nub`); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
+`pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (provisioned by mise); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
 
 **Use nub to run code, but `pnpm` to install.** `nub`/`nubx`/`nub run` for executing files, scripts, and CLIs are great. But `nub install` / `nub add` currently produce a node_modules layout this repo's deps don't like — it broke Astro's type tree in `site/` (astro-icon `<Icon>` types fail `astro check`) and left `api/`'s deps in a "missing" state. `pnpm install` / `pnpm add` resolve both cleanly. So: **installs and dependency changes go through `pnpm`.**
 
