@@ -1,6 +1,7 @@
 ---
 import { Icon } from 'astro-icon/components';
-import { comparisons } from '$lib/comparisons';
+import { comparisons, type CompareCategory } from '$lib/comparisons';
+import CompareFlow from '../../components/product/CompareFlow.astro';
 import Button from '../../components/ui/Button.astro';
 import Section from '../../components/ui/Section.astro';
 import Base from '../../layouts/Base.astro';
@@ -13,76 +14,102 @@ export function getStaticPaths() {
 }
 
 const { comparison } = Astro.props;
-const { name, title, description, intro, rows, theyreBetter } = comparison;
+const { name, shortName, title, description, intro, verdict, bestFor, rows, theyreBetter, sources } = comparison;
+const categoryOrder: CompareCategory[] = [
+	'Privacy & ownership',
+	'Capture & intelligence',
+	'Access & availability'
+];
+const groupedRows = categoryOrder.map((category) => ({
+	category,
+	rows: rows.filter((row) => row.category === category)
+}));
 ---
 
 <Base title={title} description={description}>
-	<Section class="py-16 md:py-24">
-		<div class="mx-auto max-w-2xl text-center">
-			<h1 class="font-display text-4xl font-semibold tracking-tight md:text-5xl">
-				muesly vs {name}
-			</h1>
-			<p class="mt-4 text-lg text-muted-foreground">{intro}</p>
+	<Section class="pt-10 pb-16 md:pt-16 md:pb-24">
+		<a href="/compare" class="inline-flex min-h-10 items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+			<Icon name="lucide:arrow-left" class="size-4" aria-hidden="true" /> All comparisons
+		</a>
+
+		<div class="mt-8 grid items-center gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:gap-20">
+			<div>
+				<div class="text-sm font-medium text-accent">muesly vs {name}</div>
+				<h1 class="mt-4 max-w-3xl font-display text-4xl leading-[1.08] font-semibold tracking-[-0.03em] md:text-5xl">
+					{verdict}
+				</h1>
+				<p class="mt-6 max-w-xl text-base leading-relaxed text-muted-foreground">{intro}</p>
+				<div class="mt-8 flex flex-wrap gap-3">
+					<Button href="/download" variant="accent" size="lg" class="pl-6 pr-5.5" data-os-cta>
+						<span data-os-cta-label>See all downloads</span>
+						<Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" />
+					</Button>
+					<Button href="#decision" variant="outline" size="lg">Help me choose</Button>
+				</div>
+			</div>
+
+			<div data-reveal><CompareFlow competitor={shortName} /></div>
 		</div>
 
-		<div class="mx-auto mt-12 max-w-3xl overflow-hidden rounded-2xl border border-border">
-			<table class="w-full text-sm">
-				<thead>
-					<tr class="border-b border-border bg-secondary/40 text-left">
-						<th class="px-4 py-3"><span class="sr-only">Feature</span></th>
-						<th class="px-4 py-3 font-semibold text-accent">muesly</th>
-						<th class="px-4 py-3 font-medium text-muted-foreground">{name}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{
-						rows.map((row) => (
-							<tr class="border-b border-border last:border-0">
-								<td class="px-4 py-3 text-muted-foreground">{row.dimension}</td>
-								<td class="px-4 py-3 font-medium text-foreground">{row.muesly}</td>
-								<td class="px-4 py-3 text-muted-foreground">{row.them}</td>
-							</tr>
-						))
-					}
-				</tbody>
-			</table>
+		<div id="decision" class="mt-24 scroll-mt-24 border-y border-border" data-reveal>
+			<div class="grid md:grid-cols-2">
+				<div class="py-8 pr-0 md:py-10 md:pr-10">
+					<div class="flex items-center gap-2 text-sm font-semibold text-accent">
+						<span class="flex size-7 items-center justify-center rounded-full bg-accent/10"><Icon name="lucide:hard-drive" class="size-3.5" aria-hidden="true" /></span>
+						Choose muesly if…
+					</div>
+					<p class="mt-4 font-display text-2xl font-semibold">{bestFor}</p>
+					<ul class="mt-5 grid gap-2.5 text-sm text-muted-foreground">
+						<li class="flex items-start gap-2"><Icon name="lucide:check" class="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />You want transcription, summaries, and chat to work offline.</li>
+						<li class="flex items-start gap-2"><Icon name="lucide:check" class="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />You do not want an account or vendor-hosted meeting archive.</li>
+						<li class="flex items-start gap-2"><Icon name="lucide:check" class="mt-0.5 size-4 shrink-0 text-accent" aria-hidden="true" />You value public source over managed team infrastructure.</li>
+					</ul>
+				</div>
+				<div class="border-t border-border py-8 md:border-t-0 md:border-l md:py-10 md:pl-10">
+					<div class="flex items-center gap-2 text-sm font-semibold text-foreground">
+						<span class="flex size-7 items-center justify-center rounded-full bg-secondary"><Icon name="lucide:cloud" class="size-3.5" aria-hidden="true" /></span>
+						Choose {shortName} if…
+					</div>
+					<p class="mt-4 font-display text-2xl font-semibold">Cloud convenience matters more than a local-only data path.</p>
+					<ul class="mt-5 grid gap-2.5 text-sm text-muted-foreground">
+						{theyreBetter.map((item) => <li class="flex items-start gap-2"><Icon name="lucide:plus" class="mt-0.5 size-4 shrink-0" aria-hidden="true" />{item}</li>)}
+					</ul>
+				</div>
+			</div>
 		</div>
 
-		<div class="mx-auto mt-10 max-w-2xl rounded-2xl border border-border bg-card p-6">
-			<h2 class="font-semibold">Where {name} is stronger</h2>
-			<p class="mt-1 text-sm text-muted-foreground">In the spirit of an honest comparison:</p>
-			<ul class="mt-3 space-y-2">
-				{
-					theyreBetter.map((item) => (
-						<li class="flex items-start gap-2 text-sm text-muted-foreground">
-							<Icon
-								name="lucide:check"
-								class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-								aria-hidden="true"
-							/>
-							{item}
-						</li>
-					))
-				}
-			</ul>
-			<p class="mt-4 text-sm text-muted-foreground">
-				If a polished cloud product with those features matters more than keeping your conversations
-				on your device, {name} may be the better fit. If verifiable privacy is the priority, that is exactly
-				what muesly is built for.
-			</p>
+		<div id="comparison" class="mt-24 scroll-mt-24">
+			<div class="max-w-2xl" data-reveal>
+				<div class="text-sm font-medium text-accent">The evidence</div>
+				<h2 class="mt-3 font-display text-3xl font-semibold tracking-tight md:text-4xl">Compare the product fundamentals.</h2>
+				<p class="mt-3 text-muted-foreground">Grouped around the decisions that materially change privacy, workflow, and access.</p>
+			</div>
+
+			<div class="mt-10 hidden md:block" data-reveal>
+				<div class="sticky top-14 z-10 grid grid-cols-[0.34fr_0.33fr_0.33fr] border-y border-border bg-background/90 px-4 py-3 text-sm backdrop-blur-md">
+					<span></span><span class="font-semibold text-accent">muesly</span><span class="font-semibold">{name}</span>
+				</div>
+				{groupedRows.map((group) => <section class="grid grid-cols-[0.22fr_0.78fr] border-b border-border py-8"><h3 class="pr-6 text-xs font-semibold tracking-[0.1em] text-muted-foreground uppercase">{group.category}</h3><div>{group.rows.map((row) => <div class="grid grid-cols-[0.34fr_0.33fr_0.33fr] border-b border-border/70 py-4 last:border-0"><div class="pr-4 text-sm font-medium">{row.dimension}</div><div class:list={['pr-5 text-sm', row.advantage === 'muesly' ? 'font-medium text-foreground' : 'text-muted-foreground']}>{row.muesly}</div><div class:list={['text-sm', row.advantage === 'them' ? 'font-medium text-foreground' : 'text-muted-foreground']}>{row.them}</div></div>)}</div></section>)}
+			</div>
+
+			<div class="mt-10 grid gap-10 md:hidden">
+				{groupedRows.map((group) => <section><h3 class="border-b border-border pb-3 text-xs font-semibold tracking-[0.1em] text-muted-foreground uppercase">{group.category}</h3><div class="grid gap-6 pt-5">{group.rows.map((row) => <div><h4 class="text-sm font-semibold">{row.dimension}</h4><dl class="mt-3 grid grid-cols-2 gap-4 text-xs"><div><dt class="font-medium text-accent">muesly</dt><dd class="mt-1 leading-relaxed text-muted-foreground">{row.muesly}</dd></div><div><dt class="font-medium">{shortName}</dt><dd class="mt-1 leading-relaxed text-muted-foreground">{row.them}</dd></div></dl></div>)}</div></section>)}
+			</div>
 		</div>
 
-		<div class="mx-auto mt-10 flex max-w-2xl flex-wrap justify-center gap-3">
-			<Button href="/download" variant="accent" size="lg" data-os-cta>
-				<span data-os-cta-label>See all downloads</span>
-				<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
-			</Button>
+		<div class="mx-auto mt-14 max-w-3xl text-center">
+			<h2 class="text-sm font-semibold">Official sources</h2>
+			<div class="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-2">
+				{sources.map((source) => (
+					<a class="inline-flex min-h-10 items-center gap-1.5 text-xs text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground" href={source.href} target="_blank" rel="noopener noreferrer">{source.label}<Icon name="lucide:external-link" class="size-3" aria-hidden="true" /></a>
+				))}
+			</div>
+			<p class="mt-4 text-xs text-muted-foreground">Reviewed against public product information in July 2026. Features and plans change; corrections are welcome on GitHub.</p>
+		</div>
+
+		<div class="mx-auto mt-14 flex max-w-2xl flex-wrap justify-center gap-3">
+			<Button href="/download" variant="accent" size="lg" class="pl-6 pr-5.5" data-os-cta><span data-os-cta-label>See all downloads</span><Icon name="lucide:arrow-right" class="size-4" aria-hidden="true" /></Button>
 			<Button href="/compare" variant="outline" size="lg">All comparisons</Button>
 		</div>
-
-		<p class="mx-auto mt-8 max-w-2xl text-center text-xs text-muted-foreground">
-			Comparison based on each product's public positioning and may change over time. Corrections
-			welcome on GitHub.
-		</p>
 	</Section>
 </Base>
