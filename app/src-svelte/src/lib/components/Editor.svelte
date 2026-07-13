@@ -229,6 +229,11 @@
 		background: color-mix(in oklab, var(--color-brand), black 15%);
 		animation: fixed-caret-blink 1.1s steps(1, end) infinite;
 	}
+	@media (prefers-reduced-motion: reduce) {
+		.tiptap-prose :global(.ProseMirror .fixed-caret::after) {
+			animation: none;
+		}
+	}
 	.tiptap-prose :global(.ProseMirror:not(:focus) .fixed-caret::after) {
 		display: none;
 	}
