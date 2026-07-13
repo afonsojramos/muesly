@@ -46,7 +46,7 @@ pnpm -C src-svelte lint   # Oxlint + eslint-plugin-better-tailwindcss (via Vite+
 pnpm -C src-svelte format # Oxfmt (via Vite+ `vp`); `format:check` verifies without writing
 ```
 
-The root `package.json` is script-delegation only (no workspace — lockfiles stay separate): `pnpm dev` / `build` / `check` / `lint` / `format` / `test` from the repo root forward to the commands above.
+The root `package.json` is script-delegation only (no workspace — each of `app/src-svelte`, `site`, and `api` keeps its own lockfile). From the repo root: `pnpm dev` / `build` / `lint` / `format` target the app; `pnpm check` fans out to app + `site` + `api` (typecheck), and `pnpm test` to app + `site`.
 
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 
