@@ -3,7 +3,7 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"setup": "nub install && nub --cwd app/src-svelte install && nub --cwd site install && nub --cwd api install",
+		"setup": "nub --cwd app install && nub --cwd app/src-svelte install && nub --cwd site install && nub --cwd api install",
 		"dev": "nub --cwd app run tauri:dev",
 		"build": "nub --cwd app run tauri:build",
 		"check": "nub --cwd app/src-svelte run check && nub --cwd site run check && nub --cwd api run typecheck",

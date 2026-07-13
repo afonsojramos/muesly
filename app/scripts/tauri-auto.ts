@@ -3,8 +3,11 @@
  * Auto-detect GPU and run Tauri (dev|build) with the appropriate cargo features.
  * Override detection with the TAURI_GPU_FEATURE environment variable.
  */
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const command = process.argv[2];
 if (!command || !['dev', 'build'].includes(command)) {
@@ -18,7 +21,7 @@ if (process.env.TAURI_GPU_FEATURE) {
 	console.log(`🔧 Using forced GPU feature from environment: ${feature}`);
 } else {
 	try {
-		feature = execSync('node scripts/auto-detect-gpu.ts', {
+		feature = execFileSync(process.execPath, ['scripts/auto-detect-gpu.ts'], {
 			encoding: 'utf8',
 			stdio: ['pipe', 'pipe', 'inherit']
 		}).trim();
@@ -38,9 +41,18 @@ if (os.platform() === 'linux' && feature === 'cuda') {
 	env.CMAKE_POSITION_INDEPENDENT_CODE ??= 'ON';
 }
 
-let tauriCmd = `tauri ${command}`;
+const appDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const tauriEntry = path.join(appDir, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+if (!fs.existsSync(tauriEntry)) {
+	console.error(
+		'Tauri CLI is not installed. Run `nub --cwd app install` (or `nub run setup`) first.'
+	);
+	process.exit(1);
+}
+
+const tauriArgs = [command];
 if (feature && feature !== 'none') {
-	tauriCmd += ` -- --features ${feature}`;
+	tauriArgs.push('--', '--features', feature);
 	console.log(`🚀 Running: tauri ${command} with features: ${feature}`);
 } else {
 	console.log(`🚀 Running: tauri ${command} (CPU-only mode)`);
@@ -48,7 +60,11 @@ if (feature && feature !== 'none') {
 console.log('');
 
 try {
-	execSync(tauriCmd, { stdio: 'inherit', env });
+	execFileSync(process.execPath, [tauriEntry, ...tauriArgs], {
+		stdio: 'inherit',
+		env,
+		cwd: appDir
+	});
 } catch (err) {
 	process.exit((err as { status?: number }).status ?? 1);
 }
