@@ -131,6 +131,13 @@ class TranscriptStore {
 
 	clearTranscripts = (): void => {
 		this.transcripts = [];
+		// Also reset the in-order reassembly state. A new recording's sequence ids
+		// restart at 1, so leaving #lastProcessedSequence high leaves them stranded
+		// behind the fast path, and a stale #buffer could leak entries across
+		// recordings.
+		this.#buffer.clear();
+		this.#lastProcessedSequence = 0;
+		this.#transcriptCounter = 0;
 	};
 
 	setMeetingTitle = (title: string): void => {
