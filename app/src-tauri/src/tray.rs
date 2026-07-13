@@ -108,7 +108,10 @@ pub fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
             log::info!("Emitting start recording event from tray");
             if let Some(window) = app_clone.get_webview_window("main") {
                 let _ = window.eval("sessionStorage.setItem('autoStartRecording', 'true')"); // Set the flag to start recording automatically
-                let _ = window.eval("window.location.assign('/')");
+                // Land on /note: that route mounts useRecordingStart, which consumes
+                // the flag. Navigating to '/' left the flag unread, so the tray's
+                // "Start Recording" silently did nothing.
+                let _ = window.eval("window.location.assign('/note')");
             }
         }
     });
