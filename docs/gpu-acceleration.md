@@ -8,14 +8,15 @@ launch with `MUESLY_WHISPER_FORCE_CPU=1` to keep the same model while bypassing 
 | Backend | Hardware |
 | --- | --- |
 | CUDA | NVIDIA GPUs |
-| Metal / Core ML | Apple Silicon (Metal also on Intel Macs) |
+| Metal | Apple Silicon and Intel Macs |
+| Core ML | Apple Silicon with a matching compiled Whisper encoder bundle |
 | Vulkan | AMD / Intel GPUs (cross-platform) |
 | HIPBLAS | AMD GPUs on Linux (ROCm) |
 | OpenBLAS | optimized CPU fallback |
 
 ## Auto-detection
 
-`nub run tauri:dev` and `nub run tauri:build` run `app/scripts/tauri-auto.ts`, which detects your GPU (via `app/scripts/auto-detect-gpu.ts`) and builds with the matching `--features` flag. On macOS, Metal and Core ML are always enabled. On Windows/Linux, detection runs in priority order:
+`nub run tauri:dev` and `nub run tauri:build` run `app/scripts/tauri-auto.ts`, which detects your GPU (via `app/scripts/auto-detect-gpu.ts`) and builds with the matching `--features` flag. On macOS, Metal is enabled automatically. Core ML remains an explicit option because it also requires a compiled encoder bundle matching the selected Whisper model. On Windows/Linux, detection runs in priority order:
 
 | Priority | Backend | Detected when | Feature |
 | --- | --- | --- | --- |

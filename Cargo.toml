@@ -17,3 +17,9 @@ anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.32.0", features = ["full"] }
+
+# Package-specific release tuning for the local LLM sidecar. LTO is omitted
+# because Cargo only supports it at the whole-workspace profile level.
+[profile.release.package.llama-helper]
+codegen-units = 1
+opt-level = "s"

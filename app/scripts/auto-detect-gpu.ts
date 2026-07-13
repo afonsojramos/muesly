@@ -22,13 +22,10 @@ function commandExists(cmd: string): boolean {
 function detectGPU(): GpuFeature | null {
 	const platform = os.platform();
 
-	// macOS: Metal is always available; Apple Silicon adds CoreML.
+	// Metal works with the downloaded GGML model alone. Core ML additionally
+	// requires a matching compiled encoder bundle, so it remains an explicit opt-in.
 	if (platform === 'darwin') {
-		if (os.arch() === 'arm64') {
-			console.log('🍎 Apple Silicon detected - using Metal + CoreML');
-			return 'coreml'; // CoreML includes Metal
-		}
-		console.log('🍎 macOS Intel detected - using Metal');
+		console.log(`🍎 ${os.arch() === 'arm64' ? 'Apple Silicon' : 'macOS Intel'} detected - using Metal`);
 		return 'metal';
 	}
 
