@@ -26,6 +26,7 @@ export interface ChatMessage {
 	barId?: string;
 	barTitle?: string;
 	barPrompt?: string;
+	barContext?: string;
 }
 
 function uid(): string {
@@ -61,6 +62,7 @@ class ChatStore {
 					barId: execution.barId,
 					barTitle: execution.barTitle,
 					barPrompt: execution.barPrompt,
+					barContext: execution.barContext,
 				}
 			: {};
 		this.messages.push({ id: uid(), role: 'user', content: question, ...metadata });
@@ -108,6 +110,7 @@ class ChatStore {
 				content: question,
 				bar_id: execution?.barId ?? null,
 				display_text: execution?.barTitle ?? null,
+				bar_context: execution?.barContext ?? null,
 			},
 			history,
 			provider,
@@ -128,6 +131,7 @@ class ChatStore {
 			barId: message.barId,
 			barTitle: message.barTitle,
 			barPrompt: message.barPrompt,
+			barContext: message.barContext,
 		});
 	}
 
@@ -166,6 +170,7 @@ class ChatStore {
 				barId: m.bar_id ?? undefined,
 				barTitle: m.display_text ?? undefined,
 				barPrompt: m.bar_id ? prompt : undefined,
+				barContext: m.bar_context ?? undefined,
 			};
 		});
 	}

@@ -31,6 +31,7 @@ export interface GlobalChatMessage {
 	barId?: string;
 	barTitle?: string;
 	barPrompt?: string;
+	barContext?: string;
 }
 
 function uid(): string {
@@ -54,6 +55,7 @@ class GlobalChatStore {
 					barId: execution.barId,
 					barTitle: execution.barTitle,
 					barPrompt: execution.barPrompt,
+					barContext: execution.barContext,
 				}
 			: {};
 		this.messages.push({ id: uid(), role: 'user', content: question, actions: [], ...metadata });
@@ -110,6 +112,7 @@ class GlobalChatStore {
 			barId: message.barId,
 			barTitle: message.barTitle,
 			barPrompt: message.barPrompt,
+			barContext: message.barContext,
 		});
 	}
 

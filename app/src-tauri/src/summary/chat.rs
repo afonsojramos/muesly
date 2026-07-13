@@ -325,6 +325,7 @@ pub struct ChatQuestion {
     pub content: String,
     pub bar_id: Option<String>,
     pub display_text: Option<String>,
+    pub bar_context: Option<String>,
 }
 
 #[tauri::command]
@@ -345,6 +346,7 @@ pub async fn chat_ask<R: Runtime>(
         content: question,
         bar_id,
         display_text,
+        bar_context,
     } = question;
     if question.trim().is_empty() {
         return Err("Question cannot be empty".to_string());
@@ -445,6 +447,7 @@ pub async fn chat_ask<R: Runtime>(
                 &question,
                 bar_id.as_deref(),
                 display_text.as_deref(),
+                bar_context.as_deref(),
             )
             .await
             {
@@ -456,6 +459,7 @@ pub async fn chat_ask<R: Runtime>(
                         &answer,
                         bar_id.as_deref(),
                         display_text.as_deref(),
+                        bar_context.as_deref(),
                     )
                     .await
                     {

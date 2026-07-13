@@ -848,6 +848,7 @@ export type ChatMessageRow = {
 	content: string,
 	bar_id: string | null,
 	display_text: string | null,
+	bar_context: string | null,
 	created_at: string,
 };
 
@@ -862,6 +863,7 @@ export type ChatQuestion = {
 	content: string,
 	bar_id: string | null,
 	display_text: string | null,
+	bar_context: string | null,
 };
 
 /**

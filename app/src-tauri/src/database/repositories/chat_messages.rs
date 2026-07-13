@@ -12,6 +12,7 @@ pub struct ChatMessageRow {
     pub content: String,
     pub bar_id: Option<String>,
     pub display_text: Option<String>,
+    pub bar_context: Option<String>,
     pub created_at: String,
 }
 
@@ -35,7 +36,7 @@ impl ChatMessagesRepository {
         meeting_id: &str,
     ) -> Result<Vec<ChatMessageRow>, sqlx::Error> {
         sqlx::query_as::<_, ChatMessageRow>(
-            "SELECT id, meeting_id, role, content, bar_id, display_text, created_at FROM chat_messages \
+            "SELECT id, meeting_id, role, content, bar_id, display_text, bar_context, created_at FROM chat_messages \
              WHERE meeting_id = ? ORDER BY created_at, rowid",
         )
         .bind(meeting_id)
@@ -52,7 +53,7 @@ impl ChatMessagesRepository {
         role: &str,
         content: &str,
     ) -> Result<bool, sqlx::Error> {
-        Self::append_with_metadata(pool, meeting_id, role, content, None, None).await
+        Self::append_with_metadata(pool, meeting_id, role, content, None, None, None).await
     }
 
     pub async fn append_with_metadata(
@@ -62,6 +63,7 @@ impl ChatMessagesRepository {
         content: &str,
         bar_id: Option<&str>,
         display_text: Option<&str>,
+        bar_context: Option<&str>,
     ) -> Result<bool, sqlx::Error> {
         let meeting_exists: bool = sqlx::query("SELECT 1 FROM meetings WHERE id = ?")
             .bind(meeting_id)
@@ -72,8 +74,8 @@ impl ChatMessagesRepository {
             return Ok(false);
         }
         sqlx::query(
-            "INSERT INTO chat_messages (id, meeting_id, role, content, bar_id, display_text, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO chat_messages (id, meeting_id, role, content, bar_id, display_text, bar_context, created_at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(format!("chatmsg-{}", uuid::Uuid::new_v4()))
         .bind(meeting_id)
@@ -81,6 +83,7 @@ impl ChatMessagesRepository {
         .bind(content)
         .bind(bar_id)
         .bind(display_text)
+        .bind(bar_context)
         .bind(Utc::now().to_rfc3339())
         .execute(pool)
         .await?;
@@ -184,6 +187,7 @@ mod tests {
                 content,
                 Some("builtin:summary"),
                 Some("Summarize"),
+                Some("related to project X"),
             )
             .await
             .expect("append metadata");
@@ -198,6 +202,9 @@ mod tests {
         assert!(thread
             .iter()
             .all(|row| row.display_text.as_deref() == Some("Summarize")));
+        assert!(thread
+            .iter()
+            .all(|row| row.bar_context.as_deref() == Some("related to project X")));
     }
 
     #[tokio::test]
@@ -260,6 +267,7 @@ mod tests {
             "A long reusable prompt",
             Some("builtin:summary"),
             Some("Summarize"),
+            None,
         )
         .await
         .expect("c");
