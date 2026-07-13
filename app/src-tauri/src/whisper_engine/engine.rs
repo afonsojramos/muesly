@@ -61,6 +61,28 @@ impl WhisperEngine {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::WhisperEngine;
+
+    #[test]
+    fn token_confidence_uses_model_probabilities_not_text_length() {
+        let short_utterance = WhisperEngine::token_confidence(&[0.92], 0.02).unwrap();
+        let long_hallucination = WhisperEngine::token_confidence(&[0.18; 20], 0.65).unwrap();
+
+        assert!(short_utterance > 0.8);
+        assert!(long_hallucination < 0.1);
+    }
+
+    #[test]
+    fn token_confidence_ignores_invalid_values_and_clamps_inputs() {
+        let confidence = WhisperEngine::token_confidence(&[f32::NAN, 1.4, -0.2], -1.0).unwrap();
+
+        assert!((confidence - 0.5).abs() < f32::EPSILON);
+        assert_eq!(WhisperEngine::token_confidence(&[f32::NAN], 0.0), None);
+    }
+}
+
 impl WhisperEngine {
     /// Detect available GPU acceleration capabilities
     fn detect_gpu_acceleration() -> bool {
@@ -585,8 +607,8 @@ impl WhisperEngine {
     /// Collect and clean the transcript from a finished whisper state.
     ///
     /// Shared by both passes (the detect pass and the forced re-transcribe pass)
-    /// so the segment loop and confidence proxy are not duplicated. Returns the
-    /// cleaned transcript and an average confidence.
+    /// so segment collection and genuine token-confidence aggregation are not
+    /// duplicated. Returns the cleaned transcript and an average confidence.
     fn collect_segments(state: &WhisperState) -> Result<(String, f32)> {
         let num_segments = state.full_n_segments();
 
@@ -595,21 +617,25 @@ impl WhisperEngine {
         let mut segment_count = 0u32;
 
         for i in 0..num_segments {
-            let segment_text = match state.get_segment(i).and_then(|s| s.to_str_lossy().ok()) {
-                Some(text) => text.into_owned(),
-                None => continue,
+            let Some(segment) = state.get_segment(i) else {
+                continue;
+            };
+            let segment_text = match segment.to_str_lossy() {
+                Ok(text) => text.into_owned(),
+                Err(_) => continue,
             };
 
-            // Confidence proxy based on segment text length (whisper-rs doesn't
-            // expose per-token logprobs through the safe API here).
-            let segment_length = segment_text.len() as f32;
-            let segment_confidence = if segment_length > 0.0 {
-                (segment_length / 100.0).min(0.9) + 0.1
-            } else {
-                0.1
-            };
-            total_confidence += segment_confidence;
-            segment_count += 1;
+            let token_probabilities: Vec<f32> = (0..segment.n_tokens())
+                .filter_map(|token_index| segment.get_token(token_index))
+                .map(|token| token.token_probability())
+                .collect();
+            if let Some(confidence) = Self::token_confidence(
+                &token_probabilities,
+                segment.no_speech_probability(),
+            ) {
+                total_confidence += confidence;
+                segment_count += 1;
+            }
 
             let cleaned_text = segment_text.trim();
             if !cleaned_text.is_empty() {
@@ -630,6 +656,24 @@ impl WhisperEngine {
         };
 
         Ok((cleaned_result, avg_confidence))
+    }
+
+    /// Whisper's safe API exposes token probabilities and a per-segment
+    /// no-speech probability. Combine those signals without inventing certainty
+    /// from transcript length: short, correct utterances can now score just as
+    /// highly as longer sentences.
+    fn token_confidence(token_probabilities: &[f32], no_speech_probability: f32) -> Option<f32> {
+        let probabilities: Vec<f32> = token_probabilities
+            .iter()
+            .copied()
+            .filter(|probability| probability.is_finite())
+            .map(|probability| probability.clamp(0.0, 1.0))
+            .collect();
+        if probabilities.is_empty() {
+            return None;
+        }
+        let average = probabilities.iter().sum::<f32>() / probabilities.len() as f32;
+        Some(average * (1.0 - no_speech_probability.clamp(0.0, 1.0)))
     }
 
     /// Synchronous whisper inference shared by both transcribe entry points.
@@ -933,9 +977,17 @@ impl WhisperEngine {
             // Reduce successful transcription logging frequency
             // Only log every 5th result or significant results (>50 chars) to reduce I/O overhead
             if transcription_count % 5 == 0 || cleaned_result.len() > 50 || duration_seconds > 10.0 {
-                log::info!("Transcription #{} result: '{}'", transcription_count, cleaned_result);
+                log::info!(
+                    "Transcription #{} completed ({} characters)",
+                    transcription_count,
+                    cleaned_result.chars().count()
+                );
             } else {
-                perf_debug!("Transcription #{} result: '{}'", transcription_count, cleaned_result);
+                perf_debug!(
+                    "Transcription #{} completed ({} characters)",
+                    transcription_count,
+                    cleaned_result.chars().count()
+                );
             }
         }
 
