@@ -1,15 +1,16 @@
-//! User-defined transcription vocabulary: exact, whole-word, case-insensitive
-//! corrections applied to the final transcript text of both engines, plus a
-//! Whisper initial_prompt bias built from the correct spellings.
+//! User-defined transcription vocabulary: preferred terms used to bias Whisper,
+//! plus comma/newline-separated aliases applied as literal, boundary-aware
+//! corrections to the final transcript text of both local engines.
 
+use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
 use std::sync::{LazyLock, RwLock};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 pub struct VocabularyEntry {
-    /// The text the engine tends to produce (matched case-insensitively).
+    /// Comma/newline-separated forms the engine tends to produce.
     pub from: String,
-    /// The correct replacement (inserted verbatim).
+    /// The preferred spelling, also supplied to Whisper as prompt context.
     pub to: String,
 }
 
@@ -49,9 +50,61 @@ fn meeting_prompt_terms() -> Vec<String> {
     MEETING_TERMS.read().map(|g| g.clone()).unwrap_or_default()
 }
 
+/// Trim persisted values, merge duplicate preferred terms, discard incomplete
+/// rows, and de-duplicate aliases. Keeping this at the IPC boundary means old
+/// saved JSON automatically benefits without a database migration.
+pub fn normalize_vocabulary(entries: Vec<VocabularyEntry>) -> Vec<VocabularyEntry> {
+    let mut normalized: Vec<VocabularyEntry> = Vec::new();
+
+    for entry in entries {
+        let preferred = entry.to.trim();
+        if preferred.is_empty() {
+            continue;
+        }
+
+        let mut aliases: Vec<String> = Vec::new();
+        for alias in entry.from.split([',', '\n']).map(str::trim) {
+            // Keep case-only aliases (for example `c++` → `C++`) so preferred
+            // capitalization can be enforced; only exact no-op aliases are dropped.
+            if !alias.is_empty()
+                && alias != preferred
+                && !aliases.iter().any(|current| current.eq_ignore_ascii_case(alias))
+            {
+                aliases.push(alias.to_string());
+            }
+        }
+
+        if let Some(existing) = normalized
+            .iter_mut()
+            .find(|candidate| candidate.to.eq_ignore_ascii_case(preferred))
+        {
+            let mut existing_aliases: Vec<String> = existing
+                .from
+                .split(',')
+                .map(str::trim)
+                .filter(|alias| !alias.is_empty())
+                .map(str::to_string)
+                .collect();
+            for alias in aliases {
+                if !existing_aliases.iter().any(|current| current.eq_ignore_ascii_case(&alias)) {
+                    existing_aliases.push(alias);
+                }
+            }
+            existing.from = existing_aliases.join(", ");
+        } else {
+            normalized.push(VocabularyEntry {
+                from: aliases.join(", "),
+                to: preferred.to_string(),
+            });
+        }
+    }
+
+    normalized
+}
+
 pub fn set_vocabulary(entries: Vec<VocabularyEntry>) {
     if let Ok(mut guard) = VOCABULARY.write() {
-        *guard = entries;
+        *guard = normalize_vocabulary(entries);
     }
 }
 
@@ -59,21 +112,70 @@ pub fn get_vocabulary() -> Vec<VocabularyEntry> {
     VOCABULARY.read().map(|g| g.clone()).unwrap_or_default()
 }
 
-/// Whole-word, case-insensitive replacement of each `from` with its `to`.
-/// Pure and engine-agnostic. Entries with an empty `from` are skipped.
+fn is_term_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
+}
+
+/// Boundary-aware, case-insensitive replacement of every alias with its
+/// preferred spelling. All aliases are matched against the original text in a
+/// single pass: longer phrases win and replacements cannot cascade into other
+/// corrections. Unlike `\b`, the explicit boundary check handles terms such as
+/// `C++` whose first or last character is punctuation.
 pub fn apply_corrections(text: &str, entries: &[VocabularyEntry]) -> String {
-    let mut out = text.to_string();
-    for entry in entries {
-        let from = entry.from.trim();
-        if from.is_empty() {
+    let normalized = normalize_vocabulary(entries.to_vec());
+    let mut corrections: Vec<(String, String)> = normalized
+        .into_iter()
+        .flat_map(|entry| {
+            entry
+                .from
+                .split(',')
+                .map(str::trim)
+                .filter(|alias| !alias.is_empty())
+                .map(|alias| (alias.to_string(), entry.to.clone()))
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    corrections.sort_by(|(left, _), (right, _)| right.len().cmp(&left.len()));
+
+    if corrections.is_empty() {
+        return text.to_string();
+    }
+
+    let alternatives = corrections
+        .iter()
+        .map(|(alias, _)| regex::escape(alias))
+        .collect::<Vec<_>>()
+        .join("|");
+    let Ok(pattern) = RegexBuilder::new(&alternatives).case_insensitive(true).build() else {
+        return text.to_string();
+    };
+
+    let mut output = String::with_capacity(text.len());
+    let mut copied_until = 0;
+    for matched in pattern.find_iter(text) {
+        let has_left_boundary = text[..matched.start()]
+            .chars()
+            .next_back()
+            .is_none_or(|character| !is_term_character(character));
+        let has_right_boundary = text[matched.end()..]
+            .chars()
+            .next()
+            .is_none_or(|character| !is_term_character(character));
+        if !has_left_boundary || !has_right_boundary {
             continue;
         }
-        let pattern = format!(r"(?i)\b{}\b", regex::escape(from));
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            out = re.replace_all(&out, regex::NoExpand(entry.to.as_str())).into_owned();
-        }
+
+        let replacement = corrections
+            .iter()
+            .find(|(alias, _)| alias.eq_ignore_ascii_case(matched.as_str()))
+            .map(|(_, preferred)| preferred.as_str())
+            .unwrap_or(matched.as_str());
+        output.push_str(&text[copied_until..matched.start()]);
+        output.push_str(replacement);
+        copied_until = matched.end();
     }
-    out
+    output.push_str(&text[copied_until..]);
+    output
 }
 
 /// Apply the cached vocabulary to `text`. Fast no-op when empty.
@@ -132,6 +234,30 @@ mod tests {
     }
 
     #[test]
+    fn supports_multiple_aliases_and_prefers_longest_phrase() {
+        let v = vec![
+            entry("slack red, red", "Slack thread"),
+            entry("the fred", "the thread"),
+        ];
+        assert_eq!(
+            apply_corrections("From the Slack red, not the red. Open the Fred.", &v),
+            "From the Slack thread, not the Slack thread. Open the thread."
+        );
+    }
+
+    #[test]
+    fn handles_terms_that_end_in_punctuation() {
+        let v = vec![entry("c plus plus", "C++"), entry("c++", "C++")];
+        assert_eq!(apply_corrections("C plus plus and c++ tools", &v), "C++ and C++ tools");
+    }
+
+    #[test]
+    fn corrections_do_not_cascade() {
+        let v = vec![entry("cube", "Kubernetes"), entry("kubernetes", "K8s")];
+        assert_eq!(apply_corrections("cube and kubernetes", &v), "Kubernetes and K8s");
+    }
+
+    #[test]
     fn does_not_replace_substrings() {
         let v = vec![entry("ml", "ML")];
         // "html" must not become "htML".
@@ -142,6 +268,20 @@ mod tests {
     fn empty_from_is_skipped() {
         let v = vec![entry("", "X")];
         assert_eq!(apply_corrections("unchanged", &v), "unchanged");
+    }
+
+    #[test]
+    fn normalization_merges_preferred_terms_and_drops_incomplete_rows() {
+        let entries = normalize_vocabulary(vec![
+            entry(" cubernetes, kube, Cubernetes ", " Kubernetes "),
+            entry("cooper netties", "kubernetes"),
+            entry("ignored", ""),
+            entry("", "Moodle"),
+        ]);
+        assert_eq!(
+            entries,
+            vec![entry("cubernetes, kube, cooper netties", "Kubernetes"), entry("", "Moodle")]
+        );
     }
 
     #[test]

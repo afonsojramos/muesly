@@ -63,8 +63,8 @@
 	});
 
 	const providerItems = [
-		{ value: 'parakeet', label: '⚡ Parakeet (Recommended — Real-time / Accurate)' },
-		{ value: 'localWhisper', label: '🏠 Local Whisper (High Accuracy)' },
+		{ value: 'parakeet', label: 'Parakeet — Fast, real-time' },
+		{ value: 'localWhisper', label: 'Local Whisper — Best accuracy' },
 	];
 
 	const requiresApiKey = $derived(
@@ -133,6 +133,11 @@
 						</Select.Group>
 					</Select.Content>
 				</Select.Root>
+				<Field.Description>
+					{uiProvider === 'parakeet'
+						? 'Best for low-latency live notes. Short phrases and specialist terms may need vocabulary corrections.'
+						: 'Best for accents, longer context, and specialist terminology; it uses more processing time.'}
+				</Field.Description>
 			</Field.Field>
 
 			{#if uiProvider === 'localWhisper'}
@@ -189,56 +194,73 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Custom Vocabulary</Card.Title>
+			<Card.Title>Custom vocabulary</Card.Title>
 			<Card.Description>
-				Fix words the transcriber mishears (proper nouns, jargon, acronyms). Matching is whole-word
-				and case-insensitive.
+				Add names, jargon, and acronyms in their preferred spelling. Whisper uses every preferred
+				term as context; optional mishearings correct the output from either local engine.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			<div class="flex flex-col gap-2">
+			<div class="flex flex-col gap-3">
+				{#if config.customVocabulary.length === 0}
+					<p class="text-pretty rounded-lg bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
+						No preferred terms yet. Add the words that matter in your meetings.
+					</p>
+				{/if}
 				{#each config.customVocabulary as entry, i}
-					<div class="flex items-center gap-2">
-						<Input
-							class="flex-1"
-							value={entry.from}
-							placeholder="Mishear (e.g. cubernetes)"
-							oninput={(e) => {
-								const updated = config.customVocabulary.map((v, idx) =>
-									idx === i ? { ...v, from: e.currentTarget.value } : v,
-								);
-								config.setCustomVocabulary(updated);
-							}}
-						/>
-						<span class="text-muted-foreground shrink-0 text-xs">→</span>
-						<Input
-							class="flex-1"
-							value={entry.to}
-							placeholder="Correction (e.g. Kubernetes)"
-							oninput={(e) => {
-								const updated = config.customVocabulary.map((v, idx) =>
-									idx === i ? { ...v, to: e.currentTarget.value } : v,
-								);
-								config.setCustomVocabulary(updated);
-							}}
-						/>
+					<div
+						class="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.5rem]"
+					>
+						<Field.Field class="col-span-2 sm:col-span-1">
+							<Field.FieldLabel for={`vocabulary-term-${i}`}>Preferred term</Field.FieldLabel>
+							<Input
+								id={`vocabulary-term-${i}`}
+								value={entry.to}
+								placeholder="Kubernetes"
+								oninput={(e) => {
+									const updated = config.customVocabulary.map((v, idx) =>
+										idx === i ? { ...v, to: e.currentTarget.value } : v,
+									);
+									config.setCustomVocabulary(updated);
+								}}
+							/>
+						</Field.Field>
+						<Field.Field>
+							<Field.FieldLabel for={`vocabulary-aliases-${i}`}>Misheard as</Field.FieldLabel>
+							<Input
+								id={`vocabulary-aliases-${i}`}
+								value={entry.from}
+								placeholder="cubernetes, cooper netties"
+								oninput={(e) => {
+									const updated = config.customVocabulary.map((v, idx) =>
+										idx === i ? { ...v, from: e.currentTarget.value } : v,
+									);
+									config.setCustomVocabulary(updated);
+								}}
+							/>
+						</Field.Field>
 						<Button
 							variant="ghost"
 							size="icon"
+							class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
 							aria-label="Remove term"
 							onclick={() => {
 								const updated = config.customVocabulary.filter((_, idx) => idx !== i);
 								config.setCustomVocabulary(updated);
 							}}
 						>
-							<X />
+							<X data-icon />
 						</Button>
 					</div>
 				{/each}
+				<p class="text-pretty text-xs text-muted-foreground">
+					Separate multiple mishearings with commas. Matching ignores case, respects word
+					boundaries, and prefers the longest matching phrase.
+				</p>
 				<Button
 					variant="outline"
 					size="sm"
-					class="self-start"
+					class="h-10 self-start transition-transform active:scale-[0.96]"
 					onclick={() => {
 						config.setCustomVocabulary([...config.customVocabulary, { from: '', to: '' }]);
 					}}
@@ -256,8 +278,8 @@
 				<Card.Title>Post-meeting quality pass</Card.Title>
 				<Card.Description>
 					After each meeting, re-transcribe the full recording with merged context for higher
-					accuracy. Local models only; adds processing time after the recording stops. Off by
-					default.
+					accuracy while preserving microphone/system attribution from the live timeline. Local
+					models only; adds processing time after the recording stops. Off by default.
 				</Card.Description>
 			</div>
 			<Switch checked={qualityPassEnabled} onCheckedChange={toggleQualityPass} />

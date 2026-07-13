@@ -678,6 +678,7 @@ async fn set_custom_vocabulary<R: Runtime>(
     app: AppHandle<R>,
     entries: Vec<vocabulary::VocabularyEntry>,
 ) -> Result<(), String> {
+    let entries = vocabulary::normalize_vocabulary(entries);
     vocabulary::set_vocabulary(entries.clone());
     if let Some(state) = app.try_state::<state::AppState>() {
         match serde_json::to_string(&entries) {
@@ -705,8 +706,19 @@ async fn get_custom_vocabulary<R: Runtime>(
                 state.db_manager.pool(),
             ).await.map_err(|e| format!("Failed to read custom vocabulary: {}", e))?;
             match json {
-                Some(j) => serde_json::from_str(&j).map_err(|e| format!("Invalid vocabulary JSON: {}", e)),
-                None => Ok(Vec::new()),
+                Some(j) => {
+                    let entries: Vec<vocabulary::VocabularyEntry> = serde_json::from_str(&j)
+                        .map_err(|e| format!("Invalid vocabulary JSON: {}", e))?;
+                    let entries = vocabulary::normalize_vocabulary(entries);
+                    // Loading settings must also hydrate the Rust-side cache. Previously,
+                    // persisted vocabulary only became active after the user edited a row.
+                    vocabulary::set_vocabulary(entries.clone());
+                    Ok(entries)
+                }
+                None => {
+                    vocabulary::set_vocabulary(Vec::new());
+                    Ok(Vec::new())
+                }
             }
         }
         None => Ok(Vec::new()),

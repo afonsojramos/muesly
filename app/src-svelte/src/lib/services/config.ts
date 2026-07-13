@@ -14,9 +14,9 @@ export interface TranscriptModelProps {
 }
 
 export interface VocabularyEntry {
-	/** The text the engine tends to produce (matched case-insensitively). */
+	/** Comma/newline-separated forms the engine tends to produce. */
 	from: string;
-	/** The correct replacement (inserted verbatim). */
+	/** The preferred spelling, also supplied to Whisper as prompt context. */
 	to: string;
 }
 
