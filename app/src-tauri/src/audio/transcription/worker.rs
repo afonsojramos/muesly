@@ -90,9 +90,13 @@ pub fn start_transcription_task<R: Runtime>(
         // New recording session: do not carry prior-meeting text into Whisper prompts.
         transcription_engine.reset_segment_context().await;
 
-        // Create parallel workers for faster processing while preserving ALL chunks
+        // Bound the worker handoff so a slow model cannot create a second,
+        // unbounded copy of the pending audio. The dispatcher awaits capacity
+        // here while the capture-side queue remains lossless.
         const NUM_WORKERS: usize = 1; // Serial processing ensures transcripts emit in chronological order
-        let (work_sender, work_receiver) = tokio::sync::mpsc::unbounded_channel::<AudioChunk>();
+        const WORK_QUEUE_CAPACITY: usize = 16;
+        let (work_sender, work_receiver) =
+            tokio::sync::mpsc::channel::<AudioChunk>(WORK_QUEUE_CAPACITY);
         let work_receiver = Arc::new(tokio::sync::Mutex::new(work_receiver));
 
         // Track completion: AtomicU64 for chunks queued, AtomicU64 for chunks completed
@@ -160,11 +164,18 @@ pub fn start_transcription_task<R: Runtime>(
 
                             // Check if model is still loaded before processing
                             if !engine_clone.is_model_loaded().await {
-                                warn!("⚠️ Worker {}: Model unloaded, but continuing to preserve chunk {}", worker_id, chunk.chunk_id);
-                                // Still count as completed even if we can't process
-                                chunks_completed_clone.fetch_add(1, Ordering::SeqCst);
-                                CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
-                                continue;
+                                warn!("⚠️ Worker {}: Whisper model unloaded; recovering before chunk {}", worker_id, chunk.chunk_id);
+                                if let Err(error) = engine_clone.load_model(&current_model).await {
+                                    error!("Worker {} could not recover Whisper model '{}': {}", worker_id, current_model, error);
+                                    let _ = app_clone.emit("transcription-error", serde_json::json!({
+                                        "error": error.to_string(),
+                                        "userMessage": "Transcription paused because the local model could not be reloaded.",
+                                        "actionable": true
+                                    }));
+                                    chunks_completed_clone.fetch_add(1, Ordering::SeqCst);
+                                    CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
+                                    continue;
+                                }
                             }
 
                             let chunk_timestamp = chunk.timestamp;
@@ -175,13 +186,29 @@ pub fn start_transcription_task<R: Runtime>(
                                 crate::audio::recording_state::DeviceType::System => "system",
                             };
 
-                            match transcribe_chunk_with_whisper(
+                            let first_attempt = transcribe_chunk_with_whisper(
                                 &engine_clone,
-                                chunk,
+                                chunk.clone(),
                                 &app_clone,
                             )
-                            .await
-                            {
+                            .await;
+                            let result = if matches!(
+                                &first_attempt,
+                                Err(TranscriptionError::EngineFailed(_))
+                            ) {
+                                warn!("Worker {}: Whisper failed on chunk {}; reloading and retrying once", worker_id, chunk.chunk_id);
+                                engine_clone.unload_model().await;
+                                match engine_clone.load_model(&current_model).await {
+                                    Ok(()) => transcribe_chunk_with_whisper(&engine_clone, chunk, &app_clone).await,
+                                    Err(error) => Err(TranscriptionError::EngineFailed(format!(
+                                        "failed to reload model '{}': {}",
+                                        current_model, error
+                                    ))),
+                                }
+                            } else {
+                                first_attempt
+                            };
+                            match result {
                                 Ok((transcript, confidence_opt, is_partial)) => {
                                     let confidence_threshold = 0.3;
 
@@ -394,7 +421,7 @@ pub fn start_transcription_task<R: Runtime>(
                 chunk.chunk_id, queued
             );
 
-            if let Err(_) = work_sender.send(chunk) {
+            if let Err(_) = work_sender.send(chunk).await {
                 error!("❌ Failed to send chunk to workers - this should not happen!");
                 break;
             }
@@ -474,7 +501,7 @@ pub fn start_transcription_task<R: Runtime>(
 async fn transcribe_chunk_with_whisper<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
 ) -> std::result::Result<(String, Option<f32>, bool), TranscriptionError> {
     // Convert to 16kHz mono for transcription. Propagate failures instead of
     // silently feeding wrong-rate audio to the model, which would otherwise be
@@ -539,14 +566,6 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
                 chunk.chunk_id, error
             );
             let transcription_error = TranscriptionError::EngineFailed(error.to_string());
-            let _ = app.emit(
-                "transcription-error",
-                &serde_json::json!({
-                    "error": transcription_error.to_string(),
-                    "userMessage": format!("Transcription failed: {}", transcription_error),
-                    "actionable": false
-                }),
-            );
             Err(transcription_error)
         }
     }
