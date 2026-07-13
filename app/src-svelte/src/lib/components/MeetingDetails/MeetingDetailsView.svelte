@@ -11,6 +11,7 @@
 	import EllipsisVerticalIcon from '@lucide/svelte/icons/ellipsis-vertical';
 	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
 	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
@@ -564,8 +565,8 @@
 				</div>
 			</div>
 			<!-- Note header: large display title + date, Granola-style. -->
-			<div data-tauri-drag-region="deep" class="flex-shrink-0 px-8 pb-1 pt-4">
-				<div class="flex items-start gap-1">
+			<div class="flex-shrink-0 px-8 pb-1 pt-4">
+				<div class="flex items-start gap-2">
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
@@ -583,18 +584,25 @@
 							class="h-auto min-w-0 flex-1 border-none bg-transparent p-0 font-display text-3xl font-medium shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-muted-foreground/50"
 						/>
 					{:else}
-						<button
-							type="button"
-							onclick={startEditTitle}
-							class="min-w-0 flex-1 truncate text-left font-display text-3xl font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-							aria-label="Edit meeting title"
+						<h1
+							class="min-w-0 flex-1 select-text truncate font-display text-3xl font-medium text-foreground"
 						>
 							{#if meetingData.meetingTitle?.trim()}
 								{meetingData.meetingTitle}
 							{:else}
 								<span class="text-muted-foreground/50">Untitled meeting</span>
 							{/if}
-						</button>
+						</h1>
+						<Button
+							variant="ghost"
+							size="icon"
+							class="h-10 w-10 shrink-0 text-muted-foreground transition-transform active:scale-[0.96] hover:text-foreground"
+							onclick={startEditTitle}
+							aria-label="Edit meeting title"
+							title="Edit meeting title"
+						>
+							<PencilIcon data-icon />
+						</Button>
 					{/if}
 				</div>
 				{#if !isNaN(createdDate.getTime())}
