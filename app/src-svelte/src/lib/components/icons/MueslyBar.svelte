@@ -4,8 +4,7 @@
 </script>
 
 <!-- A muesly (granola) bar in lucide's visual language: 24x24, currentColor
-     stroke, round caps/joins. A rounded bar with oat/seed dots (drawn as
-     zero-length round-capped strokes, the same trick lucide uses for dots). -->
+     stroke, round caps/joins. -->
 <svg
 	xmlns="http://www.w3.org/2000/svg"
 	width="24"
