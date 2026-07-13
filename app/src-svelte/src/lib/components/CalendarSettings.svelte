@@ -170,12 +170,14 @@
 		calId: string,
 		include: boolean,
 	): Promise<void> {
+		const prev = accountExcluded;
 		const next = new Set(accountExcluded[accountId] ?? new Set<string>());
 		if (include) next.delete(calId);
 		else next.add(calId);
 		accountExcluded = { ...accountExcluded, [accountId]: next };
 		const res = await commands.calendarSetAccountExcludedIds(accountId, [...next]);
 		if (res.status === 'error') {
+			accountExcluded = prev; // revert the optimistic change on failure
 			toast.error('Could not update calendar selection', { description: res.error });
 		}
 	}
@@ -246,12 +248,14 @@
 	}
 
 	async function toggleCalendar(id: string, include: boolean): Promise<void> {
+		const prev = excludedIds;
 		const next = new Set(excludedIds);
 		if (include) next.delete(id);
 		else next.add(id);
 		excludedIds = next;
 		const res = await commands.calendarSetExcludedIds([...next]);
 		if (res.status === 'error') {
+			excludedIds = prev; // revert the optimistic change on failure
 			toast.error('Failed to update calendar selection', { description: res.error });
 		}
 	}
