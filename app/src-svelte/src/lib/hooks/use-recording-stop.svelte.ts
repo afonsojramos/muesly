@@ -4,8 +4,8 @@
  * Manages the recording stop lifecycle: transcription-completion wait → buffer
  * flush → SQLite save → navigation. Mirrors the React useRecordingStop hook.
  *
- * `stop_recording` itself is already called by RecordingControls; this hook
- * only handles post-stop processing.
+ * `stop_recording` itself is already called by the recording controls (pill /
+ * bar); this hook only handles post-stop processing.
  */
 
 import { goto } from '$app/navigation';

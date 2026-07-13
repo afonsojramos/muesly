@@ -204,7 +204,7 @@ export function useRecordingStart(
 			);
 			setIsRecording(false);
 			void Analytics.trackButtonClick('start_recording_error', 'home_page');
-			// Re-throw so RecordingControls can surface device-specific errors.
+			// Re-throw so the caller can surface device-specific errors.
 			throw error;
 		}
 	};
