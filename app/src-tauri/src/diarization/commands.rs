@@ -140,14 +140,20 @@ pub async fn diarize_meeting<R: Runtime>(
         .ok_or_else(|| "meeting has no recording folder".to_string())?;
 
     let audio_path = find_audio_file(&PathBuf::from(&folder_path))?;
-    let decoded = decode_audio_file(&audio_path).map_err(|e| format!("decode audio: {e}"))?;
-    let mono = audio_to_mono(&decoded.samples, decoded.channels);
-    let samples_16k = if decoded.sample_rate == DIARIZATION_SAMPLE_RATE {
-        mono
-    } else {
-        resample(&mono, decoded.sample_rate, DIARIZATION_SAMPLE_RATE)
-            .map_err(|e| format!("resample to 16kHz: {e}"))?
-    };
+    // Decode + downmix + resample of a full meeting is heavy sync CPU/IO; keep it
+    // off the async runtime's worker threads (only the sidecar call below was).
+    let samples_16k = tokio::task::spawn_blocking(move || -> Result<Vec<f32>, String> {
+        let decoded = decode_audio_file(&audio_path).map_err(|e| format!("decode audio: {e}"))?;
+        let mono = audio_to_mono(&decoded.samples, decoded.channels);
+        if decoded.sample_rate == DIARIZATION_SAMPLE_RATE {
+            Ok(mono)
+        } else {
+            resample(&mono, decoded.sample_rate, DIARIZATION_SAMPLE_RATE)
+                .map_err(|e| format!("resample to 16kHz: {e}"))
+        }
+    })
+    .await
+    .map_err(|e| format!("audio decode task join error: {e}"))??;
 
     // The sidecar call is blocking (spawns a process and waits); keep it off the
     // async runtime's worker threads.
