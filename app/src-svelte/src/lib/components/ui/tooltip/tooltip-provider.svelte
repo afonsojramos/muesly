@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { Tooltip as TooltipPrimitive } from 'bits-ui';
 
-	let { delayDuration = 0, ...restProps }: TooltipPrimitive.ProviderProps = $props();
+	const APP_TOOLTIP_DELAY_MS = 500;
+	let { ...restProps }: TooltipPrimitive.ProviderProps = $props();
 </script>
 
-<TooltipPrimitive.Provider {delayDuration} {...restProps} />
+<!-- Tooltip timing is intentionally app-global. Keep the explicit value after
+     spread so nested providers cannot silently introduce inconsistent delays. -->
+<TooltipPrimitive.Provider {...restProps} delayDuration={APP_TOOLTIP_DELAY_MS} />
