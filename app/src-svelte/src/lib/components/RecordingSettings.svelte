@@ -285,9 +285,9 @@
 
 		<div class="flex items-center justify-between rounded-lg border border-border p-4">
 			<div class="flex-1">
-				<div class="font-medium">Recording Start Notification</div>
+				<div class="font-medium">Recording consent reminder</div>
 				<div class="text-sm text-muted-foreground">
-					Show reminder to inform participants when recording starts
+					Show an in-app banner reminding you to tell participants a recording has started
 				</div>
 			</div>
 			<Switch checked={showRecordingNotification} onCheckedChange={handleNotificationToggle} />

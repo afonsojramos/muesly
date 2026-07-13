@@ -148,9 +148,9 @@
 			<Card.Header>
 				<div class="flex items-center justify-between">
 					<div>
-						<Card.Title>Notifications</Card.Title>
+						<Card.Title>System notifications</Card.Title>
 						<Card.Description>
-							Enable or disable notifications of start and end of meeting
+							Show a system notification when a meeting starts and ends
 						</Card.Description>
 					</div>
 					<Switch checked={notificationsEnabled} onCheckedChange={handleNotificationToggle} />
