@@ -41,7 +41,18 @@ export function usePermissionCheck(): UsePermissionCheck {
 			const outputDevices = devices.filter((d) => d.device_type === 'Output');
 
 			hasMicrophone = inputDevices.length > 0;
-			hasSystemAudio = outputDevices.length > 0;
+			// System-audio availability is the actual capture *permission* (macOS TCC
+			// process-tap consent), not merely having an output device: without the
+			// permission the tap silently records zeros. Still require an output to
+			// capture from. On platforms without the gate the command returns true, so
+			// we fall back to output-device presence.
+			let systemAudioPermitted = true;
+			try {
+				systemAudioPermitted = await invoke<boolean>('check_system_audio_permissions_command');
+			} catch {
+				systemAudioPermitted = true;
+			}
+			hasSystemAudio = outputDevices.length > 0 && systemAudioPermitted;
 			isChecking = false;
 
 			return { hasMicrophone, hasSystemAudio };
