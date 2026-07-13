@@ -2,17 +2,21 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { goto } from '$app/navigation';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import { mergeProps } from 'bits-ui';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import EllipsisVerticalIcon from '@lucide/svelte/icons/ellipsis-vertical';
-	import PanelRightCloseIcon from '@lucide/svelte/icons/panel-right-close';
-	import PanelRightOpenIcon from '@lucide/svelte/icons/panel-right-open';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
+	import FileTextIcon from '@lucide/svelte/icons/file-text';
+	import LanguagesIcon from '@lucide/svelte/icons/languages';
+	import SettingsIcon from '@lucide/svelte/icons/settings';
+	import SparklesIcon from '@lucide/svelte/icons/sparkles';
+	import SquareIcon from '@lucide/svelte/icons/square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import UsersIcon from '@lucide/svelte/icons/users';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
@@ -23,6 +27,7 @@
 	import { saveStatus } from '$lib/stores/save-status.svelte';
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
+	import { AUTO_SUMMARY_LANGUAGE, SUMMARY_LANGUAGES } from '$lib/summary-languages';
 	import { findSegmentNearTime } from '$lib/transcript-link';
 	import { debounce } from '$lib/utils/debounce';
 	import { toast } from '$lib/toast';
@@ -109,7 +114,7 @@
 				for (const n of res.data.shortlist) {
 					if (n.trim() && !chips.includes(n.trim())) chips.push(n.trim());
 				}
-				attendeeChips = chips.slice(0, 12);
+				attendeeChips = chips;
 			} catch {
 				attendeeChips = [];
 			}
@@ -144,13 +149,12 @@
 	// Title is a click-to-edit field: a truncating label when idle (so long
 	// auto-generated titles don't clip mid-word), an input while editing.
 	let isEditingTitle = $state(false);
-	let titleInputEl = $state<HTMLInputElement>();
-	function startEditTitle(): void {
+	let titleInputEl = $state<HTMLInputElement | null>(null);
+	async function startEditTitle(): Promise<void> {
 		isEditingTitle = true;
-		queueMicrotask(() => {
-			titleInputEl?.focus();
-			titleInputEl?.select();
-		});
+		await tick();
+		titleInputEl?.focus();
+		titleInputEl?.select();
 	}
 	function stopEditTitle(): void {
 		isEditingTitle = false;
@@ -246,12 +250,25 @@
 	// bind:open is used, so bind both and force the tooltip shut while the menu
 	// is open or was just closed; a fresh hover (pointerenter) re-arms.
 	let actionsMenuOpen = $state(false);
+	// Button's bindable `ref` prop has a fallback, so Svelte requires an explicit
+	// nullable value here. `undefined` throws while this view mounts and leaves the
+	// route's previous loading state visible indefinitely.
+	let actionsButtonEl = $state<HTMLButtonElement | null>(null);
 	let actionsTooltipOpen = $state(false);
 	let suppressActionsTooltip = $state(false);
 
 	$effect(() => {
 		if (actionsMenuOpen) suppressActionsTooltip = true;
 	});
+
+	function openModelSettingsFromMenu(): void {
+		// Let the dropdown close and restore its trigger before opening the dialog,
+		// so closing Model Settings returns focus to a stable visible control.
+		setTimeout(() => {
+			actionsButtonEl?.focus();
+			summaryPanel?.openSummarySettings();
+		}, 0);
+	}
 	$effect(() => {
 		if (actionsTooltipOpen && (actionsMenuOpen || suppressActionsTooltip)) {
 			actionsTooltipOpen = false;
@@ -356,6 +373,11 @@
 		setAiSummary: meetingData.setAiSummary,
 		onOpenModelSettings: handleOpenModelSettings,
 	});
+	const isSummaryGenerating = $derived(
+		['processing', 'cleanup', 'summarizing', 'regenerating'].includes(
+			summaryGeneration.summaryStatus,
+		),
+	);
 
 	const copyOperations = useCopyOperations({
 		// svelte-ignore state_referenced_locally
@@ -492,6 +514,7 @@
 											<DropdownMenu.Trigger>
 												{#snippet child({ props: menuProps })}
 													<Button
+														bind:ref={actionsButtonEl}
 														{...mergeProps(tooltipProps, menuProps, {
 															onpointerenter: () => (suppressActionsTooltip = false),
 														})}
@@ -510,6 +533,64 @@
 								</Tooltip.Root>
 							</Tooltip.Provider>
 							<DropdownMenu.Content align="end" class="min-w-48">
+								<DropdownMenu.Item
+									disabled={meeting.transcripts.length === 0}
+									onSelect={() => void summaryPanel?.triggerSummaryAction()}
+								>
+									{#if isSummaryGenerating}
+										<SquareIcon fill="currentColor" />
+										Stop enhancing
+									{:else}
+										<SparklesIcon />
+										Enhance notes
+									{/if}
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onSelect={openModelSettingsFromMenu}>
+									<SettingsIcon />
+									AI model
+								</DropdownMenu.Item>
+								{#if templates.availableTemplates.length > 0}
+									<DropdownMenu.Sub>
+										<DropdownMenu.SubTrigger>
+											<FileTextIcon />
+											Template
+										</DropdownMenu.SubTrigger>
+										<DropdownMenu.SubContent class="max-h-72 overflow-y-auto">
+											{#each templates.availableTemplates as template (template.id)}
+												<DropdownMenu.CheckboxItem
+													checked={template.id === templates.selectedTemplate}
+													onSelect={() => void handleTemplateSelect(template.id, template.name)}
+												>
+													{template.name}
+												</DropdownMenu.CheckboxItem>
+											{/each}
+										</DropdownMenu.SubContent>
+									</DropdownMenu.Sub>
+								{/if}
+								<DropdownMenu.Sub>
+									<DropdownMenu.SubTrigger>
+										<LanguagesIcon />
+										Language
+									</DropdownMenu.SubTrigger>
+									<DropdownMenu.SubContent class="max-h-72 overflow-y-auto">
+										{#each [{ code: AUTO_SUMMARY_LANGUAGE, name: 'Automatic (English)' }, ...SUMMARY_LANGUAGES] as language (language.code)}
+											<DropdownMenu.CheckboxItem
+												checked={language.code === summaryLanguage.preferred}
+												onSelect={() => summaryLanguage.set(language.code)}
+											>
+												{language.name}
+											</DropdownMenu.CheckboxItem>
+										{/each}
+									</DropdownMenu.SubContent>
+								</DropdownMenu.Sub>
+								<DropdownMenu.Item
+									disabled={!meetingData.aiSummary}
+									onSelect={() => void copyOperations.handleCopySummary()}
+								>
+									<CopyIcon />
+									Copy summary
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
 								<DropdownMenu.Item onSelect={() => void handleCopyNotes()}>
 									<CopyIcon />
 									Copy notes
@@ -530,43 +611,12 @@
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
-						<Tooltip.Provider delayDuration={300}>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-sm"
-											onclick={() => sidePanelState.toggle()}
-											class="text-muted-foreground hover:text-foreground"
-											aria-label={sidePanelState.open
-												? 'Hide transcript & notes'
-												: 'Show transcript & notes'}
-											aria-pressed={sidePanelState.open}
-										>
-											{#if sidePanelState.open}
-												<PanelRightCloseIcon />
-											{:else}
-												<PanelRightOpenIcon />
-											{/if}
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content>
-									<span class="flex items-center">
-										{sidePanelState.open ? 'Hide transcript & notes' : 'Show transcript & notes'}
-										<span class="ml-1.5 tracking-wide opacity-60">⌘T</span>
-									</span>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
 					</div>
 				</div>
 			</div>
 			<!-- Note header: large display title + date, Granola-style. -->
 			<div class="flex-shrink-0 px-8 pb-1 pt-4">
-				<div class="flex items-start gap-2">
+				<div class="group/title flex items-start gap-1">
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
@@ -596,37 +646,68 @@
 						<Button
 							variant="ghost"
 							size="icon"
-							class="h-10 w-10 shrink-0 text-muted-foreground transition-transform active:scale-[0.96] hover:text-foreground"
-							onclick={startEditTitle}
+							class="size-10 shrink-0 opacity-0 text-muted-foreground transition-[opacity,color,scale] duration-150 group-hover/title:opacity-100 hover:text-foreground focus-visible:opacity-100 active:scale-[0.96]"
+							onclick={() => void startEditTitle()}
 							aria-label="Edit meeting title"
-							title="Edit meeting title"
 						>
 							<PencilIcon data-icon />
 						</Button>
 					{/if}
 				</div>
-				{#if !isNaN(createdDate.getTime())}
-					<p class="mt-1 text-sm text-muted-foreground">
-						{createdDate.toLocaleDateString(undefined, {
-							weekday: 'long',
-							month: 'long',
-							day: 'numeric',
-						})} · {createdDate.toLocaleTimeString(undefined, {
-							hour: 'numeric',
-							minute: '2-digit',
-						})}
-					</p>
-				{/if}
-				{#if attendeeChips.length > 0}
-					<div class="mt-3 flex flex-wrap gap-1.5" aria-label="Attendees">
-						{#each attendeeChips as name (name)}
-							<span
-								class="inline-flex max-w-[12rem] items-center truncate rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 text-xs text-foreground"
-								title={name}
-							>
-								{name}
+				{#if !isNaN(createdDate.getTime()) || attendeeChips.length > 0}
+					<div
+						class="mt-1 flex min-h-10 flex-wrap items-center gap-x-1 text-sm text-muted-foreground"
+					>
+						{#if !isNaN(createdDate.getTime())}
+							<span>
+								{createdDate.toLocaleDateString(undefined, {
+									weekday: 'long',
+									month: 'long',
+									day: 'numeric',
+								})} · {createdDate.toLocaleTimeString(undefined, {
+									hour: 'numeric',
+									minute: '2-digit',
+								})}
 							</span>
-						{/each}
+						{/if}
+						{#if attendeeChips.length > 0}
+							<Tooltip.Provider>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="sm"
+												class="h-10 px-1.5 text-muted-foreground hover:bg-transparent hover:text-foreground"
+												aria-label={`${attendeeChips.length} ${attendeeChips.length === 1 ? 'participant' : 'participants'}`}
+											>
+												<UsersIcon data-icon="inline-start" />
+												<span class="tabular-nums">{attendeeChips.length}</span>
+												{attendeeChips.length === 1 ? 'participant' : 'participants'}
+											</Button>
+										{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content
+										side="bottom"
+										sideOffset={8}
+										arrowClasses="hidden"
+										class="block w-64 max-w-[calc(100vw-2rem)] p-1.5"
+									>
+										<p class="px-2 pb-1.5 pt-1 font-medium text-primary-foreground/70">
+											Participants
+										</p>
+										<ul
+											class="flex max-h-[min(16rem,calc(100vh-8rem))] flex-col gap-1 overflow-y-auto rounded-sm px-2 pb-1"
+										>
+											{#each attendeeChips as name (name)}
+												<li class="break-words py-0.5 text-sm leading-5">{name}</li>
+											{/each}
+										</ul>
+									</Tooltip.Content>
+								</Tooltip.Root>
+							</Tooltip.Provider>
+						{/if}
 					</div>
 				{/if}
 			</div>

@@ -4,7 +4,6 @@
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import LanguagesIcon from '@lucide/svelte/icons/languages';
 	import Loader2Icon from '@lucide/svelte/icons/loader-2';
-	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import SquareIcon from '@lucide/svelte/icons/square';
 
@@ -211,6 +210,18 @@
 		}
 	}
 
+	export async function triggerPrimaryAction(): Promise<void> {
+		if (isGenerating) {
+			onStopGeneration();
+			return;
+		}
+		await checkOllamaModelsAndGenerate();
+	}
+
+	export function openSettings(): void {
+		settingsDialogOpen = true;
+	}
+
 	const templateItems = $derived(
 		availableTemplates.map((t) => ({
 			value: t.id,
@@ -246,6 +257,24 @@
 			summaryLanguage.preferred !== 'en',
 	);
 </script>
+
+<!-- Programmatic settings dialog stays mounted even when a meeting has no
+     transcript. The visible trigger lives in the meeting actions menu. -->
+<Dialog.Root bind:open={settingsDialogOpen}>
+	<Dialog.Content class="flex max-h-[85vh] flex-col sm:max-w-lg">
+		<Dialog.Title class="sr-only">Model Settings</Dialog.Title>
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<ModelSettingsModal
+				{modelConfig}
+				{setModelConfig}
+				onSave={async (config) => {
+					await onSaveModelConfig(config);
+					settingsDialogOpen = false;
+				}}
+			/>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>
 
 {#if hasTranscripts}
 	<div class="flex items-center gap-1">
@@ -310,40 +339,6 @@
 				</Tooltip.Root>
 			</Tooltip.Provider>
 		{/if}
-
-		<Dialog.Root bind:open={settingsDialogOpen}>
-			<Dialog.Trigger>
-				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="sm"
-						class="text-muted-foreground hover:text-foreground"
-						aria-label="Summary settings"
-						title="Summary Settings"
-					>
-						<SettingsIcon data-icon="inline-start" />
-						<span class="hidden lg:inline">AI Model</span>
-					</Button>
-				{/snippet}
-			</Dialog.Trigger>
-			<!-- Cap height and scroll the body: the built-in model list is long and
-			     would otherwise overflow the viewport (Dialog.Content is centered
-			     with no intrinsic height). Matches AnalyticsDataModal. -->
-			<Dialog.Content class="flex max-h-[85vh] flex-col sm:max-w-lg">
-				<Dialog.Title class="sr-only">Model Settings</Dialog.Title>
-				<div class="min-h-0 flex-1 overflow-y-auto">
-					<ModelSettingsModal
-						{modelConfig}
-						{setModelConfig}
-						onSave={async (config) => {
-							await onSaveModelConfig(config);
-							settingsDialogOpen = false;
-						}}
-					/>
-				</div>
-			</Dialog.Content>
-		</Dialog.Root>
 
 		{#if availableTemplates.length > 0}
 			<DropdownMenu.Root>

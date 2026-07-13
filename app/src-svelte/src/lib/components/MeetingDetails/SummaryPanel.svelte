@@ -10,7 +10,6 @@
 	import EmptyStateSummary from '$lib/components/EmptyStateSummary.svelte';
 	import SummaryView from '$lib/components/SummaryView.svelte';
 	import SummaryGeneratorButtonGroup from './SummaryGeneratorButtonGroup.svelte';
-	import SummaryUpdaterButtonGroup from './SummaryUpdaterButtonGroup.svelte';
 
 	interface Props {
 		onCopySummary: () => Promise<void>;
@@ -59,9 +58,18 @@
 	}: Props = $props();
 
 	let summaryView = $state<ReturnType<typeof SummaryView>>();
+	let summaryControls = $state<ReturnType<typeof SummaryGeneratorButtonGroup>>();
 
 	export function getSummaryMarkdown(): string {
 		return summaryView?.getMarkdown() ?? '';
+	}
+
+	export async function triggerSummaryAction(): Promise<void> {
+		await summaryControls?.triggerPrimaryAction();
+	}
+
+	export function openSummarySettings(): void {
+		summaryControls?.openSettings();
 	}
 
 	const isSummaryLoading = $derived(
@@ -76,53 +84,28 @@
 	const hasModel = $derived(!!modelConfig.provider && !!modelConfig.model);
 </script>
 
-<div class="flex flex-1 min-w-0 flex-col overflow-hidden bg-background">
-	<div class="px-8 py-2">
-		{#if aiSummary && !isSummaryLoading}
-			<div class="flex w-full items-center gap-2 pt-0">
-				<div class="flex-shrink-0">
-					<SummaryGeneratorButtonGroup
-						{modelConfig}
-						{setModelConfig}
-						{onSaveModelConfig}
-						{onGenerateSummary}
-						{onStopGeneration}
-						{customPrompt}
-						{summaryStatus}
-						{availableTemplates}
-						{selectedTemplate}
-						{onTemplateSelect}
-						hasTranscripts={transcripts.length > 0}
-						{isModelConfigLoading}
-						{onOpenModelSettings}
-					/>
-				</div>
-				<div class="flex-shrink-0">
-					<SummaryUpdaterButtonGroup onCopy={onCopySummary} hasSummary={!!aiSummary} />
-				</div>
-			</div>
-		{/if}
-	</div>
+<!-- Keep one headless controller mounted for model validation/settings. Its
+     visible actions live in the meeting's three-dot menu. -->
+<SummaryGeneratorButtonGroup
+	bind:this={summaryControls}
+	{modelConfig}
+	{setModelConfig}
+	{onSaveModelConfig}
+	{onGenerateSummary}
+	{onStopGeneration}
+	{customPrompt}
+	{summaryStatus}
+	{availableTemplates}
+	{selectedTemplate}
+	{onTemplateSelect}
+	hasTranscripts={false}
+	{isModelConfigLoading}
+	{onOpenModelSettings}
+/>
 
+<div class="flex flex-1 min-w-0 flex-col overflow-hidden bg-background">
 	{#if isSummaryLoading}
 		<div class="flex h-full flex-col">
-			<div class="flex items-center justify-center pb-4 pt-8">
-				<SummaryGeneratorButtonGroup
-					{modelConfig}
-					{setModelConfig}
-					{onSaveModelConfig}
-					{onGenerateSummary}
-					{onStopGeneration}
-					{customPrompt}
-					{summaryStatus}
-					{availableTemplates}
-					{selectedTemplate}
-					{onTemplateSelect}
-					hasTranscripts={transcripts.length > 0}
-					{isModelConfigLoading}
-					{onOpenModelSettings}
-				/>
-			</div>
 			<div class="flex flex-1 items-center justify-center">
 				<div class="text-center">
 					<Loader2Icon class="mx-auto mb-4 size-12 animate-spin text-brand" />
@@ -134,23 +117,6 @@
 		</div>
 	{:else if !aiSummary}
 		<div class="flex h-full flex-col">
-			<div class="flex items-center justify-center pb-4 pt-8">
-				<SummaryGeneratorButtonGroup
-					{modelConfig}
-					{setModelConfig}
-					{onSaveModelConfig}
-					{onGenerateSummary}
-					{onStopGeneration}
-					{customPrompt}
-					{summaryStatus}
-					{availableTemplates}
-					{selectedTemplate}
-					{onTemplateSelect}
-					hasTranscripts={transcripts.length > 0}
-					{isModelConfigLoading}
-					{onOpenModelSettings}
-				/>
-			</div>
 			<EmptyStateSummary
 				onGenerate={() => void onGenerateSummary(customPrompt)}
 				{hasModel}
