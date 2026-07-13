@@ -57,6 +57,7 @@ class RecordingStateStore {
 	#pollingInterval: ReturnType<typeof setInterval> | null = null;
 	#unsubscribers: UnlistenFn[] = [];
 	#started = false;
+	#stopPromise: Promise<boolean> | null = null;
 
 	setStatus = (status: RecordingStatus, message?: string): void => {
 		console.log(`[RecordingState] Status: ${this.status} → ${status}`, message || '');
@@ -104,35 +105,74 @@ class RecordingStateStore {
 	 *          `false` if it failed for any reason other than idempotency.
 	 */
 	async stop(): Promise<boolean> {
-		try {
-			const dataDir = await appDataDir();
-			const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-			const savePath = `${dataDir}/recording-${timestamp}.wav`;
-			await invoke('stop_recording', { args: { save_path: savePath } });
-			return true;
-		} catch (error) {
-			const message =
-				error instanceof Error ? error.message : typeof error === 'string' ? error : String(error);
-			if (message.includes('No recording in progress')) {
-				// Already stopped by another surface — treat as a no-op success.
+		if (this.#stopPromise) return this.#stopPromise;
+
+		const previous = {
+			isRecording: this.isRecording,
+			isPaused: this.isPaused,
+			isActive: this.isActive,
+			status: this.status,
+			statusMessage: this.statusMessage,
+			audioLevel: this.audioLevel,
+		};
+
+		// Acknowledge the click immediately. Rust still performs the full, safe
+		// transcript/audio flush; this only stops presenting the session as active.
+		this.status = RecordingStatus.STOPPING;
+		this.statusMessage = 'Saving meeting…';
+		this.isPaused = false;
+		this.isActive = false;
+		this.audioLevel = 0;
+		this.#stopPolling();
+
+		this.#stopPromise = (async () => {
+			try {
+				const dataDir = await appDataDir();
+				const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+				const savePath = `${dataDir}/recording-${timestamp}.wav`;
+				await invoke('stop_recording', { args: { save_path: savePath } });
 				return true;
+			} catch (error) {
+				const message =
+					error instanceof Error
+						? error.message
+						: typeof error === 'string'
+							? error
+							: String(error);
+				if (message.includes('No recording in progress')) {
+					// Already stopped by another surface — treat as a no-op success.
+					return true;
+				}
+				// Backend may still have emitted recording-stopped and best-effort
+				// saved; never block the SQLite save pipeline on a soft stream error.
+				if (
+					message.includes('recording data was still saved') ||
+					message.includes('stream error after best-effort')
+				) {
+					console.warn(
+						'[RecordingStateStore] Stop reported a soft stream error; continuing save pipeline:',
+						message,
+					);
+					return true;
+				}
+				console.error('[RecordingStateStore] Failed to stop recording:', error);
+				// A hard rejection means the backend may still be recording. Restore the
+				// interactive state so the user can retry instead of leaving a false stop.
+				this.isRecording = previous.isRecording;
+				this.isPaused = previous.isPaused;
+				this.isActive = previous.isActive;
+				this.status = previous.status;
+				this.statusMessage = previous.statusMessage;
+				this.audioLevel = previous.audioLevel;
+				if (previous.isRecording) this.#startPolling();
+				toast.error('Failed to stop recording', { description: message });
+				return false;
 			}
-			// Backend may still have emitted recording-stopped and best-effort
-			// saved; never block the SQLite save pipeline on a soft stream error.
-			if (
-				message.includes('recording data was still saved') ||
-				message.includes('stream error after best-effort')
-			) {
-				console.warn(
-					'[RecordingStateStore] Stop reported a soft stream error; continuing save pipeline:',
-					message,
-				);
-				return true;
-			}
-			console.error('[RecordingStateStore] Failed to stop recording:', error);
-			toast.error('Failed to stop recording', { description: message });
-			return false;
-		}
+		})().finally(() => {
+			this.#stopPromise = null;
+		});
+
+		return this.#stopPromise;
 	}
 
 	/** Pause the active recording (idempotent at the call site). */
