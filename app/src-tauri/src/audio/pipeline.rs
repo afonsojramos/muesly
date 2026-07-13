@@ -196,7 +196,6 @@ pub struct AudioCapture {
     channels: u16,
     chunk_counter: Arc<std::sync::atomic::AtomicU64>,
     device_type: DeviceType,
-    recording_sender: Option<mpsc::UnboundedSender<AudioChunk>>,
     needs_resampling: bool, // Flag if resampling is required
     // CRITICAL FIX: Persistent resampler to preserve energy across chunks
     resampler: Arc<std::sync::Mutex<Option<SincFixedIn<f32>>>>,
@@ -218,7 +217,6 @@ impl AudioCapture {
         sample_rate: u32,
         channels: u16,
         device_type: DeviceType,
-        recording_sender: Option<mpsc::UnboundedSender<AudioChunk>>,
     ) -> Self {
         // CRITICAL FIX: Detect if resampling is needed
         // Pipeline expects 48kHz, but Bluetooth devices often report 8kHz, 16kHz, or 44.1kHz
@@ -387,7 +385,6 @@ impl AudioCapture {
             channels,
             chunk_counter: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             device_type,
-            recording_sender,
             needs_resampling,
             resampler: Arc::new(std::sync::Mutex::new(resampler)),
             resampler_input_buffer: Arc::new(std::sync::Mutex::new(Vec::with_capacity(

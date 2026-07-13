@@ -128,7 +128,7 @@ impl AudioStream {
         device: Arc<AudioDevice>,
         state: Arc<RecordingState>,
         device_type: DeviceType,
-        recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
+        _recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
     ) -> Result<Self> {
         info!("Creating CPAL stream for device: {}", device.name);
 
@@ -145,7 +145,6 @@ impl AudioStream {
             config.sample_rate().0,
             config.channels(),
             device_type,
-            recording_sender,
         );
 
         // Confine the cpal stream to a dedicated thread. The stream is built,
@@ -217,7 +216,7 @@ impl AudioStream {
         device: Arc<AudioDevice>,
         state: Arc<RecordingState>,
         device_type: DeviceType,
-        recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
+        _recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
     ) -> Result<Self> {
         info!("🔊 Stream: Creating Core Audio stream for device: {}", device.name);
 
@@ -247,7 +246,6 @@ impl AudioStream {
             sample_rate,
             1, // Core Audio tap is MONO (not stereo!)
             device_type,
-            recording_sender,
         );
 
         // Spawn task to process Core Audio stream samples

@@ -15,9 +15,6 @@ macro_rules! perf_debug {
     ($($arg:tt)*) => {};
 }
 
-// Make this macro available to other modules
-pub(crate) use perf_debug;
-
 // Re-export async logging macros for external use (removed due to macro conflicts)
 
 // Declare audio module

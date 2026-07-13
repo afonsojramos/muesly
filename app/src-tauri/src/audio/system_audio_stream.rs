@@ -20,7 +20,7 @@ impl SystemAudioStreamManager {
     pub async fn create(
         device: Arc<AudioDevice>,
         state: Arc<RecordingState>,
-        recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
+        _recording_sender: Option<mpsc::UnboundedSender<super::recording_state::AudioChunk>>,
     ) -> Result<Self> {
         info!("Creating system audio stream for device: {}", device.name);
 
@@ -35,7 +35,6 @@ impl SystemAudioStreamManager {
             system_stream.sample_rate(),
             2, // Assume stereo for system audio
             DeviceType::Output,
-            recording_sender,
         );
 
         // Spawn task to process system audio stream
