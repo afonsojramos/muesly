@@ -23,8 +23,8 @@ generated into `drizzle/` and applied to the shared `muesly` D1 with wrangler.
 
 ```bash
 # after editing src/db/schema.ts:
-pnpm db:generate      # writes a migration into drizzle/
-pnpm db:migrate       # applies it to remote D1  (add :local for the dev DB)
+nub run db:generate   # writes a migration into drizzle/
+nub run db:migrate    # applies it to remote D1  (add :local for the dev DB)
 ```
 
 Never hand-edit files in `drizzle/`.
@@ -46,13 +46,13 @@ is required for the binding.
 ## Deploy — manual / first time
 
 ```bash
-pnpm install
-pnpm dlx wrangler login                       # or export CLOUDFLARE_API_TOKEN
-pnpm dlx wrangler d1 create muesly            # once; paste database_id into wrangler.jsonc
+nub install
+nubx wrangler login                           # or export CLOUDFLARE_API_TOKEN
+nubx wrangler d1 create muesly                # once; paste database_id into wrangler.jsonc
 
 # account_id isn't in the config, so pass it for multi-account setups:
-CLOUDFLARE_ACCOUNT_ID=<your-account-id> pnpm db:migrate
-CLOUDFLARE_ACCOUNT_ID=<your-account-id> pnpm run release
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> nub run db:migrate
+CLOUDFLARE_ACCOUNT_ID=<your-account-id> nub run release
 
 # Optional: serve on api.muesly.ai (uncomment `routes` in wrangler.jsonc, or add
 # the custom domain in the dashboard).

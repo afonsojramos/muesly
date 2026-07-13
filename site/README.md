@@ -7,17 +7,17 @@ It is a separate project from the desktop app (`app/`) with its own dependencies
 ## Develop
 
 ```bash
-pnpm install
-pnpm dev          # http://localhost:4321
+nub install
+nub run dev       # http://localhost:4321
 ```
 
 ## Build & verify
 
 ```bash
-pnpm build        # static output in dist/
-pnpm preview      # serve the production build locally
-pnpm check        # astro check (types)
-pnpm test         # vitest unit tests (detect-os, button variants, cn)
+nub run build     # static output in dist/
+nub run preview   # serve the production build locally
+nub run check     # astro check (types)
+nub run test      # vitest unit tests (detect-os, button variants, cn)
 ```
 
 The whole site is prerendered to static HTML. The only client JavaScript is a small enhancement script (`src/scripts/client.ts`): scroll reveal, sticky-nav state, OS-aware download CTAs, download-card promotion, and the live GitHub star count. Everything works without it.
@@ -33,7 +33,7 @@ Two supported paths:
 **1. Wrangler (config-as-code, recommended).** `wrangler.jsonc` is committed. Authenticate once (`wrangler login`, or set `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`), then:
 
 ```bash
-pnpm deploy       # astro build && wrangler deploy
+nub run deploy    # astro build && wrangler deploy
 ```
 
 Use a least-privilege API token (`Workers Scripts:Edit` on `muesly-web`, plus `Workers Routes:Edit` on the `muesly.ai` zone for the custom domains). The apex (`muesly.ai`) and `www` are attached as custom domains in `wrangler.jsonc`; the `muesly.ai` zone must already be on the Cloudflare account.
