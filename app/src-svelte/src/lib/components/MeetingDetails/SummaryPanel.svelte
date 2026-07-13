@@ -156,6 +156,11 @@
 				{hasModel}
 				isGenerating={isSummaryLoading}
 			/>
+			{#if summaryError}
+				<!-- Keep the failure visible in the empty state; previously the error
+				     only flashed as a toast and the panel fell back to blank. -->
+				<p class="px-8 pb-8 text-center text-sm text-destructive">{summaryError}</p>
+			{/if}
 		</div>
 	{:else}
 		<!-- Show the summary whenever one exists — gating on transcripts hid a valid
