@@ -3,12 +3,12 @@
     windows_subsystem = "windows"
 )]
 
-use log;
-use env_logger;
-
 fn main() {
-    std::env::set_var("RUST_LOG", "info");
-    env_logger::init();
+    // Quiet verbose native ML internals while preserving explicit RUST_LOG overrides.
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info,ort=warn"),
+    )
+    .init();
 
     // Async logger will be initialized lazily when first needed (after Tauri runtime starts)
     log::info!("Starting application...");
