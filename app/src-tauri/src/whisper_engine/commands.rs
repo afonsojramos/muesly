@@ -72,6 +72,12 @@ pub async fn whisper_get_available_models() -> Result<Vec<WhisperModelInfo>, Str
     }
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn whisper_get_recommended_model() -> String {
+    crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
+}
+
 /// Discover Whisper models by scanning the models directory directly
 /// Used when the Whisper engine isn't initialized (e.g., when using Parakeet for live transcription)
 fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {

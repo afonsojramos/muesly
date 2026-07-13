@@ -170,6 +170,7 @@ pub async fn import_and_initialize_database(
     // preference; load it into the in-memory cache the transcription hot path
     // reads, otherwise the first session runs at the "auto" default until the
     // frontend reconciles. Best-effort, never blocks.
+    super::setup::migrate_legacy_parakeet_config(db_manager.pool()).await?;
     super::setup::load_transcription_language_cache(db_manager.pool()).await;
 
     // Update app state with the new manager
@@ -225,11 +226,13 @@ pub async fn initialize_fresh_database(app: AppHandle) -> Result<(), String> {
         error!("Failed to set default summary model config: {}", e);
     }
 
-    // Default Transcription Model: Parakeet
+    // Default transcription model: hardware-appropriate local Whisper.
+    let default_transcription_model =
+        crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect());
     if let Err(e) = crate::database::repositories::setting::SettingsRepository::save_transcript_config(
         pool,
-        "parakeet",
-        crate::config::DEFAULT_PARAKEET_MODEL,
+        "localWhisper",
+        default_transcription_model,
     ).await {
         error!("Failed to set default transcription model config: {}", e);
     }

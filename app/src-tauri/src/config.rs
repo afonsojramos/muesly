@@ -7,6 +7,19 @@
 /// This is the recommended balance of accuracy and speed.
 pub const DEFAULT_WHISPER_MODEL: &str = "large-v3-turbo";
 
+/// Pick the smallest Whisper model that preserves a good live experience on
+/// the detected hardware. Quantized models keep onboarding downloads and memory
+/// low while higher tiers retain Large v3 Turbo accuracy.
+pub fn recommended_whisper_model(profile: &crate::audio::HardwareProfile) -> &'static str {
+    match profile.performance_tier {
+        crate::audio::PerformanceTier::Ultra | crate::audio::PerformanceTier::High => {
+            "large-v3-turbo-q5_0"
+        }
+        crate::audio::PerformanceTier::Medium => "small-q5_1",
+        crate::audio::PerformanceTier::Low => "base-q5_1",
+    }
+}
+
 /// Default Parakeet model for transcription when no preference is configured.
 /// This is the quantized version optimized for speed.
 pub const DEFAULT_PARAKEET_MODEL: &str = "parakeet-tdt-0.6b-v3-int8";
@@ -34,3 +47,27 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
     ("large-v3-turbo-q5_0", "ggml-large-v3-turbo-q5_0.bin", 547, "High", "Medium", "Quantized large model, best balance"),
     ("large-v3-q5_0", "ggml-large-v3-q5_0.bin", 1031, "High", "Slow", "Quantized large model, high accuracy"),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::recommended_whisper_model;
+    use crate::audio::{GpuType, HardwareProfile, PerformanceTier};
+
+    fn profile(performance_tier: PerformanceTier) -> HardwareProfile {
+        HardwareProfile {
+            cpu_cores: 8,
+            has_gpu_acceleration: performance_tier != PerformanceTier::Low,
+            gpu_type: GpuType::None,
+            memory_gb: 16,
+            performance_tier,
+        }
+    }
+
+    #[test]
+    fn recommends_a_model_each_hardware_tier_can_run_interactively() {
+        assert_eq!(recommended_whisper_model(&profile(PerformanceTier::Low)), "base-q5_1");
+        assert_eq!(recommended_whisper_model(&profile(PerformanceTier::Medium)), "small-q5_1");
+        assert_eq!(recommended_whisper_model(&profile(PerformanceTier::High)), "large-v3-turbo-q5_0");
+        assert_eq!(recommended_whisper_model(&profile(PerformanceTier::Ultra)), "large-v3-turbo-q5_0");
+    }
+}
