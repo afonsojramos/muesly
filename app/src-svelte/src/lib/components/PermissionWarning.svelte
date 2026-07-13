@@ -84,7 +84,9 @@
 					</p>
 					{#if isMacOS}
 						<ul class="ml-2 flex list-inside list-disc flex-col gap-1 text-sm">
-							<li>Open System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording</li>
+							<li>
+								Open System Settings → Privacy &amp; Security → Screen &amp; System Audio Recording
+							</li>
 							<li>Enable muesly (or your terminal when running in dev)</li>
 							<li>Start the recording again after granting access</li>
 						</ul>

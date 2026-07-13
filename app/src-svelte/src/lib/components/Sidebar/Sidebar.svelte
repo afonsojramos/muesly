@@ -290,9 +290,7 @@
 			const target = e.target as HTMLElement | null;
 			if (
 				target &&
-				(target.isContentEditable ||
-					target.tagName === 'INPUT' ||
-					target.tagName === 'TEXTAREA')
+				(target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
 			)
 				return;
 			const key = e.key.toLowerCase();
