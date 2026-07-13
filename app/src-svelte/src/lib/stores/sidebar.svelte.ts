@@ -217,7 +217,11 @@ class SidebarStore {
 		await this.refetchMeetings();
 	};
 
+	// Monotonic token so a slow earlier query can't overwrite a newer one's results.
+	#searchGeneration = 0;
+
 	searchTranscripts = async (query: string): Promise<void> => {
+		const generation = ++this.#searchGeneration;
 		if (!query.trim()) {
 			this.searchResults = [];
 			return;
@@ -228,12 +232,13 @@ class SidebarStore {
 			const results = (await invoke('api_search_transcripts', {
 				query,
 			})) as TranscriptSearchResult[];
+			if (generation !== this.#searchGeneration) return; // superseded by a newer query
 			this.searchResults = results;
 		} catch (error) {
 			console.error('[SidebarStore] Search failed:', error);
-			this.searchResults = [];
+			if (generation === this.#searchGeneration) this.searchResults = [];
 		} finally {
-			this.isSearching = false;
+			if (generation === this.#searchGeneration) this.isSearching = false;
 		}
 	};
 

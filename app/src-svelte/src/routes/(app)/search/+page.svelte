@@ -30,6 +30,8 @@
 	// Title matches are computed locally and instantly; transcript matches arrive
 	// via the debounced store call (api_search_transcripts populates searchResults).
 	let debounce: ReturnType<typeof setTimeout> | undefined;
+	// Monotonic token so a slow NL response can't overwrite a newer query's results.
+	let nlGeneration = 0;
 	function onInput(value: string): void {
 		query = value;
 		clearTimeout(debounce);
@@ -38,6 +40,7 @@
 			void sidebar.searchTranscripts(q);
 			// 3+ words → also pack multi-meeting context for NL Q&A.
 			if (q.split(/\s+/).filter(Boolean).length >= 3) {
+				const generation = ++nlGeneration;
 				void (async () => {
 					try {
 						const { invoke } = await import('@tauri-apps/api/core');
@@ -45,14 +48,18 @@
 							hits: Array<{ meeting_id: string; title: string; match_context: string }>;
 							context_pack: string;
 						};
+						if (generation !== nlGeneration) return; // superseded by a newer query
 						nlHits = res.hits ?? [];
 						nlPack = res.context_pack ?? null;
 					} catch {
-						nlHits = [];
-						nlPack = null;
+						if (generation === nlGeneration) {
+							nlHits = [];
+							nlPack = null;
+						}
 					}
 				})();
 			} else {
+				nlGeneration++; // cancel any in-flight NL search
 				nlHits = [];
 				nlPack = null;
 			}
