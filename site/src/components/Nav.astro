@@ -3,12 +3,20 @@ import MueslyMark from './MueslyMark.astro';
 import Button from './ui/Button.astro';
 ---
 
-<header data-nav class="sticky top-0 z-50 border-b border-transparent">
-	<nav aria-label="Primary" class="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
+<header data-nav class="sticky top-0 z-50">
+	<nav aria-label="Primary" class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-6">
 		<a href="/" class="flex items-center gap-2" aria-label="muesly home">
-			<MueslyMark class="h-7 w-7" />
+			<MueslyMark class="h-8 w-8" />
 			<span class="font-display text-lg font-semibold tracking-tight">muesly</span>
 		</a>
-		<Button href="/download" variant="accent">Download</Button>
+		<div class="hidden items-center gap-1 md:flex">
+			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/#features">Features</a>
+			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/#bars">Muesly bars</a>
+			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/#privacy">Privacy</a>
+			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/compare">Compare</a>
+		</div>
+		<Button href="/download" variant="accent" class="pl-4 pr-3.5">
+			Download
+		</Button>
 	</nav>
 </header>

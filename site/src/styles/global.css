@@ -68,11 +68,29 @@
 	}
 
 	body {
-		background-color: var(--color-background);
+		background:
+			radial-gradient(
+				circle at 8% 4%,
+				color-mix(in oklab, var(--color-accent) 9%, transparent),
+				transparent 24rem
+			),
+			var(--color-background);
 		color: var(--color-foreground);
 		font-family: var(--font-sans);
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+	}
+
+	h1,
+	h2,
+	h3 {
+		text-wrap: balance;
+	}
+
+	p,
+	li,
+	dd {
+		text-wrap: pretty;
 	}
 
 	/* Themed keyboard-focus indicator (matches the app). */
@@ -91,9 +109,11 @@
 		backdrop-filter 0.15s ease;
 }
 [data-nav].is-scrolled {
-	background-color: color-mix(in oklab, var(--color-background) 82%, transparent);
-	border-bottom-color: var(--color-border);
-	backdrop-filter: blur(8px);
+	background-color: color-mix(in oklab, var(--color-background) 86%, transparent);
+	box-shadow:
+		0 1px 0 rgba(0, 0, 0, 0.06),
+		0 8px 28px rgba(61, 46, 31, 0.04);
+	backdrop-filter: blur(16px);
 }
 @media (prefers-reduced-motion: reduce) {
 	[data-nav] {
@@ -111,14 +131,69 @@
    see the content. The client script adds reveal-init then reveal-shown. */
 .reveal-init {
 	opacity: 0;
-	transform: translateY(14px);
+	transform: translateY(12px);
+	filter: blur(4px);
 	transition:
-		opacity 0.6s ease,
-		transform 0.6s ease;
+		opacity 0.55s cubic-bezier(0.2, 0, 0, 1),
+		transform 0.55s cubic-bezier(0.2, 0, 0, 1),
+		filter 0.55s cubic-bezier(0.2, 0, 0, 1);
 }
 .reveal-shown {
 	opacity: 1;
 	transform: none;
+	filter: blur(0);
+}
+
+@utility shadow-card {
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.06),
+		0 1px 2px -1px rgba(0, 0, 0, 0.06),
+		0 2px 5px rgba(61, 46, 31, 0.04);
+}
+
+@utility shadow-card-hover {
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.09),
+		0 2px 4px -1px rgba(0, 0, 0, 0.08),
+		0 10px 24px rgba(61, 46, 31, 0.07);
+}
+
+@utility shadow-button {
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.18),
+		0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+@utility shadow-button-hover {
+	box-shadow:
+		0 2px 5px rgba(0, 0, 0, 0.2),
+		0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+
+@utility shadow-accent-button {
+	box-shadow:
+		0 2px 8px color-mix(in oklab, var(--color-accent) 30%, transparent),
+		0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+@utility shadow-accent-button-hover {
+	box-shadow:
+		0 5px 16px color-mix(in oklab, var(--color-accent) 34%, transparent),
+		0 0 0 1px rgba(0, 0, 0, 0.1);
+}
+
+.product-surface {
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.08),
+		0 24px 70px -26px rgba(61, 46, 31, 0.28),
+		0 8px 20px -12px rgba(61, 46, 31, 0.16);
+}
+
+.paper-grid {
+	background-image:
+		linear-gradient(rgba(74, 59, 42, 0.045) 1px, transparent 1px),
+		linear-gradient(90deg, rgba(74, 59, 42, 0.045) 1px, transparent 1px);
+	background-size: 28px 28px;
 }
 
 /* Recording-bar animation for the product mock (matches the app's live meter). */

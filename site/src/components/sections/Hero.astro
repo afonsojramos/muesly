@@ -1,48 +1,59 @@
 ---
 import { Icon } from 'astro-icon/components';
 import { GITHUB_URL } from '$lib/config';
-import BeforeAfterNotes from '../product/BeforeAfterNotes.astro';
-import Badge from '../ui/Badge.astro';
+import WorkspaceMock from '../product/WorkspaceMock.astro';
 import Button from '../ui/Button.astro';
 import Section from '../ui/Section.astro';
 ---
 
-<Section class="pt-16 pb-12 text-center md:pt-24 md:pb-16">
-	<div class="mb-5 flex justify-center">
-		<Badge>
-			<Icon name="lucide:wheat" class="h-3.5 w-3.5" aria-hidden="true" />
-			The rawer granola
-		</Badge>
-	</div>
-	<h1
-		class="mx-auto max-w-3xl font-display text-4xl leading-[1.08] font-semibold tracking-tight text-balance md:text-6xl"
-	>
-		Private meeting notes, done before your next call
-	</h1>
-	<p class="mx-auto mt-5 max-w-xl text-lg text-muted-foreground text-pretty">
-		Granola comes baked and sweetened; muesly is the raw, unprocessed version. It records,
-		transcribes, and summarizes your meetings entirely on your device. No account, no meeting bot,
-		and the source code is public, so you never have to take our word for it.
-	</p>
+<Section class="pt-12 pb-16 md:pt-20 md:pb-24">
+	<div class="grid items-center gap-12 lg:grid-cols-[0.84fr_1.16fr] lg:gap-10 xl:gap-16">
+		<div>
+			<h1
+				class="max-w-2xl font-display text-5xl leading-[1.02] font-semibold tracking-[-0.035em] text-balance sm:text-6xl xl:text-7xl"
+			>
+				Private speech-to-text for everything you say.
+			</h1>
+			<p class="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground text-pretty">
+				Capture meetings, calls, lectures, and dictation. muesly transcribes, organizes, and
+				answers questions across your conversations—on your machine, not someone else’s cloud.
+			</p>
 
-	<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-		<Button href="/download" variant="accent" size="lg" data-os-cta>
-			<span data-os-cta-label>See all downloads</span>
-			<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
-		</Button>
-		<Button
-			href={GITHUB_URL}
-			variant="outline"
-			size="lg"
-			target="_blank"
-			rel="noopener noreferrer"
-		>
-			View on GitHub
-			<Icon name="lucide:external-link" class="h-4 w-4" aria-hidden="true" />
-		</Button>
-	</div>
+			<div class="mt-8 flex flex-wrap items-center gap-3">
+				<Button href="/download" variant="accent" size="lg" class="pl-6 pr-5.5" data-os-cta>
+					<span data-os-cta-label>See all downloads</span>
+					<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button
+					href={GITHUB_URL}
+					variant="outline"
+					size="lg"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					View on GitHub
+					<Icon name="lucide:external-link" class="h-4 w-4" aria-hidden="true" />
+				</Button>
+			</div>
+			<ul class="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
+				<li class="flex items-center gap-1.5">
+					<Icon name="lucide:check" class="size-4 text-accent" aria-hidden="true" /> Free for
+					personal use
+				</li>
+				<li class="flex items-center gap-1.5">
+					<Icon name="lucide:check" class="size-4 text-accent" aria-hidden="true" /> macOS,
+					Windows & Linux
+				</li>
+				<li class="flex items-center gap-1.5">
+					<Icon name="lucide:check" class="size-4 text-accent" aria-hidden="true" />
+					Source-available
+				</li>
+			</ul>
+		</div>
 
-	<div class="mx-auto mt-14 max-w-4xl text-left">
-		<BeforeAfterNotes />
+		<div class="relative lg:pl-2" data-reveal>
+			<div class="absolute -inset-8 -z-10 rounded-full bg-accent/8 blur-3xl"></div>
+			<WorkspaceMock />
+		</div>
 	</div>
 </Section>

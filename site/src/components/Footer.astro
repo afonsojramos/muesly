@@ -5,36 +5,37 @@ import MueslyMark from './MueslyMark.astro';
 const ext = { target: '_blank', rel: 'noopener noreferrer' };
 ---
 
-<footer class="border-t border-border">
-	<div class="mx-auto grid max-w-6xl gap-10 px-6 py-12 sm:grid-cols-2 md:grid-cols-[1.5fr_1fr_1fr]">
+<footer class="bg-foreground text-primary-foreground">
+	<div class="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:grid-cols-2 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr]">
 		<div>
 			<a href="/" class="flex items-center gap-2" aria-label="muesly home">
 				<MueslyMark class="h-7 w-7" />
 				<span class="font-display text-lg font-semibold tracking-tight">muesly</span>
 			</a>
-			<p class="mt-3 max-w-xs text-sm text-muted-foreground">
-				Private, on-device meeting notes. Privacy-first. Local. Source-available.
+			<p class="mt-3 max-w-xs text-sm leading-relaxed text-white/50">
+				Private speech-to-text for meetings, calls, lectures, and everything you say.
 			</p>
 		</div>
 
 		<nav aria-label="Product" class="text-sm">
-			<h2 class="mb-3 font-medium text-foreground">Product</h2>
-			<ul class="space-y-2 text-muted-foreground">
-				<li><a class="hover:text-foreground" href="/download">Download</a></li>
-				<li><a class="hover:text-foreground" href="/compare">Compare</a></li>
-				<li><a class="hover:text-foreground" href="/#faq">FAQ</a></li>
-				<li><a class="hover:text-foreground" href="/privacy">Privacy</a></li>
-				<li><a class="hover:text-foreground" href="/terms">Terms</a></li>
+			<h2 class="mb-3 font-medium text-white">Product</h2>
+			<ul class="space-y-2 text-white/50">
+				<li><a class="transition-colors hover:text-white" href="/download">Download</a></li>
+				<li><a class="transition-colors hover:text-white" href="/compare">Compare</a></li>
+				<li><a class="transition-colors hover:text-white" href="/#features">Features</a></li>
+				<li><a class="transition-colors hover:text-white" href="/#faq">FAQ</a></li>
+				<li><a class="transition-colors hover:text-white" href="/privacy">Privacy</a></li>
+				<li><a class="transition-colors hover:text-white" href="/terms">Terms</a></li>
 			</ul>
 		</nav>
 
 		<nav aria-label="Project" class="text-sm">
-			<h2 class="mb-3 font-medium text-foreground">Project</h2>
-			<ul class="space-y-2 text-muted-foreground">
-				<li><a class="hover:text-foreground" href={GITHUB_URL} {...ext}>GitHub</a></li>
-				<li><a class="hover:text-foreground" href={RELEASES_PAGE} {...ext}>Releases</a></li>
+			<h2 class="mb-3 font-medium text-white">Project</h2>
+			<ul class="space-y-2 text-white/50">
+				<li><a class="transition-colors hover:text-white" href={GITHUB_URL} {...ext}>GitHub</a></li>
+				<li><a class="transition-colors hover:text-white" href={RELEASES_PAGE} {...ext}>Releases</a></li>
 				<li>
-					<a class="hover:text-foreground" href={LICENSE_URL} {...ext}>
+					<a class="transition-colors hover:text-white" href={LICENSE_URL} {...ext}>
 						License (PolyForm Noncommercial)
 					</a>
 				</li>
@@ -42,7 +43,8 @@ const ext = { target: '_blank', rel: 'noopener noreferrer' };
 		</nav>
 	</div>
 
-	<div class="mx-auto max-w-6xl px-6 pb-10 text-sm text-muted-foreground">
-		Free and source-available. Available for macOS, Windows, and Linux.
+	<div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 pb-10 text-sm text-white/40 sm:px-6">
+		<span>Free and source-available. Available for macOS, Windows, and Linux.</span>
+		<span>Made to keep your conversations yours.</span>
 	</div>
 </footer>

@@ -1,0 +1,110 @@
+---
+import { Icon } from 'astro-icon/components';
+import Section from '../ui/Section.astro';
+
+const features = [
+	{
+		icon: 'lucide:messages-square',
+		title: 'Ask across every meeting',
+		body: 'Search, connect, and reason over all your conversations. See each step as muesly finds the right moments.',
+		meta: 'Local agentic search',
+		class: 'lg:col-span-2',
+		visual: 'chat'
+	},
+	{
+		icon: 'lucide:calendar-check',
+		title: 'Ready when the call starts',
+		body: 'Connect your calendar, match upcoming calls, and start with the right title and context.',
+		meta: 'Calendar-aware capture',
+		class: '',
+		visual: 'calendar'
+	},
+	{
+		icon: 'lucide:wand-sparkles',
+		title: 'Import & enhance',
+		body: 'Bring existing audio, then re-transcribe it with another model or language—still entirely local.',
+		meta: 'Beta',
+		class: '',
+		visual: 'import'
+	},
+	{
+		icon: 'lucide:languages',
+		title: 'Summaries in your language',
+		body: 'Create a strong English base summary, then translate it into the language you choose.',
+		meta: 'Two-pass summaries',
+		class: '',
+		visual: 'language'
+	},
+	{
+		icon: 'lucide:keyboard',
+		title: 'Talk wherever you type',
+		body: 'Hold your shortcut, speak, and paste a private transcription into any app.',
+		meta: 'Push-to-talk dictation',
+		class: '',
+		visual: 'dictation'
+	}
+];
+---
+
+<section id="features" class="bg-foreground text-primary-foreground">
+	<Section class="py-20 md:py-28">
+		<div class="grid gap-10 lg:grid-cols-[0.72fr_1.28fr] lg:gap-16">
+			<div class="lg:sticky lg:top-28 lg:self-start" data-reveal>
+				<div class="text-sm font-medium text-accent">New in muesly</div>
+				<h2 class="mt-3 max-w-md font-display text-4xl leading-tight font-semibold tracking-tight md:text-5xl">
+					Your memory for every conversation.
+				</h2>
+				<p class="mt-5 max-w-md leading-relaxed text-white/60">
+					muesly has grown beyond meeting notes. Capture from anywhere, organize the people and projects that matter, then ask questions across the full history—all without building a cloud copy of your life.
+				</p>
+				<div class="mt-7 flex flex-wrap gap-2 text-xs text-white/55">
+					<span class="rounded-full bg-white/7 px-3 py-1.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">Folders & favorites</span>
+					<span class="rounded-full bg-white/7 px-3 py-1.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">Named speakers</span>
+					<span class="rounded-full bg-white/7 px-3 py-1.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">People directory</span>
+				</div>
+			</div>
+
+			<div class="grid gap-4 lg:grid-cols-2" data-reveal>
+				{features.map((feature) => (
+					<article class:list={['group rounded-3xl bg-white/[0.055] p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] transition-[background-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/[0.075] hover:shadow-[inset_0_0_0_1px_rgba(255,255,255,0.13),0_16px_32px_rgba(0,0,0,0.16)]', feature.class]}>
+						<div class="flex items-center justify-between gap-3">
+							<span class="flex size-10 items-center justify-center rounded-xl bg-accent/15 text-accent">
+								<Icon name={feature.icon} class="size-5" aria-hidden="true" />
+							</span>
+							<span class="text-[11px] font-medium tracking-wide text-white/40 uppercase">{feature.meta}</span>
+						</div>
+
+						{feature.visual === 'chat' && (
+							<div class="mt-5 grid gap-2 sm:grid-cols-[1fr_auto_1fr]">
+								<div class="rounded-xl bg-black/15 p-3 text-xs text-white/75">“When did we decide to move the launch?”</div>
+								<Icon name="lucide:arrow-right" class="mx-auto size-4 self-center text-accent max-sm:rotate-90" />
+								<div class="rounded-xl bg-accent/10 p-3 text-xs text-white/75"><span class="text-accent">3 moments</span> across Product weekly and Design critique</div>
+							</div>
+						)}
+						{feature.visual === 'calendar' && (
+							<div class="mt-5 rounded-xl bg-black/15 p-3">
+								<div class="flex items-center gap-2 text-xs"><span class="size-2 rounded-full bg-accent"></span><span>Research interview</span><span class="ml-auto text-white/35 tabular-nums">10:30</span></div>
+								<div class="mt-2 text-[10px] text-white/40">Matched from your calendar · Ready to record</div>
+							</div>
+						)}
+						{feature.visual === 'import' && (
+							<div class="mt-5 flex items-center gap-2 rounded-xl bg-black/15 p-3 text-xs text-white/60"><Icon name="lucide:file-audio" class="size-4 text-accent" /><span class="truncate">customer-call.m4a</span><span class="ml-auto rounded-full bg-success/15 px-2 py-1 text-[10px] text-success">Local</span></div>
+						)}
+						{feature.visual === 'language' && (
+							<div class="mt-5 flex items-center gap-2 text-xs"><span class="rounded-lg bg-black/15 px-3 py-2 text-white/55">English</span><Icon name="lucide:arrow-right" class="size-3.5 text-accent" /><span class="rounded-lg bg-accent/10 px-3 py-2">Español</span></div>
+						)}
+						{feature.visual === 'dictation' && (
+							<div class="mt-5 flex h-9 items-center justify-center gap-1 rounded-xl bg-black/15" aria-hidden="true">
+								{[3, 6, 9, 14, 8, 12, 5, 3].map((height) => <span class="w-1 rounded-full bg-accent/80" style={`height: ${height}px`}></span>)}
+								<span class="ml-2 text-[10px] text-white/40">⌥ Space</span>
+							</div>
+						)}
+
+						<h3 class="mt-5 text-lg font-semibold">{feature.title}</h3>
+						<p class="mt-2 text-sm leading-relaxed text-white/55">{feature.body}</p>
+					</article>
+				))}
+			</div>
+		</div>
+	</Section>
+</section>

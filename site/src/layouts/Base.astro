@@ -13,8 +13,8 @@ interface Props {
 }
 
 const {
-	title = 'muesly — private, on-device meeting notes',
-	description = 'muesly records, transcribes, and summarizes your meetings on your device. Source-available, no account required, on-device by default.',
+	title = 'muesly — private speech-to-text for everything you say',
+	description = 'Capture, transcribe, organize, and ask questions across meetings, calls, lectures, and dictation on your own device. No account required.',
 	image = `${SITE_URL}/og.png`
 } = Astro.props;
 
@@ -27,7 +27,7 @@ const jsonLd = JSON.stringify({
 	applicationCategory: 'BusinessApplication',
 	operatingSystem: 'macOS, Windows, Linux',
 	description:
-		'Private, on-device AI meeting assistant. Records, transcribes, and summarizes meetings locally.',
+		'Private, on-device speech-to-text for meetings, calls, lectures, and dictation.',
 	url: SITE_URL,
 	offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
 });

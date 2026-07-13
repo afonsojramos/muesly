@@ -1,0 +1,80 @@
+---
+import { Icon } from 'astro-icon/components';
+
+const meetings = [
+	{ title: 'Product weekly', meta: 'Today · 42 min', active: true },
+	{ title: 'Research interview', meta: 'Yesterday · 31 min', active: false },
+	{ title: 'Design critique', meta: 'Mon · 55 min', active: false }
+];
+---
+
+<div
+	role="img"
+	aria-label="muesly workspace showing recent meetings, a private transcript, and an Ask anything answer"
+	class="product-surface overflow-hidden rounded-[22px] bg-card"
+>
+	<div class="flex h-11 items-center gap-2 bg-foreground px-4 text-primary-foreground">
+		<div class="flex gap-1.5" aria-hidden="true">
+			<span class="size-2.5 rounded-full bg-white/25"></span>
+			<span class="size-2.5 rounded-full bg-white/25"></span>
+			<span class="size-2.5 rounded-full bg-white/25"></span>
+		</div>
+		<span class="mx-auto text-xs font-medium text-white/70">muesly · all conversations</span>
+		<Icon name="lucide:lock-keyhole" class="size-3.5 text-white/55" />
+	</div>
+
+	<div class="grid min-h-[390px] grid-cols-[132px_1fr] sm:grid-cols-[170px_1fr]">
+		<aside class="border-r border-black/6 bg-[#f1eee7] p-3">
+			<div class="flex items-center gap-2 rounded-lg bg-white/70 px-2.5 py-2 text-xs font-medium shadow-card">
+				<Icon name="lucide:house" class="size-3.5 text-accent" /> Home
+			</div>
+			<div class="mt-4 px-2 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">Recent</div>
+			<ul class="mt-1.5 space-y-1">
+				{meetings.map((meeting) => (
+					<li class:list={['rounded-lg px-2 py-2', meeting.active ? 'bg-accent/10' : '']}>
+						<div class="truncate text-[11px] font-medium">{meeting.title}</div>
+						<div class="mt-0.5 truncate text-[9px] text-muted-foreground">{meeting.meta}</div>
+					</li>
+				))}
+			</ul>
+			<div class="mt-5 hidden sm:block">
+				<div class="px-2 text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">Folders</div>
+				<div class="mt-2 flex items-center gap-2 px-2 text-[11px] text-muted-foreground"><Icon name="lucide:folder" class="size-3" /> Interviews</div>
+				<div class="mt-2 flex items-center gap-2 px-2 text-[11px] text-muted-foreground"><Icon name="lucide:folder" class="size-3" /> Product</div>
+			</div>
+		</aside>
+
+		<div class="paper-grid flex min-w-0 flex-col p-4 sm:p-5">
+			<div class="flex items-start justify-between gap-3">
+				<div>
+					<div class="text-[10px] font-medium text-accent">TODAY, 10:00</div>
+					<h2 class="mt-1 font-display text-xl font-semibold sm:text-2xl">Product weekly</h2>
+				</div>
+				<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-accent text-white shadow-accent-button">
+					<Icon name="lucide:audio-lines" class="size-4" />
+				</div>
+			</div>
+
+			<div class="mt-5 grid gap-2 sm:grid-cols-2">
+				<div class="rounded-xl bg-white/80 p-3 shadow-card">
+					<div class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">Decision</div>
+					<p class="mt-1.5 text-[11px] leading-relaxed">Ship the new onboarding flow with the July release.</p>
+				</div>
+				<div class="hidden rounded-xl bg-white/80 p-3 shadow-card sm:block">
+					<div class="text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">Action item</div>
+					<p class="mt-1.5 text-[11px] leading-relaxed"><strong>Maya</strong> to share the final copy by Thursday.</p>
+				</div>
+			</div>
+
+			<div class="mt-auto rounded-2xl bg-foreground p-3.5 text-primary-foreground shadow-lg">
+				<div class="flex items-center gap-2 text-[10px] font-medium text-white/55">
+					<Icon name="lucide:sparkles" class="size-3 text-accent" /> ASKING 12 MEETINGS
+				</div>
+				<p class="mt-2 text-xs leading-relaxed text-white/90">What decisions are still waiting on me?</p>
+				<div class="mt-2.5 flex items-center gap-1.5 text-[10px] text-white/50">
+					<Icon name="lucide:circle-check" class="size-3 text-success" /> Searched transcripts · 3 relevant moments
+				</div>
+			</div>
+		</div>
+	</div>
+</div>

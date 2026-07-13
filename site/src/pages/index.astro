@@ -6,24 +6,24 @@ import Faq from '../components/sections/Faq.astro';
 import FeatureGrid from '../components/sections/FeatureGrid.astro';
 import Hero from '../components/sections/Hero.astro';
 import HowItWorks from '../components/sections/HowItWorks.astro';
+import LatestFeatures from '../components/sections/LatestFeatures.astro';
 import MueslyBars from '../components/sections/MueslyBars.astro';
 import OpenSourceTrust from '../components/sections/OpenSourceTrust.astro';
 import PrivacyBlock from '../components/sections/PrivacyBlock.astro';
 import ProductShowcase from '../components/sections/ProductShowcase.astro';
-import WhoItsFor from '../components/sections/WhoItsFor.astro';
 import Base from '../layouts/Base.astro';
 ---
 
 <Base>
 	<Hero />
 	<OpenSourceTrust />
-	<WaveDivider class="my-2" />
-	<WhoItsFor />
-	<HowItWorks />
+	<WaveDivider class="my-4" />
+	<LatestFeatures />
 	<ProductShowcase />
 	<MueslyBars />
 	<PrivacyBlock />
 	<FeatureGrid />
+	<HowItWorks />
 	<Faq />
 	<Community />
 	<DownloadCta />
