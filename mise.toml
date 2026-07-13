@@ -2,6 +2,10 @@
 # `mise install` provisions these; run `mise use node@<v>` etc. to change one.
 [tools]
 node = "24"
+# Held at pnpm 10.33: pnpm 11's default minimumReleaseAge guard rejects
+# freshly-published transitive deps (e.g. tsx published today), and its 11.x
+# release assets were renamed (pnpm-macos-* → pnpm-darwin-*) so mise's aqua
+# registry can't fetch them yet. Revisit once those settle.
 pnpm = "10.33.0"
 # nub (the Node toolkit — see AGENTS.md) via its npm distribution, so it's
 # pinned with the repo instead of a separate brew/curl install.
