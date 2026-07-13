@@ -39,6 +39,8 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
+	import * as ToggleGroup from '$lib/components/ui/toggle-group';
+	import * as Tooltip from '$lib/components/ui/tooltip';
 	import BarEditor from '$lib/components/bars/BarEditor.svelte';
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 
@@ -225,21 +227,25 @@
 							</Select.Content>
 						</Select.Root>
 					{/if}
-					<div class="flex items-center gap-1">
-						{#each SCENARIO_FILTERS as f (f.value)}
-							<button
-								type="button"
-								onclick={() => (scenarioFilter = f.value)}
-								class={cn(
-									'rounded-full border px-2.5 py-1 text-xs transition-colors',
-									scenarioFilter === f.value
-										? 'border-foreground/20 bg-secondary text-foreground'
-										: 'border-transparent text-muted-foreground hover:text-foreground',
-								)}
-							>
-								{f.label}
-							</button>
-						{/each}
+					<div class="max-w-full overflow-x-auto rounded-xl bg-secondary/70 p-1">
+						<ToggleGroup.Root
+							type="single"
+							value={scenarioFilter}
+							onValueChange={(value) => value && (scenarioFilter = value as ScenarioFilter)}
+							variant="default"
+							size="sm"
+							spacing={1}
+							aria-label="Filter bars by when they are used"
+						>
+							{#each SCENARIO_FILTERS as f (f.value)}
+								<ToggleGroup.Item
+									value={f.value}
+									class="h-10 whitespace-nowrap rounded-lg px-3 text-sm text-muted-foreground data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+								>
+									{f.label}
+								</ToggleGroup.Item>
+							{/each}
+						</ToggleGroup.Root>
 					</div>
 					<div class="relative">
 						<Search
@@ -262,25 +268,34 @@
 					{/if}
 				</div>
 			{:else}
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
 					{#each filtered as bar (bar.id)}
 						{@const Icon = barIcon(bar.icon)}
 						<Card.Root
-							class="min-h-52 cursor-pointer transition-[box-shadow] hover:ring-foreground/20"
-							onclick={() => (detail = bar)}
+							size="sm"
+							class="relative min-h-40 transition-[box-shadow] hover:ring-foreground/20"
 						>
-							<Card.Header>
-								<div
-									class="flex size-9 items-center justify-center rounded-lg border border-border text-muted-foreground"
-								>
-									<Icon class="size-4" />
+							<Button
+								variant="ghost"
+								class="absolute inset-0 z-0 h-full w-full rounded-xl p-0 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-ring"
+								onclick={() => (detail = bar)}
+								aria-label={`Open ${bar.title}`}
+							/>
+							<Card.Header class="pointer-events-none relative z-10 items-center">
+								<div class="flex min-w-0 items-center gap-2.5">
+									<div
+										class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground"
+									>
+										<Icon class="size-4" />
+									</div>
+									<h3 class="truncate text-sm font-medium">{bar.title}</h3>
 								</div>
 								{#if tab === 'menu'}
 									<Card.Action>
 										<Button
 											variant={bars.isPinned(bar) ? 'secondary' : 'ghost'}
 											size="icon"
-											class="size-10 text-muted-foreground"
+											class="pointer-events-auto size-10 text-muted-foreground"
 											onclick={(event) => togglePinned(event, bar)}
 											aria-label={`${bars.isPinned(bar) ? 'Unpin' : 'Pin'} ${bar.title}`}
 											aria-pressed={bars.isPinned(bar)}
@@ -290,31 +305,40 @@
 									</Card.Action>
 								{:else if bar.source !== 'user'}
 									<Card.Action>
-										<Button
-											variant={bars.isInMenu(bar) ? 'secondary' : 'ghost'}
-											size="sm"
-											class={cn('h-10', !bars.isInMenu(bar) && 'text-muted-foreground')}
-											onclick={(event) => toggleInMenu(event, bar)}
-											aria-pressed={bars.isInMenu(bar)}
-											aria-label={`${bars.isInMenu(bar) ? 'Remove' : 'Add'} ${bar.title} ${bars.isInMenu(bar) ? 'from' : 'to'} Muesly bar menus`}
-										>
-											{#if bars.isInMenu(bar)}
-												<Check data-icon />
-												In menu
-											{:else}
-												<Plus data-icon />
-												Add
-											{/if}
-										</Button>
+										<Tooltip.Provider>
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant={bars.isInMenu(bar) ? 'secondary' : 'ghost'}
+															size="icon"
+															class="pointer-events-auto size-10 rounded-full text-muted-foreground"
+															onclick={(event) => toggleInMenu(event, bar)}
+															aria-pressed={bars.isInMenu(bar)}
+															aria-label={`${bars.isInMenu(bar) ? 'Remove' : 'Add'} ${bar.title} ${bars.isInMenu(bar) ? 'from' : 'to'} your menu`}
+														>
+															{#if bars.isInMenu(bar)}<Check data-icon />{:else}<Plus
+																	data-icon
+																/>{/if}
+														</Button>
+													{/snippet}
+												</Tooltip.Trigger>
+												<Tooltip.Content>
+													{bars.isInMenu(bar)
+														? 'Remove from your Muesly bar menu'
+														: 'Add to your Muesly bar menu'}
+												</Tooltip.Content>
+											</Tooltip.Root>
+										</Tooltip.Provider>
 									</Card.Action>
 								{/if}
 							</Card.Header>
-							<Card.Content class="flex flex-1 flex-col">
-								<h3 class="text-wrap-balance text-sm font-medium">{bar.title}</h3>
-								<p class="mt-1 line-clamp-2 text-pretty text-sm text-muted-foreground">
+							<Card.Content class="pointer-events-none relative z-10 flex flex-1 flex-col">
+								<p class="line-clamp-2 text-pretty text-sm leading-5 text-muted-foreground">
 									{bar.description}
 								</p>
-								<div class="mt-auto flex items-end justify-between gap-2 pt-5">
+								<div class="mt-auto flex items-end justify-between gap-2 pt-3">
 									<div class="flex min-w-0 flex-wrap items-center gap-1.5">
 										{#if bar.source === 'user'}
 											<Badge variant="secondary">Yours</Badge>
@@ -326,13 +350,29 @@
 										{/each}
 									</div>
 									{#if bars.usesFor(bar.id) > 0}
-										<span
-											class="flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground"
-											title={`${bars.usesFor(bar.id)} uses`}
-										>
-											<Sparkles class="size-3" />
-											{formatUses(bars.usesFor(bar.id))}
-										</span>
+										<Tooltip.Provider>
+											<Tooltip.Root>
+												<Tooltip.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="sm"
+															onclick={() => (detail = bar)}
+															aria-label={`${bars.usesFor(bar.id).toLocaleString()} uses across Muesly`}
+															class="pointer-events-auto h-10 shrink-0 gap-1 px-1.5 text-xs tabular-nums text-muted-foreground"
+														>
+															<Sparkles class="size-3" />
+															{formatUses(bars.usesFor(bar.id))}
+														</Button>
+													{/snippet}
+												</Tooltip.Trigger>
+												<Tooltip.Content>
+													Used {bars.usesFor(bar.id).toLocaleString()}
+													{bars.usesFor(bar.id) === 1 ? 'time' : 'times'} across Muesly
+												</Tooltip.Content>
+											</Tooltip.Root>
+										</Tooltip.Provider>
 									{/if}
 								</div>
 							</Card.Content>
