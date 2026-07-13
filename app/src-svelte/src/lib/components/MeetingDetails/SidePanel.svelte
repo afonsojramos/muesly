@@ -179,7 +179,7 @@
 	bind:this={panelEl}
 	class={cn(
 		'@container relative shrink-0 flex-col overflow-hidden border-l border-border bg-sidebar',
-		sidePanelState.open ? 'hidden md:flex' : 'hidden',
+		sidePanelState.open ? 'flex' : 'hidden',
 	)}
 	style={`width: ${sidePanelState.width}px; max-width: min(${SIDE_PANEL_MAX_WIDTH}px, calc(100% - ${SIDE_PANEL_SUMMARY_MIN_WIDTH}px)); min-width: ${SIDE_PANEL_MIN_WIDTH}px`}
 >
