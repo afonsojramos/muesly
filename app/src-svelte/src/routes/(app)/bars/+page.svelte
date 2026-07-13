@@ -27,6 +27,7 @@
 	let editorOpen = $state(false);
 	let editingBar = $state<Bar | null>(null);
 	let detail = $state<Bar | null>(null);
+	let confirmingDelete = $state<Bar | null>(null);
 
 	onMount(() => {
 		void bars.ensureLoaded();
@@ -261,7 +262,7 @@
 							variant="ghost"
 							size="sm"
 							class="text-muted-foreground hover:text-destructive"
-							onclick={() => detail && void remove(detail)}
+							onclick={() => (confirmingDelete = detail)}
 						>
 							<Trash2 data-icon />
 							Delete
@@ -282,6 +283,28 @@
 				</div>
 			</Dialog.Footer>
 		{/if}
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={confirmingDelete !== null} onOpenChange={(o) => !o && (confirmingDelete = null)}>
+	<Dialog.Content class="sm:max-w-[400px]">
+		<Dialog.Title>Delete this bar?</Dialog.Title>
+		<Dialog.Description>
+			{confirmingDelete ? `"${confirmingDelete.title}" will be permanently removed.` : ''}
+		</Dialog.Description>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (confirmingDelete = null)}>Cancel</Button>
+			<Button
+				variant="destructive"
+				onclick={() => {
+					const bar = confirmingDelete;
+					confirmingDelete = null;
+					if (bar) void remove(bar);
+				}}
+			>
+				Delete
+			</Button>
+		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
 
