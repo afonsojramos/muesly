@@ -81,6 +81,28 @@ pub struct RecordingSaver {
 }
 
 impl RecordingSaver {
+    /// Cloneable segment storage used by the event listener during shutdown,
+    /// when the RecordingManager is temporarily moved out of global state.
+    pub fn transcript_segment_sink(&self) -> Arc<Mutex<Vec<TranscriptSegment>>> {
+        self.transcript_segments.clone()
+    }
+
+    pub fn add_transcript_segment_to_sink(
+        sink: &Arc<Mutex<Vec<TranscriptSegment>>>,
+        segment: TranscriptSegment,
+    ) {
+        if let Ok(mut segments) = sink.lock() {
+            if let Some(existing) = segments
+                .iter_mut()
+                .find(|s| s.sequence_id == segment.sequence_id)
+            {
+                *existing = segment;
+            } else {
+                segments.push(segment);
+            }
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             incremental_saver: None,
@@ -127,21 +149,7 @@ impl RecordingSaver {
     /// Add or update a structured transcript segment (upserts based on sequence_id)
     /// Also saves incrementally to disk
     pub fn add_transcript_segment(&self, segment: TranscriptSegment) {
-        if let Ok(mut segments) = self.transcript_segments.lock() {
-            // Check if segment with same sequence_id exists (update it)
-            if let Some(existing) = segments.iter_mut().find(|s| s.sequence_id == segment.sequence_id) {
-                *existing = segment.clone();
-                info!("Updated transcript segment {} (seq: {}) - total segments: {}",
-                      segment.id, segment.sequence_id, segments.len());
-            } else {
-                // New segment, add it
-                segments.push(segment.clone());
-                info!("Added new transcript segment {} (seq: {}) - total segments: {}",
-                      segment.id, segment.sequence_id, segments.len());
-            }
-        } else {
-            error!("Failed to lock transcript segments for adding segment {}", segment.id);
-        }
+        Self::add_transcript_segment_to_sink(&self.transcript_segments, segment);
 
         // NEW: Save incrementally to disk
         if let Some(folder) = &self.meeting_folder {
@@ -331,6 +339,49 @@ impl RecordingSaver {
         Ok(())
     }
 
+    fn finalize_metadata(&self, recording_duration: Option<f64>) -> Result<(), String> {
+        let (Some(folder), Some(mut metadata)) = (&self.meeting_folder, self.metadata.clone()) else {
+            return Ok(());
+        };
+
+        metadata.status = "completed".to_string();
+        metadata.completed_at = Some(chrono::Utc::now().to_rfc3339());
+        metadata.duration_seconds = recording_duration.or_else(|| {
+            self.transcript_segments
+                .lock()
+                .ok()
+                .and_then(|segments| segments.last().map(|segment| segment.audio_end_time))
+        });
+
+        if let Ok(segments) = self.transcript_segments.lock() {
+            let segment_count = segments.len();
+            let total_duration: f64 = segments.iter().map(|segment| segment.duration).sum();
+            metadata.transcription_diagnostics = Some(TranscriptionDiagnostics {
+                segment_count,
+                segments_under_three_seconds: segments
+                    .iter()
+                    .filter(|segment| segment.duration < 3.0)
+                    .count(),
+                average_segment_seconds: if segment_count == 0 {
+                    0.0
+                } else {
+                    total_duration / segment_count as f64
+                },
+            });
+        }
+
+        self.write_metadata(folder, &metadata).map_err(|error| {
+            error!("❌ Failed to update metadata to completed: {}", error);
+            format!("Failed to update metadata: {}", error)
+        })?;
+
+        info!(
+            "✅ Metadata updated with duration: {:?}s",
+            metadata.duration_seconds
+        );
+        Ok(())
+    }
+
     /// Write transcripts.json to disk (atomic write with temp file and validation)
     fn write_transcripts_json(&self, folder: &PathBuf) -> Result<()> {
         // Clone segments to avoid holding lock during I/O
@@ -399,9 +450,33 @@ impl RecordingSaver {
         // Check if incremental saver exists (indicates auto_save was enabled)
         let should_save_audio = self.incremental_saver.is_some();
 
+        // Always rewrite the final transcript snapshot after transcription workers
+        // finish. In transcript-only mode there is no audio saver, but late shutdown
+        // segments may have arrived since the last incremental write.
+        if let Some(folder) = &self.meeting_folder {
+            if let Err(e) = self.write_transcripts_json(folder) {
+                error!("❌ Failed to write final transcripts: {}", e);
+                return Err(format!("Failed to save transcripts: {}", e));
+            }
+
+            let transcript_path = folder.join("transcripts.json");
+            if !transcript_path.exists() {
+                error!(
+                    "❌ Transcript file was not created at: {}",
+                    transcript_path.display()
+                );
+                return Err("Transcript file verification failed".to_string());
+            }
+            info!(
+                "✅ Transcripts saved and verified at: {}",
+                transcript_path.display()
+            );
+        }
+
         if !should_save_audio {
             info!("⚠️  No audio saver initialized (auto-save was disabled) - skipping audio finalization");
-            info!("✅ Transcripts and metadata already saved incrementally");
+            self.finalize_metadata(recording_duration)?;
+            info!("✅ Final transcript snapshot saved");
             return Ok(None);
         }
 
@@ -423,61 +498,8 @@ impl RecordingSaver {
             return Err("No incremental saver initialized".to_string());
         };
 
-        // Save final transcripts.json with validation
-        if let Some(folder) = &self.meeting_folder {
-            if let Err(e) = self.write_transcripts_json(folder) {
-                error!("❌ Failed to write final transcripts: {}", e);
-                return Err(format!("Failed to save transcripts: {}", e));
-            }
-
-            // Verify transcripts were written correctly
-            let transcript_path = folder.join("transcripts.json");
-            if !transcript_path.exists() {
-                error!("❌ Transcript file was not created at: {}", transcript_path.display());
-                return Err("Transcript file verification failed".to_string());
-            }
-            info!("✅ Transcripts saved and verified at: {}", transcript_path.display());
-        }
-
-        // Update metadata to completed status with actual recording duration
-        if let (Some(folder), Some(mut metadata)) = (&self.meeting_folder, self.metadata.clone()) {
-            metadata.status = "completed".to_string();
-            metadata.completed_at = Some(chrono::Utc::now().to_rfc3339());
-
-            // Use actual recording duration from RecordingState (more accurate than transcript segments)
-            // Falls back to last transcript segment if duration not provided
-            metadata.duration_seconds = recording_duration.or_else(|| {
-                if let Ok(segments) = self.transcript_segments.lock() {
-                    segments.last().map(|seg| seg.audio_end_time)
-                } else {
-                    None
-                }
-            });
-
-            if let Ok(segments) = self.transcript_segments.lock() {
-                let segment_count = segments.len();
-                let total_duration: f64 = segments.iter().map(|segment| segment.duration).sum();
-                metadata.transcription_diagnostics = Some(TranscriptionDiagnostics {
-                    segment_count,
-                    segments_under_three_seconds: segments
-                        .iter()
-                        .filter(|segment| segment.duration < 3.0)
-                        .count(),
-                    average_segment_seconds: if segment_count == 0 {
-                        0.0
-                    } else {
-                        total_duration / segment_count as f64
-                    },
-                });
-            }
-
-            if let Err(e) = self.write_metadata(folder, &metadata) {
-                error!("❌ Failed to update metadata to completed: {}", e);
-                return Err(format!("Failed to update metadata: {}", e));
-            }
-
-            info!("✅ Metadata updated with duration: {:?}s", metadata.duration_seconds);
-        }
+        // Update metadata to completed status with actual recording duration.
+        self.finalize_metadata(recording_duration)?;
 
         // Emit save event with audio and transcript paths
         let save_event = serde_json::json!({
