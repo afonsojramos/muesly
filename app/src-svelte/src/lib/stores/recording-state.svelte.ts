@@ -11,6 +11,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { appDataDir } from '@tauri-apps/api/path';
 import { recordingService } from '$lib/services/recording';
+import { toast } from '$lib/toast';
 
 export enum RecordingStatus {
 	IDLE = 'idle',
@@ -129,6 +130,7 @@ class RecordingStateStore {
 				return true;
 			}
 			console.error('[RecordingStateStore] Failed to stop recording:', error);
+			toast.error('Failed to stop recording', { description: message });
 			return false;
 		}
 	}
@@ -139,6 +141,7 @@ class RecordingStateStore {
 			await invoke('pause_recording');
 		} catch (error) {
 			console.error('[RecordingStateStore] Failed to pause recording:', error);
+			toast.error('Failed to pause recording');
 		}
 	}
 
@@ -148,6 +151,7 @@ class RecordingStateStore {
 			await invoke('resume_recording');
 		} catch (error) {
 			console.error('[RecordingStateStore] Failed to resume recording:', error);
+			toast.error('Failed to resume recording');
 		}
 	}
 
@@ -217,6 +221,12 @@ class RecordingStateStore {
 			this.isActive = backend.is_active;
 			this.recordingDuration = backend.recording_duration;
 			this.activeDuration = backend.active_duration;
+			// Keep `status` consistent with the synced flags. A mount that missed the
+			// `recording-started` event otherwise left status at IDLE while recording.
+			// Never override an in-progress stop/save flow.
+			if (!STOP_FLOW_STATUSES.has(this.status)) {
+				this.status = backend.is_recording ? RecordingStatus.RECORDING : RecordingStatus.IDLE;
+			}
 		} catch (error) {
 			console.error('[RecordingStateStore] Failed to sync with backend:', error);
 		}

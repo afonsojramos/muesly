@@ -127,7 +127,12 @@
 		// disabled, so gate the loop on an actually-visible active recording instead
 		// of letting it churn reactive state forever.
 		const interval = setInterval(() => {
-			if (reducedMotion || !recordingState.isRecording || document.visibilityState !== 'visible')
+			if (
+				reducedMotion ||
+				!recordingState.isRecording ||
+				recordingState.isPaused ||
+				document.visibilityState !== 'visible'
+			)
 				return;
 			barHeights = levelMeterBars(recordingState.audioLevel, 4, 18);
 		}, 80);

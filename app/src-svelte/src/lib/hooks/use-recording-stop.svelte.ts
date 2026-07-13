@@ -74,6 +74,9 @@ async function runQualityPass(meetingId: string, folderPath: string): Promise<vo
 	);
 	if (started.status === 'error') {
 		console.error('Quality pass failed to start:', started.error);
+		// The task is only terminated by retranscription-complete/-error events, and
+		// a failed start emits neither — end it here so it doesn't linger forever.
+		backgroundTasks.finish('retranscription', meetingId, 'error', started.error ?? 'Failed to start');
 		return;
 	}
 	await completion;
