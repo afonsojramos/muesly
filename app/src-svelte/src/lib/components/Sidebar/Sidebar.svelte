@@ -344,31 +344,33 @@
 			</Tooltip.Content>
 		</Tooltip.Root>
 	</Tooltip.Provider>
-	<Tooltip.Provider delayDuration={300}>
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				{#snippet child({ props })}
-					<Button
-						{...props}
-						variant="ghost"
-						size="icon-sm"
-						onclick={openSearch}
-						class="text-muted-foreground/70"
-						aria-label="Search notes"
-					>
-						<Search />
-					</Button>
-				{/snippet}
-			</Tooltip.Trigger>
-			<Tooltip.Content>
-				<span class="flex items-center">
-					Search
-					<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
-				</span>
-			</Tooltip.Content>
-		</Tooltip.Root>
-	</Tooltip.Provider>
-	<BackgroundTasksButton />
+	{#if !sidebar.isCollapsed}
+		<Tooltip.Provider delayDuration={300}>
+			<Tooltip.Root>
+				<Tooltip.Trigger>
+					{#snippet child({ props })}
+						<Button
+							{...props}
+							variant="ghost"
+							size="icon-sm"
+							onclick={openSearch}
+							class="text-muted-foreground/70"
+							aria-label="Search notes"
+						>
+							<Search />
+						</Button>
+					{/snippet}
+				</Tooltip.Trigger>
+				<Tooltip.Content>
+					<span class="flex items-center">
+						Search
+						<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
+					</span>
+				</Tooltip.Content>
+			</Tooltip.Root>
+		</Tooltip.Provider>
+		<BackgroundTasksButton />
+	{/if}
 </div>
 
 <div class="fixed left-0 top-0 z-40 h-screen">
