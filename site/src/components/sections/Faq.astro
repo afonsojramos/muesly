@@ -2,7 +2,7 @@
 import Section from '../ui/Section.astro';
 
 // Answers double as objection-handling and FAQPage structured data (below).
-// Keep every answer accurate against PRIVACY_POLICY.md (analytics is opt-out,
+// Keep every answer accurate against PRIVACY_POLICY.md (analytics is opt-in,
 // cloud LLM is opt-in).
 const faqs = [
 	{
@@ -31,7 +31,7 @@ const faqs = [
 	},
 	{
 		q: 'What analytics does muesly collect?',
-		a: 'Official builds include anonymized, opt-out usage analytics to help fix bugs and improve performance. It never includes meeting content. You can disable it in settings, and builds compiled without an analytics key have it off entirely.'
+		a: 'Optional anonymized usage analytics helps fix bugs and improve performance. It is off by default, never includes meeting content, and can be enabled or disabled in settings. Builds compiled without an analytics key have it off entirely.'
 	},
 	{
 		q: 'Which platforms are supported?',

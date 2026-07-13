@@ -10,14 +10,14 @@ muesly is built on a simple principle: everything you say stays yours. It captur
 
 - **Transcription**: runs entirely on your device using local Whisper or Parakeet models
 - **Recordings**: your audio is never transmitted to external servers
-- **Transcripts and notes**: stored locally in a SQLite database on your device
+- **Transcripts and notes**: stored in a local database on your device
 - **Summaries**: generated locally by default, or through a cloud LLM provider you explicitly configure
 
 You own all of your recordings, transcripts, and summaries. You can view, export, or delete them at any time, and there is no vendor lock-in.
 
 ## Usage Analytics
 
-Official builds include anonymized usage analytics (via PostHog) to help us find bugs and improve performance. You can disable analytics at any time in the app settings, and builds compiled without a PostHog key have analytics disabled entirely.
+Official builds include optional anonymized usage analytics (via PostHog) to help us find bugs and improve performance. Analytics is disabled by default until you opt in, you can change that choice at any time in the app settings, and builds compiled without a PostHog key have analytics disabled entirely.
 
 **What we collect:**
 

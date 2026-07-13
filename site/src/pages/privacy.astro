@@ -17,7 +17,7 @@ const rendered = sanitizeHtml(marked.parse(policy, { async: false }) as string, 
 
 <Base
 	title="Privacy Policy — muesly"
-	description="How muesly handles your data: meeting content stays on your device, analytics is opt-out, cloud LLMs are opt-in."
+	description="How muesly handles your data: meeting content stays on your device, analytics is opt-in, and cloud LLMs are optional."
 >
 	<Section class="py-16 md:py-24">
 		<article class="prose-muesly mx-auto max-w-2xl" set:html={rendered} />
