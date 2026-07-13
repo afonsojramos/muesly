@@ -307,11 +307,23 @@ jobs:
   release-summary:
     needs: [create-release, build-all-platforms, build-linux]
     runs-on: ubuntu-latest
+    environment: production
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup toolchain via mise (node, pnpm, nub)
+        uses: jdx/mise-action@v4
+
+      - name: Install site dependencies
+        run: nub --cwd site install --frozen-lockfile
+
       - name: Publish stable download names and checksums
         env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -320,15 +332,24 @@ jobs:
 
           gh release download "v${VERSION}" --dir release-assets \
             --pattern "muesly_*_aarch64.dmg" \
+            --pattern "muesly_*_aarch64.app.tar.gz" \
             --pattern "muesly_*_x64-setup.exe" \
+            --pattern "muesly_*_x64_en-US.msi" \
+            --pattern "muesly_*_amd64.AppImage" \
             --pattern "muesly-linux-x86_64.deb" \
             --pattern "muesly-linux-x86_64.AppImage" \
             --pattern "latest.json"
 
           MACOS=$(find release-assets -name 'muesly_*_aarch64.dmg' | head -1)
+          MACOS_UPDATE=$(find release-assets -name 'muesly_*_aarch64.app.tar.gz' | head -1)
           WINDOWS=$(find release-assets -name 'muesly_*_x64-setup.exe' | head -1)
+          WINDOWS_MSI=$(find release-assets -name 'muesly_*_x64_en-US.msi' | head -1)
+          LINUX_UPDATE=$(find release-assets -name 'muesly_*_amd64.AppImage' | head -1)
           test -f "$MACOS" || { echo "::error::macOS DMG is missing"; exit 1; }
+          test -f "$MACOS_UPDATE" || { echo "::error::macOS updater archive is missing"; exit 1; }
           test -f "$WINDOWS" || { echo "::error::Windows installer is missing"; exit 1; }
+          test -f "$WINDOWS_MSI" || { echo "::error::Windows MSI is missing"; exit 1; }
+          test -f "$LINUX_UPDATE" || { echo "::error::Linux updater AppImage is missing"; exit 1; }
           test -f release-assets/muesly-linux-x86_64.deb || { echo "::error::Linux DEB is missing"; exit 1; }
           test -f release-assets/muesly-linux-x86_64.AppImage || { echo "::error::Linux AppImage is missing"; exit 1; }
 
@@ -337,18 +358,67 @@ jobs:
           cp release-assets/muesly-linux-x86_64.deb public-downloads/
           cp release-assets/muesly-linux-x86_64.AppImage public-downloads/
 
+          BASE_URL="https://downloads.muesly.ai/releases/v${VERSION}"
+          jq \
+            --arg base "$BASE_URL" \
+            --arg macos "$(basename "$MACOS_UPDATE")" \
+            --arg windows "$(basename "$WINDOWS")" \
+            --arg windows_msi "$(basename "$WINDOWS_MSI")" \
+            --arg linux "$(basename "$LINUX_UPDATE")" \
+            '
+              .platforms["darwin-aarch64"].url = ($base + "/" + $macos) |
+              .platforms["darwin-aarch64-app"].url = ($base + "/" + $macos) |
+              .platforms["windows-x86_64"].url = ($base + "/" + $windows_msi) |
+              .platforms["windows-x86_64-msi"].url = ($base + "/" + $windows_msi) |
+              .platforms["windows-x86_64-nsis"].url = ($base + "/" + $windows) |
+              .platforms["linux-x86_64"].url = ($base + "/" + $linux)
+            ' release-assets/latest.json > release-assets/latest.public.json
+          mv release-assets/latest.public.json release-assets/latest.json
+
           jq -e '
             .platforms["darwin-aarch64"] and
             .platforms["windows-x86_64"] and
-            .platforms["linux-x86_64"]
+            .platforms["linux-x86_64"] and
+            ([.platforms[].url | startswith("https://downloads.muesly.ai/")] | all)
           ' release-assets/latest.json >/dev/null || {
-            echo "::error::latest.json is missing a supported updater platform"
+            echo "::error::latest.json is missing a platform or contains a non-public updater URL"
             exit 1
           }
 
           cd public-downloads
           sha256sum ./* > SHA256SUMS.txt
           gh release upload "v${VERSION}" ./* --clobber
+          gh release upload "v${VERSION}" ../release-assets/latest.json --clobber
+          cd ..
+
+          put_binary() {
+            KEY="$1"
+            FILE=$(realpath "$2")
+            CACHE_CONTROL="$3"
+            NAME=$(basename "$FILE")
+            nub --cwd site exec wrangler r2 object put "muesly-downloads/${KEY}" \
+              --remote \
+              --file "$FILE" \
+              --content-type application/octet-stream \
+              --cache-control "$CACHE_CONTROL" \
+              --content-disposition "attachment; filename=\"${NAME}\"" \
+              --force
+          }
+
+          put_binary "releases/v${VERSION}/$(basename "$MACOS_UPDATE")" "$MACOS_UPDATE" "public, max-age=31536000, immutable"
+          put_binary "releases/v${VERSION}/$(basename "$WINDOWS_MSI")" "$WINDOWS_MSI" "public, max-age=31536000, immutable"
+          put_binary "releases/v${VERSION}/$(basename "$WINDOWS")" "$WINDOWS" "public, max-age=31536000, immutable"
+          put_binary "releases/v${VERSION}/$(basename "$LINUX_UPDATE")" "$LINUX_UPDATE" "public, max-age=31536000, immutable"
+          put_binary "latest/muesly-macos-arm64.dmg" "public-downloads/muesly-macos-arm64.dmg" "public, max-age=300"
+          put_binary "latest/muesly-windows-x64-setup.exe" "public-downloads/muesly-windows-x64-setup.exe" "public, max-age=300"
+          put_binary "latest/muesly-linux-x86_64.AppImage" "public-downloads/muesly-linux-x86_64.AppImage" "public, max-age=300"
+          put_binary "latest/muesly-linux-x86_64.deb" "public-downloads/muesly-linux-x86_64.deb" "public, max-age=300"
+          nub --cwd site exec wrangler r2 object put muesly-downloads/latest/SHA256SUMS.txt \
+            --remote --file "$(realpath public-downloads/SHA256SUMS.txt)" --content-type text/plain \
+            --cache-control "public, max-age=300" --force
+          nub --cwd site exec wrangler r2 object put muesly-downloads/releases/latest.json \
+            --remote --file "$(realpath release-assets/latest.json)" --content-type application/json \
+            --cache-control "no-cache" --force
 
       - name: Get release assets and latest.json
         id: release-info

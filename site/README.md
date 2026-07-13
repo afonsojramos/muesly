@@ -21,7 +21,9 @@ nub run test      # vitest unit tests (detect-os, button variants, cn)
 nub run build && nub run test:smoke # verify every production route and required asset
 ```
 
-The whole site is prerendered to static HTML. The only client JavaScript is a small enhancement script (`src/scripts/client.ts`): scroll reveal, sticky-nav state, OS-aware download CTAs, download-card promotion, and the live GitHub star count. Everything works without it.
+The whole site is prerendered to static HTML. The only client JavaScript is a small enhancement script (`src/scripts/client.ts`): scroll reveal, sticky-nav state, OS-aware download CTAs, and download-card promotion. Everything works without it.
+
+Installers and updater payloads are served publicly from the `muesly-downloads` R2 bucket through `downloads.muesly.ai`. The source repository is private, so GitHub Release URLs must not be used for anonymous download links. The release workflow publishes immutable versioned updater payloads, stable aliases under `/latest/`, checksums, and `/releases/latest.json`.
 
 Pull requests and pushes to `main` that touch the site run formatting, lint, type checks, unit tests, a production build, route smoke tests, and a high-severity dependency audit in `.github/workflows/site-check.yml`. After review, run the manual `Deploy Site` workflow; it repeats the full verification suite, validates the Wrangler bundle, and deploys through the protected `production` environment.
 
@@ -39,7 +41,7 @@ Two supported paths:
 nub run deploy    # astro build && wrangler deploy
 ```
 
-Use a least-privilege API token (`Workers Scripts:Edit` on `muesly-web`, plus `Workers Routes:Edit` on the `muesly.ai` zone for the custom domains). The apex (`muesly.ai`) and `www` are attached as custom domains in `wrangler.jsonc`; the `muesly.ai` zone must already be on the Cloudflare account.
+Use a least-privilege API token (`Workers Scripts:Edit` on `muesly-web`, plus `Workers Routes:Edit` on the `muesly.ai` zone for the custom domains). Release automation additionally needs R2 object write access to `muesly-downloads`. The apex (`muesly.ai`) and `www` are attached as custom domains in `wrangler.jsonc`; `downloads.muesly.ai` is attached directly to the R2 bucket.
 
 **2. Cloudflare dashboard Git integration (zero local setup).** Connect the repo, set the project root directory to `site/`, build command `nub run build`, output directory `dist`. Pushes deploy automatically and PRs get preview URLs. No secrets in the repo.
 
