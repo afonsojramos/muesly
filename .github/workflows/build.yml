@@ -84,29 +84,20 @@ jobs:
             echo "Build profile: release"
           fi
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10
-          run_install: false
+      - name: Setup toolchain via mise (node, pnpm, nub)
+        uses: jdx/mise-action@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: '20'
-
-      - name: Get pnpm store directory
+      - name: Get nub store directory
         shell: bash
-        run: |
-          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+        run: echo "NUB_STORE=$(nub store path)" >> $GITHUB_ENV
 
-      - name: Setup pnpm cache
+      - name: Cache nub store
         uses: actions/cache@v5
         with:
-          path: ${{ env.STORE_PATH }}
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          path: ${{ env.NUB_STORE }}
+          key: ${{ runner.os }}-nub-store-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: |
-            ${{ runner.os }}-pnpm-store-
+            ${{ runner.os }}-nub-store-
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -423,11 +414,11 @@ jobs:
       - name: Install app dependencies
         run: |
           cd app
-          # The SvelteKit frontend is a separate pnpm project with its own
-          # lockfile, so it must be installed too or `vite` is missing when
-          # tauri-action runs beforeBuildCommand (`pnpm -C src-svelte build`).
-          pnpm install
-          pnpm -C src-svelte install
+          # The SvelteKit frontend is a separate project with its own lockfile,
+          # so it must be installed too or `vite` is missing when tauri-action
+          # runs beforeBuildCommand (`nub --cwd src-svelte run build:tauri`).
+          nub install
+          nub install --cwd src-svelte
 
       - name: rustup install target
         if: ${{ inputs.target != '' && !contains(inputs.target, 'unknown-linux-gnu') && !contains(inputs.target, 'pc-windows-msvc') }}

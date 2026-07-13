@@ -2,13 +2,12 @@
 # `mise install` provisions these; run `mise use node@<v>` etc. to change one.
 [tools]
 node = "24"
-# pnpm is a compatible fallback now that nub is the installer (both share the
-# lockfile). Held at 10.33: pnpm 11 adds a minimumReleaseAge supply-chain policy
-# that rejects the current lockfiles' fresh transitive deps, and conflicts with nub
-# (which doesn't enforce it) over the shared lockfile. Adopting 11 would mean
-# disabling that guard (counter to the ncu cooldown) in every pnpm-workspace.yaml,
-# including app's. Revisit if/when CI also moves onto nub. (11.x needs the npm
-# backend, "npm:pnpm" = "11.12.0" — aqua can't fetch its renamed macOS assets.)
+# pnpm is now only a local fallback: nub is the installer everywhere, CI included
+# (via jdx/mise-action). Held at 10.33 because pnpm 11 adds a minimumReleaseAge
+# supply-chain policy that rejects the current lockfiles' fresh transitive deps (so
+# a plain `pnpm install` breaks locally), and it conflicts with nub, which doesn't
+# enforce the policy, over the shared lockfile. 11.x also needs the npm backend
+# ("npm:pnpm" = "11.12.0"); aqua can't fetch its renamed macOS assets.
 pnpm = "10.33.0"
 # nub (the Node toolkit — see AGENTS.md) via its npm distribution, so it's
 # pinned with the repo instead of a separate brew/curl install.

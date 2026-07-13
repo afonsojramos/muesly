@@ -21,22 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+      - uses: jdx/mise-action@v4
       - name: Word error rate (short fixture)
         run: |
-          node app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.mjs \
             app/scripts/eval/fixtures/sample-ref.txt \
             app/scripts/eval/fixtures/sample-hyp.txt \
             --max-wer 0
       - name: Word error rate (multi-utterance golden)
         run: |
-          node app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.mjs \
             app/scripts/eval/fixtures/meeting-golden-ref.txt \
             app/scripts/eval/fixtures/meeting-golden-hyp.txt \
             --max-wer 0
-          node app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.mjs \
             app/scripts/eval/fixtures/meeting-golden-ref.txt \
             app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt \
             --max-wer 10
@@ -50,4 +48,4 @@ jobs:
           ## Action items
           - Ship the eval harness
           MD
-          node app/scripts/eval/summary-rubric.mjs /tmp/sample-summary.md
+          nub app/scripts/eval/summary-rubric.mjs /tmp/sample-summary.md

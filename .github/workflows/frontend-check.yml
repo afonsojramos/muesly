@@ -25,24 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
+      - uses: jdx/mise-action@v4
 
-      - uses: actions/setup-node@v4
+      - name: Cache nub store
+        uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: app/src-svelte/pnpm-lock.yaml
+          path: ~/.local/share/nub/store
+          key: ${{ runner.os }}-nub-store-${{ hashFiles('app/src-svelte/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-nub-store-
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: nub install --frozen-lockfile
 
       - name: Typecheck (svelte-check)
-        run: pnpm check
+        run: nub run check
 
       - name: Lint
-        run: pnpm lint
+        run: nub run lint
 
       - name: Unit tests
-        run: pnpm test
+        run: nub run test
