@@ -4,7 +4,7 @@
 // and Vitest via vitest.config.ts, both of which ignore this file.
 export default {
 	lint: {
-		ignorePatterns: ['dist/**', '.astro/**'],
+		ignorePatterns: ['dist/**', '.astro/**', 'src/env.d.ts'],
 		plugins: ['typescript', 'import', 'unicorn', 'oxc'],
 	},
 	fmt: {

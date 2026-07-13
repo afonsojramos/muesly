@@ -14,7 +14,8 @@ export function getStaticPaths() {
 }
 
 const { comparison } = Astro.props;
-const { name, shortName, title, description, intro, verdict, bestFor, rows, theyreBetter, sources } = comparison;
+const { name, shortName, title, description, intro, verdict, bestFor, reviewedAt, rows, theyreBetter, sources } = comparison;
+const reviewedLabel = new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${reviewedAt}T00:00:00Z`));
 const categoryOrder: CompareCategory[] = [
 	'Privacy & ownership',
 	'Capture & intelligence',
@@ -104,7 +105,7 @@ const groupedRows = categoryOrder.map((category) => ({
 					<a class="inline-flex min-h-10 items-center gap-1.5 text-xs text-muted-foreground underline decoration-border underline-offset-4 transition-colors hover:text-foreground" href={source.href} target="_blank" rel="noopener noreferrer">{source.label}<Icon name="lucide:external-link" class="size-3" aria-hidden="true" /></a>
 				))}
 			</div>
-			<p class="mt-4 text-xs text-muted-foreground">Reviewed against public product information in July 2026. Features and plans change; corrections are welcome on GitHub.</p>
+			<p class="mt-4 text-xs text-muted-foreground">Reviewed against public product information in {reviewedLabel}. Features and plans change; corrections are welcome on GitHub.</p>
 		</div>
 
 		<div class="mx-auto mt-14 flex max-w-2xl flex-wrap justify-center gap-3">

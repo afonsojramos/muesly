@@ -4,7 +4,7 @@
 	// so Cloudflare serves the assets directly.
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "muesly-web",
-	"compatibility_date": "2026-06-01",
+	"compatibility_date": "2026-07-13",
 	"assets": {
 		"directory": "./dist",
 		"not_found_handling": "404-page",

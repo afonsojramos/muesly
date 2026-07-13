@@ -7,6 +7,6 @@ describe('cn', () => {
 	});
 
 	it('drops falsy values', () => {
-		expect(cn('a', false && 'b', undefined, 'c')).toBe('a c');
+		expect(cn('a', false, undefined, 'c')).toBe('a c');
 	});
 });

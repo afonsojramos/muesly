@@ -26,6 +26,7 @@ export type Comparison = {
 	intro: string;
 	verdict: string;
 	bestFor: string;
+	reviewedAt: string;
 	rows: CompareRow[];
 	theyreBetter: string[];
 	sources: { label: string; href: string }[];
@@ -85,7 +86,7 @@ const sharedRows = (overrides: Partial<Record<string, CompareRow>>): CompareRow[
 		platforms: {
 			category: 'Access & availability',
 			dimension: 'Platforms',
-			muesly: 'macOS and Windows; Linux from source',
+			muesly: 'Native builds for macOS, Windows, and Linux',
 			them: 'Cloud, plus apps',
 			advantage: 'neutral',
 		},
@@ -98,6 +99,7 @@ const sharedRows = (overrides: Partial<Record<string, CompareRow>>): CompareRow[
 export const comparisons: Comparison[] = [
 	{
 		slug: 'otter',
+		reviewedAt: '2026-07-13',
 		name: 'Otter.ai',
 		shortName: 'Otter',
 		title: 'muesly vs Otter.ai: the private, local alternative',
@@ -118,7 +120,7 @@ export const comparisons: Comparison[] = [
 			platforms: {
 				category: 'Access & availability',
 				dimension: 'Platforms',
-				muesly: 'macOS and Windows; Linux from source',
+				muesly: 'Native builds for macOS, Windows, and Linux',
 				them: 'Web, macOS, Windows, iOS, Android, Chrome',
 				advantage: 'them',
 			},
@@ -135,6 +137,7 @@ export const comparisons: Comparison[] = [
 	},
 	{
 		slug: 'granola',
+		reviewedAt: '2026-07-13',
 		name: 'Granola',
 		shortName: 'Granola',
 		title: 'muesly vs Granola: source-available and on-device',
@@ -156,7 +159,7 @@ export const comparisons: Comparison[] = [
 			platforms: {
 				category: 'Access & availability',
 				dimension: 'Platforms',
-				muesly: 'macOS and Windows; Linux from source',
+				muesly: 'Native builds for macOS, Windows, and Linux',
 				them: 'macOS, Windows, and iPhone',
 				advantage: 'neutral',
 			},
@@ -183,6 +186,7 @@ export const comparisons: Comparison[] = [
 	},
 	{
 		slug: 'fireflies',
+		reviewedAt: '2026-07-13',
 		name: 'Fireflies.ai',
 		shortName: 'Fireflies',
 		title: 'muesly vs Fireflies.ai: private, no bot, source-available',
@@ -205,7 +209,7 @@ export const comparisons: Comparison[] = [
 			platforms: {
 				category: 'Access & availability',
 				dimension: 'Platforms',
-				muesly: 'macOS and Windows; Linux from source',
+				muesly: 'Native builds for macOS, Windows, and Linux',
 				them: 'Web, desktop, iOS, Android, Chrome',
 				advantage: 'them',
 			},

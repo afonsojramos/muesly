@@ -1,6 +1,6 @@
 ---
 import { Icon } from 'astro-icon/components';
-import { BUILD_GUIDE_URL, GITHUB_URL, RELEASES_URL } from '$lib/config';
+import { DOWNLOADS, GITHUB_URL, RELEASES_URL } from '$lib/config';
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import Section from '../components/ui/Section.astro';
@@ -15,7 +15,7 @@ const platforms = [
 		icon: 'lucide:laptop',
 		detail: 'Apple Silicon · .dmg',
 		cta: 'Download for Mac',
-		href: RELEASES_URL
+		href: DOWNLOADS.macos
 	},
 	{
 		id: 'windows',
@@ -23,22 +23,22 @@ const platforms = [
 		icon: 'lucide:monitor',
 		detail: 'x64 · .exe installer',
 		cta: 'Download for Windows',
-		href: RELEASES_URL
+		href: DOWNLOADS.windows
 	},
 	{
 		id: 'linux',
 		name: 'Linux',
 		icon: 'lucide:terminal',
-		detail: 'Requires Rust + Node toolchain',
-		cta: 'Build from source',
-		href: BUILD_GUIDE_URL
+		detail: 'x64 · AppImage or .deb',
+		cta: 'Download AppImage',
+		href: DOWNLOADS.linuxAppImage
 	}
 ];
 ---
 
 <Base
 	title="Download muesly — macOS, Windows, Linux"
-	description="Download muesly for macOS or Windows, or build from source on Linux. Free and source-available, no account required."
+	description="Download muesly for macOS, Windows, or Linux. Free for personal and noncommercial use, source-available, and no account required."
 >
 	<Section class="py-16 md:py-24">
 		<div class="mx-auto max-w-2xl text-center">
@@ -82,5 +82,10 @@ const platforms = [
 				<Icon name="lucide:external-link" class="inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true" />
 			</a>
 		</p>
+		<div class="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm">
+			<a class="text-accent underline underline-offset-2" href={DOWNLOADS.linuxDeb} {...ext}>Linux .deb</a>
+			<a class="text-accent underline underline-offset-2" href={DOWNLOADS.checksums} {...ext}>SHA-256 checksums</a>
+			<a class="text-accent underline underline-offset-2" href={RELEASES_URL} {...ext}>Release notes</a>
+		</div>
 	</Section>
 </Base>

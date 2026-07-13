@@ -15,7 +15,7 @@ interface Props {
 const {
 	title = 'muesly — private speech-to-text for everything you say',
 	description = 'Capture, transcribe, organize, and ask questions across meetings, calls, lectures, and dictation on your own device. No account required.',
-	image = `${SITE_URL}/og.png`
+	image = `${SITE_URL}/og-2026.png`
 } = Astro.props;
 
 const canonical = new URL(Astro.url.pathname, SITE_URL).href;
@@ -29,7 +29,13 @@ const jsonLd = JSON.stringify({
 	description:
 		'Private, on-device speech-to-text for meetings, calls, lectures, and dictation.',
 	url: SITE_URL,
-	offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' }
+	license: 'https://polyformproject.org/licenses/noncommercial/1.0.0/',
+	offers: {
+		'@type': 'Offer',
+		price: '0',
+		priceCurrency: 'USD',
+		description: 'Free for personal and noncommercial use.'
+	}
 });
 ---
 

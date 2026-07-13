@@ -18,13 +18,16 @@ nub run build     # static output in dist/
 nub run preview   # serve the production build locally
 nub run check     # astro check (types)
 nub run test      # vitest unit tests (detect-os, button variants, cn)
+nub run build && nub run test:smoke # verify every production route and required asset
 ```
 
 The whole site is prerendered to static HTML. The only client JavaScript is a small enhancement script (`src/scripts/client.ts`): scroll reveal, sticky-nav state, OS-aware download CTAs, download-card promotion, and the live GitHub star count. Everything works without it.
 
+Pull requests and pushes to `main` that touch the site run formatting, lint, type checks, unit tests, a production build, route smoke tests, and a high-severity dependency audit in `.github/workflows/site-check.yml`. After review, run the manual `Deploy Site` workflow; it repeats the full verification suite, validates the Wrangler bundle, and deploys through the protected `production` environment.
+
 ## Privacy page
 
-`/privacy` renders the repo-root `PRIVACY_POLICY.md` so it stays the single source of truth. A prebuild step (`scripts/copy-privacy-policy.mjs`) copies it into the project before each `dev`/`build`/`check`; the copy is gitignored.
+`/privacy` and `/terms` render the repo-root legal documents so they stay the single source of truth. A prebuild step (`scripts/copy-legal-docs.mjs`) copies them into the project before each `dev`/`build`/`check`; the copies are gitignored.
 
 ## Deploy (Cloudflare)
 
@@ -38,7 +41,7 @@ nub run deploy    # astro build && wrangler deploy
 
 Use a least-privilege API token (`Workers Scripts:Edit` on `muesly-web`, plus `Workers Routes:Edit` on the `muesly.ai` zone for the custom domains). The apex (`muesly.ai`) and `www` are attached as custom domains in `wrangler.jsonc`; the `muesly.ai` zone must already be on the Cloudflare account.
 
-**2. Cloudflare dashboard Git integration (zero local setup).** Connect the repo, set the project root directory to `site/`, build command `pnpm build`, output directory `dist`. Pushes deploy automatically and PRs get preview URLs. No secrets in the repo.
+**2. Cloudflare dashboard Git integration (zero local setup).** Connect the repo, set the project root directory to `site/`, build command `nub run build`, output directory `dist`. Pushes deploy automatically and PRs get preview URLs. No secrets in the repo.
 
 If you wire deploys through GitHub Actions instead, trigger the workflow `on: push` to the default branch only (never `pull_request` — a fork PR would expose the deploy secrets) and path-filter it to `site/**`.
 

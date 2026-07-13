@@ -13,6 +13,7 @@
 		"format": "vp fmt . --write",
 		"format:check": "vp fmt . --check",
 		"test": "vitest run",
+		"test:smoke": "nub scripts/smoke-built-site.ts",
 		"deploy": "node scripts/copy-legal-docs.mjs && astro build && wrangler deploy"
 	},
 	"dependencies": {

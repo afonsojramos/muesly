@@ -1,10 +1,11 @@
 ---
+import { Icon } from 'astro-icon/components';
 import MueslyMark from './MueslyMark.astro';
 import Button from './ui/Button.astro';
 ---
 
 <header data-nav class="sticky top-0 z-50">
-	<nav aria-label="Primary" class="mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-6">
+	<nav aria-label="Primary" class="relative mx-auto flex max-w-7xl items-center justify-between px-5 py-3 sm:px-6">
 		<a href="/" class="flex items-center gap-2" aria-label="muesly home">
 			<MueslyMark class="h-8 w-8" />
 			<span class="font-display text-lg font-semibold tracking-tight">muesly</span>
@@ -15,8 +16,20 @@ import Button from './ui/Button.astro';
 			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/#privacy">Privacy</a>
 			<a class="rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground" href="/compare">Compare</a>
 		</div>
-		<Button href="/download" variant="accent" class="pl-4 pr-3.5">
-			Download
-		</Button>
+		<div class="flex items-center gap-2">
+			<details class="group md:hidden">
+				<summary class="flex size-10 cursor-pointer list-none items-center justify-center rounded-lg text-muted-foreground transition-[background-color,color] hover:bg-secondary hover:text-foreground [&::-webkit-details-marker]:hidden" aria-label="Open navigation menu">
+					<Icon name="lucide:menu" class="size-5 group-open:hidden" aria-hidden="true" />
+					<Icon name="lucide:x" class="hidden size-5 group-open:block" aria-hidden="true" />
+				</summary>
+				<div class="absolute inset-x-5 top-[calc(100%+0.25rem)] grid gap-1 rounded-2xl bg-card p-2 shadow-card sm:inset-x-6">
+					<a class="rounded-xl px-4 py-3 text-sm hover:bg-secondary" href="/#features">Features</a>
+					<a class="rounded-xl px-4 py-3 text-sm hover:bg-secondary" href="/#bars">Muesly bars</a>
+					<a class="rounded-xl px-4 py-3 text-sm hover:bg-secondary" href="/#privacy">Privacy</a>
+					<a class="rounded-xl px-4 py-3 text-sm hover:bg-secondary" href="/compare">Compare</a>
+				</div>
+			</details>
+			<Button href="/download" variant="accent" class="pl-4 pr-3.5">Download</Button>
+		</div>
 	</nav>
 </header>
