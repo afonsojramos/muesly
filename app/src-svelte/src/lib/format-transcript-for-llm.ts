@@ -17,10 +17,7 @@ export interface LlmSpeakerNames {
 	selfName?: string;
 }
 
-function nameFor(
-	segment: LlmTranscriptSegment,
-	ctx: LlmSpeakerNames | undefined,
-): string {
+function nameFor(segment: LlmTranscriptSegment, ctx: LlmSpeakerNames | undefined): string {
 	const names = ctx?.names;
 	const lookup = (id: number): string | undefined => {
 		if (!names) return undefined;
@@ -54,7 +51,13 @@ function nameFor(
  */
 export function formatTranscriptForLlm(
 	segments: LlmTranscriptSegment[],
-	opts?: LlmSpeakerNames & { includeTimestamps?: boolean; formatTime?: (start: number | null | undefined, ts: string | number | null | undefined) => string },
+	opts?: LlmSpeakerNames & {
+		includeTimestamps?: boolean;
+		formatTime?: (
+			start: number | null | undefined,
+			ts: string | number | null | undefined,
+		) => string;
+	},
 ): string {
 	return segments
 		.map((t) => {

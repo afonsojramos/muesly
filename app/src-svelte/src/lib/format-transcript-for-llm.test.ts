@@ -23,10 +23,9 @@ describe('formatTranscriptForLlm', () => {
 	});
 
 	it('falls back to Speaker N for unnamed clusters', () => {
-		const out = formatTranscriptForLlm(
-			[{ text: 'x', speaker: 'system', speaker_id: 3 }],
-			{ names: new Map() },
-		);
+		const out = formatTranscriptForLlm([{ text: 'x', speaker: 'system', speaker_id: 3 }], {
+			names: new Map(),
+		});
 		expect(out).toBe('Speaker 3: x');
 	});
 });
