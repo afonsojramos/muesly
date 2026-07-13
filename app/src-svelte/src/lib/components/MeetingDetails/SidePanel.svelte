@@ -263,6 +263,7 @@
 				showSpeakers={!isRecording && !!meetingId}
 				speakerContext={speakers.ctx}
 				onAssignSpeaker={!isRecording && meetingId ? speakers.assign : undefined}
+				onClearSpeaker={!isRecording && meetingId ? speakers.clear : undefined}
 			/>
 		</div>
 

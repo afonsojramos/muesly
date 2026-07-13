@@ -394,6 +394,20 @@ pub async fn set_speaker_name(
         .map_err(|e| format!("set speaker name: {e}"))
 }
 
+/// Remove a speaker's assigned name, reverting the label to "Speaker N".
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_speaker_name(
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    speaker_id: i64,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    SpeakerNamesRepository::clear_one(pool, &meeting_id, speaker_id)
+        .await
+        .map_err(|e| format!("clear speaker name: {e}"))
+}
+
 /// Decide the `speaker_id` to persist for each segment.
 ///
 /// - `system` (remote) segments always receive a diarized cluster when turns match.

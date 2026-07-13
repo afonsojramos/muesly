@@ -60,6 +60,23 @@ impl SpeakerNamesRepository {
             .await?;
         Ok(())
     }
+
+    /// Remove the assigned name for a single speaker, reverting it to "Speaker N".
+    pub async fn clear_one<'e, E>(
+        executor: E,
+        meeting_id: &str,
+        speaker_id: i64,
+    ) -> Result<(), sqlx::Error>
+    where
+        E: sqlx::Executor<'e, Database = sqlx::Sqlite>,
+    {
+        sqlx::query("DELETE FROM speaker_names WHERE meeting_id = ? AND speaker_id = ?")
+            .bind(meeting_id)
+            .bind(speaker_id)
+            .execute(executor)
+            .await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

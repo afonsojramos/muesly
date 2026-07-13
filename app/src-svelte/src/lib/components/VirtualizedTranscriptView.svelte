@@ -1,11 +1,10 @@
 <script lang="ts" module>
-	// Helper: format seconds as recording-relative time [MM:SS].
+	import { formatRecordingTimestamp } from '$lib/utils/format-time';
+
+	// Helper: format seconds as recording-relative time [MM:SS] (or [H:MM:SS]).
 	export function formatRecordingTime(seconds: number | undefined): string {
 		if (seconds === undefined) return '[--:--]';
-		const total = Math.floor(seconds);
-		const minutes = Math.floor(total / 60);
-		const secs = total % 60;
-		return `[${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}]`;
+		return formatRecordingTimestamp(seconds);
 	}
 
 	const STOP_WORDS = ['uh', 'um', 'er', 'ah', 'hmm', 'hm', 'eh', 'oh'];
@@ -61,6 +60,8 @@
 		speakerContext?: SpeakerContext;
 		/** Persist a cluster's name; when set, system labels become editable. */
 		onAssignSpeaker?: (speakerId: number, name: string) => void | Promise<void>;
+		/** Clear a cluster's name, reverting it to "Speaker N". */
+		onClearSpeaker?: (speakerId: number) => void | Promise<void>;
 	}
 
 	/** Approximate row height for windowing (variable content; overscan covers drift). */
@@ -83,6 +84,7 @@
 		showSpeakers = false,
 		speakerContext,
 		onAssignSpeaker,
+		onClearSpeaker,
 	}: Props = $props();
 
 	// Per-segment speaker labels, shown only at a speaker change (turn boundary)
@@ -325,7 +327,11 @@
 											label={speaker.label}
 											speakerId={segment.speaker_id!}
 											shortlist={(speakerContext ?? emptySpeakerContext()).shortlist}
+											isNamed={(speakerContext ?? emptySpeakerContext()).names.has(
+												segment.speaker_id!,
+											)}
 											onAssign={onAssignSpeaker}
+											onClear={onClearSpeaker}
 										/>
 									{:else}
 										<span class="mb-0.5 block text-[11px] font-medium text-muted-foreground"

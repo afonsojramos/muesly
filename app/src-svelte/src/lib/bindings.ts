@@ -43,6 +43,8 @@ export const commands = {
 	getTalkTime: (meetingId: string) => typedError<TalkTimeGroup[], string>(__TAURI_INVOKE("get_talk_time", { meetingId })),
 	/**  Assign (or rename) the name for a diarized cluster within a meeting. */
 	setSpeakerName: (meetingId: string, speakerId: number, name: string) => typedError<null, string>(__TAURI_INVOKE("set_speaker_name", { meetingId, speakerId, name })),
+	/**  Remove a speaker's assigned name, reverting the label to "Speaker N". */
+	clearSpeakerName: (meetingId: string, speakerId: number) => typedError<null, string>(__TAURI_INVOKE("clear_speaker_name", { meetingId, speakerId })),
 	readAudioFile: (filePath: string) => typedError<number[], string>(__TAURI_INVOKE("read_audio_file", { filePath })),
 	saveTranscript: (filePath: string, content: string) => typedError<null, string>(__TAURI_INVOKE("save_transcript", { filePath, content })),
 	initAnalytics: () => typedError<null, string>(__TAURI_INVOKE("init_analytics")),

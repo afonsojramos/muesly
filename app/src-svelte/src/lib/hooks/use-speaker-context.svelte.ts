@@ -25,6 +25,7 @@ import { toast } from '$lib/toast';
 export interface UseSpeakerContext {
 	readonly ctx: SpeakerContext;
 	assign: (speakerId: number, name: string) => Promise<void>;
+	clear: (speakerId: number) => Promise<void>;
 }
 
 export function useSpeakerContext(
@@ -81,10 +82,25 @@ export function useSpeakerContext(
 		ctx = { ...ctx, names };
 	}
 
+	async function clear(speakerId: number): Promise<void> {
+		const id = getMeetingId();
+		if (!id) return;
+		const res = await commands.clearSpeakerName(id, speakerId);
+		if (res.status !== 'ok') {
+			toast.error('Failed to reset speaker', { description: res.error });
+			return;
+		}
+		genId += 1;
+		const names = new Map(ctx.names);
+		names.delete(speakerId);
+		ctx = { ...ctx, names };
+	}
+
 	return {
 		get ctx() {
 			return ctx;
 		},
 		assign,
+		clear,
 	};
 }

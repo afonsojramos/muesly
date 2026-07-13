@@ -12,9 +12,13 @@
 		shortlist: string[];
 		/** Persist the assignment for this cluster. */
 		onAssign: (speakerId: number, name: string) => void | Promise<void>;
+		/** Whether this cluster currently has an assigned name (enables Reset). */
+		isNamed?: boolean;
+		/** Clear the assignment, reverting to "Speaker N". */
+		onClear?: (speakerId: number) => void | Promise<void>;
 	}
 
-	let { label, speakerId, shortlist, onAssign }: Props = $props();
+	let { label, speakerId, shortlist, onAssign, isNamed = false, onClear }: Props = $props();
 
 	let open = $state(false);
 	let query = $state('');
@@ -31,6 +35,12 @@
 		open = false;
 		query = '';
 		await onAssign(speakerId, trimmed);
+	}
+
+	async function reset(): Promise<void> {
+		open = false;
+		query = '';
+		await onClear?.(speakerId);
 	}
 </script>
 
@@ -72,6 +82,12 @@
 					{/if}
 					<Command.Item value={`use-${query}`} onSelect={() => assign(query)}>
 						<span class="text-brand">Use “{query.trim()}”</span>
+					</Command.Item>
+				{/if}
+				{#if isNamed && onClear}
+					<Command.Separator />
+					<Command.Item value="reset-speaker" onSelect={() => reset()}>
+						<span class="text-muted-foreground">Reset to Speaker {speakerId}</span>
 					</Command.Item>
 				{/if}
 			</Command.List>
