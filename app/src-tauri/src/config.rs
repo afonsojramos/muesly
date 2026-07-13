@@ -20,10 +20,6 @@ pub fn recommended_whisper_model(profile: &crate::audio::HardwareProfile) -> &'s
     }
 }
 
-/// Default Parakeet model for transcription when no preference is configured.
-/// This is the quantized version optimized for speed.
-pub const DEFAULT_PARAKEET_MODEL: &str = "parakeet-tdt-0.6b-v3-int8";
-
 /// Whisper model catalog with metadata for all supported models.
 /// Used by both WhisperEngine::discover_models() and discover_models_standalone().
 ///

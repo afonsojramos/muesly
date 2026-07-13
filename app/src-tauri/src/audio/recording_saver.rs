@@ -20,7 +20,7 @@ pub struct TranscriptSegment {
     pub audio_end_time: f64,   // Seconds from recording start
     pub duration: f64,          // Segment duration in seconds
     pub display_time: String,   // Formatted time for display like "[02:15]"
-    /// Measured ASR confidence; absent for engines such as Parakeet.
+    /// Measured ASR confidence.
     pub confidence: Option<f32>,
     pub sequence_id: u64,
     /// Audio source: "mic" (the user) or "system" (other participants)

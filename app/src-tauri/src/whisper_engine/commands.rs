@@ -78,8 +78,8 @@ pub fn whisper_get_recommended_model() -> String {
     crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
 }
 
-/// Discover Whisper models by scanning the models directory directly
-/// Used when the Whisper engine isn't initialized (e.g., when using Parakeet for live transcription)
+/// Discover Whisper models by scanning the models directory directly when the
+/// engine has not been initialized yet.
 fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {
     use crate::whisper_engine::ModelStatus;
 

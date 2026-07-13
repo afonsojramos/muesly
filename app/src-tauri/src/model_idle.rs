@@ -43,20 +43,6 @@ pub fn spawn_idle_unload_watcher() {
                     engine.unload_model().await;
                 }
             }
-
-            // Parakeet.
-            let parakeet = {
-                let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE.lock().unwrap();
-                guard.as_ref().cloned()
-            };
-            if let Some(engine) = parakeet {
-                let loaded = engine.is_model_loaded().await;
-                let idle = engine.idle_for().await;
-                if should_unload(loaded, false, idle, MODEL_IDLE_TIMEOUT) {
-                    log::info!("Idle for {:?}, unloading Parakeet model to free memory", idle);
-                    engine.unload_model().await;
-                }
-            }
         }
     });
 }

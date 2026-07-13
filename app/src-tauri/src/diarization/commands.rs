@@ -440,7 +440,7 @@ fn assign_speaker_ids(
 
 /// Download the diarization models on demand, emitting
 /// `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
-/// the Parakeet model-download flow).
+/// the transcription model-download flow).
 #[tauri::command]
 #[specta::specta]
 pub async fn download_diarization_models<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {

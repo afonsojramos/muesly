@@ -1,7 +1,7 @@
-//! Types shared by the transcription engines (Whisper, Parakeet).
+//! Types shared by the Whisper engine and frontend.
 //!
 //! The two engines manage models with genuinely different on-disk layouts
-//! (Whisper = a single GGML `.bin` file; Parakeet = a directory of ONNX files),
+//! (Whisper models are single GGML `.bin` files),
 //! so their download/discovery I/O is intentionally NOT shared. What they DO
 //! share — and what lives here — is the model lifecycle status type, kept as a
 //! single definition so the two engines (and the frontend that deserializes it)

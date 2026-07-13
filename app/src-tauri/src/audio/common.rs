@@ -1,5 +1,4 @@
 use crate::api::TranscriptSegment;
-use crate::parakeet_engine::ParakeetEngine;
 use crate::whisper_engine::WhisperEngine;
 use anyhow::{anyhow, Result};
 use log::{debug, info, warn};
@@ -37,59 +36,22 @@ pub(crate) async fn ensure_whisper_model(target_model: &str) -> Result<Arc<Whisp
     Ok(engine)
 }
 
-/// Ensure the global Parakeet engine has `target_model` loaded; see
-/// [`ensure_whisper_model`] for the shared-policy rationale.
-pub(crate) async fn ensure_parakeet_model(target_model: &str) -> Result<Arc<ParakeetEngine>> {
-    use crate::parakeet_engine::commands::PARAKEET_ENGINE;
-
-    let engine = {
-        let guard = PARAKEET_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_ref().cloned()
-    };
-    let engine = engine.ok_or_else(|| anyhow!("Parakeet engine not initialized"))?;
-
-    let current_model = engine.get_current_model().await;
-    if current_model.as_deref() != Some(target_model) {
-        info!("Loading Parakeet model '{}' (current: {:?})", target_model, current_model);
-        if let Err(e) = engine.discover_models().await {
-            warn!("Parakeet model discovery error (continuing): {}", e);
-        }
-        engine
-            .load_model(target_model)
-            .await
-            .map_err(|e| anyhow!("Failed to load Parakeet model '{}': {}", target_model, e))?;
-    }
-
-    Ok(engine)
-}
-
 /// Unload the transcription engine after a batch job (import or retranscription).
 /// Skips unloading if a live recording is currently in progress, since recording
 /// uses the same global engine instances.
-pub(crate) async fn unload_engine_after_batch(use_parakeet: bool) {
+pub(crate) async fn unload_engine_after_batch() {
     if crate::audio::recording_commands::is_recording().await {
         log::info!("Skipping model unload after batch: recording in progress");
         return;
     }
 
-    if use_parakeet {
-        use crate::parakeet_engine::commands::PARAKEET_ENGINE;
-        let engine = {
-            let guard = PARAKEET_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-            guard.as_ref().cloned()
-        };
-        if let Some(e) = engine {
-            e.unload_model().await;
-        }
-    } else {
-        use crate::whisper_engine::commands::WHISPER_ENGINE;
-        let engine = {
-            let guard = WHISPER_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
-            guard.as_ref().cloned()
-        };
-        if let Some(e) = engine {
-            e.unload_model().await;
-        }
+    use crate::whisper_engine::commands::WHISPER_ENGINE;
+    let engine = {
+        let guard = WHISPER_ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().cloned()
+    };
+    if let Some(e) = engine {
+        e.unload_model().await;
     }
 }
 

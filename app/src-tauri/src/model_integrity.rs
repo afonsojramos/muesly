@@ -79,28 +79,6 @@ pub fn whisper_model_sha256(model_name: &str) -> Option<&'static str> {
     })
 }
 
-/// Pinned SHA-256 for a Parakeet ONNX/vocab file basename (v3 repo pins).
-pub fn parakeet_file_sha256(filename: &str) -> Option<&'static str> {
-    Some(match filename {
-        "encoder-model.int8.onnx" => {
-            "6139d2fa7e1b086097b277c7149725edbab89cc7c7ae64b23c741be4055aff09"
-        }
-        "decoder_joint-model.int8.onnx" => {
-            "eea7483ee3d1a30375daedc8ed83e3960c91b098812127a0d99d1c8977667a70"
-        }
-        "encoder-model.onnx" => "98a74b21b4cc0017c1e7030319a4a96f4a9506e50f0708f3a516d02a77c96bb1",
-        "encoder-model.onnx.data" => {
-            "9a22d372c51455c34f13405da2520baefb7125bd16981397561423ed32d24f36"
-        }
-        "decoder_joint-model.onnx" => {
-            "e978ddf6688527182c10fde2eb4b83068421648985ef23f7a86be732be8706c1"
-        }
-        "nemo128.onnx" => "a9fde1486ebfcc08f328d75ad4610c67835fea58c73ba57e3209a6f6cf019e9f",
-        "vocab.txt" => "d58544679ea4bc6ac563d1f545eb7d474bd6cfa467f0a6e2c1dc1c7d37e3c35d",
-        _ => return None,
-    })
-}
-
 /// Pinned GGUF summary model SHA-256 by on-disk filename (`ModelDef.gguf_file`).
 pub fn gguf_filename_sha256(filename: &str) -> Option<&'static str> {
     Some(match filename {

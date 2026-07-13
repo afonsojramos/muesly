@@ -116,8 +116,8 @@ mod tests {
             &pool,
             "m1",
             "Transcript text here",
-            "parakeet",
-            "parakeet-tdt-0.6b-v2",
+            "whisper",
+            "large-v3-turbo",
             1024,
             100,
         )
@@ -134,8 +134,8 @@ mod tests {
             .expect("fetch");
 
         assert_eq!(text, "Transcript text here");
-        assert_eq!(model, "parakeet");
-        assert_eq!(model_name, "parakeet-tdt-0.6b-v2");
+        assert_eq!(model, "whisper");
+        assert_eq!(model_name, "large-v3-turbo");
         assert_eq!(chunk_size, 1024);
         assert_eq!(overlap, 100);
     }

@@ -19,7 +19,7 @@ pub struct OnboardingStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default, specta::Type)]
 pub struct ModelStatus {
-    pub parakeet: String,  // "downloaded" | "not_downloaded" | "downloading"
+    pub whisper: String,   // "downloaded" | "not_downloaded" | "downloading"
     pub summary: String,   // Generic field for summary model (gemma3:1b or gemma3:4b)
 }
 
@@ -30,7 +30,7 @@ impl Default for OnboardingStatus {
             completed: false,
             current_step: 1,
             model_status: ModelStatus {
-                parakeet: "not_downloaded".to_string(),
+                whisper: "not_downloaded".to_string(),
                 summary: "not_downloaded".to_string(),  // Changed from gemma
             },
             last_updated: chrono::Utc::now().to_rfc3339(),
@@ -192,16 +192,18 @@ pub async fn complete_onboarding<R: Runtime>(
     }
     info!("Saved builtin-ai model config: model={}", model);
 
-    // Save transcription model config (parakeet provider) - always parakeet
+    // Save the device-appropriate Whisper transcription model.
+    let transcription_model =
+        crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect());
     if let Err(e) = SettingsRepository::save_transcript_config(
         pool,
-        "parakeet",
-        crate::config::DEFAULT_PARAKEET_MODEL,
+        "localWhisper",
+        transcription_model,
     ).await {
         error!("Failed to save transcription model config: {}", e);
         return Err(format!("Failed to save transcription model config: {}", e));
     }
-    info!("Saved transcription model config: provider=parakeet, model={}", crate::config::DEFAULT_PARAKEET_MODEL);
+    info!("Saved transcription model config: provider=localWhisper, model={}", transcription_model);
 
     // Step 2: Only NOW mark onboarding as complete (after DB operations succeed)
     let mut status = load_onboarding_status(&app)
@@ -215,7 +217,7 @@ pub async fn complete_onboarding<R: Runtime>(
     // user can finish onboarding before a model completes (e.g. the non-mac
     // "continue"), and the frontend re-derives availability from disk on load, so a
     // blanket "downloaded" stamp is at best cosmetic and at worst wrong.
-    let parakeet_ready = crate::parakeet_engine::commands::parakeet_has_available_models()
+    let whisper_ready = crate::whisper_engine::commands::whisper_has_available_models()
         .await
         .unwrap_or(false);
     let summary_ready = match app.try_state::<crate::summary::summary_engine::ModelManagerState>() {
@@ -230,8 +232,8 @@ pub async fn complete_onboarding<R: Runtime>(
         }
         None => false,
     };
-    status.model_status.parakeet =
-        if parakeet_ready { "downloaded" } else { "not_downloaded" }.to_string();
+    status.model_status.whisper =
+        if whisper_ready { "downloaded" } else { "not_downloaded" }.to_string();
     status.model_status.summary =
         if summary_ready { "downloaded" } else { "not_downloaded" }.to_string();
 

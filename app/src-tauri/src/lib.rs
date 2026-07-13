@@ -36,7 +36,6 @@ pub mod json;
 pub mod meeting_detect;
 pub mod notifications;
 pub mod onboarding;
-pub mod parakeet_engine;
 pub mod pill_window;
 pub mod providers;
 pub mod state;
@@ -1036,20 +1035,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         whisper_engine::commands::whisper_download_model,
         whisper_engine::commands::whisper_cancel_download,
         whisper_engine::commands::whisper_delete_corrupted_model,
-        parakeet_engine::commands::parakeet_init,
-        parakeet_engine::commands::parakeet_get_available_models,
-        parakeet_engine::commands::parakeet_load_model::<tauri::Wry>,
-        parakeet_engine::commands::parakeet_get_current_model,
-        parakeet_engine::commands::parakeet_is_model_loaded,
-        parakeet_engine::commands::parakeet_has_available_models,
-        parakeet_engine::commands::parakeet_validate_model_ready,
-        parakeet_engine::commands::parakeet_transcribe_audio,
-        parakeet_engine::commands::parakeet_get_models_directory,
-        parakeet_engine::commands::parakeet_download_model::<tauri::Wry>,
-        parakeet_engine::commands::parakeet_retry_download::<tauri::Wry>,
-        parakeet_engine::commands::parakeet_cancel_download::<tauri::Wry>,
-        parakeet_engine::commands::parakeet_delete_corrupted_model,
-        parakeet_engine::commands::open_parakeet_models_folder,
         get_audio_devices,
         trigger_microphone_permission,
         start_recording_with_devices::<tauri::Wry>,
@@ -1435,16 +1420,6 @@ pub fn run() {
             tauri::async_runtime::spawn(async {
                 if let Err(e) = whisper_engine::commands::whisper_init().await {
                     log::error!("Failed to initialize Whisper engine on startup: {}", e);
-                }
-            });
-
-            // Set Parakeet models directory
-            parakeet_engine::commands::set_models_directory(&_app.handle());
-
-            // Initialize Parakeet engine on startup
-            tauri::async_runtime::spawn(async {
-                if let Err(e) = parakeet_engine::commands::parakeet_init().await {
-                    log::error!("Failed to initialize Parakeet engine on startup: {}", e);
                 }
             });
 

@@ -6,7 +6,7 @@
 //! stdout output (logs go to stderr) so a caller can capture it directly.
 //!
 //! Usage: cargo run -p muesly --example transcribe-fixture --
-//!        [--provider whisper|parakeet] [--language en] [--vad]
+//!        [--language en] [--vad]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
 
 use std::io::Write as _;
@@ -14,7 +14,6 @@ use std::path::PathBuf;
 
 use app_lib::audio::decoder::decode_audio_file;
 use app_lib::audio::vad::get_speech_chunks;
-use app_lib::parakeet_engine::engine::ParakeetEngine;
 use app_lib::transcription_models::ModelStatus;
 use app_lib::vocabulary::set_meeting_prompt_terms;
 use app_lib::whisper_engine::engine::WhisperEngine;
@@ -27,7 +26,6 @@ fn fail(msg: String) -> ! {
 #[tokio::main]
 async fn main() {
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
-    let mut provider = "whisper".to_string();
     let mut language = None;
     let mut use_vad = false;
     let mut prompt = None;
@@ -35,13 +33,6 @@ async fn main() {
     let mut index = 0;
     while index < raw_args.len() {
         match raw_args[index].as_str() {
-            "--provider" => {
-                index += 1;
-                provider = raw_args
-                    .get(index)
-                    .cloned()
-                    .unwrap_or_else(|| fail("--provider requires whisper or parakeet".to_string()));
-            }
             "--language" => {
                 index += 1;
                 language =
@@ -61,24 +52,13 @@ async fn main() {
         }
         index += 1;
     }
-    if provider != "whisper" && provider != "parakeet" {
-        fail(format!(
-            "unknown provider '{provider}'; expected whisper or parakeet"
-        ));
-    }
     let Some(audio_path) = positional.first().map(PathBuf::from) else {
         fail(
-            "usage: transcribe-fixture [--provider whisper|parakeet] [--language en] [--vad] [--prompt terms] <audio> [model] [models_dir]"
+            "usage: transcribe-fixture [--language en] [--vad] [--prompt terms] <audio> [model] [models_dir]"
                 .to_string(),
         );
     };
-    let model_name = positional.get(1).cloned().unwrap_or_else(|| {
-        if provider == "parakeet" {
-            "parakeet-tdt-0.6b-v3-int8".to_string()
-        } else {
-            "tiny".to_string()
-        }
-    });
+    let model_name = positional.get(1).cloned().unwrap_or_else(|| "tiny".to_string());
     let models_dir = positional.get(2).map(PathBuf::from);
 
     if !audio_path.exists() {
@@ -95,32 +75,8 @@ async fn main() {
     );
 
     let samples = decoded.to_whisper_format();
-    let text = if provider == "parakeet" {
-        let engine = ParakeetEngine::new_with_models_dir(models_dir)
-            .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
-        let models = engine
-            .discover_models()
-            .await
-            .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
-        let needs_download = models
-            .iter()
-            .find(|model| model.name == model_name)
-            .map(|model| !matches!(model.status, ModelStatus::Available))
-            .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-        if needs_download {
-            download_parakeet_model(&engine, &model_name).await;
-        }
-        engine
-            .load_model(&model_name)
-            .await
-            .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
-        engine
-            .transcribe_audio(samples)
-            .await
-            .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
-    } else {
-        let engine = WhisperEngine::new_with_models_dir(models_dir)
-            .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
+    let engine = WhisperEngine::new_with_models_dir(models_dir)
+        .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
         let models = engine
             .discover_models()
             .await
@@ -147,7 +103,7 @@ async fn main() {
                     .collect(),
             );
         }
-        if use_vad {
+    let text = if use_vad {
             let segments = get_speech_chunks(&samples, 2000)
                 .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
             eprintln!("VAD detected {} speech segments", segments.len());
@@ -171,12 +127,11 @@ async fn main() {
                 }
             }
             transcripts.join(" ")
-        } else {
+    } else {
             engine
                 .transcribe_audio(samples, language)
                 .await
                 .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
-        }
     };
     println!("{}", text.trim());
 }
@@ -189,20 +144,6 @@ fn progress_callback() -> Box<dyn Fn(u8) + Send> {
 }
 
 async fn download_whisper_model(engine: &WhisperEngine, model_name: &str) {
-    eprintln!("downloading model '{model_name}' (first run)...");
-    if let Err(error) = engine
-        .download_model(model_name, Some(progress_callback()))
-        .await
-    {
-        fail(format!("model download failed: {error}"));
-    }
-    eprintln!();
-    if let Err(error) = engine.discover_models().await {
-        fail(format!("model rediscovery failed: {error}"));
-    }
-}
-
-async fn download_parakeet_model(engine: &ParakeetEngine, model_name: &str) {
     eprintln!("downloading model '{model_name}' (first run)...");
     if let Err(error) = engine
         .download_model(model_name, Some(progress_callback()))
