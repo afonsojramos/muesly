@@ -1,6 +1,6 @@
 ---
 import { Icon } from 'astro-icon/components';
-import { DOWNLOADS, GITHUB_URL, RELEASES_URL } from '$lib/config';
+import { DOWNLOADS } from '$lib/config';
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import Section from '../components/ui/Section.astro';
@@ -38,13 +38,13 @@ const platforms = [
 
 <Base
 	title="Download muesly — macOS, Windows, Linux"
-	description="Download muesly for macOS, Windows, or Linux. Free for personal and noncommercial use, source-available, and no account required."
+	description="Download muesly for macOS, Windows, or Linux. Free for personal and noncommercial use, with no account required."
 >
 	<Section class="py-16 md:py-24">
 		<div class="mx-auto max-w-2xl text-center">
 			<h1 class="font-display text-4xl font-semibold tracking-tight md:text-5xl">Download muesly</h1>
 			<p class="mt-4 text-lg text-muted-foreground">
-				Free and source-available. No account required. Pick your platform below.
+				Free for personal and noncommercial use. No account required. Pick your platform below.
 			</p>
 		</div>
 
@@ -76,16 +76,11 @@ const platforms = [
 
 		<p class="mx-auto mt-8 max-w-2xl text-center text-sm text-muted-foreground">
 			macOS builds target Apple Silicon. If the first launch is blocked, open the app from
-			Applications with right-click → Open. Prefer to inspect before running?
-			<a class="text-accent underline underline-offset-2" href={GITHUB_URL} {...ext}>
-				View the source on GitHub
-				<Icon name="lucide:external-link" class="inline h-3.5 w-3.5 align-[-2px]" aria-hidden="true" />
-			</a>
+			Applications with right-click → Open. Verify any download against the published SHA-256 checksums.
 		</p>
 		<div class="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-x-5 gap-y-2 text-sm">
 			<a class="text-accent underline underline-offset-2" href={DOWNLOADS.linuxDeb} {...ext}>Linux .deb</a>
 			<a class="text-accent underline underline-offset-2" href={DOWNLOADS.checksums} {...ext}>SHA-256 checksums</a>
-			<a class="text-accent underline underline-offset-2" href={RELEASES_URL} {...ext}>Release notes</a>
 		</div>
 	</Section>
 </Base>

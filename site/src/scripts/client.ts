@@ -63,25 +63,8 @@ function initDownloadPromote(os: OS) {
 	card.querySelector('[data-recommended-badge]')?.classList.remove('hidden');
 }
 
-/** Show the real GitHub star count when available (never faked). */
-async function initStars() {
-	const el = document.querySelector('[data-stars]');
-	if (!el) return;
-	try {
-		const res = await fetch('https://api.github.com/repos/afonsojramos/muesly');
-		if (!res.ok) return;
-		const data = await res.json();
-		if (typeof data.stargazers_count === 'number') {
-			el.textContent = data.stargazers_count.toLocaleString();
-		}
-	} catch {
-		// Rate-limited or offline — leave the button without a number.
-	}
-}
-
 const os = detectOS({ userAgent: navigator.userAgent, platform: navigator.platform });
 initReveal();
 initNav();
 initOsCta(os);
 initDownloadPromote(os);
-void initStars();

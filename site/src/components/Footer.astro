@@ -1,8 +1,5 @@
 ---
-import { GITHUB_URL, LICENSE_URL, RELEASES_PAGE } from '$lib/config';
 import MueslyMark from './MueslyMark.astro';
-
-const ext = { target: '_blank', rel: 'noopener noreferrer' };
 ---
 
 <footer class="bg-foreground text-primary-foreground">
@@ -29,22 +26,17 @@ const ext = { target: '_blank', rel: 'noopener noreferrer' };
 			</ul>
 		</nav>
 
-		<nav aria-label="Project" class="text-sm">
-			<h2 class="mb-3 font-medium text-white">Project</h2>
+		<nav aria-label="Legal" class="text-sm">
+			<h2 class="mb-3 font-medium text-white">Legal</h2>
 			<ul class="space-y-2 text-white/50">
-				<li><a class="transition-colors hover:text-white" href={GITHUB_URL} {...ext}>GitHub</a></li>
-				<li><a class="transition-colors hover:text-white" href={RELEASES_PAGE} {...ext}>Releases</a></li>
-				<li>
-					<a class="transition-colors hover:text-white" href={LICENSE_URL} {...ext}>
-						License (PolyForm Noncommercial)
-					</a>
-				</li>
+				<li><a class="transition-colors hover:text-white" href="/privacy">Privacy policy</a></li>
+				<li><a class="transition-colors hover:text-white" href="/terms">Terms & license</a></li>
 			</ul>
 		</nav>
 	</div>
 
 	<div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-5 pb-10 text-sm text-white/40 sm:px-6">
-		<span>Free and source-available. Available for macOS, Windows, and Linux.</span>
+		<span>Free for personal and noncommercial use. Available for macOS, Windows, and Linux.</span>
 		<span>Made to keep your conversations yours.</span>
 	</div>
 </footer>

@@ -1,6 +1,5 @@
 ---
 import { Icon } from 'astro-icon/components';
-import { GITHUB_URL } from '$lib/config';
 import WorkspaceMock from '../product/WorkspaceMock.astro';
 import Button from '../ui/Button.astro';
 import Section from '../ui/Section.astro';
@@ -24,15 +23,9 @@ import Section from '../ui/Section.astro';
 					<span data-os-cta-label>See all downloads</span>
 					<Icon name="lucide:arrow-right" class="h-4 w-4" aria-hidden="true" />
 				</Button>
-				<Button
-					href={GITHUB_URL}
-					variant="outline"
-					size="lg"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					View on GitHub
-					<Icon name="lucide:external-link" class="h-4 w-4" aria-hidden="true" />
+				<Button href="/compare" variant="outline" size="lg">
+					Compare privacy
+					<Icon name="lucide:scale" class="h-4 w-4" aria-hidden="true" />
 				</Button>
 			</div>
 			<ul class="mt-7 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
@@ -46,7 +39,7 @@ import Section from '../ui/Section.astro';
 				</li>
 				<li class="flex items-center gap-1.5">
 					<Icon name="lucide:check" class="size-4 text-accent" aria-hidden="true" />
-					Source-available
+					On-device processing
 				</li>
 			</ul>
 		</div>

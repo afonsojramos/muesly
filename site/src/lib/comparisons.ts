@@ -140,9 +140,9 @@ export const comparisons: Comparison[] = [
 		reviewedAt: '2026-07-13',
 		name: 'Granola',
 		shortName: 'Granola',
-		title: 'muesly vs Granola: source-available and on-device',
+		title: 'muesly vs Granola: private and on-device',
 		description:
-			'Granola is a polished, bot-free cloud meeting notepad. muesly makes the same quiet capture philosophy local, offline-capable, and source-available.',
+			'Granola is a polished, bot-free cloud meeting notepad. muesly makes the same quiet capture philosophy local, offline-capable, and on-device.',
 		intro:
 			'Granola and muesly share a bot-free approach: both capture microphone and system audio directly. The architectural difference is what happens next. Granola uses cloud transcription and AI providers and stores meeting data on AWS; muesly can transcribe, summarize, and store everything on your device.',
 		verdict:
@@ -189,7 +189,7 @@ export const comparisons: Comparison[] = [
 		reviewedAt: '2026-07-13',
 		name: 'Fireflies.ai',
 		shortName: 'Fireflies',
-		title: 'muesly vs Fireflies.ai: private, no bot, source-available',
+		title: 'muesly vs Fireflies.ai: private, local, and bot-free',
 		description:
 			'Fireflies is a cloud conversation-intelligence platform with extensive team features. muesly prioritizes local processing, offline use, and user-owned data.',
 		intro:
