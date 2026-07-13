@@ -13,12 +13,16 @@
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
 	import { analyticsConsent } from '$lib/stores/analytics-consent.svelte';
 	import { toast } from '$lib/toast';
-	import { recordingService } from '$lib/services/recording';
+	import { invoke } from '@tauri-apps/api/core';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { isAudioExtension, getAudioFormatsDisplayList } from '$lib/constants/audio-formats';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
-	import { FOLDER_PIN_KEY } from '$lib/hooks/use-recording-start.svelte';
+	import {
+		FOLDER_PIN_KEY,
+		generateMeetingTitle,
+		startRecordingWithTitle,
+	} from '$lib/hooks/use-recording-start.svelte';
 	import {
 		setUpdateDialogCallback,
 		showUpdateNotification,
@@ -227,13 +231,10 @@
 							duration: 10000,
 							action: {
 								label: 'Start recording',
-								onClick: () => {
-									void recordingService.startRecording().catch((error) => {
-										toast.error('Failed to start recording', {
-											description: error instanceof Error ? error.message : 'Unknown error',
-										});
-									});
-								},
+								// Use the shared start path so auto-detect gets the same readiness
+								// check, optimistic UI, title, and notification as a manual start.
+								onClick: () =>
+									void startRecordingWithTitle(generateMeetingTitle(), 'meeting_detected'),
 							},
 						});
 					},
@@ -248,6 +249,105 @@
 		return () => {
 			cancelled = true;
 			unlisten?.();
+		};
+	});
+
+	// Surface transcription-engine failures (model init / decode errors) regardless
+	// of the current page — previously emitted with no listener, so they vanished.
+	$effect(() => {
+		let unlisten: UnlistenFn | undefined;
+		let cancelled = false;
+		(async () => {
+			try {
+				const fn = await listen<{ error?: string; userMessage?: string }>(
+					'transcription-error',
+					(event) => {
+						toast.error(event.payload?.userMessage ?? 'Transcription error', {
+							description: event.payload?.error,
+						});
+					},
+				);
+				if (cancelled) fn();
+				else unlisten = fn;
+			} catch (error) {
+				console.error('[Layout] Failed to set up transcription-error listener:', error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
+	});
+
+	// Surface push-to-talk dictation injection failures (e.g. missing Accessibility
+	// permission), which otherwise only reached a backend log line.
+	$effect(() => {
+		let unlisten: UnlistenFn | undefined;
+		let cancelled = false;
+		(async () => {
+			try {
+				const fn = await listen<{ text?: string; injected?: boolean; error?: string | null }>(
+					'dictation-text',
+					(event) => {
+						const p = event.payload;
+						if (p?.injected === false) {
+							const needsAx = !!p.error && p.error.toLowerCase().includes('accessibility');
+							toast.error("Couldn't insert dictated text", {
+								description: needsAx
+									? 'Grant Accessibility permission to insert text, or paste it manually.'
+									: (p.text ?? undefined),
+							});
+						}
+					},
+				);
+				if (cancelled) fn();
+				else unlisten = fn;
+			} catch (error) {
+				console.error('[Layout] Failed to set up dictation listener:', error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+			unlisten?.();
+		};
+	});
+
+	// While recording, poll for audio device disconnect/reconnect events and surface
+	// them (auto-attempting a reconnect). Without this a recording silently
+	// continued on a dead device — the poll/reconnect commands existed but nothing
+	// on the frontend ever called them.
+	$effect(() => {
+		if (!recordingState.isRecording) return;
+		let stopped = false;
+		const interval = setInterval(() => {
+			void (async () => {
+				try {
+					const evt = await invoke<
+						| { type: 'DeviceDisconnected'; device_name: string; device_type: string }
+						| { type: 'DeviceReconnected'; device_name: string; device_type: string }
+						| { type: 'DeviceListChanged' }
+						| null
+					>('poll_audio_device_events');
+					if (stopped || !evt) return;
+					if (evt.type === 'DeviceDisconnected') {
+						toast.error(`${evt.device_name} disconnected`, {
+							description: 'Attempting to reconnect…',
+						});
+						void invoke('attempt_device_reconnect', {
+							deviceName: evt.device_name,
+							deviceType: evt.device_type,
+						}).catch(() => {});
+					} else if (evt.type === 'DeviceReconnected') {
+						toast.success(`${evt.device_name} reconnected`);
+					}
+				} catch (error) {
+					console.error('[Layout] audio device poll failed:', error);
+				}
+			})();
+		}, 2000);
+		return () => {
+			stopped = true;
+			clearInterval(interval);
 		};
 	});
 
