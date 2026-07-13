@@ -28,7 +28,7 @@ This repo augments Node with **nub** — one Rust CLI that runs TS/JS directly, 
 
 `pnpm tauri:dev` / `tauri:build` run their TypeScript through nub (`brew install nubjs/tap/nub`); the explicit `:cpu`/`:metal`/… variants don't need it. Use `nub --node <file>` for strict, unaugmented Node. Full reference: the `nub` skill or `nub agent docs`.
 
-**Exception — installs in `site/`:** use `pnpm install` / `pnpm add` there, not `nub install`. nub's dependency resolution breaks Astro's type tree (astro-icon's `<Icon>` types fail `astro check`); pnpm resolves it cleanly. Running files/scripts with nub, and `nub install` in `app/*` and `api/`, are all fine.
+**Use nub to run code, but `pnpm` to install.** `nub`/`nubx`/`nub run` for executing files, scripts, and CLIs are great. But `nub install` / `nub add` currently produce a node_modules layout this repo's deps don't like — it broke Astro's type tree in `site/` (astro-icon `<Icon>` types fail `astro check`) and left `api/`'s deps in a "missing" state. `pnpm install` / `pnpm add` resolve both cleanly. So: **installs and dependency changes go through `pnpm`.**
 
 ## Commands
 
