@@ -53,6 +53,22 @@ async function checkParakeetReady(): Promise<boolean> {
 	}
 }
 
+// Pre-flight readiness gate. Only Parakeet has a cheap FE availability check;
+// for any other configured provider (e.g. Whisper) the backend validates
+// readiness by provider at start, so don't apply the Parakeet gate and wrongly
+// block those users.
+async function checkTranscriptionReady(): Promise<boolean> {
+	try {
+		const cfg = await invoke<{ provider?: string } | null>('api_get_transcript_config', {
+			authToken: null,
+		});
+		if (cfg?.provider && cfg.provider !== 'parakeet') return true;
+	} catch (error) {
+		console.error('Failed to read transcription config:', error);
+	}
+	return await checkParakeetReady();
+}
+
 async function checkIfModelDownloading(): Promise<boolean> {
 	try {
 		const models = await invoke<ModelStatus[]>('parakeet_get_available_models');
@@ -90,7 +106,7 @@ export async function startRecordingWithTitle(
 	pin?: FolderPin,
 ): Promise<void> {
 	if (recordingState.isRecording) return;
-	const parakeetReady = await checkParakeetReady();
+	const parakeetReady = await checkTranscriptionReady();
 	if (!parakeetReady) {
 		toast.error('Transcription model not ready', {
 			description: 'Please download a transcription model before recording.',
@@ -171,7 +187,7 @@ export function useRecordingStart(
 
 	const handleRecordingStart = async (): Promise<void> => {
 		try {
-			const parakeetReady = await checkParakeetReady();
+			const parakeetReady = await checkTranscriptionReady();
 			if (!parakeetReady) {
 				await notifyModelNotReady('home_page');
 				return;
@@ -198,7 +214,7 @@ export function useRecordingStart(
 		isAutoStarting = true;
 
 		try {
-			const parakeetReady = await checkParakeetReady();
+			const parakeetReady = await checkTranscriptionReady();
 			if (!parakeetReady) {
 				await notifyModelNotReady(location);
 				return;
