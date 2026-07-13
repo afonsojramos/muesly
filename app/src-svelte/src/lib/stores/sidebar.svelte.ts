@@ -260,7 +260,8 @@ class SidebarStore {
 		let pollCount = 0;
 		backgroundTasks.begin('summary', meetingId, 'Generating summary');
 
-		const interval = setInterval(async () => {
+		let interval: ReturnType<typeof setInterval>;
+		const poll = async (): Promise<void> => {
 			pollCount++;
 
 			if (pollCount >= MAX_POLLS) {
@@ -311,9 +312,13 @@ class SidebarStore {
 					error instanceof Error ? error.message : 'Unknown error',
 				);
 			}
-		}, POLL_INTERVAL_MS);
+		};
+		interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
 
 		this.activeSummaryPolls.set(meetingId, interval);
+		// Check once right away so a summary that's already done shows immediately
+		// instead of after a full poll interval.
+		void poll();
 		console.log(`[SidebarStore] Started polling for ${meetingId}, process ${processId}`);
 	};
 
