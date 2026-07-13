@@ -285,6 +285,16 @@
 		// Granola-style shortcuts: ⌘S toggles the sidebar, ⌘K opens search.
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+			// Don't hijack ⌘S/⌘K while the user is typing (inputs, textareas, the note
+			// editor) — the editor uses ⌘K for links and ⌘S conceptually for save.
+			const target = e.target as HTMLElement | null;
+			if (
+				target &&
+				(target.isContentEditable ||
+					target.tagName === 'INPUT' ||
+					target.tagName === 'TEXTAREA')
+			)
+				return;
 			const key = e.key.toLowerCase();
 			if (key === 's') {
 				e.preventDefault();
