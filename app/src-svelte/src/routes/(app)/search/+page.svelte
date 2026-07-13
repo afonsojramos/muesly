@@ -78,6 +78,16 @@
 			.sort((a, b) => compareByDateDesc(a.createdAt, b.createdAt));
 	});
 
+	// NL hits, filtered to the active folder scope like the transcript results —
+	// otherwise an in-folder search still surfaced matches from other folders.
+	const scopedNlHits = $derived.by(() => {
+		if (!effectiveScopeId) return nlHits;
+		const inScope = new Set(
+			sidebar.meetings.filter((m) => m.folderId === effectiveScopeId).map((m) => m.id),
+		);
+		return nlHits.filter((h) => inScope.has(h.meeting_id));
+	});
+
 	function snippet(id: string): string | null {
 		return sidebar.searchResults.find((r) => r.id === id)?.matchContext ?? null;
 	}
@@ -203,13 +213,13 @@
 				</div>
 			{/if}
 
-			{#if nlHits.length > 0}
+			{#if scopedNlHits.length > 0}
 				<div class="mt-5 rounded-xl border border-border bg-card p-4">
 					<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 						Natural-language matches
 					</p>
 					<ul class="mt-2 flex flex-col gap-2">
-						{#each nlHits as hit (hit.meeting_id + hit.match_context)}
+						{#each scopedNlHits as hit (hit.meeting_id + hit.match_context)}
 							<li>
 								<button
 									type="button"
@@ -236,6 +246,10 @@
 				{#if !query.trim()}
 					<div class="py-20 text-center text-sm text-muted-foreground">
 						Type to search across your notes and transcripts.
+					</div>
+				{:else if sidebar.searchFailed && scopedNlHits.length === 0}
+					<div class="py-16 text-center text-sm text-destructive">
+						Search failed. Please try again.
 					</div>
 				{:else if results.length === 0}
 					<div class="py-16 text-center text-sm text-muted-foreground">

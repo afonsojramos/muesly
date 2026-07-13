@@ -225,11 +225,15 @@ class SidebarStore {
 
 	// Monotonic token so a slow earlier query can't overwrite a newer one's results.
 	#searchGeneration = 0;
+	/** True when the last transcript search failed, so the UI can distinguish an
+	 *  error from a genuine zero-match result. */
+	searchFailed = $state(false);
 
 	searchTranscripts = async (query: string): Promise<void> => {
 		const generation = ++this.#searchGeneration;
 		if (!query.trim()) {
 			this.searchResults = [];
+			this.searchFailed = false;
 			return;
 		}
 
@@ -240,9 +244,13 @@ class SidebarStore {
 			})) as TranscriptSearchResult[];
 			if (generation !== this.#searchGeneration) return; // superseded by a newer query
 			this.searchResults = results;
+			this.searchFailed = false;
 		} catch (error) {
 			console.error('[SidebarStore] Search failed:', error);
-			if (generation === this.#searchGeneration) this.searchResults = [];
+			if (generation === this.#searchGeneration) {
+				this.searchResults = [];
+				this.searchFailed = true;
+			}
 		} finally {
 			if (generation === this.#searchGeneration) this.isSearching = false;
 		}
