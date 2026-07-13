@@ -21,12 +21,68 @@ pub async fn api_restore_latest_transcript_revision(
     state: tauri::State<'_, AppState>,
     meeting_id: String,
 ) -> Result<bool, String> {
-    crate::database::repositories::transcript_revision::TranscriptRevisionRepository::restore_latest(
-        state.db_manager.pool(),
+    let pool = state.db_manager.pool();
+    let restored = crate::database::repositories::transcript_revision::TranscriptRevisionRepository::restore_latest(
+        pool,
         &meeting_id,
     )
     .await
-    .map_err(|error| format!("restore transcript revision: {error}"))
+    .map_err(|error| format!("restore transcript revision: {error}"))?;
+
+    if restored {
+        let folder_path: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT folder_path FROM meetings WHERE id = ?",
+        )
+        .bind(&meeting_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|error| format!("load restored meeting folder: {error}"))?
+        .flatten();
+
+        if let Some(folder_path) = folder_path.filter(|path| !path.trim().is_empty()) {
+            let rows: Vec<(
+                String,
+                String,
+                String,
+                Option<f64>,
+                Option<f64>,
+                Option<f64>,
+                Option<String>,
+            )> = sqlx::query_as(
+                "SELECT id, transcript, timestamp, audio_start_time, audio_end_time, duration, speaker \
+                 FROM transcripts WHERE meeting_id = ? \
+                 ORDER BY COALESCE(audio_start_time, 1e30), timestamp, id",
+            )
+            .bind(&meeting_id)
+            .fetch_all(pool)
+            .await
+            .map_err(|error| format!("load restored transcript: {error}"))?;
+            let segments = rows
+                .into_iter()
+                .map(
+                    |(id, text, timestamp, audio_start_time, audio_end_time, duration, speaker)| {
+                        TranscriptSegment {
+                            id,
+                            text,
+                            timestamp,
+                            audio_start_time,
+                            audio_end_time,
+                            duration,
+                            speaker,
+                        }
+                    },
+                )
+                .collect::<Vec<_>>();
+            if let Err(error) = crate::audio::common::write_transcripts_json(
+                std::path::Path::new(&folder_path),
+                &segments,
+            ) {
+                log_warn!("Restored transcript in SQLite but could not update transcripts.json: {}", error);
+            }
+        }
+    }
+
+    Ok(restored)
 }
 
 #[tauri::command]
