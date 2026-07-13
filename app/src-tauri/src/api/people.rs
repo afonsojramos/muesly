@@ -123,11 +123,20 @@ pub fn aggregate_people(
     let mut map: BTreeMap<String, PersonGroup> = BTreeMap::new();
     for (meeting_id, title, created_at, attendees) in rows {
         let Some(json) = attendees else { continue };
+        // Collapse case-variants of the same attendee within a single meeting so
+        // speech time and the meeting ref aren't double-counted for one person.
+        let mut seen_in_meeting = std::collections::HashSet::new();
         for att in attendees_from_json(&json) {
+            if !seen_in_meeting.insert(norm_name(&att.name)) {
+                continue;
+            }
             let seconds = speech
                 .get(&(meeting_id.clone(), norm_name(&att.name)))
                 .copied();
-            let entry = map.entry(att.name.clone()).or_insert_with(|| PersonGroup {
+            // Key by normalized name so case-variants of the same attendee
+            // ("Bob" / "bob") collapse into one person; the first-seen spelling is
+            // kept for display.
+            let entry = map.entry(norm_name(&att.name)).or_insert_with(|| PersonGroup {
                 name: att.name.clone(),
                 company: att.company.clone(),
                 meeting_count: 0,
@@ -300,9 +309,9 @@ mod tests {
     }
 
     #[test]
-    fn case_variant_duplicate_attendees_each_show_the_same_speech() {
-        // Accepted quirk: exact-name dedupe upstream means "Ana" and "ana" in one
-        // meeting form two groups, both matching the same normalized speech entry.
+    fn case_variant_attendees_merge_into_one_person() {
+        // "Ana" and "ana" are the same person: they collapse into a single group,
+        // and their speech time is counted once (not doubled) within the meeting.
         let rows = vec![(
             "m1".into(),
             "Sync".into(),
@@ -313,8 +322,32 @@ mod tests {
         speech.insert(("m1".into(), "ana".into()), 60.0);
 
         let g = aggregate_people(rows, &speech);
-        assert_eq!(g.len(), 2);
-        assert!(g.iter().all(|p| p.speech_seconds == Some(60.0)));
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].meeting_count, 1);
+        assert_eq!(g[0].speech_seconds, Some(60.0));
+    }
+
+    #[test]
+    fn case_variant_attendees_merge_across_meetings() {
+        // The same person spelled differently across meetings forms one group with
+        // both meetings attributed to them.
+        let rows = vec![
+            (
+                "m1".into(),
+                "Sync".into(),
+                "2026-01-01".into(),
+                Some(r#"[{"name":"Bob","is_self":false}]"#.into()),
+            ),
+            (
+                "m2".into(),
+                "Review".into(),
+                "2026-01-02".into(),
+                Some(r#"[{"name":"bob","is_self":false}]"#.into()),
+            ),
+        ];
+        let g = aggregate_people(rows, &SpeechMap::new());
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].meeting_count, 2);
     }
 }
 
