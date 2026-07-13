@@ -111,6 +111,23 @@ jobs:
           workspaces: ". -> target"
           key: ${{ inputs.platform }}-${{ inputs.target }}-vulkan-v2
 
+      - name: Install native dependencies (macOS)
+        if: contains(inputs.platform, 'macos')
+        shell: bash
+        run: |
+          brew install openssl@3 pkg-config
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          if [ ! -f "$OPENSSL_PREFIX/include/openssl/err.h" ]; then
+            echo "::error::OpenSSL headers were not installed correctly"
+            exit 1
+          fi
+          {
+            echo "OPENSSL_DIR=$OPENSSL_PREFIX"
+            echo "OPENSSL_ROOT_DIR=$OPENSSL_PREFIX"
+            echo "CMAKE_PREFIX_PATH=$OPENSSL_PREFIX"
+            echo "PKG_CONFIG_PATH=$OPENSSL_PREFIX/lib/pkgconfig"
+          } >> "$GITHUB_ENV"
+
       - name: install dependencies (ubuntu 24.04)
         if: contains(inputs.platform, 'ubuntu-24.04')
         run: |
