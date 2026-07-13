@@ -21,7 +21,12 @@
 </script>
 
 {#each overlays as overlay (overlay.message)}
-	<div class="fixed bottom-4 left-0 right-0 z-10" transition:fade={{ duration: 150 }}>
+	<div
+		class="fixed bottom-4 left-0 right-0 z-10"
+		role="status"
+		aria-live="polite"
+		transition:fade={{ duration: 150 }}
+	>
 		<div
 			class="flex justify-center transition-[margin] duration-300"
 			style={`margin-left: ${sidebar.effectiveWidth}px`}
