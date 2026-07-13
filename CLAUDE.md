@@ -1,6 +1,6 @@
 ## Project Overview
 
-**muesly** is private speech-to-text for everything you say, capturing, transcribing, and summarizing entirely on local infrastructure. It is a single-process Tauri 2 desktop app with no separate backend service.
+**muesly** is private speech-to-text for everything you say, capturing, transcribing, and summarizing entirely on local infrastructure. It is a single-process Tauri 2 desktop app; recording, transcription, and summarization all run locally with no backend in the data path.
 
 - **Frontend**: SvelteKit 2 + Svelte 5 (runes) + Tailwind 4, in `app/src-svelte/`
 - **Core**: Rust (Tauri), in `app/src-tauri/`
@@ -11,6 +11,8 @@
 Detailed docs: [docs/architecture.md](docs/architecture.md), [docs/building.md](docs/building.md), [docs/gpu-acceleration.md](docs/gpu-acceleration.md).
 
 The marketing website (muesly.ai) is a separate static Astro project in `site/`, with its own lockfile and deploy. See [site/README.md](site/README.md). Run it with `pnpm -C site install && pnpm -C site dev`; build/check/test with `pnpm -C site build` / `check` / `test`.
+
+The `api/` directory is a small Cloudflare Worker + D1 (schema managed with Drizzle) at `api.muesly.ai`. It stores only anonymous, aggregate "muesly bar" popularity counts (public `builtin:`/`imported:` catalog ids, never user data). See [api/README.md](api/README.md); it deploys via GitHub Actions on push to `main`, or `nub run release` from `api/`.
 
 ## Commands
 
@@ -32,6 +34,8 @@ pnpm -C src-svelte format # Oxfmt (via Vite+ `vp`); `format:check` verifies with
 
 The root `package.json` is script-delegation only (no workspace — lockfiles stay separate): `pnpm dev` / `build` / `check` / `lint` / `format` / `test` from the repo root forward to the commands above.
 
+`pnpm tauri:dev` / `tauri:build` run their TypeScript through **nub** (`brew install nubjs/tap/nub`); the explicit `:cpu`/`:metal`/… variants don't need it. This repo prefers `nub` / `nubx` / `nub install` over `node` / `npx` / `pnpm` (it reads/writes the same pnpm lockfiles) — see [AGENTS.md](AGENTS.md) and the `nub` skill.
+
 Override GPU auto-detection with the `TAURI_GPU_FEATURE` env var. Rust checks run from the repo root (Cargo workspace: `app/src-tauri` + `llama-helper`): `cargo check`, `cargo test`.
 
 Seed fake data into the app's dev database for UI testing (folders, favorites, subfolders, meetings, transcripts, summaries, attendees, notes): `pnpm seed` (re-runnable/idempotent, all rows `seed-` prefixed), `pnpm seed:clear` to remove it. Source: `app/src-tauri/examples/seed-dev-data.rs`. Navigate away and back in the app to pick up changes.
@@ -42,7 +46,7 @@ Lint/format are driven by [Vite+](https://viteplus.dev) (`vp`) and configured in
 
 - **IPC**: Frontend calls Rust via `invoke('command_name', args)`. Commands are registered in `app/src-tauri/src/lib.rs`. Rust pushes updates to the frontend via `app.emit(...)` events (e.g. `transcript-update`).
 - **Dual-path audio pipeline** (`app/src-tauri/src/audio/pipeline.rs`): raw mic + system audio are split into a recording path (RMS-based ducking, professional mixing, clipping prevention) and a transcription path (VAD-filtered, only speech segments reach the transcription engine).
-- **Module map**: `audio/` (capture, devices, mixing, VAD, recording), `whisper_engine/` and `parakeet_engine/` (transcription), `summary/` (LLM providers + templates), `database/` (sqlx repositories, migrations in `database/setup.rs`). Frontend state lives in Svelte stores under `app/src-svelte/src/lib/stores/`.
+- **Module map**: `audio/` (capture, devices, mixing, VAD, recording), `whisper_engine/` and `parakeet_engine/` (transcription), `summary/` (LLM providers + templates), `database/` (sqlx repositories; migrations are `.sql` files in `app/src-tauri/migrations/`, applied at startup via `sqlx::migrate!` in `database/manager.rs`). Frontend state lives in Svelte stores under `app/src-svelte/src/lib/stores/`.
 
 ## Conventions
 
