@@ -83,6 +83,7 @@ pub fn inject_text<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<()> {
     }
 
     let text = text.to_string();
+    let injected_text = text.clone();
     let app_for_restore = app.clone();
     let (tx, rx) = std::sync::mpsc::channel::<std::result::Result<Option<String>, String>>();
 
@@ -104,7 +105,18 @@ pub fn inject_text<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<()> {
         .map_err(|e| anyhow!("{e}"))?;
 
     // Let the target app read the clipboard before restoring the prior contents.
-    std::thread::sleep(std::time::Duration::from_millis(150));
-    let _ = app_for_restore.run_on_main_thread(move || restore_clipboard(previous));
+    // A fixed delay can't guarantee the paste has been consumed, so use a slightly
+    // more forgiving window; the guard below prevents the worst outcome of racing.
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let _ = app_for_restore.run_on_main_thread(move || {
+        // Only restore if our dictated text is still on the clipboard. If the user
+        // (or another app) copied something new during the paste window, keep their
+        // content rather than clobbering it with the stale `previous`.
+        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+            if clipboard.get_text().ok().as_deref() == Some(injected_text.as_str()) {
+                restore_clipboard(previous);
+            }
+        }
+    });
     Ok(())
 }
