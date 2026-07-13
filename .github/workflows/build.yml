@@ -418,7 +418,7 @@ jobs:
           # so it must be installed too or `vite` is missing when tauri-action
           # runs beforeBuildCommand (`nub --cwd src-svelte run build:tauri`).
           nub install
-          nub install --cwd src-svelte
+          nub --cwd src-svelte install
 
       - name: rustup install target
         if: ${{ inputs.target != '' && !contains(inputs.target, 'unknown-linux-gnu') && !contains(inputs.target, 'pc-windows-msvc') }}

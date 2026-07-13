@@ -3,20 +3,20 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"setup": "pnpm install && pnpm -C app/src-svelte install && pnpm -C site install && pnpm -C api install",
-		"dev": "pnpm -C app tauri:dev",
-		"build": "pnpm -C app tauri:build",
-		"check": "pnpm -C app/src-svelte check && pnpm -C site check && pnpm -C api typecheck",
-		"lint": "pnpm -C app/src-svelte lint && pnpm -C site lint && pnpm -C api lint",
-		"lint:fix": "pnpm -C app/src-svelte lint:fix",
-		"format": "pnpm -C app/src-svelte format && pnpm -C site format && pnpm -C api format",
-		"format:check": "pnpm -C app/src-svelte format:check && pnpm -C site format:check && pnpm -C api format:check",
-		"test": "pnpm -C app/src-svelte test && pnpm -C site test",
+		"setup": "nub install && nub --cwd app/src-svelte install && nub --cwd site install && nub --cwd api install",
+		"dev": "nub --cwd app run tauri:dev",
+		"build": "nub --cwd app run tauri:build",
+		"check": "nub --cwd app/src-svelte run check && nub --cwd site run check && nub --cwd api run typecheck",
+		"lint": "nub --cwd app/src-svelte run lint && nub --cwd site run lint && nub --cwd api run lint",
+		"lint:fix": "nub --cwd app/src-svelte run lint:fix",
+		"format": "nub --cwd app/src-svelte run format && nub --cwd site run format && nub --cwd api run format",
+		"format:check": "nub --cwd app/src-svelte run format:check && nub --cwd site run format:check && nub --cwd api run format:check",
+		"test": "nub --cwd app/src-svelte run test && nub --cwd site run test",
 		"seed": "cargo run -q -p muesly --example seed-dev-data",
 		"seed:clear": "cargo run -q -p muesly --example seed-dev-data -- --clear",
-		"eval:wer": "node app/scripts/eval/wer.mjs",
-		"eval:rubric": "node app/scripts/eval/summary-rubric.mjs",
-		"eval:real": "node app/scripts/eval/real-run.mjs",
-		"eval": "node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp.txt --max-wer 0 && node app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt --max-wer 10"
+		"eval:wer": "nub app/scripts/eval/wer.mjs",
+		"eval:rubric": "nub app/scripts/eval/summary-rubric.mjs",
+		"eval:real": "nub app/scripts/eval/real-run.mjs",
+		"eval": "nub app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp.txt --max-wer 0 && nub app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt --max-wer 10"
 	}
 }

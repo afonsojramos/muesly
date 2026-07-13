@@ -6,7 +6,7 @@
     "build": {
         "frontendDist": "../src-svelte/build",
         "devUrl": "http://localhost:1420",
-        "beforeDevCommand": "pnpm -C src-svelte dev",
+        "beforeDevCommand": "nub --cwd src-svelte run dev",
         "beforeBuildCommand": "nub --cwd src-svelte run build:tauri"
     },
     "app": {

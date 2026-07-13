@@ -182,7 +182,7 @@ jobs:
           # src-svelte is a separate project; install it too or `vite` is
           # missing when tauri-action runs the frontend build.
           nub install
-          nub install --cwd src-svelte
+          nub --cwd src-svelte install
 
       - name: Build llama-helper sidecar
         run: |
@@ -247,7 +247,7 @@ jobs:
         run: |
           APPIMAGE=$(readlink -f "$(find target/x86_64-unknown-linux-gnu/release/bundle/appimage -name '*.AppImage' | head -1)")
           echo "Re-signing $APPIMAGE"
-          pnpm -C app exec tauri signer sign "$APPIMAGE"
+          nub --cwd app exec tauri signer sign "$APPIMAGE"
           test -f "${APPIMAGE}.sig" || { echo "::error::AppImage .sig was not generated"; exit 1; }
 
       - name: Upload Linux artifacts and add updater entry
