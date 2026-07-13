@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 import type { OnboardingPermissions, PermissionStatus } from '$lib/types/onboarding';
+import { toast } from '$lib/toast';
 
 const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
 const SAVE_DEBOUNCE_MS = 1000;
@@ -355,6 +356,9 @@ class OnboardingStore {
 				if (check?.exists) {
 					await invoke('import_and_initialize_database', { legacyDbPath: homebrewDbPath });
 					this.databaseExists = true;
+					toast.info('Imported your existing muesly database', {
+						description: 'Meetings from your previous install are now available.',
+					});
 					return;
 				}
 			} catch (e) {
@@ -367,6 +371,9 @@ class OnboardingStore {
 			if (legacyPath) {
 				await invoke('import_and_initialize_database', { legacyDbPath: legacyPath });
 				this.databaseExists = true;
+				toast.info('Imported your existing muesly database', {
+					description: 'Meetings from your previous install are now available.',
+				});
 				return;
 			}
 		} catch (e) {
