@@ -67,6 +67,8 @@ class SidebarStore {
 	currentMeeting = $state<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
 	isCollapsed = $state<boolean>(false);
 	meetings = $state<CurrentMeeting[]>([]);
+	/** False until the first meetings fetch settles, so the UI can tell "loading" from "empty". */
+	meetingsLoaded = $state(false);
 	folders = $state<Folder[]>([]);
 	isMeetingActive = $state<boolean>(false);
 	searchResults = $state<TranscriptSearchResult[]>([]);
@@ -148,6 +150,10 @@ class SidebarStore {
 			}
 			console.error('[SidebarStore] Failed to fetch meetings:', error);
 			this.meetings = [];
+		} finally {
+			// Set after the first fetch attempt so the UI can distinguish "still
+			// loading" from "genuinely empty" and not flash the empty state on boot.
+			this.meetingsLoaded = true;
 		}
 	};
 

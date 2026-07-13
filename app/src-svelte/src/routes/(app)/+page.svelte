@@ -188,7 +188,7 @@
 				</section>
 			{/each}
 
-			{#if noteGroups.length === 0}
+			{#if noteGroups.length === 0 && sidebar.meetingsLoaded}
 				<div class="py-20 text-center text-sm text-muted-foreground">
 					No notes yet. Start a recording to create one.
 				</div>
