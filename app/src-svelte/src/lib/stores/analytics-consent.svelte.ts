@@ -100,12 +100,15 @@ class AnalyticsConsentStore {
 
 		// Identify user with enhanced properties immediately after init.
 		const appVersion = await getVersion();
+		// Persisted once, not rewritten each launch — otherwise "first seen" tracked
+		// the latest boot rather than the actual first launch.
+		const firstSeen = (await store.get<string>('first_launch_date')) ?? new Date().toISOString();
 		await Analytics.identify(userId, {
 			app_version: appVersion,
 			platform: deviceInfo.platform,
 			os_version: deviceInfo.os_version,
 			architecture: deviceInfo.architecture,
-			first_seen: new Date().toISOString(),
+			first_seen: firstSeen,
 		});
 
 		// Start analytics session with platform info.
