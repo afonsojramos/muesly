@@ -30,7 +30,11 @@
 		groups = [];
 		if (!id) return;
 		void commands.getTalkTime(id).then((res) => {
-			if (gen !== genId || res.status !== 'ok') return;
+			if (gen !== genId) return;
+			if (res.status !== 'ok') {
+				console.error('Failed to load talk time:', res.error);
+				return;
+			}
 			groups = res.data;
 		});
 	});
