@@ -2,12 +2,8 @@
 # `mise install` provisions these; run `mise use node@<v>` etc. to change one.
 [tools]
 node = "24"
-# pnpm is a local fallback (nub is the installer everywhere, CI included via
-# jdx/mise-action), pinned to 11 through the npm backend since aqua can't fetch its
-# renamed macOS assets. pnpm 11's default minimumReleaseAge (~1 day) is a
-# supply-chain cooldown matching the ncu cooldown, so a local `pnpm install` rejects
-# deps published within the last day; nub (the primary path) doesn't enforce it.
-"npm:pnpm" = "11.12.0"
-# nub (the Node toolkit — see AGENTS.md) via its npm distribution, so it's
-# pinned with the repo instead of a separate brew/curl install.
+# nub (the Node toolkit, see AGENTS.md) is the installer and script runner across
+# every project, CI included (via jdx/mise-action). It reads and writes the
+# pnpm-lock.yaml files directly, so pnpm itself is no longer provisioned. Pinned via
+# its npm distribution so it travels with the repo, no separate brew/curl install.
 "npm:@nubjs/nub" = "0.4.11"
