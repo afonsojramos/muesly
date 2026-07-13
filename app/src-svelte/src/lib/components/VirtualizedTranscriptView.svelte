@@ -182,7 +182,7 @@
 					onLoadMore();
 				}
 			},
-			{ root: null, rootMargin: '100px', threshold: 0 },
+			{ root: scrollEl ?? null, rootMargin: '100px', threshold: 0 },
 		);
 		observer.observe(trigger);
 		return () => observer.disconnect();
