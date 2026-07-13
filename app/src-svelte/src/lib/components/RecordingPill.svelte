@@ -156,8 +156,7 @@
 			     interactive children below sit on top so their clicks win. -->
 			<div
 				data-tauri-drag-region
-				class="absolute inset-0 rounded-3xl"
-				style="-webkit-user-select:none"
+				class="absolute inset-0 cursor-grab touch-none rounded-3xl select-none active:cursor-grabbing"
 			></div>
 
 			<span
@@ -202,7 +201,7 @@
 				{#each barHeights as height, index (index)}
 					<div
 						class={cn(
-							'w-1 rounded-full transition-all duration-200',
+							'w-1 rounded-full transition-[height,opacity,background-color] duration-200',
 							isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
 						)}
 						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}

@@ -35,6 +35,7 @@
                 "skipTaskbar": true,
                 "shadow": false,
                 "focus": false,
+                "acceptFirstMouse": true,
                 "visible": false,
                 "backgroundThrottling": "disabled",
                 "title": "muesly recording"
