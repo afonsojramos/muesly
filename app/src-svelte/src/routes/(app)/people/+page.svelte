@@ -5,6 +5,7 @@
 
 	import { commands, type PersonGroup } from '$lib/bindings';
 	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import { formatSeconds } from '$lib/talk-time';
 	import { toast } from '$lib/toast';
@@ -14,15 +15,24 @@
 	let expanded = $state<string | null>(null);
 	/** When true, group people under company headings when company is known. */
 	let groupByCompany = $state(true);
+	let filterQuery = $state('');
+
+	const filteredPeople = $derived.by(() => {
+		const q = filterQuery.trim().toLowerCase();
+		if (!q) return people;
+		return people.filter(
+			(p) => p.name.toLowerCase().includes(q) || (p.company?.toLowerCase().includes(q) ?? false),
+		);
+	});
 
 	type CompanyBucket = { key: string; label: string; people: PersonGroup[] };
 
 	const buckets = $derived.by((): CompanyBucket[] => {
 		if (!groupByCompany) {
-			return [{ key: 'all', label: 'People', people }];
+			return [{ key: 'all', label: 'People', people: filteredPeople }];
 		}
 		const map = new Map<string, PersonGroup[]>();
-		for (const p of people) {
+		for (const p of filteredPeople) {
 			const key = p.company?.trim() || '';
 			const list = map.get(key) ?? [];
 			list.push(p);
@@ -36,7 +46,7 @@
 		if (unorg.length > 0) {
 			named.push({ key: '_none', label: 'No company', people: unorg });
 		}
-		return named.length > 0 ? named : [{ key: 'all', label: 'People', people }];
+		return named.length > 0 ? named : [{ key: 'all', label: 'People', people: filteredPeople }];
 	});
 
 	onMount(() => {
@@ -76,6 +86,10 @@
 			</Button>
 		{/if}
 	</div>
+
+	{#if people.length > 0}
+		<Input placeholder="Filter by name or company…" bind:value={filterQuery} class="max-w-xs" />
+	{/if}
 
 	{#if loading}
 		<p class="text-sm text-muted-foreground">Loading…</p>
