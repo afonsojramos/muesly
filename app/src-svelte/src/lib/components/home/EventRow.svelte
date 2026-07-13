@@ -132,8 +132,11 @@
 		const pin = ev.ical_uid
 			? { icalUid: ev.ical_uid, occurrenceMinute: ev.occurrence_minute }
 			: undefined;
-		await startRecordingWithTitle(ev.title, 'coming_up', pin);
-		void goto('/note');
+		// Only navigate to the note view if the recording actually started; otherwise
+		// we'd land on an empty note for a recording that failed to begin.
+		if (await startRecordingWithTitle(ev.title, 'coming_up', pin)) {
+			void goto('/note');
+		}
 	}
 
 	async function onJoin(): Promise<void> {

@@ -18,6 +18,7 @@ import { showRecordingNotification } from '$lib/recording-notification';
 import { toast } from '$lib/toast';
 import { config } from '$lib/stores/config.svelte';
 import { recordingState, RecordingStatus } from '$lib/stores/recording-state.svelte';
+import { notes } from '$lib/stores/notes.svelte';
 import { sidebar } from '$lib/stores/sidebar.svelte';
 import { transcripts } from '$lib/stores/transcript.svelte';
 
@@ -104,15 +105,15 @@ export async function startRecordingWithTitle(
 	title: string,
 	location = 'coming_up',
 	pin?: FolderPin,
-): Promise<void> {
-	if (recordingState.isRecording) return;
+): Promise<boolean> {
+	if (recordingState.isRecording) return false;
 	const parakeetReady = await checkTranscriptionReady();
 	if (!parakeetReady) {
 		toast.error('Transcription model not ready', {
 			description: 'Please download a transcription model before recording.',
 		});
 		recordingState.setStatus(RecordingStatus.IDLE);
-		return;
+		return false;
 	}
 	try {
 		recordingState.setStatus(RecordingStatus.STARTING, 'Initializing recording...');
@@ -124,12 +125,15 @@ export async function startRecordingWithTitle(
 		transcripts.setMeetingTitle(title);
 		recordingState.markStarted();
 		transcripts.clearTranscripts();
+		// Drop any unsaved notes from a prior meeting so they don't bleed into this one.
+		notes.clear();
 		sidebar.setIsMeetingActive(true);
 		if (pin && typeof sessionStorage !== 'undefined') {
 			sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(pin));
 		}
 		await showRecordingNotification();
 		void Analytics.trackButtonClick('start_recording', location);
+		return true;
 	} catch (error) {
 		console.error('Failed to start recording:', error);
 		recordingState.setStatus(
@@ -139,6 +143,7 @@ export async function startRecordingWithTitle(
 		toast.error('Failed to start recording', {
 			description: error instanceof Error ? error.message : String(error),
 		});
+		return false;
 	}
 }
 
@@ -181,6 +186,8 @@ export function useRecordingStart(
 		recordingState.markStarted();
 		setIsRecording(true);
 		transcripts.clearTranscripts();
+		// Clear unsaved notes from a prior meeting so they don't carry over.
+		notes.clear();
 		sidebar.setIsMeetingActive(true);
 		await showRecordingNotification();
 	};
