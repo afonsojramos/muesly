@@ -37,6 +37,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import BackgroundTasksButton from './BackgroundTasksButton.svelte';
+	import GlobalSearchCommand from './GlobalSearchCommand.svelte';
 	import EmojiPicker from '$lib/components/EmojiPicker.svelte';
 	import { SETTINGS_TABS, SETTINGS_TRASH, resolveSettingsTab } from '$lib/settings-tabs';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
@@ -53,6 +54,7 @@
 		meetingId: null,
 	});
 	let editingTitle = $state('');
+	let searchOpen = $state(false);
 
 	const pathname = $derived(page.url.pathname);
 
@@ -149,11 +151,8 @@
 		}
 	}
 
-	// Search lives in the main-area /search view; this just opens it, pre-scoped to
-	// the current folder when one is being viewed.
 	function openSearch(): void {
-		const folderId = page.url.pathname === '/folder' ? page.url.searchParams.get('id') : null;
-		void navigate(folderId ? `/search?folder=${folderId}` : '/search');
+		searchOpen = true;
 	}
 
 	function handleRecordingToggle(): void {
@@ -379,6 +378,8 @@
 		</div>
 	{/if}
 </div>
+
+<GlobalSearchCommand bind:open={searchOpen} />
 
 {#if sidebar.isCollapsed && recordingState.isRecording}
 	<Tooltip.Provider delayDuration={300}>

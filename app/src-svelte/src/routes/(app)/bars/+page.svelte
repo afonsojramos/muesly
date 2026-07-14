@@ -102,7 +102,7 @@
 		categoryFilter === 'all'
 			? 'All collections'
 			: categoryFilter === 'featured'
-				? 'Recommended'
+				? 'Featured'
 				: (categoryLabels.get(categoryFilter) ?? categoryFilter),
 	);
 
@@ -167,56 +167,80 @@
 	<div data-tauri-drag-region="deep" class="h-8 flex-shrink-0"></div>
 
 	<div class="flex-1 overflow-y-auto">
-		<div class="mx-auto w-full max-w-[980px] px-8 pb-24 pt-4">
+		<div class="mx-auto w-full max-w-[1120px] px-6 pb-24 pt-3 sm:px-8">
 			<!-- Header -->
-			<div class="mb-6 flex items-start justify-between gap-4">
+			<div class="mb-5 flex items-start justify-between gap-4">
 				<div class="flex items-center gap-3">
-					<div class="flex size-10 items-center justify-center rounded-xl bg-brand/10 text-brand">
-						<MueslyBar class="size-5" />
+					<div
+						class="flex size-9 items-center justify-center rounded-[11px] bg-brand/10 text-brand"
+					>
+						<MueslyBar class="size-[18px]" />
 					</div>
 					<div>
-						<h1 class="text-2xl font-semibold tracking-tight">Muesly bars</h1>
-						<p class="mt-1 text-sm text-muted-foreground">
-							Reusable prompts you can drop into any meeting's chat or the Home chat.
+						<h1 class="text-balance text-2xl font-semibold tracking-tight">Muesly bars</h1>
+						<p class="mt-0.5 text-pretty text-sm text-muted-foreground">
+							Reusable prompts for your meetings and Home chat.
 						</p>
 					</div>
 				</div>
-				<Button onclick={openCreate}>
+				<Button
+					variant="brand"
+					size="lg"
+					class="active:scale-[0.96] transition-transform"
+					onclick={openCreate}
+				>
 					<Plus data-icon />
-					New bar
+					Create bar
 				</Button>
 			</div>
 
-			<!-- Tabs + toolbar -->
-			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-				<div class="flex items-center gap-1 rounded-full bg-secondary p-1">
-					{#each [{ value: 'discover', label: 'Discover' }, { value: 'menu', label: 'My menu' }, { value: 'mine', label: 'My bars' }] as t (t.value)}
-						<button
-							type="button"
+			<!-- Views -->
+			<div class="mb-4 border-b border-border/70">
+				<div class="flex items-center gap-1" aria-label="Bar views">
+					{#each [{ value: 'discover', label: 'Discover' }, { value: 'menu', label: 'Added' }, { value: 'mine', label: 'Created by me' }] as t (t.value)}
+						<Button
+							variant="ghost"
 							onclick={() => (tab = t.value as Tab)}
 							class={cn(
-								'rounded-full px-3 py-1 text-sm transition-colors',
+								'relative h-10 rounded-none px-3 text-sm transition-colors after:absolute after:inset-x-3 after:bottom-[-1px] after:h-0.5 after:rounded-full after:bg-foreground after:opacity-0 after:transition-opacity',
 								tab === t.value
-									? 'bg-card font-medium text-foreground shadow-sm'
+									? 'bg-transparent text-foreground after:opacity-100 hover:bg-transparent'
 									: 'text-muted-foreground hover:text-foreground',
 							)}
+							aria-pressed={tab === t.value}
 						>
 							{t.label}
-						</button>
+						</Button>
 					{/each}
 				</div>
+			</div>
 
-				<div class="flex items-center gap-2">
+			<!-- Search + collection -->
+			<div class="mb-3 flex min-w-0 items-center gap-2">
+				<div class="relative min-w-0 flex-1">
+					<Search
+						class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+					/>
+					<Input
+						bind:value={query}
+						placeholder="Search bars…"
+						aria-label="Search bars"
+						class="h-8 w-full bg-muted/40 pl-9 shadow-none"
+					/>
+				</div>
+				<div class="shrink-0">
 					{#if tab === 'discover'}
 						<Select.Root
 							type="single"
 							value={categoryFilter}
 							onValueChange={(value) => value && (categoryFilter = value as CategoryFilter)}
 						>
-							<Select.Trigger class="w-40">{categoryFilterLabel}</Select.Trigger>
+							<Select.Trigger class="w-48" aria-label="Filter by collection">
+								<span class="truncate">Collection: {categoryFilterLabel}</span>
+							</Select.Trigger>
 							<Select.Content>
 								<Select.Group>
-									<Select.Item value="featured" label="Recommended">Recommended</Select.Item>
+									<Select.Item value="featured" label="Featured">Featured</Select.Item>
 									<Select.Item value="all" label="All collections">All collections</Select.Item>
 									{#each BAR_CATEGORIES as category (category.value)}
 										<Select.Item value={category.value} label={category.label}
@@ -227,33 +251,32 @@
 							</Select.Content>
 						</Select.Root>
 					{/if}
-					<div class="max-w-full overflow-x-auto rounded-xl bg-secondary/70 p-1">
-						<ToggleGroup.Root
-							type="single"
-							value={scenarioFilter}
-							onValueChange={(value) => value && (scenarioFilter = value as ScenarioFilter)}
-							variant="default"
-							size="sm"
-							spacing={1}
-							aria-label="Filter bars by when they are used"
-						>
-							{#each SCENARIO_FILTERS as f (f.value)}
-								<ToggleGroup.Item
-									value={f.value}
-									class="h-10 whitespace-nowrap rounded-lg px-3 text-sm text-muted-foreground data-[state=on]:bg-background data-[state=on]:font-medium data-[state=on]:text-foreground data-[state=on]:shadow-sm"
-								>
-									{f.label}
-								</ToggleGroup.Item>
-							{/each}
-						</ToggleGroup.Root>
-					</div>
-					<div class="relative">
-						<Search
-							class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-						/>
-						<Input bind:value={query} placeholder="Search…" class="h-9 w-48 pl-8" />
-					</div>
 				</div>
+			</div>
+
+			<!-- Scenario filters -->
+			<div
+				class="mb-4 max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+			>
+				<ToggleGroup.Root
+					type="single"
+					value={scenarioFilter}
+					onValueChange={(value) => value && (scenarioFilter = value as ScenarioFilter)}
+					variant="default"
+					size="sm"
+					spacing={1}
+					aria-label="Filter bars by when they are used"
+					class="w-max bg-transparent p-0"
+				>
+					{#each SCENARIO_FILTERS as f (f.value)}
+						<ToggleGroup.Item
+							value={f.value}
+							class="h-9 whitespace-nowrap rounded-lg px-3 text-sm text-muted-foreground ring-1 ring-transparent transition-[color,background-color,box-shadow] hover:bg-muted/60 data-[state=on]:bg-secondary data-[state=on]:font-medium data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+						>
+							{f.label}
+						</ToggleGroup.Item>
+					{/each}
+				</ToggleGroup.Root>
 			</div>
 
 			<!-- Grid -->
@@ -262,18 +285,18 @@
 					{#if tab === 'mine'}
 						No bars yet. Create one to reuse a prompt across meetings.
 					{:else if tab === 'menu'}
-						No bars are currently shown in your menu.
+						You haven't added any bars yet.
 					{:else}
 						No bars match your search.
 					{/if}
 				</div>
 			{:else}
-				<div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
 					{#each filtered as bar (bar.id)}
 						{@const Icon = barIcon(bar.icon)}
 						<Card.Root
 							size="sm"
-							class="relative min-h-40 transition-[box-shadow] hover:ring-foreground/20"
+							class="relative min-h-44 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-[box-shadow,transform] hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(0,0,0,0.08)] hover:ring-foreground/15"
 						>
 							<Button
 								variant="ghost"
@@ -284,11 +307,11 @@
 							<Card.Header class="pointer-events-none relative z-10 items-center">
 								<div class="flex min-w-0 items-center gap-2.5">
 									<div
-										class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border text-muted-foreground"
+										class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground"
 									>
 										<Icon class="size-4" />
 									</div>
-									<h3 class="truncate text-sm font-medium">{bar.title}</h3>
+									<h3 class="truncate text-sm font-semibold">{bar.title}</h3>
 								</div>
 								{#if tab === 'menu'}
 									<Card.Action>
@@ -311,16 +334,18 @@
 													{#snippet child({ props })}
 														<Button
 															{...props}
-															variant={bars.isInMenu(bar) ? 'secondary' : 'ghost'}
-															size="icon"
-															class="pointer-events-auto size-10 rounded-full text-muted-foreground"
+															variant={bars.isInMenu(bar) ? 'secondary' : 'outline'}
+															size="sm"
+															class="pointer-events-auto h-10 min-w-16 rounded-lg active:scale-[0.96] transition-transform"
 															onclick={(event) => toggleInMenu(event, bar)}
 															aria-pressed={bars.isInMenu(bar)}
 															aria-label={`${bars.isInMenu(bar) ? 'Remove' : 'Add'} ${bar.title} ${bars.isInMenu(bar) ? 'from' : 'to'} your menu`}
 														>
-															{#if bars.isInMenu(bar)}<Check data-icon />{:else}<Plus
-																	data-icon
-																/>{/if}
+															{#if bars.isInMenu(bar)}
+																<Check data-icon /> Added
+															{:else}
+																<Plus data-icon /> Add
+															{/if}
 														</Button>
 													{/snippet}
 												</Tooltip.Trigger>
@@ -335,7 +360,9 @@
 								{/if}
 							</Card.Header>
 							<Card.Content class="pointer-events-none relative z-10 flex flex-1 flex-col">
-								<p class="line-clamp-2 text-pretty text-sm leading-5 text-muted-foreground">
+								<p
+									class="line-clamp-2 min-h-10 text-pretty text-sm leading-5 text-muted-foreground"
+								>
 									{bar.description}
 								</p>
 								<div class="mt-auto flex items-end justify-between gap-2 pt-3">
@@ -358,9 +385,8 @@
 															{...props}
 															variant="ghost"
 															size="sm"
-															onclick={() => (detail = bar)}
 															aria-label={`${bars.usesFor(bar.id).toLocaleString()} uses across Muesly`}
-															class="pointer-events-auto h-10 shrink-0 gap-1 px-1.5 text-xs tabular-nums text-muted-foreground"
+															class="pointer-events-auto h-10 shrink-0 cursor-default gap-1 px-1.5 text-xs tabular-nums text-muted-foreground hover:bg-transparent hover:text-muted-foreground"
 														>
 															<Sparkles class="size-3" />
 															{formatUses(bars.usesFor(bar.id))}
@@ -415,6 +441,32 @@
 				{detail.prompt}
 			</div>
 
+			{#if bars.isInMenu(detail)}
+				<div class="flex items-center justify-between gap-3 rounded-lg bg-muted/50 px-3 py-2">
+					<span class="text-sm text-muted-foreground">Menu position</span>
+					<div class="flex items-center gap-1">
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-10"
+							onclick={() => detail && bars.moveInMenu(detail, -1)}
+						>
+							<ArrowUp data-icon />
+							Move up
+						</Button>
+						<Button
+							variant="ghost"
+							size="sm"
+							class="h-10"
+							onclick={() => detail && bars.moveInMenu(detail, 1)}
+						>
+							<ArrowDown data-icon />
+							Move down
+						</Button>
+					</div>
+				</div>
+			{/if}
+
 			<Dialog.Footer class="sm:justify-between">
 				<div class="flex items-center gap-2">
 					{#if detail.source === 'user'}
@@ -439,26 +491,6 @@
 					{/if}
 				</div>
 				<div class="flex items-center gap-2">
-					{#if bars.isInMenu(detail)}
-						<Button
-							variant="ghost"
-							size="icon"
-							class="size-10"
-							onclick={() => detail && bars.moveInMenu(detail, -1)}
-							aria-label="Move earlier in menu"
-						>
-							<ArrowUp data-icon />
-						</Button>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="size-10"
-							onclick={() => detail && bars.moveInMenu(detail, 1)}
-							aria-label="Move later in menu"
-						>
-							<ArrowDown data-icon />
-						</Button>
-					{/if}
 					{#if detail.source !== 'user'}
 						<Button variant="outline" size="sm" onclick={() => detail && bars.toggleInMenu(detail)}>
 							{#if bars.isInMenu(detail)}
