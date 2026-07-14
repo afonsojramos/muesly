@@ -56,8 +56,6 @@
 		/** Initial / external content as a markdown string. */
 		value?: string;
 		editable?: boolean;
-		/** Remove the document-sized minimum height for embedded read-only content. */
-		compact?: boolean;
 		class?: string;
 		/**
 		 * Visual role of the document. `ai` uses muted foreground (Granola-style
@@ -75,7 +73,6 @@
 	let {
 		value = '',
 		editable = true,
-		compact = false,
 		class: className,
 		tone = 'user',
 		onChange,
@@ -261,12 +258,7 @@
 <div class="relative">
 	<div
 		bind:this={element}
-		class={cn(
-			'tiptap-prose select-text',
-			tone === 'ai' && 'tiptap-prose-ai',
-			compact && 'tiptap-prose-compact',
-			className,
-		)}
+		class={cn('tiptap-prose select-text', tone === 'ai' && 'tiptap-prose-ai', className)}
 		onclick={(e) => {
 			if (!onTimestampClick) return;
 			const t = e.target;
@@ -321,10 +313,6 @@
 		color: var(--color-foreground);
 		/* Hide the native caret; the FixedCaret extension draws a text-sized one. */
 		caret-color: transparent;
-	}
-	.tiptap-prose-compact :global(.ProseMirror) {
-		min-height: 0;
-		line-height: 1.5;
 	}
 
 	/* AI-generated body: muted gray; user notes keep default foreground. */

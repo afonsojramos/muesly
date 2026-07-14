@@ -53,6 +53,9 @@ importers:
       cnfast:
         specifier: ^0.0.8
         version: 0.0.8
+      marked:
+        specifier: 17.0.6
+        version: 17.0.6
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0

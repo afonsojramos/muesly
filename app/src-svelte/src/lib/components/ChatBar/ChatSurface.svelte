@@ -51,7 +51,7 @@
 	import { parseBarCommandDraft } from '$lib/bars/execution';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import Editor from '$lib/components/Editor.svelte';
+	import MarkdownContent from '$lib/components/MarkdownContent.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import ChatRailButton from './ChatRailButton.svelte';
 
@@ -312,7 +312,7 @@
 													{/if}
 												</div>
 											{:else}
-												<Editor value={message.content} editable={false} compact />
+												<MarkdownContent value={message.content} />
 											{/if}
 										{:else if controller.isStreaming}
 											<span class="text-muted-foreground">{thinkingLabel}</span>
