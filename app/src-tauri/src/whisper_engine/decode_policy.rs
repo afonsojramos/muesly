@@ -47,6 +47,39 @@ pub fn should_retry_decode(text: &str, min_chars: usize) -> bool {
     text.trim().chars().count() < min_chars
 }
 
+/// Minimum normalized length for an echo verdict. Short interjections ("Sim.",
+/// "Ok.") legitimately repeat across consecutive segments; a 12+ character
+/// verbatim reappearance of prior-prompt text is the conditioning failure.
+const ECHO_MIN_CHARS: usize = 12;
+
+/// Whether a decode merely parroted the prior-segment prompt instead of
+/// transcribing the audio.
+///
+/// This is Whisper's classic conditioning collapse: a hallucinated phrase (a
+/// subtitle-credit URL, a stray sentence) gets carried into the next chunk's
+/// `initial_prompt`, and the decoder emits the prompt again regardless of the
+/// audio, looping until something breaks the chain. Callers re-decode the
+/// chunk WITHOUT the prior prompt when this returns true, which yields the
+/// real content when there is any and confines a hallucination to the one
+/// segment that produced it.
+pub fn is_prompt_echo(text: &str, prior_prompt: &str) -> bool {
+    let normalized_text = normalize_for_echo(text);
+    if normalized_text.chars().count() < ECHO_MIN_CHARS {
+        return false;
+    }
+    normalize_for_echo(prior_prompt).contains(&normalized_text)
+}
+
+/// Lowercased alphanumeric words joined by single spaces, so punctuation or
+/// spacing drift between the prompt and the decode doesn't hide an echo.
+fn normalize_for_echo(text: &str) -> String {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Next temperature after `current` in the ladder, if any.
 pub fn next_temperature(current: f32) -> Option<f32> {
     let mut found = false;
@@ -95,5 +128,40 @@ mod tests {
     fn ladder_advances() {
         assert_eq!(next_temperature(0.0), Some(0.2));
         assert_eq!(next_temperature(0.8), None);
+    }
+
+    #[test]
+    fn url_echo_of_prior_prompt_is_detected() {
+        // The observed failure: a hallucinated subtitle-credit URL loops
+        // through the prompt across punctuation/case drift.
+        assert!(is_prompt_echo("www.cdc.gov.br", "www.cdc.gov.br"));
+        assert!(is_prompt_echo(
+            "WWW. CDC. GOV. BR",
+            "…legendas www.cdc.gov.br"
+        ));
+    }
+
+    #[test]
+    fn echo_requires_the_whole_decode_to_reappear() {
+        // Overlapping vocabulary with the previous segment is normal speech.
+        assert!(!is_prompt_echo(
+            "o PR do mobile app ficou pronto",
+            "ele queria testar o mobile app por causa da autenticação"
+        ));
+    }
+
+    #[test]
+    fn short_repeats_are_not_echoes() {
+        // Consecutive "Sim." answers are genuine, not conditioning collapse.
+        assert!(!is_prompt_echo("Sim.", "Sim."));
+        assert!(!is_prompt_echo("Obrigado.", "Obrigado."));
+    }
+
+    #[test]
+    fn long_verbatim_repeat_is_an_echo() {
+        assert!(is_prompt_echo(
+            "estou a tentar organizar melhor o meu estudo",
+            "mas sim, estou a tentar organizar melhor o meu estudo fora do trabalho"
+        ));
     }
 }

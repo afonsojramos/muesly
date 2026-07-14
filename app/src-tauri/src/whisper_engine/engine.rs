@@ -866,16 +866,45 @@ impl WhisperEngine {
         );
         let should_translate = matches!(language.as_deref(), Some("auto-translate"));
 
-        const TRUSTED_WITH_PRIOR: PromptOutcome = PromptOutcome {
-            safe_to_store: true,
-            used_prior: true,
+        // Conditioning-collapse guard for every pass that consumed the prior
+        // prompt: when the decode merely parrots that prompt (a hallucination
+        // looping segment-to-segment through `initial_prompt`), re-decode the
+        // chunk without the prior. Returns `(text, confidence, used_prior)`;
+        // `lang`/`translate` must reproduce the pass's language selection.
+        let finish_pass = |lang: Option<&str>,
+                           translate: bool,
+                           text: String,
+                           confidence: f32|
+         -> Result<(String, f32, bool)> {
+            let echoed = prior_prompt
+                .as_deref()
+                .is_some_and(|prior| super::decode_policy::is_prompt_echo(&text, prior));
+            if !echoed {
+                return Ok((text, confidence, true));
+            }
+            log::info!(
+                "Decode echoed the prior prompt ({} chars); re-decoding without it",
+                text.chars().count()
+            );
+            let (text, confidence) =
+                Self::collect_segments(&run_pass_state(lang, translate, false)?)?;
+            Ok((text, confidence, false))
         };
 
-        // Explicit code path, byte-for-byte unchanged: set code, no translate.
+        // Explicit code path: set code, no translate.
         if !is_auto {
             let (text, confidence) =
                 Self::collect_segments(&run_pass_state(language.as_deref(), false, true)?)?;
-            return Ok((text, confidence, TRUSTED_WITH_PRIOR));
+            let (text, confidence, used_prior) =
+                finish_pass(language.as_deref(), false, text, confidence)?;
+            return Ok((
+                text,
+                confidence,
+                PromptOutcome {
+                    safe_to_store: true,
+                    used_prior,
+                },
+            ));
         }
 
         // auto-translate: detect + translate to English in one pass. The output is
@@ -883,7 +912,15 @@ impl WhisperEngine {
         // (which exists to keep the ORIGINAL language stable) does not apply.
         if should_translate {
             let (text, confidence) = Self::collect_segments(&run_pass_state(None, true, true)?)?;
-            return Ok((text, confidence, TRUSTED_WITH_PRIOR));
+            let (text, confidence, used_prior) = finish_pass(None, true, text, confidence)?;
+            return Ok((
+                text,
+                confidence,
+                PromptOutcome {
+                    safe_to_store: true,
+                    used_prior,
+                },
+            ));
         }
 
         // auto (keep original language): pass 1 always auto-detects.
@@ -938,14 +975,23 @@ impl WhisperEngine {
                         detection_prob
                     );
                 }
+                let (text, confidence) = Self::collect_segments(&state)?;
+                // Re-run a prompt echo pinned to the DETECTED language (not
+                // auto) so the re-decode cannot flip the segment's language.
+                let echo_lang = if detected_id >= 0 {
+                    whisper_rs::get_lang_str(detected_id)
+                } else {
+                    None
+                };
+                let (text, confidence, used_prior) =
+                    finish_pass(echo_lang, false, text, confidence)?;
                 // Text emitted before the language settles (or via the plurality
                 // edge where the locking vote disagrees with the winner) is in an
                 // unverified language: never feed it forward as a prompt.
                 let outcome = PromptOutcome {
                     safe_to_store: new_stable == Some(detected_id),
-                    used_prior: true,
+                    used_prior,
                 };
-                let (text, confidence) = Self::collect_segments(&state)?;
                 Ok((text, confidence, outcome))
             }
             super::lang_lock::LangDecision::ForceStable(id) => {
