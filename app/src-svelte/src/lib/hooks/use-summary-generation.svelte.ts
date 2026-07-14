@@ -105,7 +105,9 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 		const notesMarkdown = getNotesMarkdown?.().trim() ?? '';
 		const blocks: string[] = [];
 		if (notesMarkdown) {
-			blocks.push(`The user's own notes taken during the meeting:\n${notesMarkdown}`);
+			blocks.push(
+				`The user's own notes taken during the meeting:\n<user_notes>\n${notesMarkdown}\n</user_notes>`,
+			);
 		}
 		if (customPrompt.trim()) {
 			blocks.push(customPrompt.trim());
