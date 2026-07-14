@@ -54,6 +54,7 @@ openmp = ["whisper-rs/openmp"]     # OpenMP parallel processing
 tauri-build = { version = "2.3.0", features = [] }
 which = "8.0.0"
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", rev = "a1216c3d0256112702b4c1967101a55488088965" }
+ureq = "3.1"
 
 
 [dependencies]

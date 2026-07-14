@@ -3945,6 +3945,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "ureq 3.3.0",
  "url",
  "uuid",
  "whatlang",

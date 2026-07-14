@@ -12,7 +12,7 @@
 // build-script compile time — so this targets the build HOST, not an arbitrary
 // cargo TARGET. CI builds run on per-platform native runners, which is fine.
 
-use ffmpeg_sidecar::download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg};
+use ffmpeg_sidecar::download::{ffmpeg_download_url, unpack_ffmpeg};
 
 /// Download and bundle FFmpeg binary for the build host.
 /// Skips download if a working cached binary is already present.
@@ -64,8 +64,7 @@ pub fn ensure_ffmpeg_binary() {
     let _ = std::fs::remove_dir_all(&extract_dir);
     std::fs::create_dir_all(&extract_dir).expect("Failed to create extract dir");
 
-    let archive_path =
-        download_ffmpeg_package(url, &extract_dir).expect("Failed to download FFmpeg package");
+    let archive_path = download_ffmpeg_package(url, &extract_dir);
 
     unpack_ffmpeg(&archive_path, &extract_dir).expect("Failed to unpack FFmpeg archive");
 
@@ -97,6 +96,25 @@ pub fn ensure_ffmpeg_binary() {
     }
 
     println!("cargo:warning=✨ FFmpeg ready: {}", binary_name);
+}
+
+fn download_ffmpeg_package(url: &str, download_dir: &std::path::Path) -> std::path::PathBuf {
+    let filename = url
+        .rsplit_once('/')
+        .map(|(_, filename)| filename)
+        .filter(|filename| !filename.is_empty())
+        .expect("FFmpeg download URL has no filename");
+    let archive_path = download_dir.join(filename);
+    let mut response = ureq::get(url)
+        .header("User-Agent", "muesly-build/1.0")
+        .header("Accept", "application/octet-stream")
+        .call()
+        .expect("Failed to download FFmpeg package");
+    let mut archive =
+        std::fs::File::create(&archive_path).expect("Failed to create FFmpeg package archive");
+    std::io::copy(&mut response.body_mut().as_reader(), &mut archive)
+        .expect("Failed to write FFmpeg package archive");
+    archive_path
 }
 
 /// Verify FFmpeg binary is functional by running `ffmpeg -version`.
