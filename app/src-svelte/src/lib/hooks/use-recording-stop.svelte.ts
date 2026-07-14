@@ -200,9 +200,27 @@ export function useRecordingStop(
 				if (!transcriptionComplete) {
 					console.warn('[RecordingStop] Saving despite incomplete transcription wait');
 				}
-				recordingState.setStatus(RecordingStatus.SAVING, 'Saving meeting to database...');
-
 				const freshTranscripts = [...transcripts.transcripts];
+				const hasTranscriptText = freshTranscripts.some((transcript) => transcript.text.trim());
+
+				if (!hasTranscriptText) {
+					recordingState.setStatus(RecordingStatus.IDLE);
+					transcripts.clearTranscripts();
+					if (isBrowser) {
+						sessionStorage.removeItem('last_recording_folder_path');
+						sessionStorage.removeItem('last_recording_meeting_name');
+						sessionStorage.removeItem('indexeddb_current_meeting_id');
+						sessionStorage.removeItem(FOLDER_PIN_KEY);
+					}
+					sidebar.setIsMeetingActive(false);
+					setIsRecordingDisabled(false);
+					toast.info('No meeting saved', {
+						description: 'No speech was detected in the recording.',
+					});
+					return;
+				}
+
+				recordingState.setStatus(RecordingStatus.SAVING, 'Saving meeting to database...');
 
 				const folderPath = isBrowser ? sessionStorage.getItem('last_recording_folder_path') : null;
 				const savedMeetingName = isBrowser
@@ -336,18 +354,6 @@ export function useRecordingStop(
 					}
 
 					recordingState.setStatus(RecordingStatus.COMPLETED);
-
-					toast.success('Recording saved successfully!', {
-						description: `${freshTranscripts.length} transcript segments saved.`,
-						action: {
-							label: 'View Meeting',
-							onClick: () => {
-								void goto(`/meeting-details?id=${meetingId}`);
-								void Analytics.trackButtonClick('view_meeting_from_toast', 'recording_complete');
-							},
-						},
-						duration: 10000,
-					});
 
 					setTimeout(() => {
 						void goto(`/meeting-details?id=${meetingId}&source=recording`);
