@@ -31,6 +31,8 @@
 	let requesting = $state(false);
 	let accounts = $state<CalendarAccount[]>([]);
 	let googleConfigured = $state(false);
+	let purgeConfirming = $state(false);
+	let purgePending = $state(false);
 	// Monotonic id so only the most recent "Add account" click is applied; an
 	// earlier attempt the user abandoned (closed the tab) resolves later and is
 	// ignored rather than overwriting the result of the click they completed.
@@ -279,33 +281,39 @@
 	}
 
 	async function purgeData(): Promise<void> {
+		purgePending = true;
 		const res = await commands.calendarPurgeAllSnapshots();
 		if (res.status === 'ok') {
 			toast.success(`Deleted calendar data from ${res.data} recording(s).`);
 		} else {
 			toast.error('Failed to delete calendar data', { description: res.error });
 		}
+		purgePending = false;
+		purgeConfirming = false;
 	}
 </script>
 
-<div class="flex flex-col gap-6">
-	<div>
-		<p class="mb-6 text-sm text-muted-foreground">
-			muesly attaches the meeting happening at record time to your recordings and summaries. Use
-			your Mac's local calendars (read entirely on-device, no account) and/or connect Google
-			accounts (read-only). Everything is off by default; what reaches a cloud summary provider is
-			controlled separately below.
-		</p>
-	</div>
+<div class="flex flex-col gap-4">
+	<p class="text-pretty text-sm text-muted-foreground">
+		Muesly attaches the meeting happening at record time to your recordings and summaries. Use your
+		Mac's local calendars (read entirely on-device, no account) and/or connect Google accounts
+		(read-only). Everything is off by default; what reaches a cloud summary provider is controlled
+		separately below.
+	</p>
 	<Loadable {loading}>
-		<Card.Root class="flex flex-row items-center justify-between p-4">
-			<div class="flex-1">
-				<div class="font-medium">Use calendar context</div>
+		<Card.Root class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+			<div class="min-w-0 flex-1">
+				<div id="calendar-context-label" class="font-medium">Use calendar context</div>
 				<div class="text-sm text-muted-foreground">
 					Match each recording to the meeting happening at that time.
 				</div>
 			</div>
-			<Switch checked={enabled} disabled={requesting} onCheckedChange={handleEnableToggle} />
+			<Switch
+				checked={enabled}
+				disabled={requesting}
+				aria-labelledby="calendar-context-label"
+				onCheckedChange={handleEnableToggle}
+			/>
 		</Card.Root>
 
 		{#if enabled}
@@ -332,6 +340,7 @@
 									<Switch
 										checked={localAccount.enabled && granted}
 										disabled={requesting}
+										aria-label="Use calendars on this Mac"
 										onCheckedChange={(v) => toggleAccount(localAccount.id, v)}
 									/>
 								{/if}
@@ -362,6 +371,7 @@
 												<Switch
 													checked={!cal.excluded_by_default && !excludedIds.has(cal.id)}
 													disabled={cal.excluded_by_default}
+													aria-label={`Use ${cal.title}`}
 													onCheckedChange={(v) => toggleCalendar(cal.id, v)}
 												/>
 											</div>
@@ -388,6 +398,7 @@
 								<div class="flex flex-shrink-0 items-center gap-3">
 									<Switch
 										checked={acct.enabled}
+										aria-label={`Use ${acct.email ?? 'Google account'}`}
 										onCheckedChange={(v) => toggleAccount(acct.id, v)}
 									/>
 									<Tooltip.Provider delayDuration={300}>
@@ -441,6 +452,7 @@
 											<span class="min-w-0 flex-1 truncate text-sm">{cal.title}</span>
 											<Switch
 												checked={!accountExcluded[acct.id]?.has(cal.id)}
+												aria-label={`Use ${cal.title}`}
 												onCheckedChange={(v) => toggleAccountCalendar(acct.id, cal.id, v)}
 											/>
 										</div>
@@ -463,8 +475,7 @@
 						</p>
 					{:else}
 						<p class="text-xs text-muted-foreground">
-							Google accounts are unavailable: no OAuth client id is configured (set
-							<code>MUESLY_GOOGLE_CLIENT_ID</code> / <code>MUESLY_GOOGLE_CLIENT_SECRET</code>).
+							Google Calendar connections are not available in this build.
 						</p>
 					{/if}
 				</div>
@@ -472,33 +483,45 @@
 		{/if}
 
 		{#if enabled && granted}
-			<Card.Root class="p-4">
-				<div class="mb-1 font-medium">Cloud summaries</div>
-				<div class="mb-3 text-sm text-muted-foreground">
-					When you use a cloud summary provider, these control what calendar data may leave your
-					device. Attendee emails are never sent or stored.
-				</div>
-				<Alert.Root class="mb-4 border-warning/50 bg-warning/10 text-warning">
-					<ShieldAlert />
-					<Alert.Description class="text-warning/90">
-						<p>
-							With a cloud provider selected, anything enabled below is sent to that provider when a
-							summary is generated. Local summaries always include full context and send nothing.
-						</p>
-					</Alert.Description>
-				</Alert.Root>
-				<div class="flex items-center justify-between py-2">
-					<div class="text-sm">Send attendee &amp; organizer names</div>
-					<Switch checked={sendNames} onCheckedChange={toggleSendNames} />
-				</div>
-				<div class="flex items-center justify-between py-2">
-					<div class="text-sm">Send agenda / notes</div>
-					<Switch checked={sendNotes} onCheckedChange={toggleSendNotes} />
-				</div>
+			<Card.Root size="sm">
+				<Card.Header>
+					<Card.Title>Cloud summaries</Card.Title>
+					<Card.Description>
+						Control what calendar details may leave your device. Attendee emails are never sent or
+						stored.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="flex flex-col gap-2">
+					<Alert.Root class="border-border bg-muted/50 text-foreground">
+						<ShieldAlert class="text-foreground" />
+						<Alert.Description class="text-muted-foreground">
+							<p>
+								Enabled details are sent to your selected cloud provider when generating a summary.
+								Local summaries send nothing.
+							</p>
+						</Alert.Description>
+					</Alert.Root>
+					<div class="flex min-h-10 items-center justify-between gap-4">
+						<div class="text-sm">Send attendee &amp; organizer names</div>
+						<Switch
+							checked={sendNames}
+							aria-label="Send attendee and organizer names"
+							onCheckedChange={toggleSendNames}
+						/>
+					</div>
+					<div class="flex min-h-10 items-center justify-between gap-4">
+						<div class="text-sm">Send agenda / notes</div>
+						<Switch
+							checked={sendNotes}
+							aria-label="Send agenda and notes"
+							onCheckedChange={toggleSendNotes}
+						/>
+					</div>
+				</Card.Content>
 			</Card.Root>
 		{/if}
 
-		{#if enabled}
+		{#if import.meta.env.DEV && enabled}
 			<Card.Root class="p-4">
 				<div class="mb-1 font-medium">Upcoming events</div>
 				<div class="mb-3 text-sm text-muted-foreground">
@@ -531,16 +554,31 @@
 			</Card.Root>
 		{/if}
 
-		<Card.Root class="flex flex-row items-center justify-between p-4">
-			<div class="flex-1">
+		<Card.Root class="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+			<div class="min-w-0 flex-1">
 				<div class="font-medium">Delete stored calendar data</div>
 				<div class="text-sm text-muted-foreground">
 					Remove every calendar snapshot saved with your recordings, keeping the recordings.
 				</div>
 			</div>
-			<Button variant="outline" size="sm" onclick={purgeData}>
-				<Trash2 data-icon="inline-start" /> Delete
-			</Button>
+			<div class="flex flex-wrap gap-2">
+				{#if purgeConfirming}
+					<Button variant="destructive" size="sm" disabled={purgePending} onclick={purgeData}>
+						<Trash2 data-icon="inline-start" />
+						{purgePending ? 'Deleting…' : 'Confirm delete'}
+					</Button>
+					<Button
+						variant="ghost"
+						size="sm"
+						disabled={purgePending}
+						onclick={() => (purgeConfirming = false)}>Cancel</Button
+					>
+				{:else}
+					<Button variant="outline" size="sm" onclick={() => (purgeConfirming = true)}>
+						<Trash2 data-icon="inline-start" /> Delete
+					</Button>
+				{/if}
+			</div>
 		</Card.Root>
 	</Loadable>
 </div>
