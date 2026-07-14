@@ -30,6 +30,7 @@
 	   list rows, so it mirrors `--secondary`. Use `brand` utilities for orange. */
 	--brand: oklch(0.65 0.18 35);
 	--brand-foreground: oklch(0.985 0 0);
+	--switch-active: oklch(0.54 0.17 35); /* deeper orange for compact active controls */
 	--accent: oklch(0.935 0.008 90);
 	--accent-foreground: oklch(0.305 0.012 80);
 	--destructive: oklch(0.577 0.245 27.325);
@@ -66,6 +67,7 @@
 	--muted-foreground: oklch(0.68 0.01 85);
 	--brand: oklch(0.65 0.18 35);
 	--brand-foreground: oklch(0.985 0 0);
+	--switch-active: oklch(0.58 0.17 35);
 	--accent: oklch(0.3 0.01 80);
 	--accent-foreground: oklch(0.94 0.006 90);
 	/* Status hues brightened for the dark canvas — the light-mode values are
@@ -151,6 +153,7 @@
 	--color-muted-foreground: var(--muted-foreground);
 	--color-brand: var(--brand);
 	--color-brand-foreground: var(--brand-foreground);
+	--color-switch-active: var(--switch-active);
 	--color-accent: var(--accent);
 	--color-accent-foreground: var(--accent-foreground);
 	--color-destructive: var(--destructive);
