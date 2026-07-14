@@ -8,9 +8,12 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import { Settings2 } from '@lucide/svelte';
 
 	let enabled = $state(false);
 	let presets = $state<DictationCleanupPreset[]>([]);
+	let editorOpen = $state(false);
 
 	const activePresetId = $derived(presets.find((p) => p.is_active)?.id ?? '');
 
@@ -71,37 +74,53 @@
 	}
 </script>
 
-<div class="flex items-center justify-between rounded-lg border border-border p-4">
-	<div class="flex-1">
-		<div class="font-medium">Clean up dictated text</div>
+<div
+	class="flex min-h-14 flex-col gap-3 border-t border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between"
+>
+	<div class="min-w-0 flex-1">
+		<div id="dictation-cleanup-label" class="font-medium">Clean up dictated text</div>
 		<div class="text-sm text-muted-foreground">
-			Rewrite dictation with the local AI before inserting it. Best-effort; falls back to the raw
-			text if the model isn't ready or is too slow.
+			{enabled
+				? `Using ${presets.find((preset) => preset.is_active)?.name ?? 'the active preset'}`
+				: 'Optionally rewrite grammar and punctuation with local AI'}
 		</div>
 	</div>
-	<Switch checked={enabled} onCheckedChange={toggle} />
+	<div class="flex items-center gap-2">
+		<Button variant="outline" size="sm" onclick={() => (editorOpen = true)}>
+			<Settings2 data-icon="inline-start" /> Configure
+		</Button>
+		<Switch checked={enabled} aria-labelledby="dictation-cleanup-label" onCheckedChange={toggle} />
+	</div>
 </div>
 
-{#if enabled}
-	<div class="flex flex-col gap-3 rounded-lg border border-border p-4">
-		<div class="flex items-center justify-between">
-			<div class="font-medium">Cleanup presets</div>
+<Dialog.Root bind:open={editorOpen}>
+	<Dialog.Content class="flex max-h-[80vh] flex-col sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>Dictation cleanup presets</Dialog.Title>
+			<Dialog.Description>
+				Choose how local AI should rewrite dictated text before inserting it into another app.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="flex items-center justify-between gap-3">
+			<p class="text-sm text-muted-foreground">Select one preset as the active cleanup style.</p>
 			<Button variant="outline" size="sm" onclick={create}>New preset</Button>
 		</div>
-		<RadioGroup.Root value={activePresetId} onValueChange={setActive} class="gap-3">
-			{#each presets as preset (preset.id)}
-				<div class="flex flex-col gap-2 rounded-md border border-border p-3">
-					<div class="flex items-center gap-2">
-						<RadioGroup.Item value={preset.id} aria-label={`Use ${preset.name}`} />
-						<Input bind:value={preset.name} class="flex-1" />
-						<Button variant="ghost" size="sm" onclick={() => remove(preset.id)}>Delete</Button>
+		<div class="min-h-0 overflow-y-auto pr-1">
+			<RadioGroup.Root value={activePresetId} onValueChange={setActive} class="gap-3">
+				{#each presets as preset (preset.id)}
+					<div class="flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
+						<div class="flex items-center gap-2">
+							<RadioGroup.Item value={preset.id} aria-label={`Use ${preset.name}`} />
+							<Input bind:value={preset.name} class="flex-1" aria-label="Preset name" />
+							<Button variant="ghost" size="sm" onclick={() => remove(preset.id)}>Delete</Button>
+						</div>
+						<Textarea bind:value={preset.prompt} rows={3} aria-label={`${preset.name} prompt`} />
+						<div class="flex justify-end">
+							<Button variant="outline" size="sm" onclick={() => save(preset)}>Save changes</Button>
+						</div>
 					</div>
-					<Textarea bind:value={preset.prompt} rows={3} />
-					<div class="flex justify-end">
-						<Button variant="outline" size="sm" onclick={() => save(preset)}>Save</Button>
-					</div>
-				</div>
-			{/each}
-		</RadioGroup.Root>
-	</div>
-{/if}
+				{/each}
+			</RadioGroup.Root>
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

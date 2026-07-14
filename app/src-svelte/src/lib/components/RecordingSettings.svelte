@@ -12,6 +12,7 @@
 	import { invoke } from '@tauri-apps/api/core';
 	import { FolderOpen } from '@lucide/svelte';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	import { Analytics } from '$lib/analytics';
 	import * as Alert from '$lib/components/ui/alert';
@@ -23,9 +24,9 @@
 	import DeviceSelection, { type SelectedDevices } from './DeviceSelection.svelte';
 	import DictationCleanupSettings from './DictationCleanupSettings.svelte';
 	import { config } from '$lib/stores/config.svelte';
-	import { commands } from '$lib/bindings';
+	import { commands, type GlobalShortcutInfo } from '$lib/bindings';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
-	import { formatAccelerator } from '$lib/shortcut-accel';
+	import ShortcutRecorder from './ShortcutRecorder.svelte';
 
 	let preferences = $state<RecordingPreferences>({
 		save_folder: '',
@@ -48,8 +49,8 @@
 
 	// Live shortcut labels (rebindable in General → Keyboard shortcuts).
 	const platform = usePlatform();
-	let recordingAccel = $state<string | null>(null);
-	let dictationAccel = $state<string | null>(null);
+	let recordingShortcut = $state<GlobalShortcutInfo | null>(null);
+	let dictationShortcut = $state<GlobalShortcutInfo | null>(null);
 
 	onMount(() => {
 		void (async () => {
@@ -103,10 +104,29 @@
 				commands.getRecordingShortcut(),
 				commands.getDictationShortcut(),
 			]);
-			if (rec.status === 'ok') recordingAccel = rec.data.accelerator;
-			if (dic.status === 'ok') dictationAccel = dic.data.accelerator;
+			if (rec.status === 'ok') recordingShortcut = rec.data;
+			if (dic.status === 'ok') dictationShortcut = dic.data;
 		})();
 	});
+
+	async function changeRecordingShortcut(accelerator: string | null): Promise<void> {
+		const res = await commands.setRecordingShortcut(accelerator);
+		if (res.status === 'ok') recordingShortcut = res.data;
+		else toast.error('Could not set recording shortcut', { description: res.error });
+	}
+
+	async function changeDictationShortcut(accelerator: string | null): Promise<void> {
+		const res = await commands.setDictationShortcut(accelerator);
+		if (res.status === 'ok') dictationShortcut = res.data;
+		else toast.error('Could not set dictation shortcut', { description: res.error });
+	}
+
+	async function openAccessibilitySettings(): Promise<void> {
+		const res = await commands.openSystemSettings('Privacy_Accessibility');
+		if (res.status === 'error') {
+			toast.error('Could not open System Settings', { description: res.error });
+		}
+	}
 
 	async function handleDictationToggle(enabled: boolean): Promise<void> {
 		automationSaving = 'dictation';
@@ -269,9 +289,9 @@
 					>Choose what Muesly saves and how recording is communicated.</Card.Description
 				>
 			</Card.Header>
-			<Card.Content class="flex flex-col gap-3">
+			<Card.Content class="divide-y divide-border/60">
 				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+					class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
 				>
 					<div class="min-w-0 flex-1">
 						<div id="save-recordings-label" class="font-medium">Save audio recordings</div>
@@ -288,30 +308,23 @@
 				</div>
 
 				{#if preferences.auto_save}
-					<div class="flex flex-col gap-4">
-						<div class="rounded-lg bg-muted/35 p-4">
-							<div class="mb-2 font-medium">Save location</div>
-							<div class="mb-3 break-all text-sm text-muted-foreground">
+					<div class="grid gap-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+						<div class="min-w-0">
+							<div class="font-medium">Recording files</div>
+							<div class="mt-1 break-all text-sm text-muted-foreground">
 								{preferences.save_folder || 'Default folder'}
 							</div>
-							<Button variant="outline" size="sm" onclick={handleOpenFolder}>
-								<FolderOpen data-icon="inline-start" /> Open folder
-							</Button>
-						</div>
-
-						<div class="rounded-lg border border-brand/20 bg-brand/5 p-4">
-							<div class="text-sm text-foreground">
-								<strong>File format:</strong>
-								{preferences.file_format.toUpperCase()} files
-							</div>
 							<div class="mt-1 text-xs text-muted-foreground">
-								Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
+								{preferences.file_format.toUpperCase()} · recording_YYYYMMDD_HHMMSS.{preferences.file_format}
 							</div>
 						</div>
+						<Button class="shrink-0" variant="outline" size="sm" onclick={handleOpenFolder}>
+							<FolderOpen data-icon="inline-start" /> Open folder
+						</Button>
 					</div>
 				{:else}
-					<Alert.Root class="border-warning/30 text-warning">
-						<Alert.Description class="text-warning/90">
+					<Alert.Root class="my-3 border-border bg-muted/50 text-foreground">
+						<Alert.Description class="text-muted-foreground">
 							Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your
 							meeting audio.
 						</Alert.Description>
@@ -319,7 +332,7 @@
 				{/if}
 
 				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+					class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
 				>
 					<div class="min-w-0 flex-1">
 						<div id="recording-consent-label" class="font-medium">Recording consent reminder</div>
@@ -344,80 +357,93 @@
 					>Control recording from anywhere and respond to meetings automatically.</Card.Description
 				>
 			</Card.Header>
-			<Card.Content class="flex flex-col gap-3">
+			<Card.Content class="divide-y divide-border/60">
 				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+					class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
 				>
 					<div class="min-w-0 flex-1">
 						<div id="global-recording-label" class="font-medium">Global recording shortcut</div>
 						<div class="text-sm text-muted-foreground">
-							Start or stop a recording with
-							{recordingAccel ? formatAccelerator(recordingAccel, platform.isMac) : 'the shortcut'}
-							from any app. Rebind it in General settings.
+							Start or stop a recording from any app using the shortcut shown here.
 						</div>
 					</div>
-					<Switch
-						checked={config.globalShortcutEnabled}
-						aria-labelledby="global-recording-label"
-						onCheckedChange={(enabled) => config.toggleGlobalShortcut(enabled)}
-					/>
+					<div class="flex items-center gap-3">
+						{#if recordingShortcut}
+							<ShortcutRecorder info={recordingShortcut} onChange={changeRecordingShortcut} />
+						{/if}
+						<Switch
+							checked={config.globalShortcutEnabled}
+							aria-labelledby="global-recording-label"
+							onCheckedChange={(enabled) => config.toggleGlobalShortcut(enabled)}
+						/>
+					</div>
 				</div>
 
-				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
-				>
-					<div class="min-w-0 flex-1">
-						<div id="detect-meetings-label" class="font-medium">Automatically detect meetings</div>
-						<div class="text-sm text-muted-foreground">
-							When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start recording.
-							macOS only.
+				{#if platform.isMac}
+					<div
+						class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+					>
+						<div class="min-w-0 flex-1">
+							<div id="detect-meetings-label" class="font-medium">
+								Automatically detect meetings
+							</div>
+							<div class="text-sm text-muted-foreground">
+								When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start
+								recording.
+							</div>
 						</div>
+						<Switch
+							checked={autoDetectMeetings}
+							disabled={automationSaving === 'detection'}
+							aria-labelledby="detect-meetings-label"
+							onCheckedChange={handleAutoDetectToggle}
+						/>
 					</div>
-					<Switch
-						checked={autoDetectMeetings}
-						disabled={automationSaving === 'detection'}
-						aria-labelledby="detect-meetings-label"
-						onCheckedChange={handleAutoDetectToggle}
-					/>
-				</div>
 
-				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
-				>
-					<div class="min-w-0 flex-1">
-						<div id="auto-start-label" class="font-medium">
-							Start recording when a meeting begins
+					<div
+						class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+					>
+						<div class="min-w-0 flex-1">
+							<div id="auto-start-label" class="font-medium">
+								Start recording when a meeting begins
+							</div>
+							<div class="text-sm text-muted-foreground">
+								When a calendar meeting with attendees starts, automatically record it. Off by
+								default.
+							</div>
 						</div>
-						<div class="text-sm text-muted-foreground">
-							When a calendar meeting with attendees starts, automatically record it. Off by
-							default.
+						<div class="flex items-center gap-2">
+							<Button variant="link" size="xs" onclick={() => void goto('/settings?tab=calendar')}
+								>Calendar settings</Button
+							>
+							<Switch
+								checked={autoStartOnEvent}
+								disabled={automationSaving === 'auto-start'}
+								aria-labelledby="auto-start-label"
+								onCheckedChange={handleAutoStartToggle}
+							/>
 						</div>
 					</div>
-					<Switch
-						checked={autoStartOnEvent}
-						disabled={automationSaving === 'auto-start'}
-						aria-labelledby="auto-start-label"
-						onCheckedChange={handleAutoStartToggle}
-					/>
-				</div>
 
-				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
-					class:opacity-60={!autoStartOnEvent}
-				>
-					<div class="min-w-0 flex-1">
-						<div id="auto-join-label" class="font-medium">Open the meeting link too</div>
-						<div class="text-sm text-muted-foreground">
-							On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your browser.
+					<div
+						class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+						class:opacity-60={!autoStartOnEvent}
+					>
+						<div class="min-w-0 flex-1">
+							<div id="auto-join-label" class="font-medium">Open the meeting link too</div>
+							<div class="text-sm text-muted-foreground">
+								On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your
+								browser.
+							</div>
 						</div>
+						<Switch
+							checked={autoJoinMeeting}
+							onCheckedChange={handleAutoJoinToggle}
+							disabled={!autoStartOnEvent || automationSaving === 'auto-join'}
+							aria-labelledby="auto-join-label"
+						/>
 					</div>
-					<Switch
-						checked={autoJoinMeeting}
-						onCheckedChange={handleAutoJoinToggle}
-						disabled={!autoStartOnEvent || automationSaving === 'auto-join'}
-						aria-labelledby="auto-join-label"
-					/>
-				</div>
+				{/if}
 			</Card.Content>
 		</Card.Root>
 
@@ -428,33 +454,42 @@
 					>Insert locally transcribed speech into the app you are using.</Card.Description
 				>
 			</Card.Header>
-			<Card.Content class="flex flex-col gap-3">
+			<Card.Content class="flex flex-col">
 				<div
-					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+					class="flex min-h-14 flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between"
 				>
 					<div class="min-w-0 flex-1">
 						<div id="dictation-label" class="font-medium">Push-to-talk dictation</div>
 						<div class="text-sm text-muted-foreground">
-							Hold {dictationAccel
-								? formatAccelerator(dictationAccel, platform.isMac)
-								: 'the hotkey'}
-							to dictate; on release the transcribed text is inserted into the focused app. Keeps the
-							model warm. macOS needs Accessibility permission.
+							Hold the shortcut to dictate; release it to insert local transcription into the
+							focused app. Keeps the model warm and requires Accessibility permission.
 						</div>
-						{#if dictationEnabled && !accessibilityTrusted}
-							<div class="mt-2 text-sm text-destructive">
-								Accessibility permission is required to insert text. Grant it in System Settings →
-								Privacy &amp; Security → Accessibility.
-							</div>
-						{/if}
 					</div>
-					<Switch
-						checked={dictationEnabled}
-						disabled={automationSaving === 'dictation'}
-						aria-labelledby="dictation-label"
-						onCheckedChange={handleDictationToggle}
-					/>
+					<div class="flex items-center gap-3">
+						{#if dictationShortcut}
+							<ShortcutRecorder info={dictationShortcut} onChange={changeDictationShortcut} />
+						{/if}
+						<Switch
+							checked={dictationEnabled}
+							disabled={automationSaving === 'dictation'}
+							aria-labelledby="dictation-label"
+							onCheckedChange={handleDictationToggle}
+						/>
+					</div>
 				</div>
+
+				{#if dictationEnabled && !accessibilityTrusted}
+					<div
+						class="flex flex-col gap-3 border-t border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between"
+					>
+						<p class="text-sm text-destructive">
+							Accessibility permission is required to insert text into other apps.
+						</p>
+						<Button variant="outline" size="sm" onclick={openAccessibilitySettings}>
+							Open System Settings
+						</Button>
+					</div>
+				{/if}
 
 				{#if dictationEnabled}
 					<DictationCleanupSettings />
@@ -471,16 +506,14 @@
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
-				<div class="rounded-lg bg-muted/35 p-4">
-					<DeviceSelection
-						selectedDevices={{
-							micDevice: preferences.preferred_mic_device,
-							systemDevice: preferences.preferred_system_device,
-						}}
-						onDeviceChange={handleDeviceChange}
-						disabled={saving}
-					/>
-				</div>
+				<DeviceSelection
+					selectedDevices={{
+						micDevice: preferences.preferred_mic_device,
+						systemDevice: preferences.preferred_system_device,
+					}}
+					onDeviceChange={handleDeviceChange}
+					disabled={saving}
+				/>
 			</Card.Content>
 		</Card.Root>
 	</Loadable>
