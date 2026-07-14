@@ -688,11 +688,12 @@ mod tests {
     #[tokio::test]
     async fn save_transcript_stores_folder_path() {
         let pool = test_pool().await;
+        let segments = vec![make_segment("Folder transcript", "00:00:01")];
 
         let meeting_id = TranscriptsRepository::save_transcript(
             &pool,
             "Folder Meeting",
-            &[],
+            &segments,
             Some("work/engineering".to_string()),
         )
         .await
