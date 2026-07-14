@@ -138,6 +138,12 @@ impl TranscriptsRepository {
         transcripts: &[TranscriptSegment],
         folder_path: Option<String>,
     ) -> Result<String, SqlxError> {
+        if !transcripts.iter().any(|segment| !segment.text.trim().is_empty()) {
+            return Err(SqlxError::Protocol(
+                "cannot create a meeting without transcript text".to_string(),
+            ));
+        }
+
         let meeting_id = format!("meeting-{}", Uuid::new_v4());
 
         let mut conn = pool.acquire().await?;
@@ -558,20 +564,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn save_transcript_empty_segments_creates_meeting_with_no_transcripts() {
+    async fn save_transcript_without_text_does_not_create_meeting() {
         let pool = test_pool().await;
+        let segments = vec![make_segment("   ", "00:00:01")];
 
-        let meeting_id =
-            TranscriptsRepository::save_transcript(&pool, "Empty Meeting", &[], None)
-                .await
-                .expect("save");
+        let result =
+            TranscriptsRepository::save_transcript(&pool, "Empty Meeting", &segments, None).await;
 
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM transcripts WHERE meeting_id = ?")
-                .bind(&meeting_id)
-                .fetch_one(&pool)
-                .await
-                .expect("count");
+        assert!(result.is_err());
+
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meetings")
+            .fetch_one(&pool)
+            .await
+            .expect("count");
         assert_eq!(count, 0);
     }
 
