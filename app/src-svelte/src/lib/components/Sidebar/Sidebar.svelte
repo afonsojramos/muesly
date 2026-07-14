@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { navigate } from '$lib/navigation';
@@ -349,31 +350,33 @@
 		</Tooltip.Root>
 	</Tooltip.Provider>
 	{#if !sidebar.isCollapsed}
-		<Tooltip.Provider delayDuration={300}>
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					{#snippet child({ props })}
-						<Button
-							{...props}
-							variant="ghost"
-							size="icon-sm"
-							onclick={openSearch}
-							class="text-muted-foreground/70"
-							aria-label="Search notes"
-						>
-							<Search />
-						</Button>
-					{/snippet}
-				</Tooltip.Trigger>
-				<Tooltip.Content>
-					<span class="flex items-center">
-						Search
-						<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
-					</span>
-				</Tooltip.Content>
-			</Tooltip.Root>
-		</Tooltip.Provider>
-		<BackgroundTasksButton />
+		<div class="flex items-center" in:fade={{ delay: 80, duration: 220 }}>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
+							<Button
+								{...props}
+								variant="ghost"
+								size="icon-sm"
+								onclick={openSearch}
+								class="text-muted-foreground/70"
+								aria-label="Search notes"
+							>
+								<Search />
+							</Button>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						<span class="flex items-center">
+							Search
+							<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
+						</span>
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
+			<BackgroundTasksButton />
+		</div>
 	{/if}
 </div>
 
@@ -412,266 +415,270 @@
 		     let the empty strip drag the window. -->
 		<div data-tauri-drag-region="deep" class="h-8 shrink-0"></div>
 		{#if !sidebar.isCollapsed}
-			<!-- Header -->
-			<div class="shrink-0 px-3 pb-1 pt-1">
-				{#if recordingState.isRecording}
-					<Button variant="destructive" size="sm" class="w-full" onclick={openActiveRecording}>
-						<span class="relative flex size-2">
-							<span
-								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
-							></span>
-							<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
-						</span>
-						<span>Recording...</span>
-					</Button>
-				{:else}
-					<Button variant="brand" size="sm" onclick={handleRecordingToggle} class="h-7 w-full">
-						<Plus />
-						<span>New note</span>
-					</Button>
-				{/if}
-			</div>
+			<div class="flex min-h-0 flex-1 flex-col" in:fade={{ delay: 80, duration: 220 }}>
+				<!-- Header -->
+				<div class="shrink-0 px-3 pb-1 pt-1">
+					{#if recordingState.isRecording}
+						<Button variant="destructive" size="sm" class="w-full" onclick={openActiveRecording}>
+							<span class="relative flex size-2">
+								<span
+									class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"
+								></span>
+								<span class="relative inline-flex size-2 rounded-full bg-destructive"></span>
+							</span>
+							<span>Recording...</span>
+						</Button>
+					{:else}
+						<Button variant="brand" size="sm" onclick={handleRecordingToggle} class="h-7 w-full">
+							<Plus />
+							<span>New note</span>
+						</Button>
+					{/if}
+				</div>
 
-			<!-- Nav -->
-			<div class="flex-shrink-0 px-3 pt-2">
-				<button
-					onclick={() => navigate('/')}
-					class={cn(
-						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-						pathname === '/'
-							? 'bg-secondary font-medium text-foreground'
-							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-					)}
-				>
-					<Home class="size-4" />
-					<span>Home</span>
-				</button>
-				<button
-					type="button"
-					onclick={() => navigate('/bars')}
-					class={cn(
-						'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-						pathname === '/bars'
-							? 'bg-secondary font-medium text-foreground'
-							: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-					)}
-				>
-					<MueslyBar class="size-4" />
-					<span>Muesly bars</span>
-				</button>
-			</div>
+				<!-- Nav -->
+				<div class="flex-shrink-0 px-3 pt-2">
+					<button
+						onclick={() => navigate('/')}
+						class={cn(
+							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+							pathname === '/'
+								? 'bg-secondary font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+						)}
+					>
+						<Home class="size-4" />
+						<span>Home</span>
+					</button>
+					<button
+						type="button"
+						onclick={() => navigate('/bars')}
+						class={cn(
+							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+							pathname === '/bars'
+								? 'bg-secondary font-medium text-foreground'
+								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+						)}
+					>
+						<MueslyBar class="size-4" />
+						<span>Muesly bars</span>
+					</button>
+				</div>
 
-			<!-- Notes list -->
-			<div class="custom-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-				{#if isSettings}
-					<!-- Settings sections (replaces folders while in Settings) -->
-					<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">Settings</div>
-					{#each settingsTabs as tab (tab.value)}
-						{@const Icon = tab.icon}
-						<button
-							type="button"
-							onclick={() => navigate(`/settings?tab=${tab.value}`)}
-							class={cn(
-								'my-px flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors',
-								activeSettingsTab === tab.value
-									? 'bg-secondary font-medium text-foreground'
-									: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
-							)}
-						>
-							<Icon class="size-4 text-muted-foreground" />
-							{tab.label}
-						</button>
-					{/each}
-				{:else}
-					{#snippet folderRow(section: FolderInfo, depth: number, rowKey: string)}
-						<div class="rounded-md">
-							<div
+				<!-- Notes list -->
+				<div class="custom-scrollbar mt-2 min-h-0 flex-1 overflow-y-auto px-3 pb-2">
+					{#if isSettings}
+						<!-- Settings sections (replaces folders while in Settings) -->
+						<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">
+							Settings
+						</div>
+						{#each settingsTabs as tab (tab.value)}
+							{@const Icon = tab.icon}
+							<button
+								type="button"
+								onclick={() => navigate(`/settings?tab=${tab.value}`)}
 								class={cn(
-									'group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary',
-									depth > 0 && 'ml-4',
+									'my-px flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors',
+									activeSettingsTab === tab.value
+										? 'bg-secondary font-medium text-foreground'
+										: 'text-foreground/80 hover:bg-secondary hover:text-foreground',
 								)}
-								data-roving-row
 							>
-								<button
-									type="button"
-									onclick={() => navigate(`/folder?id=${section.id}`)}
-									onkeydown={handleRovingKeydown}
-									data-roving
-									class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
-									aria-label={`Open folder ${section.name}`}
-								>
-									{#if section.emoji}
-										<span class="flex-shrink-0 text-[13px] leading-none">{section.emoji}</span>
-									{:else}
-										<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
-									{/if}
-									<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
-								</button>
+								<Icon class="size-4 text-muted-foreground" />
+								{tab.label}
+							</button>
+						{/each}
+					{:else}
+						{#snippet folderRow(section: FolderInfo, depth: number, rowKey: string)}
+							<div class="rounded-md">
 								<div
 									class={cn(
-										'absolute inset-y-0 right-1 hidden items-center rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex',
-										openFolderMenuId === rowKey && 'flex',
+										'group/folder relative my-px flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-foreground/80 transition-colors hover:bg-secondary',
+										depth > 0 && 'ml-4',
 									)}
+									data-roving-row
 								>
-									<DropdownMenu.Root
-										open={openFolderMenuId === rowKey}
-										onOpenChange={(open) => (openFolderMenuId = open ? rowKey : null)}
+									<button
+										type="button"
+										onclick={() => navigate(`/folder?id=${section.id}`)}
+										onkeydown={handleRovingKeydown}
+										data-roving
+										class="flex min-w-0 flex-1 items-center gap-1.5 rounded text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+										aria-label={`Open folder ${section.name}`}
 									>
-										<DropdownMenu.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon-xs"
-													onkeydown={handleRovingKeydown}
-													data-roving
-													tabindex={-1}
-													class="text-muted-foreground hover:bg-border"
-													aria-label={`Folder actions for ${section.name}`}
-												>
-													<Ellipsis />
-												</Button>
-											{/snippet}
-										</DropdownMenu.Trigger>
-										<DropdownMenu.Content align="start" class="min-w-44">
-											{#if !section.parentId}
-												<DropdownMenu.Item onSelect={() => openCreateFolder(section.id)}>
-													<FolderPlus />
-													Create subfolder
-												</DropdownMenu.Item>
-											{/if}
-											<DropdownMenu.Item onSelect={() => void toggleFolderFavorite(section)}>
-												{#if section.favorited}
-													<StarOff />
-													Remove from favorites
-												{:else}
-													<Star />
-													Add to favorites
+										{#if section.emoji}
+											<span class="flex-shrink-0 text-[13px] leading-none">{section.emoji}</span>
+										{:else}
+											<Folder class="size-3.5 flex-shrink-0 text-muted-foreground" />
+										{/if}
+										<span class="min-w-0 flex-1 truncate font-medium">{section.name}</span>
+									</button>
+									<div
+										class={cn(
+											'absolute inset-y-0 right-1 hidden items-center rounded-md pl-2 group-hover/folder:flex group-focus-within/folder:flex',
+											openFolderMenuId === rowKey && 'flex',
+										)}
+									>
+										<DropdownMenu.Root
+											open={openFolderMenuId === rowKey}
+											onOpenChange={(open) => (openFolderMenuId = open ? rowKey : null)}
+										>
+											<DropdownMenu.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon-xs"
+														onkeydown={handleRovingKeydown}
+														data-roving
+														tabindex={-1}
+														class="text-muted-foreground hover:bg-border"
+														aria-label={`Folder actions for ${section.name}`}
+													>
+														<Ellipsis />
+													</Button>
+												{/snippet}
+											</DropdownMenu.Trigger>
+											<DropdownMenu.Content align="start" class="min-w-44">
+												{#if !section.parentId}
+													<DropdownMenu.Item onSelect={() => openCreateFolder(section.id)}>
+														<FolderPlus />
+														Create subfolder
+													</DropdownMenu.Item>
 												{/if}
-											</DropdownMenu.Item>
-											<DropdownMenu.Separator />
-											<DropdownMenu.Item
-												onSelect={() =>
-													openRenameFolder(section.id, section.name, section.emoji ?? null)}
-											>
-												<Pencil />
-												Rename
-											</DropdownMenu.Item>
-											<DropdownMenu.Separator />
-											<DropdownMenu.Item
-												variant="destructive"
-												onSelect={() =>
-													(deleteFolderModal = {
-														open: true,
-														folderId: section.id,
-														name: section.name,
-													})}
-											>
-												<Trash2 />
-												Delete folder
-											</DropdownMenu.Item>
-										</DropdownMenu.Content>
-									</DropdownMenu.Root>
+												<DropdownMenu.Item onSelect={() => void toggleFolderFavorite(section)}>
+													{#if section.favorited}
+														<StarOff />
+														Remove from favorites
+													{:else}
+														<Star />
+														Add to favorites
+													{/if}
+												</DropdownMenu.Item>
+												<DropdownMenu.Separator />
+												<DropdownMenu.Item
+													onSelect={() =>
+														openRenameFolder(section.id, section.name, section.emoji ?? null)}
+												>
+													<Pencil />
+													Rename
+												</DropdownMenu.Item>
+												<DropdownMenu.Separator />
+												<DropdownMenu.Item
+													variant="destructive"
+													onSelect={() =>
+														(deleteFolderModal = {
+															open: true,
+															folderId: section.id,
+															name: section.name,
+														})}
+												>
+													<Trash2 />
+													Delete folder
+												</DropdownMenu.Item>
+											</DropdownMenu.Content>
+										</DropdownMenu.Root>
+									</div>
 								</div>
 							</div>
-						</div>
-					{/snippet}
+						{/snippet}
 
-					{#if favoriteFolders.length > 0}
-						<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">
-							Favorites
+						{#if favoriteFolders.length > 0}
+							<div class="px-2 pb-0.5 pt-2 text-xs font-medium text-muted-foreground/70">
+								Favorites
+							</div>
+							{#each favoriteFolders as section (section.id)}
+								{@render folderRow(section, 0, `fav-${section.id}`)}
+							{/each}
+						{/if}
+
+						<!-- Folders header + create -->
+						<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
+							<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
+							<Tooltip.Provider delayDuration={300}>
+								<Tooltip.Root>
+									<Tooltip.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon-xs"
+												onclick={() => openCreateFolder()}
+												class="text-muted-foreground"
+												aria-label="New folder"
+											>
+												<FolderPlus />
+											</Button>
+										{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content>New folder</Tooltip.Content>
+								</Tooltip.Root>
+							</Tooltip.Provider>
 						</div>
-						{#each favoriteFolders as section (section.id)}
-							{@render folderRow(section, 0, `fav-${section.id}`)}
+
+						{#each rootFolders as section (section.id)}
+							{@render folderRow(section, 0, `tree-${section.id}`)}
+							{#each subfoldersOf.get(section.id) ?? [] as child (child.id)}
+								{@render folderRow(child, 1, `tree-${child.id}`)}
+							{/each}
 						{/each}
 					{/if}
+				</div>
 
-					<!-- Folders header + create -->
-					<div class="flex items-center justify-between px-2 pb-0.5 pt-2">
-						<span class="text-xs font-medium text-muted-foreground/70">Folders</span>
-						<Tooltip.Provider delayDuration={300}>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon-xs"
-											onclick={() => openCreateFolder()}
-											class="text-muted-foreground"
-											aria-label="New folder"
-										>
-											<FolderPlus />
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content>New folder</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
-					</div>
+				<!-- Footer -->
+				<div class="flex-shrink-0 border-t border-border px-3 py-2">
+					{#if isSettings}
+						<!-- Trash pinned to the bottom of the settings nav. -->
+						<button
+							type="button"
+							onclick={() => navigate(`/settings?tab=${SETTINGS_TRASH.value}`)}
+							class={cn(
+								'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+								activeSettingsTab === SETTINGS_TRASH.value
+									? 'bg-destructive/10 font-medium text-destructive'
+									: 'text-destructive/70 hover:bg-destructive/10 hover:text-destructive',
+							)}
+						>
+							<Trash2 class="size-4" />
+							<span>{SETTINGS_TRASH.label}</span>
+						</button>
+					{:else}
+						<button
+							onclick={() => importDialog.openImportDialog()}
+							class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+						>
+							<Upload class="size-4" />
+							<span>Import audio</span>
+						</button>
 
-					{#each rootFolders as section (section.id)}
-						{@render folderRow(section, 0, `tree-${section.id}`)}
-						{#each subfoldersOf.get(section.id) ?? [] as child (child.id)}
-							{@render folderRow(child, 1, `tree-${child.id}`)}
-						{/each}
-					{/each}
-				{/if}
-			</div>
+						<button
+							type="button"
+							onclick={() => navigate('/people')}
+							class={cn(
+								'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+								pathname === '/people'
+									? 'bg-secondary font-medium text-foreground'
+									: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+							)}
+						>
+							<Users class="size-4" />
+							<span>People</span>
+						</button>
 
-			<!-- Footer -->
-			<div class="flex-shrink-0 border-t border-border px-3 py-2">
-				{#if isSettings}
-					<!-- Trash pinned to the bottom of the settings nav. -->
-					<button
-						type="button"
-						onclick={() => navigate(`/settings?tab=${SETTINGS_TRASH.value}`)}
-						class={cn(
-							'mb-1 flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-							activeSettingsTab === SETTINGS_TRASH.value
-								? 'bg-destructive/10 font-medium text-destructive'
-								: 'text-destructive/70 hover:bg-destructive/10 hover:text-destructive',
-						)}
-					>
-						<Trash2 class="size-4" />
-						<span>{SETTINGS_TRASH.label}</span>
-					</button>
-				{:else}
-					<button
-						onclick={() => importDialog.openImportDialog()}
-						class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-					>
-						<Upload class="size-4" />
-						<span>Import audio</span>
-					</button>
-
-					<button
-						type="button"
-						onclick={() => navigate('/people')}
-						class={cn(
-							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-							pathname === '/people'
-								? 'bg-secondary font-medium text-foreground'
-								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-						)}
-					>
-						<Users class="size-4" />
-						<span>People</span>
-					</button>
-
-					<button
-						onclick={() => navigate('/settings')}
-						class={cn(
-							'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-							pathname === '/settings'
-								? 'bg-secondary font-medium text-foreground'
-								: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-						)}
-					>
-						<Settings class="size-4" />
-						<span>Settings</span>
-					</button>
-				{/if}
+						<button
+							onclick={() => navigate('/settings')}
+							class={cn(
+								'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
+								pathname === '/settings'
+									? 'bg-secondary font-medium text-foreground'
+									: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
+							)}
+						>
+							<Settings class="size-4" />
+							<span>Settings</span>
+						</button>
+					{/if}
+				</div>
 			</div>
 		{/if}
 	</div>
