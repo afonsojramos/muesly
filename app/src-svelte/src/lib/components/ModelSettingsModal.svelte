@@ -504,13 +504,9 @@
 </script>
 
 <div>
-	<div class="mb-4 flex items-center justify-between">
-		<h3 class="text-lg font-semibold">Model Settings</h3>
-	</div>
-
 	<div class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1">
-			<Label>Summarization Model</Label>
+			<Label>Summarization model</Label>
 			<div class="flex gap-2">
 				<Select.Root
 					type="single"

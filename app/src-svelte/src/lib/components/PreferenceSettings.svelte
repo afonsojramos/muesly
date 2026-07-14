@@ -31,6 +31,7 @@
 	}
 
 	let hasTrackedView = false;
+	let notificationSaving = $state(false);
 
 	onMount(() => {
 		void config.loadPreferences();
@@ -58,6 +59,7 @@
 		const current = config.notificationSettings;
 		if (!current) return;
 
+		notificationSaving = true;
 		try {
 			await config.updateNotificationSettings({
 				...current,
@@ -72,6 +74,11 @@
 			});
 		} catch (error) {
 			console.error('Failed to update notification settings:', error);
+			toast.error('Could not update notifications', {
+				description: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			notificationSaving = false;
 		}
 	}
 
@@ -108,6 +115,9 @@
 			await Analytics.track('storage_folder_opened', { folder_type: 'recordings' });
 		} catch (error) {
 			console.error('Failed to open recordings folder:', error);
+			toast.error('Could not open the recordings folder', {
+				description: error instanceof Error ? error.message : String(error),
+			});
 		}
 	}
 </script>
@@ -116,7 +126,7 @@
 	<Loadable loading={config.isLoadingPreferences}>
 		<Card.Root>
 			<Card.Header>
-				<div class="flex items-center justify-between gap-4">
+				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<Card.Title>Appearance</Card.Title>
 						<Card.Description>
@@ -146,14 +156,19 @@
 
 		<Card.Root>
 			<Card.Header>
-				<div class="flex items-center justify-between">
+				<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 					<div>
-						<Card.Title>System notifications</Card.Title>
+						<Card.Title id="system-notifications-label">System notifications</Card.Title>
 						<Card.Description>
 							Show a system notification when a meeting starts and ends
 						</Card.Description>
 					</div>
-					<Switch checked={notificationsEnabled} onCheckedChange={handleNotificationToggle} />
+					<Switch
+						checked={notificationsEnabled}
+						disabled={!config.notificationSettings || notificationSaving}
+						aria-labelledby="system-notifications-label"
+						onCheckedChange={handleNotificationToggle}
+					/>
 				</div>
 			</Card.Header>
 		</Card.Root>
@@ -166,7 +181,7 @@
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-1">
-				<div class="flex items-center justify-between gap-4 py-1.5">
+				<div class="flex flex-col gap-3 py-1.5 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<div class="text-sm font-medium">Start or stop recording</div>
 						<div class="text-sm text-muted-foreground">
@@ -177,7 +192,7 @@
 						<ShortcutRecorder info={recordingShortcut} onChange={changeRecordingShortcut} />
 					{/if}
 				</div>
-				<div class="flex items-center justify-between gap-4 py-1.5">
+				<div class="flex flex-col gap-3 py-1.5 sm:flex-row sm:items-center sm:justify-between">
 					<div>
 						<div class="text-sm font-medium">Push-to-talk dictation</div>
 						<div class="text-sm text-muted-foreground">
@@ -193,17 +208,17 @@
 
 		<Card.Root>
 			<Card.Header>
-				<Card.Title>Data Storage Locations</Card.Title>
-				<Card.Description>View and access where muesly stores your data</Card.Description>
+				<Card.Title>Data storage locations</Card.Title>
+				<Card.Description>View and access where Muesly stores your data</Card.Description>
 			</Card.Header>
 			<Card.Content class="flex flex-col gap-4">
 				<div class="rounded-lg border border-border bg-secondary/40 p-4">
-					<div class="mb-2 font-medium">Meeting Recordings</div>
+					<div class="mb-2 font-medium">Meeting recordings</div>
 					<div class="mb-3 break-all font-mono text-xs text-muted-foreground">
-						{config.storageLocations?.recordings || 'Loading...'}
+						{config.storageLocations?.recordings || 'Location unavailable'}
 					</div>
 					<Button variant="outline" size="sm" onclick={handleOpenRecordingsFolder}>
-						<FolderOpen data-icon="inline-start" /> Open Folder
+						<FolderOpen data-icon="inline-start" /> Open folder
 					</Button>
 				</div>
 			</Card.Content>

@@ -96,8 +96,8 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
-		<div class="mx-auto max-w-4xl p-8 pt-6">
-			<h2 class="mb-6 text-2xl font-semibold">{activeLabel}</h2>
+		<div class="mx-auto max-w-4xl px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+			<h2 class="mb-5 text-balance text-2xl font-semibold sm:mb-6">{activeLabel}</h2>
 			{#if activeTab === 'general'}
 				<PreferenceSettings />
 			{:else if activeTab === 'recording'}

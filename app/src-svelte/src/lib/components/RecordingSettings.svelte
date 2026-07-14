@@ -15,8 +15,8 @@
 
 	import { Analytics } from '$lib/analytics';
 	import * as Alert from '$lib/components/ui/alert';
+	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
-	import { Separator } from '$lib/components/ui/separator';
 	import { Switch } from '$lib/components/ui/switch';
 	import { toast } from '$lib/toast';
 	import Loadable from '$lib/components/Loadable.svelte';
@@ -36,6 +36,8 @@
 	});
 	let loading = $state(true);
 	let saving = $state(false);
+	let notificationSaving = $state(false);
+	let automationSaving = $state<string | null>(null);
 	let showRecordingNotification = $state(true);
 	let autoDetectMeetings = $state(false);
 	let autoStartOnEvent = $state(false);
@@ -107,6 +109,7 @@
 	});
 
 	async function handleDictationToggle(enabled: boolean): Promise<void> {
+		automationSaving = 'dictation';
 		dictationEnabled = enabled;
 		// Enabling keeps the engine warm and registers the push-to-talk hotkey.
 		const warm = await commands.setDictationEnabled(enabled);
@@ -116,31 +119,38 @@
 			toast.error('Failed to update dictation', {
 				description: warm.status === 'error' ? warm.error : (hotkey as { error?: string }).error,
 			});
+			automationSaving = null;
 			return;
 		}
 		if (enabled) {
 			const trusted = await commands.dictationAccessibilityTrusted();
 			if (trusted.status === 'ok') accessibilityTrusted = trusted.data;
 		}
+		automationSaving = null;
 	}
 
 	async function handleAutoDetectToggle(enabled: boolean): Promise<void> {
+		automationSaving = 'detection';
 		autoDetectMeetings = enabled;
 		const res = await commands.setAutoDetectMeetings(enabled);
 		if (res.status === 'error') {
 			autoDetectMeetings = !enabled;
 			toast.error('Failed to update meeting auto-detection', { description: res.error });
 		}
+		automationSaving = null;
 	}
 
 	async function handleAutoStartToggle(enabled: boolean): Promise<void> {
+		automationSaving = 'auto-start';
 		autoStartOnEvent = enabled;
 		const res = await commands.calendarSetAutoStartOnEvent(enabled);
 		if (res.status === 'error') {
 			autoStartOnEvent = !enabled;
 			toast.error('Failed to update auto-start', { description: res.error });
+			automationSaving = null;
 			return;
 		}
+		automationSaving = null;
 		// A denied Calendar permission would leave this silently never firing.
 		if (enabled) {
 			const perm = await commands.calendarPermissionStatus();
@@ -153,42 +163,47 @@
 	}
 
 	async function handleAutoJoinToggle(enabled: boolean): Promise<void> {
+		automationSaving = 'auto-join';
 		autoJoinMeeting = enabled;
 		const res = await commands.calendarSetAutoJoinMeeting(enabled);
 		if (res.status === 'error') {
 			autoJoinMeeting = !enabled;
 			toast.error('Failed to update auto-join', { description: res.error });
 		}
+		automationSaving = null;
 	}
 
-	async function savePreferences(prefs: RecordingPreferences): Promise<void> {
+	async function savePreferences(prefs: RecordingPreferences): Promise<boolean> {
 		saving = true;
 		try {
 			await invoke('set_recording_preferences', { preferences: prefs });
-			const micDevice = prefs.preferred_mic_device || 'Default';
-			const systemDevice = prefs.preferred_system_device || 'Default';
-			toast.success('Device preferences saved', {
-				description: `Microphone: ${micDevice}, System Audio: ${systemDevice}`,
-			});
+			return true;
 		} catch (error) {
 			console.error('Failed to save recording preferences:', error);
-			toast.error('Failed to save device preferences', {
+			toast.error('Failed to save recording preferences', {
 				description: error instanceof Error ? error.message : String(error),
 			});
+			return false;
 		} finally {
 			saving = false;
 		}
 	}
 
 	async function handleAutoSaveToggle(enabled: boolean): Promise<void> {
+		const previous = preferences;
 		preferences = { ...preferences, auto_save: enabled };
-		await savePreferences(preferences);
+		if (!(await savePreferences(preferences))) {
+			preferences = previous;
+			return;
+		}
 		Analytics.track('auto_save_recording_toggled', { enabled: enabled.toString() }).catch((err) =>
 			console.error('Failed to track auto-save toggle:', err),
 		);
 	}
 
 	async function handleDeviceChange(devices: SelectedDevices): Promise<void> {
+		const previousPreferences = preferences;
+		const previousDevices = config.selectedDevices;
 		preferences = {
 			...preferences,
 			preferred_mic_device: devices.micDevice,
@@ -198,7 +213,11 @@
 		// recordings read `config.selectedDevices`, so without this the change didn't
 		// take effect until the next app launch.
 		config.setSelectedDevices(devices);
-		await savePreferences(preferences);
+		if (!(await savePreferences(preferences))) {
+			preferences = previousPreferences;
+			config.setSelectedDevices(previousDevices);
+			return;
+		}
 		Analytics.track('default_devices_changed', {
 			has_preferred_microphone: (!!devices.micDevice).toString(),
 			has_preferred_system_audio: (!!devices.systemDevice).toString(),
@@ -210,175 +229,249 @@
 			await invoke('open_recordings_folder');
 		} catch (error) {
 			console.error('Failed to open recordings folder:', error);
+			toast.error('Could not open the recordings folder', {
+				description: error instanceof Error ? error.message : String(error),
+			});
 		}
 	}
 
 	async function handleNotificationToggle(enabled: boolean): Promise<void> {
+		const previous = showRecordingNotification;
+		notificationSaving = true;
 		try {
 			showRecordingNotification = enabled;
 			const { Store } = await import('@tauri-apps/plugin-store');
 			const store = await Store.load('preferences.json');
 			await store.set('show_recording_notification', enabled);
 			await store.save();
-			toast.success('Preference saved');
 			await Analytics.track('recording_notification_preference_changed', {
 				enabled: enabled.toString(),
 			});
 		} catch (error) {
+			showRecordingNotification = previous;
 			console.error('Failed to save notification preference:', error);
 			toast.error('Failed to save preference');
+		} finally {
+			notificationSaving = false;
 		}
 	}
 </script>
 
-<div class="flex flex-col gap-6">
-	<div>
-		<p class="mb-6 text-sm text-muted-foreground">
-			Configure how your audio recordings are saved during meetings.
-		</p>
-	</div>
+<div class="flex flex-col gap-4">
+	<p class="text-pretty text-sm text-muted-foreground">
+		Configure capture, meeting automation, dictation, and default devices.
+	</p>
 	<Loadable {loading}>
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Save Audio Recordings</div>
-				<div class="text-sm text-muted-foreground">
-					Automatically save audio files when recording stops
-				</div>
-			</div>
-			<Switch
-				checked={preferences.auto_save}
-				disabled={saving}
-				onCheckedChange={handleAutoSaveToggle}
-			/>
-		</div>
-
-		{#if preferences.auto_save}
-			<div class="flex flex-col gap-4">
-				<div class="rounded-lg border border-border bg-secondary/40 p-4">
-					<div class="mb-2 font-medium">Save Location</div>
-					<div class="mb-3 break-all text-sm text-muted-foreground">
-						{preferences.save_folder || 'Default folder'}
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Capture</Card.Title>
+				<Card.Description
+					>Choose what Muesly saves and how recording is communicated.</Card.Description
+				>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-3">
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="save-recordings-label" class="font-medium">Save audio recordings</div>
+						<div class="text-sm text-muted-foreground">
+							Automatically save audio files when recording stops
+						</div>
 					</div>
-					<Button variant="outline" size="sm" onclick={handleOpenFolder}>
-						<FolderOpen data-icon="inline-start" /> Open Folder
-					</Button>
+					<Switch
+						checked={preferences.auto_save}
+						disabled={saving}
+						aria-labelledby="save-recordings-label"
+						onCheckedChange={handleAutoSaveToggle}
+					/>
 				</div>
 
-				<div class="rounded-lg border border-brand/20 bg-brand/5 p-4">
-					<div class="text-sm text-foreground">
-						<strong>File Format:</strong>
-						{preferences.file_format.toUpperCase()} files
+				{#if preferences.auto_save}
+					<div class="flex flex-col gap-4">
+						<div class="rounded-lg bg-muted/35 p-4">
+							<div class="mb-2 font-medium">Save location</div>
+							<div class="mb-3 break-all text-sm text-muted-foreground">
+								{preferences.save_folder || 'Default folder'}
+							</div>
+							<Button variant="outline" size="sm" onclick={handleOpenFolder}>
+								<FolderOpen data-icon="inline-start" /> Open folder
+							</Button>
+						</div>
+
+						<div class="rounded-lg border border-brand/20 bg-brand/5 p-4">
+							<div class="text-sm text-foreground">
+								<strong>File format:</strong>
+								{preferences.file_format.toUpperCase()} files
+							</div>
+							<div class="mt-1 text-xs text-muted-foreground">
+								Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
+							</div>
+						</div>
 					</div>
-					<div class="mt-1 text-xs text-muted-foreground">
-						Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
-					</div>
-				</div>
-			</div>
-		{:else}
-			<Alert.Root class="border-warning/30 text-warning">
-				<Alert.Description class="text-warning/90">
-					Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your
-					meeting audio.
-				</Alert.Description>
-			</Alert.Root>
-		{/if}
-
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Recording consent reminder</div>
-				<div class="text-sm text-muted-foreground">
-					Show an in-app banner reminding you to tell participants a recording has started
-				</div>
-			</div>
-			<Switch checked={showRecordingNotification} onCheckedChange={handleNotificationToggle} />
-		</div>
-
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Global recording shortcut</div>
-				<div class="text-sm text-muted-foreground">
-					Start or stop a recording with
-					{recordingAccel ? formatAccelerator(recordingAccel, platform.isMac) : 'the shortcut'}
-					from any app. Rebind it in General settings.
-				</div>
-			</div>
-			<Switch
-				checked={config.globalShortcutEnabled}
-				onCheckedChange={(enabled) => config.toggleGlobalShortcut(enabled)}
-			/>
-		</div>
-
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Automatically detect meetings</div>
-				<div class="text-sm text-muted-foreground">
-					When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start recording.
-					macOS only.
-				</div>
-			</div>
-			<Switch checked={autoDetectMeetings} onCheckedChange={handleAutoDetectToggle} />
-		</div>
-
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Start recording when a meeting begins</div>
-				<div class="text-sm text-muted-foreground">
-					When a calendar meeting with attendees starts, automatically record it. Off by default.
-				</div>
-			</div>
-			<Switch checked={autoStartOnEvent} onCheckedChange={handleAutoStartToggle} />
-		</div>
-
-		<div
-			class="flex items-center justify-between rounded-lg border border-border p-4"
-			class:opacity-60={!autoStartOnEvent}
-		>
-			<div class="flex-1">
-				<div class="font-medium">Open the meeting link too</div>
-				<div class="text-sm text-muted-foreground">
-					On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your browser.
-				</div>
-			</div>
-			<Switch
-				checked={autoJoinMeeting}
-				onCheckedChange={handleAutoJoinToggle}
-				disabled={!autoStartOnEvent}
-			/>
-		</div>
-
-		<div class="flex items-center justify-between rounded-lg border border-border p-4">
-			<div class="flex-1">
-				<div class="font-medium">Push-to-talk dictation</div>
-				<div class="text-sm text-muted-foreground">
-					Hold {dictationAccel ? formatAccelerator(dictationAccel, platform.isMac) : 'the hotkey'}
-					to dictate; on release the transcribed text is inserted into the focused app. Keeps the model
-					warm. macOS needs Accessibility permission.
-				</div>
-				{#if dictationEnabled && !accessibilityTrusted}
-					<div class="mt-2 text-sm text-destructive">
-						Accessibility permission is required to insert text. Grant it in System Settings →
-						Privacy &amp; Security → Accessibility.
-					</div>
+				{:else}
+					<Alert.Root class="border-warning/30 text-warning">
+						<Alert.Description class="text-warning/90">
+							Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your
+							meeting audio.
+						</Alert.Description>
+					</Alert.Root>
 				{/if}
-			</div>
-			<Switch checked={dictationEnabled} onCheckedChange={handleDictationToggle} />
-		</div>
 
-		{#if dictationEnabled}
-			<DictationCleanupSettings />
-		{/if}
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="recording-consent-label" class="font-medium">Recording consent reminder</div>
+						<div class="text-sm text-muted-foreground">
+							Show an in-app banner reminding you to tell participants a recording has started
+						</div>
+					</div>
+					<Switch
+						checked={showRecordingNotification}
+						disabled={notificationSaving}
+						aria-labelledby="recording-consent-label"
+						onCheckedChange={handleNotificationToggle}
+					/>
+				</div>
+			</Card.Content>
+		</Card.Root>
 
-		<Separator />
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Automation</Card.Title>
+				<Card.Description
+					>Control recording from anywhere and respond to meetings automatically.</Card.Description
+				>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-3">
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="global-recording-label" class="font-medium">Global recording shortcut</div>
+						<div class="text-sm text-muted-foreground">
+							Start or stop a recording with
+							{recordingAccel ? formatAccelerator(recordingAccel, platform.isMac) : 'the shortcut'}
+							from any app. Rebind it in General settings.
+						</div>
+					</div>
+					<Switch
+						checked={config.globalShortcutEnabled}
+						aria-labelledby="global-recording-label"
+						onCheckedChange={(enabled) => config.toggleGlobalShortcut(enabled)}
+					/>
+				</div>
 
-		<div class="flex flex-col gap-4">
-			<div>
-				<h4 class="mb-4 text-base font-medium">Default Audio Devices</h4>
-				<p class="mb-4 text-sm text-muted-foreground">
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="detect-meetings-label" class="font-medium">Automatically detect meetings</div>
+						<div class="text-sm text-muted-foreground">
+							When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start recording.
+							macOS only.
+						</div>
+					</div>
+					<Switch
+						checked={autoDetectMeetings}
+						disabled={automationSaving === 'detection'}
+						aria-labelledby="detect-meetings-label"
+						onCheckedChange={handleAutoDetectToggle}
+					/>
+				</div>
+
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="auto-start-label" class="font-medium">
+							Start recording when a meeting begins
+						</div>
+						<div class="text-sm text-muted-foreground">
+							When a calendar meeting with attendees starts, automatically record it. Off by
+							default.
+						</div>
+					</div>
+					<Switch
+						checked={autoStartOnEvent}
+						disabled={automationSaving === 'auto-start'}
+						aria-labelledby="auto-start-label"
+						onCheckedChange={handleAutoStartToggle}
+					/>
+				</div>
+
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+					class:opacity-60={!autoStartOnEvent}
+				>
+					<div class="min-w-0 flex-1">
+						<div id="auto-join-label" class="font-medium">Open the meeting link too</div>
+						<div class="text-sm text-muted-foreground">
+							On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your browser.
+						</div>
+					</div>
+					<Switch
+						checked={autoJoinMeeting}
+						onCheckedChange={handleAutoJoinToggle}
+						disabled={!autoStartOnEvent || automationSaving === 'auto-join'}
+						aria-labelledby="auto-join-label"
+					/>
+				</div>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Dictation</Card.Title>
+				<Card.Description
+					>Insert locally transcribed speech into the app you are using.</Card.Description
+				>
+			</Card.Header>
+			<Card.Content class="flex flex-col gap-3">
+				<div
+					class="flex flex-col gap-4 rounded-lg bg-muted/35 p-4 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<div class="min-w-0 flex-1">
+						<div id="dictation-label" class="font-medium">Push-to-talk dictation</div>
+						<div class="text-sm text-muted-foreground">
+							Hold {dictationAccel
+								? formatAccelerator(dictationAccel, platform.isMac)
+								: 'the hotkey'}
+							to dictate; on release the transcribed text is inserted into the focused app. Keeps the
+							model warm. macOS needs Accessibility permission.
+						</div>
+						{#if dictationEnabled && !accessibilityTrusted}
+							<div class="mt-2 text-sm text-destructive">
+								Accessibility permission is required to insert text. Grant it in System Settings →
+								Privacy &amp; Security → Accessibility.
+							</div>
+						{/if}
+					</div>
+					<Switch
+						checked={dictationEnabled}
+						disabled={automationSaving === 'dictation'}
+						aria-labelledby="dictation-label"
+						onCheckedChange={handleDictationToggle}
+					/>
+				</div>
+
+				{#if dictationEnabled}
+					<DictationCleanupSettings />
+				{/if}
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<Card.Title>Default audio devices</Card.Title>
+				<Card.Description>
 					Set your preferred microphone and system audio devices for recording. These will be
 					automatically selected when starting new recordings.
-				</p>
-
-				<div class="rounded-lg border border-border bg-secondary/40 p-4">
+				</Card.Description>
+			</Card.Header>
+			<Card.Content>
+				<div class="rounded-lg bg-muted/35 p-4">
 					<DeviceSelection
 						selectedDevices={{
 							micDevice: preferences.preferred_mic_device,
@@ -388,7 +481,7 @@
 						disabled={saving}
 					/>
 				</div>
-			</div>
-		</div>
+			</Card.Content>
+		</Card.Root>
 	</Loadable>
 </div>
