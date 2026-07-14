@@ -1,6 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
-import { filterMentionSuggestions, handleMentionKey, matchMention } from './mentions';
+import {
+	filterMentionSuggestions,
+	handleMentionKey,
+	matchMention,
+	placeMentionMenu,
+} from './mentions';
+
+const viewport = { left: 0, top: 0, right: 800, bottom: 600 };
+const menu = { width: 256, height: 240 };
+
+describe('placeMentionMenu', () => {
+	it('places the menu below the caret when there is room', () => {
+		expect(
+			placeMentionMenu({ left: 100, top: 100, right: 101, bottom: 120 }, menu, viewport),
+		).toEqual({ left: 100, top: 126, placement: 'below' });
+	});
+
+	it('flips above the caret when there is more room above', () => {
+		expect(
+			placeMentionMenu({ left: 100, top: 520, right: 101, bottom: 540 }, menu, viewport),
+		).toEqual({ left: 100, top: 274, placement: 'above' });
+	});
+
+	it('clamps against the right viewport margin', () => {
+		expect(
+			placeMentionMenu({ left: 750, top: 100, right: 751, bottom: 120 }, menu, viewport).left,
+		).toBe(536);
+	});
+
+	it('clamps against the left viewport margin', () => {
+		expect(
+			placeMentionMenu({ left: -20, top: 100, right: -19, bottom: 120 }, menu, viewport).left,
+		).toBe(8);
+	});
+
+	it('keeps the menu anchored within a viewport smaller than the menu', () => {
+		const tinyViewport = { left: 20, top: 30, right: 180, bottom: 150 };
+		expect(
+			placeMentionMenu({ left: 100, top: 80, right: 101, bottom: 100 }, menu, tinyViewport),
+		).toEqual({ left: 28, top: 38, placement: 'below' });
+	});
+});
 
 describe('matchMention', () => {
 	it('activates immediately after @', () => {

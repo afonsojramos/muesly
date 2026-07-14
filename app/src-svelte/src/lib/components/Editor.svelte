@@ -4,7 +4,7 @@
 	import { StarterKit } from '@tiptap/starter-kit';
 	import { Plugin, PluginKey } from '@tiptap/pm/state';
 	import { Decoration, DecorationSet } from '@tiptap/pm/view';
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
@@ -12,6 +12,7 @@
 		filterMentionSuggestions,
 		handleMentionKey,
 		matchMention,
+		placeMentionMenu,
 		type MentionRange,
 	} from '$lib/editor/mentions';
 
@@ -99,12 +100,57 @@
 	let mentionIndex = $state(0);
 	let mentionLeft = $state(0);
 	let mentionTop = $state(0);
+	let mentionMenu = $state<HTMLDivElement>();
+	const componentId = $props.id();
+	const mentionListboxId = `${componentId}-participant-mention-listbox`;
 	const filteredMentions = $derived(filterMentionSuggestions(mentionSuggestions, mentionQuery));
 
 	function closeMentionMenu(): void {
 		mentionRange = null;
 		mentionQuery = '';
 		mentionIndex = 0;
+	}
+
+	function visibleViewport(): { left: number; top: number; right: number; bottom: number } {
+		let left = 0;
+		let top = 0;
+		let right = window.innerWidth;
+		let bottom = window.innerHeight;
+		let ancestor = element?.parentElement;
+		while (ancestor) {
+			const style = getComputedStyle(ancestor);
+			if (
+				/(auto|scroll|hidden|clip)/.test(`${style.overflow}${style.overflowX}${style.overflowY}`)
+			) {
+				const rect = ancestor.getBoundingClientRect();
+				left = Math.max(left, rect.left);
+				top = Math.max(top, rect.top);
+				right = Math.min(right, rect.right);
+				bottom = Math.min(bottom, rect.bottom);
+			}
+			ancestor = ancestor.parentElement;
+		}
+		return { left, top, right, bottom };
+	}
+
+	function positionMentionMenu(): void {
+		if (!editor || !element || !mentionMenu || !mentionRange) return;
+		const caret = editor.view.coordsAtPos(mentionRange.to);
+		const menuBounds = mentionMenu.getBoundingClientRect();
+		const containerBounds = element.parentElement?.getBoundingClientRect();
+		if (!containerBounds) return;
+		const placement = placeMentionMenu(
+			caret,
+			{ width: menuBounds.width, height: menuBounds.height },
+			visibleViewport(),
+		);
+		mentionLeft = placement.left - containerBounds.left;
+		mentionTop = placement.top - containerBounds.top;
+	}
+
+	async function scheduleMentionMenuPosition(): Promise<void> {
+		await tick();
+		positionMentionMenu();
 	}
 
 	function updateMentionMenu(ed: Editor): void {
@@ -126,12 +172,7 @@
 		mentionQuery = match.query;
 		mentionIndex = 0;
 
-		const caret = ed.view.coordsAtPos(to);
-		const bounds = element?.getBoundingClientRect();
-		if (bounds) {
-			mentionLeft = Math.max(0, Math.min(caret.left - bounds.left, bounds.width - 256));
-			mentionTop = caret.bottom - bounds.top + 6;
-		}
+		void scheduleMentionMenuPosition();
 	}
 
 	function selectMention(name: string): void {
@@ -219,6 +260,36 @@
 		});
 		lastValueProp = value;
 		ready = true;
+		const reposition = (): void => positionMentionMenu();
+		window.addEventListener('resize', reposition);
+		window.addEventListener('scroll', reposition, true);
+		return () => {
+			window.removeEventListener('resize', reposition);
+			window.removeEventListener('scroll', reposition, true);
+		};
+	});
+
+	$effect(() => {
+		const menuContentKey = `${mentionQuery}:${filteredMentions.length}`;
+		if (mentionRange && menuContentKey) {
+			void scheduleMentionMenuPosition();
+		}
+	});
+
+	$effect(() => {
+		if (!ready || !editor) return;
+		const activeMention = filteredMentions[mentionIndex];
+		editor.view.dom.setAttribute('aria-expanded', String(Boolean(mentionRange)));
+		if (mentionRange) editor.view.dom.setAttribute('aria-controls', mentionListboxId);
+		else editor.view.dom.removeAttribute('aria-controls');
+		if (mentionRange && activeMention) {
+			editor.view.dom.setAttribute(
+				'aria-activedescendant',
+				`${mentionListboxId}-option-${mentionIndex}`,
+			);
+		} else {
+			editor.view.dom.removeAttribute('aria-activedescendant');
+		}
 	});
 
 	// Reactive editable — mutate the existing instance, never recreate it.
@@ -274,10 +345,12 @@
 
 	{#if mentionRange}
 		<div
+			bind:this={mentionMenu}
 			class="absolute z-50 w-64 rounded-lg bg-popover p-1 text-popover-foreground shadow-md"
 			style:left={`${mentionLeft}px`}
 			style:top={`${mentionTop}px`}
 			role="listbox"
+			id={mentionListboxId}
 			aria-label="Tag a participant"
 		>
 			<p class="px-2 py-1.5 text-xs font-medium text-muted-foreground">Participants</p>
@@ -285,6 +358,7 @@
 				<div class="max-h-64 overflow-y-auto">
 					{#each filteredMentions as name, index (name)}
 						<Button
+							id={`${mentionListboxId}-option-${index}`}
 							variant="ghost"
 							class={cn('h-10 w-full justify-start px-2', index === mentionIndex && 'bg-accent')}
 							role="option"
