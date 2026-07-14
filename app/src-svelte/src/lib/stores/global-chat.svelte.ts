@@ -12,7 +12,7 @@ import { Channel } from '@tauri-apps/api/core';
 import { commands, type GlobalChatEvent } from '$lib/bindings';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
-import { reduceGlobalChatStreamEvent } from '$lib/chat/stream';
+import { reduceGlobalChatStreamEvent, type StreamOutcome } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 
@@ -43,6 +43,7 @@ class GlobalChatStore {
 	messages = $state<GlobalChatMessage[]>([]);
 	draft = $state('');
 	isStreaming = $state(false);
+	streamOutcome = $state<StreamOutcome>('idle');
 	#genId: string | null = null;
 
 	async send(text?: string, execution?: BarExecution): Promise<void> {
@@ -65,6 +66,7 @@ class GlobalChatStore {
 		const assistant = this.messages[this.messages.length - 1]!;
 
 		this.isStreaming = true;
+		this.streamOutcome = 'streaming';
 		const genId = uid();
 		this.#genId = genId;
 
@@ -75,6 +77,7 @@ class GlobalChatStore {
 				actions: assistant.actions,
 				isStreaming: this.isStreaming,
 				activeGenerationId: this.#genId,
+				streamOutcome: this.streamOutcome,
 			};
 			const reduction = reduceGlobalChatStreamEvent(state, genId, event);
 			if (reduction.state === state) return;
@@ -82,6 +85,7 @@ class GlobalChatStore {
 			assistant.actions = reduction.state.actions;
 			this.isStreaming = reduction.state.isStreaming;
 			this.#genId = reduction.state.activeGenerationId;
+			this.streamOutcome = reduction.state.streamOutcome;
 			if (reduction.error) toast.error('Chat failed', { description: reduction.error });
 		};
 
@@ -90,6 +94,7 @@ class GlobalChatStore {
 		if (res.status === 'error' && this.#genId === genId) {
 			if (!assistant.content) assistant.content = `⚠️ ${res.error}`;
 			toast.error('Chat failed', { description: res.error });
+			this.streamOutcome = 'error';
 			this.#finish(genId);
 		}
 	}
@@ -106,7 +111,10 @@ class GlobalChatStore {
 
 	stop(): void {
 		// Same cancellation registry as the per-meeting chat.
-		if (this.#genId) void commands.chatCancel(this.#genId);
+		if (this.#genId) {
+			void commands.chatCancel(this.#genId);
+			this.streamOutcome = 'cancelled';
+		}
 		this.isStreaming = false;
 		this.#genId = null;
 	}
@@ -114,6 +122,7 @@ class GlobalChatStore {
 	clear(): void {
 		this.stop();
 		this.messages = [];
+		this.streamOutcome = 'idle';
 	}
 
 	#finish(genId: string): void {

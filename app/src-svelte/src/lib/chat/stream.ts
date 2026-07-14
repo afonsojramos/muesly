@@ -1,9 +1,12 @@
 import type { ChatStreamEvent, GlobalChatEvent } from '$lib/bindings';
 
+export type StreamOutcome = 'idle' | 'streaming' | 'completed' | 'error' | 'cancelled';
+
 export interface ChatStreamState {
 	content: string;
 	isStreaming: boolean;
 	activeGenerationId: string | null;
+	streamOutcome: StreamOutcome;
 }
 
 export interface GlobalChatStreamState extends ChatStreamState {
@@ -13,6 +16,20 @@ export interface GlobalChatStreamState extends ChatStreamState {
 export interface StreamReduction<T> {
 	state: T;
 	error?: string;
+}
+
+export function getStreamAnnouncement(outcome: StreamOutcome): string {
+	switch (outcome) {
+		case 'streaming':
+			return 'Thinking';
+		case 'completed':
+			return 'Response ready';
+		case 'error':
+			return 'Response failed';
+		case 'idle':
+		case 'cancelled':
+			return '';
+	}
 }
 
 export function reduceChatStreamEvent(
@@ -27,7 +44,12 @@ export function reduceChatStreamEvent(
 			return { state: { ...state, content: state.content + event.data.text } };
 		case 'done':
 			return {
-				state: { content: event.data.full, isStreaming: false, activeGenerationId: null },
+				state: {
+					content: event.data.full,
+					isStreaming: false,
+					activeGenerationId: null,
+					streamOutcome: 'completed',
+				},
 			};
 		case 'error':
 			return {
@@ -35,6 +57,7 @@ export function reduceChatStreamEvent(
 					content: state.content || `⚠️ ${event.data.message}`,
 					isStreaming: false,
 					activeGenerationId: null,
+					streamOutcome: 'error',
 				},
 				error: event.data.message,
 			};
@@ -78,6 +101,7 @@ export function reduceGlobalChatStreamEvent(
 					content: event.data.full,
 					isStreaming: false,
 					activeGenerationId: null,
+					streamOutcome: 'completed',
 				},
 			};
 		case 'error':
@@ -87,6 +111,7 @@ export function reduceGlobalChatStreamEvent(
 					content: state.content || `⚠️ ${event.data.message}`,
 					isStreaming: false,
 					activeGenerationId: null,
+					streamOutcome: 'error',
 				},
 				error: event.data.message,
 			};

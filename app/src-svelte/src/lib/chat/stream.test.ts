@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	getStreamAnnouncement,
 	reduceChatStreamEvent,
 	reduceGlobalChatStreamEvent,
 	type ChatStreamState,
@@ -11,6 +12,7 @@ const streaming = (content = ''): ChatStreamState => ({
 	content,
 	isStreaming: true,
 	activeGenerationId: 'current',
+	streamOutcome: 'streaming',
 });
 
 describe('reduceChatStreamEvent', () => {
@@ -22,6 +24,8 @@ describe('reduceChatStreamEvent', () => {
 
 		expect(reduction.state.content).toBe('Hello world');
 		expect(reduction.state.isStreaming).toBe(true);
+		expect(reduction.state.streamOutcome).toBe('streaming');
+		expect(getStreamAnnouncement(reduction.state.streamOutcome)).toBe('Thinking');
 	});
 
 	it('uses done.full as the authoritative answer', () => {
@@ -34,7 +38,9 @@ describe('reduceChatStreamEvent', () => {
 			content: 'complete answer',
 			isStreaming: false,
 			activeGenerationId: null,
+			streamOutcome: 'completed',
 		});
+		expect(getStreamAnnouncement(reduction.state.streamOutcome)).toBe('Response ready');
 	});
 
 	it('rejects stale generations without mutating their message', () => {
@@ -57,6 +63,8 @@ describe('reduceChatStreamEvent', () => {
 		expect(reduction.state.content).toBe('useful partial answer');
 		expect(reduction.state.isStreaming).toBe(false);
 		expect(reduction.error).toBe('connection lost');
+		expect(reduction.state.streamOutcome).toBe('error');
+		expect(getStreamAnnouncement(reduction.state.streamOutcome)).toBe('Response failed');
 	});
 
 	it('shows an error in an otherwise empty answer', () => {
@@ -66,6 +74,16 @@ describe('reduceChatStreamEvent', () => {
 		});
 
 		expect(reduction.state.content).toBe('⚠️ model unavailable');
+	});
+});
+
+describe('getStreamAnnouncement', () => {
+	it('announces only active work and meaningful terminal outcomes', () => {
+		expect(getStreamAnnouncement('idle')).toBe('');
+		expect(getStreamAnnouncement('streaming')).toBe('Thinking');
+		expect(getStreamAnnouncement('completed')).toBe('Response ready');
+		expect(getStreamAnnouncement('error')).toBe('Response failed');
+		expect(getStreamAnnouncement('cancelled')).toBe('');
 	});
 });
 

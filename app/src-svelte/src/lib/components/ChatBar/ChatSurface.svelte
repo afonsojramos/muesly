@@ -1,5 +1,6 @@
 <script lang="ts" module>
 	import type { Component } from 'svelte';
+	import type { StreamOutcome } from '$lib/chat/stream';
 
 	export interface ChatSurfaceMessage {
 		id: string;
@@ -20,6 +21,7 @@
 		messages: ChatSurfaceMessage[];
 		draft: string;
 		isStreaming: boolean;
+		streamOutcome: StreamOutcome;
 		send(text?: string): void | Promise<void>;
 		rerun?(message: ChatSurfaceMessage): void;
 		stop(): void;
@@ -48,6 +50,7 @@
 	import type { Snippet } from 'svelte';
 
 	import { cn } from '$lib/utils';
+	import { getStreamAnnouncement } from '$lib/chat/stream';
 	import { parseBarCommandDraft } from '$lib/bars/execution';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -114,6 +117,7 @@
 	const slashListboxId = `${componentId}-bar-commands`;
 
 	const hasMessages = $derived(controller.messages.length > 0);
+	const streamAnnouncement = $derived(getStreamAnnouncement(controller.streamOutcome));
 	const slashQuery = $derived.by(() => {
 		const draft = controller.draft.trimStart();
 		if (!draft.startsWith('/') || draft.includes('\n')) return null;
@@ -278,7 +282,7 @@
 				onscroll={onViewportScroll}
 				class="min-h-0 flex-1 overflow-y-auto"
 			>
-				<div class="flex flex-col gap-3 p-4" aria-live="polite" aria-atomic="false">
+				<div class="flex flex-col gap-3 p-4">
 					{#each controller.messages as message (message.id)}
 						<div class="group/message flex flex-col gap-1.5">
 							{#if message.role === 'assistant'}
@@ -356,6 +360,9 @@
 			</div>
 		</div>
 	{/if}
+	<div class="sr-only" role="status" aria-live="polite" aria-atomic="true">
+		{streamAnnouncement}
+	</div>
 
 	<!-- items-center keeps the icon rail, input, and send button on one vertical
 	     axis in every state (a grown multiline draft included) — never the

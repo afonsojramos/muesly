@@ -13,7 +13,7 @@ import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bind
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
-import { reduceChatStreamEvent } from '$lib/chat/stream';
+import { reduceChatStreamEvent, type StreamOutcome } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -38,6 +38,7 @@ class ChatStore {
 	messages = $state<ChatMessage[]>([]);
 	draft = $state('');
 	isStreaming = $state(false);
+	streamOutcome = $state<StreamOutcome>('idle');
 	#genId: string | null = null;
 
 	/** The meeting the chat is about: the live recording, else the opened saved meeting. */
@@ -80,6 +81,7 @@ class ChatStore {
 		const assistant = this.messages[this.messages.length - 1]!;
 
 		this.isStreaming = true;
+		this.streamOutcome = 'streaming';
 		const genId = uid();
 		this.#genId = genId;
 
@@ -89,12 +91,14 @@ class ChatStore {
 				content: assistant.content,
 				isStreaming: this.isStreaming,
 				activeGenerationId: this.#genId,
+				streamOutcome: this.streamOutcome,
 			};
 			const reduction = reduceChatStreamEvent(state, genId, event);
 			if (reduction.state === state) return;
 			assistant.content = reduction.state.content;
 			this.isStreaming = reduction.state.isStreaming;
 			this.#genId = reduction.state.activeGenerationId;
+			this.streamOutcome = reduction.state.streamOutcome;
 			if (reduction.error) toast.error('Chat failed', { description: reduction.error });
 		};
 
@@ -141,7 +145,10 @@ class ChatStore {
 	}
 
 	stop(): void {
-		if (this.#genId) void commands.chatCancel(this.#genId);
+		if (this.#genId) {
+			void commands.chatCancel(this.#genId);
+			this.streamOutcome = 'cancelled';
+		}
 		this.isStreaming = false;
 		this.#genId = null;
 	}
@@ -149,6 +156,7 @@ class ChatStore {
 	clear(): void {
 		this.stop();
 		this.messages = [];
+		this.streamOutcome = 'idle';
 	}
 
 	// Monotonic token so a slow history load can't clobber a newer meeting's
@@ -208,6 +216,7 @@ class ChatStore {
 		if (this.#genId !== genId) return;
 		if (!assistant.content) assistant.content = `⚠️ ${message}`;
 		toast.error('Chat failed', { description: message });
+		this.streamOutcome = 'error';
 		this.#finish(genId);
 	}
 }
