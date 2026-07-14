@@ -176,21 +176,26 @@ pub fn clean_llm_markdown_output(markdown: &str) -> String {
     // Remove <think>...</think> or <thinking>...</thinking> blocks using cached regex
     let without_thinking = THINKING_TAG_REGEX.replace_all(markdown, "");
 
-    let trimmed = without_thinking.trim();
+    let mut trimmed = without_thinking.trim();
 
-    // List of possible language identifiers for code blocks
-    const PREFIXES: &[&str] = &["```markdown\n", "```\n"];
-    const SUFFIX: &str = "```";
-
-    for prefix in PREFIXES {
-        if trimmed.starts_with(prefix) && trimmed.ends_with(SUFFIX) {
-            // Extract content between the fences
-            let content = &trimmed[prefix.len()..trimmed.len() - SUFFIX.len()];
-            return content.trim().to_string();
+    // Strip a wrapping code fence. Small models often open with ```markdown
+    // and then FORGET the closing fence, so the opening fence is stripped even
+    // when unbalanced. Only markdown-ish info strings count as wrappers: a
+    // leading ```python (etc.) is content, not packaging.
+    if let Some(after_ticks) = trimmed.strip_prefix("```") {
+        if let Some(newline) = after_ticks.find('\n') {
+            let info_string = after_ticks[..newline].trim().to_ascii_lowercase();
+            if matches!(info_string.as_str(), "" | "markdown" | "md" | "text") {
+                trimmed = after_ticks[newline + 1..].trim();
+                // Only balance the wrapper we just opened: a trailing fence
+                // without the stripped opener belongs to real content.
+                if let Some(body) = trimmed.strip_suffix("```") {
+                    trimmed = body.trim();
+                }
+            }
         }
     }
 
-    // If no fences found, return the trimmed string
     trimmed.to_string()
 }
 
@@ -1073,6 +1078,29 @@ mod tests {
         let input = "# Clean\n\nNo fences here.";
         let output = clean_llm_markdown_output(input);
         assert_eq!(output, input.trim());
+    }
+
+    #[test]
+    fn clean_llm_strips_unclosed_opening_fence() {
+        // Small models open a wrapper fence and forget to close it; the
+        // literal fence must not leak into the rendered summary.
+        let input = "```markdown\n\n**Resumo**\n\nA reunião focou em testar a cena.";
+        let output = clean_llm_markdown_output(input);
+        assert!(output.starts_with("**Resumo**"), "got {output:?}");
+    }
+
+    #[test]
+    fn clean_llm_keeps_inner_code_blocks_intact() {
+        // A fence with a non-trivial info line is content, not a wrapper.
+        let input = "# Notes\n\n```rust\nfn main() {}\n```";
+        let output = clean_llm_markdown_output(input);
+        assert_eq!(output, input);
+        // And a wrapper around content with an inner block keeps the inner
+        // block balanced.
+        let wrapped = "```markdown\n# Notes\n\n```js\ncode\n```\n```";
+        let unwrapped = clean_llm_markdown_output(wrapped);
+        assert!(unwrapped.starts_with("# Notes"));
+        assert!(unwrapped.contains("```js\ncode\n```"), "got {unwrapped:?}");
     }
 
     // -------------------------------------------------------------------------
