@@ -233,8 +233,8 @@
 			<Popover.Content
 				align="start"
 				side="top"
-				sideOffset={8}
-				class="origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-open:slide-in-from-bottom-4 data-open:zoom-in-90 data-open:duration-200 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
+				sideOffset={16}
+				class="transcript-dropup origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
 				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
@@ -386,3 +386,28 @@
 			pendingAdditionalInstructions,
 		)}
 />
+
+<style>
+	:global(.transcript-dropup) {
+		animation: transcript-dropup-enter 240ms cubic-bezier(0.2, 0, 0, 1);
+	}
+
+	@keyframes transcript-dropup-enter {
+		from {
+			opacity: 0;
+			filter: blur(4px);
+			transform: translateY(16px) scale(0.94);
+		}
+		to {
+			opacity: 1;
+			filter: blur(0);
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		:global(.transcript-dropup) {
+			animation: none;
+		}
+	}
+</style>
