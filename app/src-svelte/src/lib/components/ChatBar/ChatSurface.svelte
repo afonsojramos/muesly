@@ -51,6 +51,7 @@
 	import { parseBarCommandDraft } from '$lib/bars/execution';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import Editor from '$lib/components/Editor.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import ChatRailButton from './ChatRailButton.svelte';
 
@@ -292,7 +293,8 @@
 								>
 									<div
 										class={cn(
-											'select-text whitespace-pre-wrap rounded-2xl px-3 py-2 text-sm',
+											'select-text rounded-2xl px-3 py-2 text-sm',
+											message.role === 'user' && 'whitespace-pre-wrap',
 											message.role === 'user'
 												? 'max-w-[85%] bg-primary text-primary-foreground'
 												: 'max-w-[75%] bg-secondary text-secondary-foreground',
@@ -310,7 +312,7 @@
 													{/if}
 												</div>
 											{:else}
-												{message.content}
+												<Editor value={message.content} editable={false} compact />
 											{/if}
 										{:else if controller.isStreaming}
 											<span class="text-muted-foreground">{thinkingLabel}</span>
