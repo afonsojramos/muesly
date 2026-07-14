@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { cubicOut } from 'svelte/easing';
+	import type { TransitionConfig } from 'svelte/transition';
 	import { Clock3, History, Pin, Settings2, Trash2 } from '@lucide/svelte';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Play from '@lucide/svelte/icons/play';
 	import Square from '@lucide/svelte/icons/square';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -69,6 +72,18 @@
 	function setTranscriptOpen(open: boolean): void {
 		if (isLiveNote) liveTranscriptPanel.open = open;
 		else sidePanelState.open = open;
+	}
+
+	function dropletGrow(_node: Element): TransitionConfig {
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			return { duration: 120, css: (t) => `opacity: ${t}` };
+		}
+		return {
+			duration: 260,
+			easing: cubicOut,
+			css: (t) =>
+				`opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: translateX(${(1 - t) * -36}px) scale(${0.25 + t * 0.75})`,
+		};
 	}
 
 	async function stopRecording(): Promise<void> {
@@ -222,9 +237,22 @@
 				class="w-[min(42rem,calc(100vw-3rem))] p-0"
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
-				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} onResume={resumeRecording} />
+				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
 			</Popover.Content>
 		</Popover.Root>
+
+		{#if transcriptPanelOpen}
+			<div class="origin-center will-change-[transform,opacity,filter]" in:dropletGrow>
+				<ChatRailButton
+					tooltip="Resume recording"
+					ariaLabel="Resume recording"
+					disabled={isResumingRecording}
+					onclick={() => void resumeRecording()}
+				>
+					<Play data-icon fill="currentColor" class="text-brand" />
+				</ChatRailButton>
+			</div>
+		{/if}
 
 		{#if recordingState.isRecording && !stopRequested}
 			<ChatRailButton

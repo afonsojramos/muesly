@@ -1,22 +1,18 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
-	import { scale } from 'svelte/transition';
-	import Play from '@lucide/svelte/icons/play';
 
 	import type { Transcript, TranscriptSegmentData } from '$lib/types';
 	import VirtualizedTranscriptView from '$lib/components/VirtualizedTranscriptView.svelte';
 	import { transcripts as liveTranscripts } from '$lib/stores/transcript.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
-	import { Button } from '$lib/components/ui/button';
 	import RecordingStatusBar from '$lib/components/RecordingStatusBar.svelte';
 
 	interface Props {
 		meetingId: string | null;
 		live?: boolean;
-		onResume?: () => void | Promise<void>;
 	}
 
-	let { meetingId, live = false, onResume }: Props = $props();
+	let { meetingId, live = false }: Props = $props();
 	let savedTranscripts = $state<Transcript[]>([]);
 	let loading = $state(false);
 
@@ -88,12 +84,4 @@
 			/>
 		</div>
 	{/if}
-	<div class="flex shrink-0 border-t border-border p-2">
-		<div class="origin-bottom-left" in:scale={{ start: 0.25, duration: 220 }}>
-			<Button variant="brand" size="sm" onclick={() => void onResume?.()}>
-				<Play data-icon="inline-start" fill="currentColor" />
-				Resume recording
-			</Button>
-		</div>
-	</div>
 </div>
