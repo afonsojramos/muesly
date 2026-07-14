@@ -19,8 +19,18 @@ const HALLUCINATION_PHRASES: &[&str] = &[
     "please subscribe",
     "subscribe to the channel",
     "subtitles by the amara org community",
+    "obrigado",
+    "obrigada",
     "obrigado por assistir",
+    "e aí",
+    "música",
+    "aplausos",
+    "risos",
+    "tchau",
+    "até a próxima",
+    "até à próxima",
     "legendas pela comunidade amara org",
+    "amara org",
     "gracias por ver",
     "merci d'avoir regarde",
     "vielen dank fürs zuschauen",
@@ -94,6 +104,21 @@ mod tests {
             should_drop_segment("you", Some(0.4)),
             Some(DropReason::SilenceHallucination)
         );
+    }
+
+    #[test]
+    fn low_confidence_portuguese_hallucinations_are_dropped() {
+        // The PT phrases Whisper actually hallucinates over silence in the
+        // wild: bare interjections and caption artifacts.
+        for phrase in ["Obrigado.", "E aí", "[Música]", "Tchau!"] {
+            assert_eq!(
+                should_drop_segment(phrase, Some(0.3)),
+                Some(DropReason::SilenceHallucination),
+                "expected {phrase:?} to be dropped",
+            );
+        }
+        // A confident, genuine "obrigado" reply survives.
+        assert_eq!(should_drop_segment("Obrigado.", Some(0.8)), None);
     }
 
     #[test]
