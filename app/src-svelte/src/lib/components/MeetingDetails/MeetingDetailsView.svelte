@@ -9,7 +9,6 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import DownloadIcon from '@lucide/svelte/icons/download';
 	import EllipsisVerticalIcon from '@lucide/svelte/icons/ellipsis-vertical';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import LanguagesIcon from '@lucide/svelte/icons/languages';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
@@ -149,6 +148,23 @@
 	// auto-generated titles don't clip mid-word), an input while editing.
 	let isEditingTitle = $state(false);
 	let titleInputEl = $state<HTMLInputElement | null>(null);
+	let titleIsTruncated = $state(false);
+	function observeTitleOverflow(node: HTMLElement): { destroy: () => void } {
+		const update = () => {
+			titleIsTruncated = node.scrollWidth > node.clientWidth + 1;
+		};
+		const resizeObserver = new ResizeObserver(update);
+		const mutationObserver = new MutationObserver(update);
+		resizeObserver.observe(node);
+		mutationObserver.observe(node, { childList: true, characterData: true, subtree: true });
+		queueMicrotask(update);
+		return {
+			destroy: () => {
+				resizeObserver.disconnect();
+				mutationObserver.disconnect();
+			},
+		};
+	}
 	async function startEditTitle(): Promise<void> {
 		isEditingTitle = true;
 		await tick();
@@ -615,7 +631,7 @@
 			</div>
 			<!-- Note header: large display title + date, Granola-style. -->
 			<div class="flex-shrink-0 px-8 pb-1 pt-4">
-				<div class="group/title flex items-start gap-1">
+				<div class="flex items-start">
 					{#if isEditingTitle}
 						<Input
 							bind:ref={titleInputEl}
@@ -633,24 +649,31 @@
 							class="h-auto min-w-0 flex-1 border-none bg-transparent p-0 font-display text-3xl font-medium shadow-none focus-visible:ring-0 md:text-3xl placeholder:text-muted-foreground/50"
 						/>
 					{:else}
-						<h1
-							class="min-w-0 flex-1 select-text truncate font-display text-3xl font-medium text-foreground"
-						>
-							{#if meetingData.meetingTitle?.trim()}
-								{meetingData.meetingTitle}
-							{:else}
-								<span class="text-muted-foreground/50">Untitled meeting</span>
-							{/if}
+						<h1 class="min-w-0 flex-1">
+							<Tooltip.Provider>
+								<Tooltip.Root disabled={!titleIsTruncated}>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											class="h-auto max-w-full cursor-text select-text justify-start truncate rounded-sm p-0 font-display text-3xl font-medium text-foreground hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+											onclick={() => void startEditTitle()}
+										>
+											<span use:observeTitleOverflow class="min-w-0 flex-1 truncate">
+												{#if meetingData.meetingTitle?.trim()}
+													{meetingData.meetingTitle}
+												{:else}
+													<span class="text-muted-foreground/50">Untitled meeting</span>
+												{/if}
+											</span>
+										</Button>
+									{/snippet}
+									</Tooltip.Trigger>
+									<Tooltip.Content>{meetingData.meetingTitle}</Tooltip.Content>
+								</Tooltip.Root>
+							</Tooltip.Provider>
 						</h1>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="size-10 shrink-0 opacity-0 text-muted-foreground transition-[opacity,color,scale] duration-150 group-hover/title:opacity-100 hover:text-foreground focus-visible:opacity-100 active:scale-[0.96]"
-							onclick={() => void startEditTitle()}
-							aria-label="Edit meeting title"
-						>
-							<PencilIcon data-icon />
-						</Button>
 					{/if}
 				</div>
 				<div
