@@ -48,6 +48,7 @@
 		isStopping?: boolean;
 		enableStreaming?: boolean;
 		showConfidence?: boolean;
+		showRecordingStatus?: boolean;
 		disableAutoScroll?: boolean;
 		hasMore?: boolean;
 		isLoadingMore?: boolean;
@@ -75,6 +76,7 @@
 		isStopping = false,
 		enableStreaming = false,
 		showConfidence = true,
+		showRecordingStatus = true,
 		disableAutoScroll = false,
 		hasMore = false,
 		isLoadingMore = false,
@@ -240,13 +242,13 @@
 </script>
 
 <div bind:this={scrollEl} class="flex h-full flex-col select-text overflow-y-auto px-4 py-2">
-	{#if isRecording}
+	{#if isRecording && showRecordingStatus}
 		<div class="sticky top-0 z-10 bg-background pb-2">
 			<RecordingStatusBar {isPaused} />
 		</div>
 	{/if}
 
-	<div class={cn(isRecording && 'pt-2')}>
+	<div class={cn(isRecording && showRecordingStatus && 'pt-2')}>
 		{#if segments.length === 0}
 			<div in:fade class="mt-8 text-center text-muted-foreground">
 				{#if isRecording}

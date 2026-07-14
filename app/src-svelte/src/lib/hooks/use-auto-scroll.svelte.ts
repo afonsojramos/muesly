@@ -47,6 +47,7 @@ export function useAutoScroll(options: UseAutoScrollOptions): UseAutoScroll {
 	let userScrolled = false;
 	let isProgrammaticScroll = false;
 	let prevSegmentCount = getSegments().length;
+	let prevLastText = getSegments().at(-1)?.text ?? '';
 
 	const isNearBottom = (): boolean => {
 		const el = getScrollElement();
@@ -118,15 +119,27 @@ export function useAutoScroll(options: UseAutoScrollOptions): UseAutoScroll {
 
 		const segmentCount = segments.length;
 		const hasNew = segmentCount > prevSegmentCount;
+		const lastText = segments.at(-1)?.text ?? '';
+		const hasStreamedText = lastText !== prevLastText;
 		prevSegmentCount = segmentCount;
+		prevLastText = lastText;
 
 		// Follow while engaged. `userScrolled` (set the moment the user scrolls up)
 		// is the lock; no post-render position check here, so a tall new segment
 		// can't bail out of following.
-		if (hasNew && autoScroll && !userScrolled && isRecording && !isPaused && segmentCount > 0) {
+		if (
+			(hasNew || hasStreamedText) &&
+			autoScroll &&
+			!userScrolled &&
+			isRecording &&
+			!isPaused &&
+			segmentCount > 0
+		) {
 			isProgrammaticScroll = true;
-			const el = getScrollElement();
-			if (el) el.scrollTop = el.scrollHeight;
+			requestAnimationFrame(() => {
+				const el = getScrollElement();
+				if (el) el.scrollTop = el.scrollHeight;
+			});
 			setTimeout(() => {
 				isProgrammaticScroll = false;
 			}, 150);

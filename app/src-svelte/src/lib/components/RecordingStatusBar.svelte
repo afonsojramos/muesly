@@ -5,9 +5,10 @@
 
 	interface Props {
 		isPaused?: boolean;
+		compact?: boolean;
 	}
 
-	let { isPaused = false }: Props = $props();
+	let { isPaused = false, compact = false }: Props = $props();
 
 	const displaySeconds = $derived(
 		recordingState.activeDuration !== null ? Math.floor(recordingState.activeDuration) : 0,
@@ -22,7 +23,10 @@
 
 <div
 	transition:fly={{ y: -10, duration: 200 }}
-	class="mb-2 flex items-center gap-2 rounded-lg bg-secondary px-3 py-2"
+	class={cn(
+		'flex items-center gap-2',
+		compact ? 'text-muted-foreground' : 'mb-2 rounded-lg bg-secondary px-3 py-2',
+	)}
 >
 	<div
 		class={cn(
@@ -30,7 +34,13 @@
 			isPaused ? 'bg-muted-foreground/60' : 'animate-pulse bg-brand',
 		)}
 	></div>
-	<span class={cn('text-sm tabular-nums', isPaused ? 'text-muted-foreground' : 'text-foreground')}>
+	<span
+		class={cn(
+			'tabular-nums',
+			compact ? 'text-xs' : 'text-sm',
+			isPaused ? 'text-muted-foreground' : 'text-foreground',
+		)}
+	>
 		{isPaused ? 'Paused' : 'Recording'} • {formatDuration(displaySeconds)}
 	</span>
 </div>

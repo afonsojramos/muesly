@@ -8,6 +8,7 @@
 	import { transcripts as liveTranscripts } from '$lib/stores/transcript.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import RecordingStatusBar from '$lib/components/RecordingStatusBar.svelte';
 
 	interface Props {
 		meetingId: string | null;
@@ -52,9 +53,14 @@
 </script>
 
 <div class="flex h-[min(60vh,30rem)] min-h-64 flex-col overflow-hidden">
-	<div class="flex items-center justify-between border-b border-border px-4 py-3">
-		<span class="text-sm font-medium">Transcript</span>
-		<span class="text-xs tabular-nums text-muted-foreground">
+	<div class="flex items-center border-b border-border px-4 py-3">
+		<div class="flex items-center gap-3">
+			<span class="text-sm font-medium">Transcript</span>
+			{#if live && recordingState.isRecording}
+				<RecordingStatusBar isPaused={recordingState.isPaused} compact />
+			{/if}
+		</div>
+		<span class="ml-auto text-xs tabular-nums text-muted-foreground">
 			{segments.length}
 			{segments.length === 1 ? 'segment' : 'segments'}
 		</span>
@@ -77,6 +83,7 @@
 				isStopping={recordingState.isStopping}
 				enableStreaming={live && recordingState.isRecording}
 				showConfidence={true}
+				showRecordingStatus={false}
 				disableAutoScroll={!live}
 			/>
 		</div>
