@@ -56,7 +56,10 @@ mod tests {
 
     #[test]
     fn ignores_unknown_or_empty_bundle_id() {
-        assert_eq!(match_meeting_app("com.apple.Safari", DEFAULT_MEETING_APPS), None);
+        assert_eq!(
+            match_meeting_app("com.apple.Safari", DEFAULT_MEETING_APPS),
+            None
+        );
         assert_eq!(match_meeting_app("", DEFAULT_MEETING_APPS), None);
     }
 }

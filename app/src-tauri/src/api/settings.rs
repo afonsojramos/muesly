@@ -3,9 +3,7 @@ use log::{error as log_error, info as log_info, warn as log_warn};
 use tauri::{AppHandle, Runtime};
 
 use crate::{
-    database::repositories::setting::SettingsRepository,
-    keychain::keyring_store,
-    state::AppState,
+    database::repositories::setting::SettingsRepository, keychain::keyring_store, state::AppState,
     summary::CustomOpenAIConfig,
 };
 
@@ -183,8 +181,12 @@ pub async fn api_get_transcript_config<R: Runtime>(
                 &config.provider,
                 &config.model
             );
-            match SettingsRepository::get_transcript_api_key(pool, &config.provider, keyring_store())
-                .await
+            match SettingsRepository::get_transcript_api_key(
+                pool,
+                &config.provider,
+                keyring_store(),
+            )
+            .await
             {
                 Ok(api_key) => {
                     log_info!("Successfully retrieved transcript config and API key.");
@@ -208,7 +210,10 @@ pub async fn api_get_transcript_config<R: Runtime>(
             log_info!("No transcript config found, returning default.");
             Ok(Some(TranscriptConfig {
                 provider: "localWhisper".to_string(),
-                model: crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string(),
+                model: crate::config::recommended_whisper_model(
+                    crate::audio::HardwareProfile::detect(),
+                )
+                .to_string(),
                 api_key: None,
             }))
         }
@@ -398,7 +403,8 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Custom OpenAI configuration saved successfully"
-            }).into())
+            })
+            .into())
         }
         Err(e) => {
             log_error!("❌ Failed to save custom OpenAI config: {}", e);
@@ -527,7 +533,10 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
                         }
 
                         // Response was 200 but doesn't match OpenAI format
-                        log_warn!("⚠️ Endpoint returned 200 but response doesn't match OpenAI format: {}", response_text);
+                        log_warn!(
+                            "⚠️ Endpoint returned 200 but response doesn't match OpenAI format: {}",
+                            response_text
+                        );
                         Err("Endpoint is reachable but doesn't appear to be OpenAI-compatible. Response is missing 'choices' array or 'message.content' / 'message.reasoning_content' field.".to_string())
                     }
                     Err(e) => {

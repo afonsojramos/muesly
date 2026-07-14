@@ -159,12 +159,16 @@ mod tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1", "Sync").await;
 
-        assert!(ChatMessagesRepository::append(&pool, "m1", "user", "What was decided?")
-            .await
-            .expect("append"));
-        assert!(ChatMessagesRepository::append(&pool, "m1", "assistant", "The budget.")
-            .await
-            .expect("append"));
+        assert!(
+            ChatMessagesRepository::append(&pool, "m1", "user", "What was decided?")
+                .await
+                .expect("append")
+        );
+        assert!(
+            ChatMessagesRepository::append(&pool, "m1", "assistant", "The budget.")
+                .await
+                .expect("append")
+        );
 
         let thread = ChatMessagesRepository::list_for_meeting(&pool, "m1")
             .await
@@ -215,10 +219,12 @@ mod tests {
             .await
             .expect("append");
         assert!(!wrote);
-        assert!(ChatMessagesRepository::list_for_meeting(&pool, "meeting-1752300000")
-            .await
-            .expect("list")
-            .is_empty());
+        assert!(
+            ChatMessagesRepository::list_for_meeting(&pool, "meeting-1752300000")
+                .await
+                .expect("list")
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -226,8 +232,12 @@ mod tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1", "Sync").await;
         insert_meeting(&pool, "m2", "Plan").await;
-        ChatMessagesRepository::append(&pool, "m1", "user", "a").await.expect("a");
-        ChatMessagesRepository::append(&pool, "m2", "user", "b").await.expect("b");
+        ChatMessagesRepository::append(&pool, "m1", "user", "a")
+            .await
+            .expect("a");
+        ChatMessagesRepository::append(&pool, "m2", "user", "b")
+            .await
+            .expect("b");
 
         ChatMessagesRepository::clear_for_meeting(&pool, "m1")
             .await
@@ -258,8 +268,12 @@ mod tests {
             .await
             .expect("trash m3");
 
-        ChatMessagesRepository::append(&pool, "m1", "user", "First question?").await.expect("a");
-        ChatMessagesRepository::append(&pool, "m1", "assistant", "Answer.").await.expect("b");
+        ChatMessagesRepository::append(&pool, "m1", "user", "First question?")
+            .await
+            .expect("a");
+        ChatMessagesRepository::append(&pool, "m1", "assistant", "Answer.")
+            .await
+            .expect("b");
         ChatMessagesRepository::append_with_metadata(
             &pool,
             "m2",
@@ -271,7 +285,9 @@ mod tests {
         )
         .await
         .expect("c");
-        ChatMessagesRepository::append(&pool, "m3", "user", "Ghost?").await.expect("d");
+        ChatMessagesRepository::append(&pool, "m3", "user", "Ghost?")
+            .await
+            .expect("d");
 
         let recent = ChatMessagesRepository::recent_threads(&pool, 10)
             .await

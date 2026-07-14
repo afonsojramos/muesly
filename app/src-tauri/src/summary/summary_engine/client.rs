@@ -47,10 +47,17 @@ enum Request {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
-    Response { text: String, error: Option<String> },
+    Response {
+        text: String,
+        error: Option<String>,
+    },
     /// Incremental output chunk (streaming requests only).
-    Token { text: String },
-    Error { message: String },
+    Token {
+        text: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 // ============================================================================
@@ -62,9 +69,8 @@ lazy_static::lazy_static! {
 }
 
 // Model path cache to avoid repeated filesystem I/O and model lookups
-static MODEL_PATH_CACHE: Lazy<RwLock<HashMap<String, PathBuf>>> = Lazy::new(|| {
-    RwLock::new(HashMap::new())
-});
+static MODEL_PATH_CACHE: Lazy<RwLock<HashMap<String, PathBuf>>> =
+    Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// Initialize the global sidecar manager
 pub async fn init_sidecar_manager(app_data_dir: PathBuf) -> Result<()> {

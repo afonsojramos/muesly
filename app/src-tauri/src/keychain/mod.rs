@@ -212,10 +212,7 @@ mod tests {
 
     #[test]
     fn entry_key_transcript_table() {
-        assert_eq!(
-            entry_key("transcript", "groq"),
-            "groq-transcript-api-key"
-        );
+        assert_eq!(entry_key("transcript", "groq"), "groq-transcript-api-key");
         assert_eq!(
             entry_key("transcript", "openai"),
             "openai-transcript-api-key"

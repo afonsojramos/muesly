@@ -1,3 +1,4 @@
+pub mod bars;
 pub mod calendar;
 pub mod calendar_accounts;
 pub mod calendar_event_rules;
@@ -6,10 +7,9 @@ pub mod dictation_preset;
 pub mod folders;
 pub mod meeting;
 pub mod notes;
-pub mod bars;
 pub mod setting;
 pub mod speaker_names;
 pub mod summary;
 pub mod transcript;
-pub mod transcript_revision;
 pub mod transcript_chunk;
+pub mod transcript_revision;

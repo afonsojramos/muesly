@@ -51,7 +51,10 @@ static MODELS_CACHE: ModelCache<OpenRouterModel> = ModelCache::new();
 #[specta::specta]
 pub async fn get_openrouter_models() -> Result<Vec<OpenRouterModel>, String> {
     if let Some(models) = MODELS_CACHE.get() {
-        log::info!("Returning cached OpenRouter models ({} models)", models.len());
+        log::info!(
+            "Returning cached OpenRouter models ({} models)",
+            models.len()
+        );
         return Ok(models);
     }
 
@@ -64,7 +67,10 @@ pub async fn get_openrouter_models() -> Result<Vec<OpenRouterModel>, String> {
         .map_err(|e| format!("Failed to make HTTP request: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("HTTP request failed with status: {}", response.status()));
+        return Err(format!(
+            "HTTP request failed with status: {}",
+            response.status()
+        ));
     }
 
     let api_response: OpenRouterResponse = response
@@ -78,7 +84,8 @@ pub async fn get_openrouter_models() -> Result<Vec<OpenRouterModel>, String> {
         .map(|m| OpenRouterModel {
             id: m.id,
             name: m.name.unwrap_or_else(|| "Unknown".to_string()),
-            context_length: m.top_provider
+            context_length: m
+                .top_provider
                 .as_ref()
                 .and_then(|tp| tp.context_length)
                 .or(m.context_length),

@@ -104,7 +104,10 @@ impl DatabaseManager {
                             Ok(db_manager)
                         }
                         Err(retry_err) => {
-                            log::error!("Database connection failed even after WAL cleanup: {}", retry_err);
+                            log::error!(
+                                "Database connection failed even after WAL cleanup: {}",
+                                retry_err
+                            );
                             Err(retry_err)
                         }
                     }
@@ -242,6 +245,9 @@ mod tests {
         manager.cleanup().await.expect("cleanup");
         let _ = std::fs::remove_dir_all(&dir);
 
-        assert!(enabled, "PRAGMA foreign_keys must be ON for the production pool");
+        assert!(
+            enabled,
+            "PRAGMA foreign_keys must be ON for the production pool"
+        );
     }
 }

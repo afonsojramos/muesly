@@ -70,7 +70,10 @@ impl EchoCanceller {
                 return mic.to_vec();
             }
             let mut processed = vec![0.0f32; n];
-            match self.pipeline.process_capture_frame(&mic_frame, &mut processed) {
+            match self
+                .pipeline
+                .process_capture_frame(&mic_frame, &mut processed)
+            {
                 // Cancelled output ready.
                 Ok(true) => out.extend_from_slice(&processed[..valid]),
                 // Pipeline still filling its latency buffer (only at the very
@@ -150,7 +153,11 @@ impl EchoCancellerHandle {
         let fallback = mic.clone();
         if self
             .req_tx
-            .send(EchoRequest { mic, reference, resp: resp_tx })
+            .send(EchoRequest {
+                mic,
+                reference,
+                resp: resp_tx,
+            })
             .is_err()
         {
             return fallback;
@@ -190,7 +197,10 @@ mod tests {
         let mic: Vec<f32> = (0..1000).map(|i| ((i as f32) * 0.01).sin() * 0.5).collect();
         let reference = vec![0.0f32; 1000];
         let out = aec.process(&mic, &reference);
-        assert_eq!(out, mic, "a silent reference must pass the mic through unchanged");
+        assert_eq!(
+            out, mic,
+            "a silent reference must pass the mic through unchanged"
+        );
     }
 
     #[test]
@@ -221,7 +231,10 @@ mod tests {
         let reference = mic.clone();
         let out = aec.process(&mic, &reference);
         assert_eq!(out.len(), mic.len());
-        assert!(out != mic, "AEC with a loud reference must change the mic signal");
+        assert!(
+            out != mic,
+            "AEC with a loud reference must change the mic signal"
+        );
     }
 
     #[test]

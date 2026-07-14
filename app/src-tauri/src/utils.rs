@@ -67,10 +67,7 @@ mod tests {
     fn path_under_root_accepts_in_root_rejects_outside() {
         let root = PathBuf::from("/Users/me/Movies/muesly-recordings");
         let roots = vec![root.clone()];
-        assert!(path_is_under_any_root(
-            &root.join("Meeting 2026"),
-            &roots
-        ));
+        assert!(path_is_under_any_root(&root.join("Meeting 2026"), &roots));
         assert!(path_is_under_any_root(&root, &roots));
         assert!(!path_is_under_any_root(
             std::path::Path::new("/tmp/evil"),
@@ -101,7 +98,10 @@ pub async fn open_system_settings(preference_pane: String) -> Result<(), String>
     use std::process::Command;
 
     // Construct the URL for System Settings
-    let url = format!("x-apple.systempreferences:com.apple.preference.security?{}", preference_pane);
+    let url = format!(
+        "x-apple.systempreferences:com.apple.preference.security?{}",
+        preference_pane
+    );
 
     // Use the 'open' command on macOS to open the URL
     Command::new("open")
@@ -110,4 +110,4 @@ pub async fn open_system_settings(preference_pane: String) -> Result<(), String>
         .map_err(|e| format!("Failed to open system settings: {}", e))?;
 
     Ok(())
-} 
+}

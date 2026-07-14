@@ -124,7 +124,11 @@ pub async fn fetch_models<P: ModelProvider>(
     };
 
     if let Some(models) = P::cache().get() {
-        log::info!("Returning cached {} models ({} models)", P::NAME, models.len());
+        log::info!(
+            "Returning cached {} models ({} models)",
+            P::NAME,
+            models.len()
+        );
         return Ok(models);
     }
 
@@ -154,7 +158,11 @@ pub async fn fetch_models<P: ModelProvider>(
     let parsed: ApiModelList<P::ApiModel> = match response.json().await {
         Ok(data) => data,
         Err(e) => {
-            log::warn!("Failed to parse {} response: {}. Using fallback.", P::NAME, e);
+            log::warn!(
+                "Failed to parse {} response: {}. Using fallback.",
+                P::NAME,
+                e
+            );
             return Ok(P::fallback_models());
         }
     };
@@ -162,7 +170,10 @@ pub async fn fetch_models<P: ModelProvider>(
     let models: Vec<P::UiModel> = parsed.data.into_iter().filter_map(P::map_model).collect();
 
     if models.is_empty() {
-        log::warn!("No chat models returned from {} API. Using fallback.", P::NAME);
+        log::warn!(
+            "No chat models returned from {} API. Using fallback.",
+            P::NAME
+        );
         return Ok(P::fallback_models());
     }
 

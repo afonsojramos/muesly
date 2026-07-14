@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio::sync::Mutex;
 
-use super::model_manager::{DownloadProgress, SummaryModelInfo, ModelManager};
+use super::model_manager::{DownloadProgress, ModelManager, SummaryModelInfo};
 
 // ============================================================================
 // Global State
@@ -157,7 +157,7 @@ pub async fn builtin_ai_download_model<R: Runtime>(
                 }),
             );
             Ok(())
-        },
+        }
         Err(e) => {
             let error_msg = e.to_string();
 
@@ -244,7 +244,7 @@ pub async fn builtin_ai_is_model_ready<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, ModelManagerState>,
     model_name: String,
-    refresh: Option<bool>,  // NEW: Optional refresh parameter
+    refresh: Option<bool>, // NEW: Optional refresh parameter
 ) -> Result<bool, String> {
     let manager = {
         // Ensure manager is initialized
@@ -317,15 +317,18 @@ pub async fn builtin_ai_get_available_summary_model<R: Runtime>(
     // Find first available summary model
     let available = all_models
         .iter()
-        .filter(|m| matches!(m.status, crate::summary::summary_engine::model_manager::ModelStatus::Available))
-        .max_by_key(|m| {
-            match m.name.as_str() {
-                "qwen3.5:4b" => 4,
-                "qwen3.5:2b" => 3,
-                "gemma3:4b" => 2,
-                "gemma3:1b" => 1,
-                _ => 0,
-            }
+        .filter(|m| {
+            matches!(
+                m.status,
+                crate::summary::summary_engine::model_manager::ModelStatus::Available
+            )
+        })
+        .max_by_key(|m| match m.name.as_str() {
+            "qwen3.5:4b" => 4,
+            "qwen3.5:2b" => 3,
+            "gemma3:4b" => 2,
+            "gemma3:1b" => 1,
+            _ => 0,
         })
         .map(|m| m.name.clone());
 
@@ -337,9 +340,7 @@ pub async fn builtin_ai_get_available_summary_model<R: Runtime>(
 // Startup Initialization & Utility Commands
 // ============================================================================
 
-pub async fn init_model_manager_at_startup<R: Runtime>(
-    app: &AppHandle<R>,
-) -> Result<(), String> {
+pub async fn init_model_manager_at_startup<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let models_dir = app
         .path()
         .app_data_dir()
@@ -362,7 +363,6 @@ pub async fn init_model_manager_at_startup<R: Runtime>(
     log::info!("ModelManager initialized at startup");
     Ok(())
 }
-
 
 /// Get the recommended summary model for this machine, used to seed the
 /// onboarding default instead of always falling back to gemma3.
@@ -443,10 +443,7 @@ fn recommend_summary_model(
 #[cfg(not(target_os = "macos"))]
 fn detect_gpu_vram_gb() -> Option<f64> {
     let output = std::process::Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=memory.total",
-            "--format=csv,noheader,nounits",
-        ])
+        .args(["--query-gpu=memory.total", "--format=csv,noheader,nounits"])
         .output()
         .ok()?;
 

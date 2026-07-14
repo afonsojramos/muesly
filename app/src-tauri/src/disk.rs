@@ -37,7 +37,10 @@ mod tests {
             (PathBuf::from("/Users/me/data"), 50u64),
         ];
         // A path under the nested mount uses that mount, not "/".
-        assert_eq!(pick_available(Path::new("/Users/me/data/models"), &disks), Some(50));
+        assert_eq!(
+            pick_available(Path::new("/Users/me/data/models"), &disks),
+            Some(50)
+        );
         // A path elsewhere falls back to "/".
         assert_eq!(pick_available(Path::new("/var/tmp"), &disks), Some(1_000));
     }

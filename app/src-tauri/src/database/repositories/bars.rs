@@ -197,7 +197,10 @@ mod tests {
         assert_eq!(edited.id, created.id);
         assert_eq!(edited.title, "Weekly recap v2");
         assert_eq!(edited.scenarios, vec!["during", "after"]);
-        assert_eq!(edited.created_at, created.created_at, "created_at preserved");
+        assert_eq!(
+            edited.created_at, created.created_at,
+            "created_at preserved"
+        );
         assert_eq!(BarsRepository::list(&pool).await.unwrap().len(), 1);
 
         BarsRepository::delete(&pool, &created.id).await.unwrap();

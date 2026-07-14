@@ -34,7 +34,11 @@ mod tests {
     use super::*;
 
     fn turn(start: f64, end: f64, speaker: i32) -> SpeakerTurn {
-        SpeakerTurn { start, end, speaker }
+        SpeakerTurn {
+            start,
+            end,
+            speaker,
+        }
     }
 
     #[test]

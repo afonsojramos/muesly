@@ -85,13 +85,14 @@ impl FoldersRepository {
         emoji: Option<&str>,
     ) -> Result<bool, sqlx::Error> {
         let now = Utc::now();
-        let result = sqlx::query("UPDATE folders SET name = ?, emoji = ?, updated_at = ? WHERE id = ?")
-            .bind(name)
-            .bind(emoji)
-            .bind(now)
-            .bind(folder_id)
-            .execute(pool)
-            .await?;
+        let result =
+            sqlx::query("UPDATE folders SET name = ?, emoji = ?, updated_at = ? WHERE id = ?")
+                .bind(name)
+                .bind(emoji)
+                .bind(now)
+                .bind(folder_id)
+                .execute(pool)
+                .await?;
         Ok(result.rows_affected() > 0)
     }
 
@@ -180,7 +181,9 @@ mod tests {
     #[tokio::test]
     async fn create_list_update_folder() {
         let pool = test_pool().await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", Some("💼"), None).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", Some("💼"), None)
+            .await
+            .unwrap();
         assert!(folder.id.starts_with("folder-"));
         assert_eq!(folder.emoji.as_deref(), Some("💼"));
 
@@ -189,9 +192,11 @@ mod tests {
         assert_eq!(folders[0].name, "Work");
         assert_eq!(folders[0].emoji.as_deref(), Some("💼"));
 
-        assert!(FoldersRepository::update_folder(&pool, &folder.id, "Projects", Some("📁"))
-            .await
-            .unwrap());
+        assert!(
+            FoldersRepository::update_folder(&pool, &folder.id, "Projects", Some("📁"))
+                .await
+                .unwrap()
+        );
         let folders = FoldersRepository::list_folders(&pool).await.unwrap();
         assert_eq!(folders[0].name, "Projects");
         assert_eq!(folders[0].emoji.as_deref(), Some("📁"));
@@ -200,20 +205,31 @@ mod tests {
     #[tokio::test]
     async fn subfolder_roundtrip_and_parent_lookup() {
         let pool = test_pool().await;
-        let root = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let root = FoldersRepository::create_folder(&pool, "Work", None, None)
+            .await
+            .unwrap();
         let child = FoldersRepository::create_folder(&pool, "Interviews", None, Some(&root.id))
             .await
             .unwrap();
         assert_eq!(child.parent_id.as_deref(), Some(root.id.as_str()));
 
         // Parent lookup distinguishes missing folder / root / child.
-        assert_eq!(FoldersRepository::folder_parent_id(&pool, "nope").await.unwrap(), None);
         assert_eq!(
-            FoldersRepository::folder_parent_id(&pool, &root.id).await.unwrap(),
+            FoldersRepository::folder_parent_id(&pool, "nope")
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            FoldersRepository::folder_parent_id(&pool, &root.id)
+                .await
+                .unwrap(),
             Some(None)
         );
         assert_eq!(
-            FoldersRepository::folder_parent_id(&pool, &child.id).await.unwrap(),
+            FoldersRepository::folder_parent_id(&pool, &child.id)
+                .await
+                .unwrap(),
             Some(Some(root.id.clone()))
         );
 
@@ -225,48 +241,81 @@ mod tests {
     #[tokio::test]
     async fn favorite_set_and_clear() {
         let pool = test_pool().await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None)
+            .await
+            .unwrap();
         assert!(folder.favorited_at.is_none());
 
-        assert!(FoldersRepository::set_folder_favorite(&pool, &folder.id, true).await.unwrap());
+        assert!(
+            FoldersRepository::set_folder_favorite(&pool, &folder.id, true)
+                .await
+                .unwrap()
+        );
         let listed = FoldersRepository::list_folders(&pool).await.unwrap();
         assert!(listed[0].favorited_at.is_some());
 
-        assert!(FoldersRepository::set_folder_favorite(&pool, &folder.id, false).await.unwrap());
+        assert!(
+            FoldersRepository::set_folder_favorite(&pool, &folder.id, false)
+                .await
+                .unwrap()
+        );
         let listed = FoldersRepository::list_folders(&pool).await.unwrap();
         assert!(listed[0].favorited_at.is_none());
 
         // Unknown folder reports false.
-        assert!(!FoldersRepository::set_folder_favorite(&pool, "nope", true).await.unwrap());
+        assert!(!FoldersRepository::set_folder_favorite(&pool, "nope", true)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
     async fn delete_folder_promotes_subfolders_to_root() {
         let pool = test_pool().await;
-        let root = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let root = FoldersRepository::create_folder(&pool, "Work", None, None)
+            .await
+            .unwrap();
         let child = FoldersRepository::create_folder(&pool, "Interviews", None, Some(&root.id))
             .await
             .unwrap();
 
-        assert!(FoldersRepository::delete_folder(&pool, &root.id).await.unwrap());
+        assert!(FoldersRepository::delete_folder(&pool, &root.id)
+            .await
+            .unwrap());
         let listed = FoldersRepository::list_folders(&pool).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, child.id);
-        assert!(listed[0].parent_id.is_none(), "child should be promoted to root");
+        assert!(
+            listed[0].parent_id.is_none(),
+            "child should be promoted to root"
+        );
     }
 
     #[tokio::test]
     async fn move_meeting_in_and_out_of_folder() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None)
+            .await
+            .unwrap();
 
-        assert!(FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap());
-        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1").await.unwrap().unwrap();
+        assert!(
+            FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id))
+                .await
+                .unwrap()
+        );
+        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1")
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(m.folder_id.as_deref(), Some(folder.id.as_str()));
 
-        assert!(FoldersRepository::set_meeting_folder(&pool, "m1", None).await.unwrap());
-        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1").await.unwrap().unwrap();
+        assert!(FoldersRepository::set_meeting_folder(&pool, "m1", None)
+            .await
+            .unwrap());
+        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(m.folder_id.is_none());
     }
 
@@ -274,14 +323,26 @@ mod tests {
     async fn delete_folder_detaches_meetings() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        let folder = FoldersRepository::create_folder(&pool, "Work", None, None).await.unwrap();
-        FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id)).await.unwrap();
+        let folder = FoldersRepository::create_folder(&pool, "Work", None, None)
+            .await
+            .unwrap();
+        FoldersRepository::set_meeting_folder(&pool, "m1", Some(&folder.id))
+            .await
+            .unwrap();
 
-        assert!(FoldersRepository::delete_folder(&pool, &folder.id).await.unwrap());
-        assert!(FoldersRepository::list_folders(&pool).await.unwrap().is_empty());
+        assert!(FoldersRepository::delete_folder(&pool, &folder.id)
+            .await
+            .unwrap());
+        assert!(FoldersRepository::list_folders(&pool)
+            .await
+            .unwrap()
+            .is_empty());
 
         // Meeting survives, detached from the folder.
-        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1").await.unwrap().unwrap();
+        let m = MeetingsRepository::get_meeting_metadata(&pool, "m1")
+            .await
+            .unwrap()
+            .unwrap();
         assert!(m.folder_id.is_none());
     }
 }

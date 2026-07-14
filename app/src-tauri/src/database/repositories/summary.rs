@@ -242,16 +242,14 @@ mod tests {
 
     async fn insert_meeting(pool: &SqlitePool, id: &str) {
         let now = Utc::now();
-        sqlx::query(
-            "INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind("Test meeting")
-        .bind(now)
-        .bind(now)
-        .execute(pool)
-        .await
-        .expect("insert meeting");
+        sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(id)
+            .bind("Test meeting")
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await
+            .expect("insert meeting");
     }
 
     #[tokio::test]
@@ -337,9 +335,15 @@ mod tests {
             .expect("create");
 
         let result_value = json!({"summary": "great meeting"});
-        SummaryProcessesRepository::update_process_completed(&pool, "m1", result_value.clone(), 3, 2.5)
-            .await
-            .expect("complete");
+        SummaryProcessesRepository::update_process_completed(
+            &pool,
+            "m1",
+            result_value.clone(),
+            3,
+            2.5,
+        )
+        .await
+        .expect("complete");
 
         let proc = SummaryProcessesRepository::get_summary_data(&pool, "m1")
             .await

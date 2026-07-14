@@ -22,36 +22,35 @@ pub mod analytics;
 pub mod api;
 pub mod audio;
 pub mod calendar;
-pub mod keychain;
-pub mod model_integrity;
 pub mod config;
 pub mod console_utils;
 pub mod database;
 pub mod diarization;
 pub mod dictation;
+pub mod disk;
 pub mod json;
+pub mod keychain;
 pub mod meeting_detect;
+pub mod model_idle;
+pub mod model_integrity;
 pub mod notifications;
 pub mod onboarding;
 pub mod pill_window;
 pub mod providers;
 pub mod state;
 pub mod summary;
-pub mod model_idle;
 pub mod transcription_models;
 pub mod tray;
-pub mod disk;
 pub mod utils;
 pub mod vocabulary;
 pub mod whisper_engine;
 
-use audio::{list_audio_devices, AudioDevice, trigger_audio_permission};
+use audio::{list_audio_devices, trigger_audio_permission, AudioDevice};
 use log::{error as log_error, info as log_info, warn as log_warn};
 use notifications::commands::NotificationManagerState;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::RwLock;
-
 
 // Runtime cache of the transcription language preference, read on the
 // transcription hot path. The settings DB is the durable source of truth and is
@@ -116,10 +115,7 @@ async fn start_recording<R: Runtime>(
             )
             .await
             {
-                log_error!(
-                    "Failed to show recording started notification: {}",
-                    e
-                );
+                log_error!("Failed to show recording started notification: {}", e);
             } else {
                 log_info!("Successfully showed recording started notification");
             }
@@ -177,10 +173,7 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
             )
             .await
             {
-                log_error!(
-                    "Failed to show recording stopped notification: {}",
-                    e
-                );
+                log_error!("Failed to show recording stopped notification: {}", e);
             } else {
                 log_info!("Successfully showed recording stopped notification");
             }
@@ -302,7 +295,10 @@ pub(crate) async fn allowed_roots_for_app<R: Runtime>(
             roots.push(folder.canonicalize().unwrap_or(folder));
         }
         Err(e) => {
-            log_warn!("Could not load recording preferences for path validation: {}", e);
+            log_warn!(
+                "Could not load recording preferences for path validation: {}",
+                e
+            );
         }
     }
 
@@ -417,7 +413,11 @@ mod path_validation_tests {
 
         let roots = vec![root.path().canonicalize().unwrap()];
         let result = validate_path_within_roots(target.to_str().unwrap(), &roots, true);
-        assert!(result.is_ok(), "expected Ok for write inside root, got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "expected Ok for write inside root, got {:?}",
+            result
+        );
     }
 
     #[test]
@@ -444,7 +444,11 @@ mod path_validation_tests {
 
         let roots = vec![root.path().canonicalize().unwrap()];
         let result = validate_path_within_roots(target.to_str().unwrap(), &roots, true);
-        assert!(result.is_ok(), "expected Ok for write with non-existent parent inside root, got {:?}", result);
+        assert!(
+            result.is_ok(),
+            "expected Ok for write with non-existent parent inside root, got {:?}",
+            result
+        );
     }
 }
 
@@ -595,10 +599,7 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
             )
             .await
             {
-                log_error!(
-                    "Failed to show recording started notification: {}",
-                    e
-                );
+                log_error!("Failed to show recording started notification: {}", e);
             }
 
             Ok(())
@@ -735,8 +736,14 @@ async fn load_shortcut_accels<R: Runtime>(app: &AppHandle<R>) {
         return;
     };
     let pool = state.db_manager.pool();
-    let recording = SettingsRepository::get_recording_shortcut(pool).await.ok().flatten();
-    let dictation = SettingsRepository::get_dictation_shortcut(pool).await.ok().flatten();
+    let recording = SettingsRepository::get_recording_shortcut(pool)
+        .await
+        .ok()
+        .flatten();
+    let dictation = SettingsRepository::get_dictation_shortcut(pool)
+        .await
+        .ok()
+        .flatten();
     let mut accels = SHORTCUT_ACCELS.write().unwrap();
     accels.recording = recording.unwrap_or_else(|| RECORDING_SHORTCUT.to_string());
     accels.dictation = dictation.unwrap_or_else(|| DICTATION_SHORTCUT.to_string());
@@ -749,9 +756,8 @@ fn validate_accelerator(accel: &str) -> Result<(), String> {
         .parse::<tauri_plugin_global_shortcut::Shortcut>()
         .map_err(|e| format!("Not a valid shortcut: {}", e))?;
     let key = format!("{:?}", shortcut.key);
-    let is_function_key = key.len() >= 2
-        && key.starts_with('F')
-        && key[1..].chars().all(|c| c.is_ascii_digit());
+    let is_function_key =
+        key.len() >= 2 && key.starts_with('F') && key[1..].chars().all(|c| c.is_ascii_digit());
     if shortcut.mods.is_empty() && !is_function_key {
         return Err("Global shortcuts need at least one modifier key".to_string());
     }
@@ -767,7 +773,9 @@ struct GlobalShortcutInfo {
 
 #[tauri::command]
 #[specta::specta]
-async fn get_recording_shortcut<R: Runtime>(app: AppHandle<R>) -> Result<GlobalShortcutInfo, String> {
+async fn get_recording_shortcut<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<GlobalShortcutInfo, String> {
     load_shortcut_accels(&app).await;
     let accelerator = SHORTCUT_ACCELS.read().unwrap().recording.clone();
     Ok(GlobalShortcutInfo {
@@ -779,7 +787,9 @@ async fn get_recording_shortcut<R: Runtime>(app: AppHandle<R>) -> Result<GlobalS
 
 #[tauri::command]
 #[specta::specta]
-async fn get_dictation_shortcut<R: Runtime>(app: AppHandle<R>) -> Result<GlobalShortcutInfo, String> {
+async fn get_dictation_shortcut<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<GlobalShortcutInfo, String> {
     load_shortcut_accels(&app).await;
     let accelerator = SHORTCUT_ACCELS.read().unwrap().dictation.clone();
     Ok(GlobalShortcutInfo {
@@ -866,7 +876,10 @@ async fn set_shortcut_accel<R: Runtime>(
                     SettingsRepository::set_dictation_shortcut(pool, revert).await
                 }
             };
-            return Err(format!("Could not register {} (is it taken by another app?): {}", new_accel, e));
+            return Err(format!(
+                "Could not register {} (is it taken by another app?): {}",
+                new_accel, e
+            ));
         }
     }
 

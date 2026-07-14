@@ -58,7 +58,10 @@ async fn main() {
                 .to_string(),
         );
     };
-    let model_name = positional.get(1).cloned().unwrap_or_else(|| "tiny".to_string());
+    let model_name = positional
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| "tiny".to_string());
     let models_dir = positional.get(2).map(PathBuf::from);
 
     if !audio_path.exists() {
@@ -104,35 +107,35 @@ async fn main() {
         );
     }
     let text = if use_vad {
-            let segments = get_speech_chunks(&samples, 2000)
-                .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
-            eprintln!("VAD detected {} speech segments", segments.len());
-            let mut transcripts = Vec::with_capacity(segments.len());
-            for (index, segment) in segments.into_iter().enumerate() {
-                if segment.samples.len() < 1600 {
-                    continue;
-                }
-                eprintln!("transcribing VAD segment {}", index + 1);
-                let (text, confidence, _) = engine
-                    .transcribe_audio_with_confidence(segment.samples, language.clone())
-                    .await
-                    .unwrap_or_else(|e| {
-                        fail(format!(
-                            "transcription failed on segment {}: {e}",
-                            index + 1
-                        ))
-                    });
-                let drop_reason = app_lib::audio::transcription::segment_filter::should_drop_segment(
-                    &text,
-                    Some(confidence),
-                );
-                if let Some(reason) = drop_reason {
-                    eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
-                } else if !text.trim().is_empty() {
-                    transcripts.push(text.trim().to_string());
-                }
+        let segments =
+            get_speech_chunks(&samples, 2000).unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
+        eprintln!("VAD detected {} speech segments", segments.len());
+        let mut transcripts = Vec::with_capacity(segments.len());
+        for (index, segment) in segments.into_iter().enumerate() {
+            if segment.samples.len() < 1600 {
+                continue;
             }
-            transcripts.join(" ")
+            eprintln!("transcribing VAD segment {}", index + 1);
+            let (text, confidence, _) = engine
+                .transcribe_audio_with_confidence(segment.samples, language.clone())
+                .await
+                .unwrap_or_else(|e| {
+                    fail(format!(
+                        "transcription failed on segment {}: {e}",
+                        index + 1
+                    ))
+                });
+            let drop_reason = app_lib::audio::transcription::segment_filter::should_drop_segment(
+                &text,
+                Some(confidence),
+            );
+            if let Some(reason) = drop_reason {
+                eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
+            } else if !text.trim().is_empty() {
+                transcripts.push(text.trim().to_string());
+            }
+        }
+        transcripts.join(" ")
     } else {
         engine
             .transcribe_audio(samples, language)

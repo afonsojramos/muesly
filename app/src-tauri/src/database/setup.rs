@@ -20,14 +20,19 @@ pub async fn load_transcription_language_cache(pool: &SqlitePool) {
 /// Retire the former Parakeet default without penalizing weaker machines. Old
 /// installs are migrated once to the hardware-appropriate Whisper model.
 pub async fn migrate_legacy_parakeet_config(pool: &SqlitePool) -> Result<(), String> {
-    let current = crate::database::repositories::setting::SettingsRepository::get_transcript_config(pool)
-        .await
-        .map_err(|error| error.to_string())?;
-    if current.as_ref().is_some_and(|config| config.provider != "parakeet") {
+    let current =
+        crate::database::repositories::setting::SettingsRepository::get_transcript_config(pool)
+            .await
+            .map_err(|error| error.to_string())?;
+    if current
+        .as_ref()
+        .is_some_and(|config| config.provider != "parakeet")
+    {
         return Ok(());
     }
 
-    let recommended = crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect());
+    let recommended =
+        crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect());
     crate::database::repositories::setting::SettingsRepository::save_transcript_config(
         pool,
         "localWhisper",

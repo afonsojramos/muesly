@@ -51,15 +51,30 @@ const DEFAULT_MAX_TOKENS: u32 = 1024;
 #[derive(Clone, Serialize, specta::Type)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum GlobalChatEvent {
-    Started { gen_id: String },
+    Started {
+        gen_id: String,
+    },
     /// A tool action began (shown as an in-progress step).
-    Action { id: u32, label: String },
+    Action {
+        id: u32,
+        label: String,
+    },
     /// The action finished; `detail` summarizes the outcome ("4 meetings").
-    ActionDone { id: u32, detail: String },
+    ActionDone {
+        id: u32,
+        detail: String,
+    },
     /// Incremental final-answer text.
-    Token { text: String },
-    Done { gen_id: String, full: String },
-    Error { message: String },
+    Token {
+        text: String,
+    },
+    Done {
+        gen_id: String,
+        full: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 /// A tool call the model may emit as a single bare JSON object.
@@ -148,15 +163,99 @@ impl TokenGate {
 /// Generic words that make terrible FTS queries ("When did I talk about my
 /// job?" should search for "job", and "what meeting?" for nothing at all).
 const STOPWORDS: &[&str] = &[
-    "a", "an", "the", "i", "me", "my", "we", "us", "our", "you", "your", "it", "its", "is",
-    "are", "was", "were", "be", "been", "being", "do", "does", "did", "doing", "have", "has",
-    "had", "what", "when", "where", "who", "whom", "which", "why", "how", "about", "talk",
-    "talked", "talking", "say", "said", "saying", "tell", "told", "speak", "spoke", "discuss",
-    "discussed", "mention", "mentioned", "meeting", "meetings", "call", "calls", "in", "on",
-    "at", "of", "for", "to", "from", "with", "and", "or", "not", "no", "yes", "this", "that",
-    "these", "those", "there", "here", "any", "some", "all", "can", "could", "would", "should",
-    "will", "shall", "may", "might", "must", "please", "know", "mean", "again", "ever", "last",
-    "time", "times",
+    "a",
+    "an",
+    "the",
+    "i",
+    "me",
+    "my",
+    "we",
+    "us",
+    "our",
+    "you",
+    "your",
+    "it",
+    "its",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "do",
+    "does",
+    "did",
+    "doing",
+    "have",
+    "has",
+    "had",
+    "what",
+    "when",
+    "where",
+    "who",
+    "whom",
+    "which",
+    "why",
+    "how",
+    "about",
+    "talk",
+    "talked",
+    "talking",
+    "say",
+    "said",
+    "saying",
+    "tell",
+    "told",
+    "speak",
+    "spoke",
+    "discuss",
+    "discussed",
+    "mention",
+    "mentioned",
+    "meeting",
+    "meetings",
+    "call",
+    "calls",
+    "in",
+    "on",
+    "at",
+    "of",
+    "for",
+    "to",
+    "from",
+    "with",
+    "and",
+    "or",
+    "not",
+    "no",
+    "yes",
+    "this",
+    "that",
+    "these",
+    "those",
+    "there",
+    "here",
+    "any",
+    "some",
+    "all",
+    "can",
+    "could",
+    "would",
+    "should",
+    "will",
+    "shall",
+    "may",
+    "might",
+    "must",
+    "please",
+    "know",
+    "mean",
+    "again",
+    "ever",
+    "last",
+    "time",
+    "times",
 ];
 
 /// Content words of a question, lowercased, stopword-stripped, deduped.
@@ -342,14 +441,13 @@ pub(crate) async fn tool_read(pool: &SqlitePool, meeting_id: &str) -> (String, O
         );
     }
     let summary = load_meeting_summary(pool, meeting_id).await;
-    let created_at: String =
-        sqlx::query_scalar("SELECT created_at FROM meetings WHERE id = ?")
-            .bind(meeting_id)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+    let created_at: String = sqlx::query_scalar("SELECT created_at FROM meetings WHERE id = ?")
+        .bind(meeting_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let date = created_at.split('T').next().unwrap_or("").to_string();
 
     let mut excerpt = transcript;
@@ -428,7 +526,11 @@ small talk, just reply naturally in plain text. Be concise.",
     if !recent.is_empty() {
         user.push_str("<conversation>\n");
         for turn in recent.into_iter().rev() {
-            let who = if turn.role == "assistant" { "Assistant" } else { "User" };
+            let who = if turn.role == "assistant" {
+                "Assistant"
+            } else {
+                "User"
+            };
             user.push_str(&format!("{}: {}\n", who, turn.content.trim()));
         }
         user.push_str("</conversation>\n\n");
@@ -483,7 +585,9 @@ async fn run_round(
         }
     } else {
         let client = crate::providers::common::http_client();
-        let max_tokens = settings.custom_openai_max_tokens.or(Some(DEFAULT_MAX_TOKENS));
+        let max_tokens = settings
+            .custom_openai_max_tokens
+            .or(Some(DEFAULT_MAX_TOKENS));
         generate_summary_streaming(
             &client,
             &settings.provider,
@@ -548,13 +652,19 @@ pub async fn global_chat_ask<R: Runtime>(
         action_id += 1;
         let _ = on_event.send(GlobalChatEvent::Action {
             id: action_id,
-            label: format!("Searching meetings for \u{201c}{}\u{201d}", ellipsize(&query, 60)),
+            label: format!(
+                "Searching meetings for \u{201c}{}\u{201d}",
+                ellipsize(&query, 60)
+            ),
         });
         let (block, hits) = tool_search(&pool, &query).await;
         let count = hits.len();
         let _ = on_event.send(GlobalChatEvent::ActionDone {
             id: action_id,
-            detail: format!("{count} meeting{} matched", if count == 1 { "" } else { "s" }),
+            detail: format!(
+                "{count} meeting{} matched",
+                if count == 1 { "" } else { "s" }
+            ),
         });
         evidence.push(block);
         executed.push(ToolCall::SearchMeetings { query });
@@ -566,13 +676,20 @@ pub async fn global_chat_ask<R: Runtime>(
             action_id += 1;
             let _ = on_event.send(GlobalChatEvent::Action {
                 id: action_id,
-                label: format!("Reading \u{201c}{}\u{201d}\u{2026}", ellipsize(&hit.title, 60)),
+                label: format!(
+                    "Reading \u{201c}{}\u{201d}\u{2026}",
+                    ellipsize(&hit.title, 60)
+                ),
             });
             let (block, _title) = tool_read(&pool, &hit.meeting_id).await;
             let date = hit.created_at.split('T').next().unwrap_or("").to_string();
             let _ = on_event.send(GlobalChatEvent::ActionDone {
                 id: action_id,
-                detail: if date.is_empty() { "done".to_string() } else { date },
+                detail: if date.is_empty() {
+                    "done".to_string()
+                } else {
+                    date
+                },
             });
             evidence.push(block);
             executed.push(ToolCall::ReadMeeting {
@@ -636,7 +753,10 @@ pub async fn global_chat_ask<R: Runtime>(
                     ToolCall::SearchMeetings { query } => {
                         let _ = on_event.send(GlobalChatEvent::Action {
                             id: action_id,
-                            label: format!("Searching meetings for \u{201c}{}\u{201d}", ellipsize(query, 60)),
+                            label: format!(
+                                "Searching meetings for \u{201c}{}\u{201d}",
+                                ellipsize(query, 60)
+                            ),
                         });
                         let (block, hits) = tool_search(&pool, query).await;
                         let count = hits.len();
@@ -728,7 +848,10 @@ mod tests {
     fn gate_holds_fenced_json_tool_calls_entirely() {
         let mut gate = TokenGate::new();
         assert_eq!(gate.push("```json\n"), "");
-        assert_eq!(gate.push("{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"), "");
+        assert_eq!(
+            gate.push("{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"),
+            ""
+        );
         assert!(gate.is_tool_call());
     }
 
@@ -757,9 +880,7 @@ mod tests {
             })
         );
         assert_eq!(
-            parse_tool_call(
-                "```json\n{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"
-            ),
+            parse_tool_call("```json\n{\"tool\":\"search_meetings\",\"query\":\"project X\"}\n```"),
             Some(ToolCall::SearchMeetings {
                 query: "project X".into()
             })
@@ -776,7 +897,10 @@ mod tests {
     fn rejects_non_tool_output() {
         assert_eq!(parse_tool_call("The answer is 42."), None);
         assert_eq!(parse_tool_call("{\"tool\":\"unknown\"}"), None);
-        assert_eq!(parse_tool_call("{\"tool\":\"search_meetings\"} trailing"), None);
+        assert_eq!(
+            parse_tool_call("{\"tool\":\"search_meetings\"} trailing"),
+            None
+        );
         assert_eq!(parse_tool_call("{broken json"), None);
         assert_eq!(
             parse_tool_call(
@@ -785,9 +909,7 @@ mod tests {
             None
         );
         assert_eq!(
-            parse_tool_call(
-                "```javascript\n{\"tool\":\"search_meetings\",\"query\":\"x\"}\n```"
-            ),
+            parse_tool_call("```javascript\n{\"tool\":\"search_meetings\",\"query\":\"x\"}\n```"),
             None
         );
     }
@@ -796,7 +918,10 @@ mod tests {
 
     #[test]
     fn keywords_strip_stopwords_and_dedupe() {
-        assert_eq!(search_keywords("When did I talk about my job?"), vec!["job"]);
+        assert_eq!(
+            search_keywords("When did I talk about my job?"),
+            vec!["job"]
+        );
         assert_eq!(
             search_keywords("the budget Budget BUDGET plan"),
             vec!["budget", "plan"]

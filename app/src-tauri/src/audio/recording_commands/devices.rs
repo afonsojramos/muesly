@@ -25,18 +25,20 @@ pub enum DeviceEventResponse {
 impl From<DeviceEvent> for DeviceEventResponse {
     fn from(event: DeviceEvent) -> Self {
         match event {
-            DeviceEvent::DeviceDisconnected { device_name, device_type } => {
-                DeviceEventResponse::DeviceDisconnected {
-                    device_name,
-                    device_type: format!("{:?}", device_type),
-                }
-            }
-            DeviceEvent::DeviceReconnected { device_name, device_type } => {
-                DeviceEventResponse::DeviceReconnected {
-                    device_name,
-                    device_type: format!("{:?}", device_type),
-                }
-            }
+            DeviceEvent::DeviceDisconnected {
+                device_name,
+                device_type,
+            } => DeviceEventResponse::DeviceDisconnected {
+                device_name,
+                device_type: format!("{:?}", device_type),
+            },
+            DeviceEvent::DeviceReconnected {
+                device_name,
+                device_type,
+            } => DeviceEventResponse::DeviceReconnected {
+                device_name,
+                device_type: format!("{:?}", device_type),
+            },
             DeviceEvent::DeviceListChanged => DeviceEventResponse::DeviceListChanged,
         }
     }
@@ -85,12 +87,12 @@ pub async fn get_reconnection_status() -> Result<ReconnectionStatus, String> {
 
     if let Some(manager) = manager_guard.as_ref() {
         let state = manager.get_state();
-        let disconnected_device = state.get_disconnected_device().map(|(device, device_type)| {
-            DisconnectedDeviceInfo {
+        let disconnected_device = state
+            .get_disconnected_device()
+            .map(|(device, device_type)| DisconnectedDeviceInfo {
                 name: device.name.clone(),
                 device_type: format!("{:?}", device_type),
-            }
-        });
+            });
 
         Ok(ReconnectionStatus {
             is_reconnecting: manager.is_reconnecting(),
@@ -109,7 +111,8 @@ pub async fn get_reconnection_status() -> Result<ReconnectionStatus, String> {
 /// Used to warn users about Bluetooth playback issues
 #[tauri::command]
 #[specta::specta]
-pub async fn get_active_audio_output() -> Result<crate::audio::playback_monitor::AudioOutputInfo, String> {
+pub async fn get_active_audio_output(
+) -> Result<crate::audio::playback_monitor::AudioOutputInfo, String> {
     crate::audio::playback_monitor::get_active_audio_output()
         .await
         .map_err(|e| format!("Failed to get audio output info: {}", e))

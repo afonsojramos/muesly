@@ -1,18 +1,17 @@
-use std::process::Command;
-use std::sync::Arc;
-use std::collections::HashSet;
-use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Emitter, Runtime};
-use tokio::time::{timeout, Duration, sleep};
-use tokio::sync::RwLock;
+use crate::providers::ollama::metadata::SHARED_METADATA_CACHE;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
-use crate::providers::ollama::metadata::SHARED_METADATA_CACHE;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::process::Command;
+use std::sync::Arc;
+use tauri::{command, AppHandle, Emitter, Runtime};
+use tokio::sync::RwLock;
+use tokio::time::{sleep, timeout, Duration};
 
 // Global set to track models currently being downloaded
-static DOWNLOADING_MODELS: Lazy<Arc<RwLock<HashSet<String>>>> = Lazy::new(|| {
-    Arc::new(RwLock::new(HashSet::new()))
-});
+static DOWNLOADING_MODELS: Lazy<Arc<RwLock<HashSet<String>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashSet::new())));
 
 // Error categorization for better error handling and user feedback
 #[derive(Debug)]
@@ -63,11 +62,7 @@ struct OllamaApiModel {
 fn is_localhost_endpoint(endpoint: Option<&str>) -> bool {
     match endpoint {
         None | Some("") => true,
-        Some(url) => {
-            url.contains("localhost") ||
-            url.contains("127.0.0.1") ||
-            url.contains("::1")
-        }
+        Some(url) => url.contains("localhost") || url.contains("127.0.0.1") || url.contains("::1"),
     }
 }
 
@@ -80,7 +75,7 @@ fn validate_endpoint_url(url: &str) -> Result<(), OllamaError> {
     // Check if URL starts with http:// or https://
     if !url.starts_with("http://") && !url.starts_with("https://") {
         return Err(OllamaError::InvalidEndpoint(
-            "URL must start with http:// or https://".to_string()
+            "URL must start with http:// or https://".to_string(),
         ));
     }
 
@@ -100,8 +95,10 @@ pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaMod
     // Add timeout wrapper (5 seconds max)
     match timeout(
         Duration::from_secs(5),
-        get_models_via_http_with_retry(endpoint.as_deref())
-    ).await {
+        get_models_via_http_with_retry(endpoint.as_deref()),
+    )
+    .await
+    {
         Ok(Ok(models)) => {
             if models.is_empty() {
                 Err(OllamaError::NoModelsFound.to_string())
@@ -112,9 +109,8 @@ pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaMod
         Ok(Err(http_err)) => {
             // Only fallback to CLI if endpoint is localhost/empty
             if is_localhost_endpoint(endpoint.as_deref()) {
-                get_models_via_cli().map_err(|cli_err| {
-                    format!("{}\n\nAlso tried CLI: {}", http_err, cli_err)
-                })
+                get_models_via_cli()
+                    .map_err(|cli_err| format!("{}\n\nAlso tried CLI: {}", http_err, cli_err))
             } else {
                 Err(http_err)
             }
@@ -124,7 +120,9 @@ pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaMod
 }
 
 // HTTP request with retry logic and exponential backoff
-async fn get_models_via_http_with_retry(endpoint: Option<&str>) -> Result<Vec<OllamaModel>, String> {
+async fn get_models_via_http_with_retry(
+    endpoint: Option<&str>,
+) -> Result<Vec<OllamaModel>, String> {
     const MAX_RETRIES: u32 = 2;
     const INITIAL_BACKOFF_MS: u64 = 300;
 
@@ -150,7 +148,10 @@ async fn get_models_via_http_with_retry(endpoint: Option<&str>) -> Result<Vec<Ol
         }
     }
 
-    Err(format!("Failed after {} retries: {}", MAX_RETRIES, last_error))
+    Err(format!(
+        "Failed after {} retries: {}",
+        MAX_RETRIES, last_error
+    ))
 }
 
 async fn get_models_via_http_async(endpoint: Option<&str>) -> Result<Vec<OllamaModel>, String> {
@@ -167,16 +168,22 @@ async fn get_models_via_http_async(endpoint: Option<&str>) -> Result<Vec<OllamaM
             if e.is_timeout() {
                 OllamaError::NetworkError("Connection timed out".to_string()).to_string()
             } else if e.is_connect() {
-                OllamaError::NetworkError(format!("Cannot connect to {}. Please check if the server is running.", base_url)).to_string()
+                OllamaError::NetworkError(format!(
+                    "Cannot connect to {}. Please check if the server is running.",
+                    base_url
+                ))
+                .to_string()
             } else {
                 OllamaError::NetworkError(e.to_string()).to_string()
             }
         })?;
 
     if !response.status().is_success() {
-        return Err(OllamaError::ServerError(
-            format!("HTTP {}: Server returned an error", response.status())
-        ).to_string());
+        return Err(OllamaError::ServerError(format!(
+            "HTTP {}: Server returned an error",
+            response.status()
+        ))
+        .to_string());
     }
 
     let api_response: OllamaApiResponse = response
@@ -184,29 +191,26 @@ async fn get_models_via_http_async(endpoint: Option<&str>) -> Result<Vec<OllamaM
         .await
         .map_err(|e| OllamaError::ParseError(e.to_string()).to_string())?;
 
-    Ok(api_response.models.into_iter().map(|m| OllamaModel {
-        name: m.name,
-        id: m.model,
-        size: format_size(m.size),
-        modified: m.modified_at,
-    }).collect())
+    Ok(api_response
+        .models
+        .into_iter()
+        .map(|m| OllamaModel {
+            name: m.name,
+            id: m.model,
+            size: format_size(m.size),
+            modified: m.modified_at,
+        })
+        .collect())
 }
 
 fn get_models_via_cli() -> Result<Vec<OllamaModel>, String> {
-    let output = Command::new("ollama")
-        .arg("list")
-        .output()
-        .map_err(|e| {
-            OllamaError::NetworkError(
-                format!("Ollama CLI not found or not in PATH: {}", e)
-            ).to_string()
-        })?;
+    let output = Command::new("ollama").arg("list").output().map_err(|e| {
+        OllamaError::NetworkError(format!("Ollama CLI not found or not in PATH: {}", e)).to_string()
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(OllamaError::ServerError(
-            format!("Ollama CLI error: {}", stderr)
-        ).to_string());
+        return Err(OllamaError::ServerError(format!("Ollama CLI error: {}", stderr)).to_string());
     }
 
     let output_str = String::from_utf8_lossy(&output.stdout);
@@ -262,7 +266,10 @@ pub async fn pull_ollama_model<R: Runtime>(
     {
         let downloading = DOWNLOADING_MODELS.read().await;
         if downloading.contains(&model_name) {
-            log::warn!("Model {} is already being downloaded, ignoring duplicate request", model_name);
+            log::warn!(
+                "Model {} is already being downloaded, ignoring duplicate request",
+                model_name
+            );
             return Err(format!("Model {} is already being downloaded", model_name));
         }
     }
@@ -301,7 +308,10 @@ pub async fn pull_ollama_model<R: Runtime>(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
 
         // Remove from downloading set on error
         {
@@ -318,7 +328,10 @@ pub async fn pull_ollama_model<R: Runtime>(
             }),
         );
 
-        return Err(format!("Failed to pull model (HTTP {}): {}", status, error_text));
+        return Err(format!(
+            "Failed to pull model (HTTP {}): {}",
+            status, error_text
+        ));
     }
 
     // Process streaming response (NDJSON format)
@@ -374,7 +387,11 @@ pub async fn pull_ollama_model<R: Runtime>(
                         if progress != last_progress
                             && (progress.saturating_sub(last_progress) >= 1 || progress == 100)
                         {
-                            log::info!("Ollama download progress for {}: {}%", model_name, progress);
+                            log::info!(
+                                "Ollama download progress for {}: {}%",
+                                model_name,
+                                progress
+                            );
 
                             let _ = app_handle.emit(
                                 "ollama-model-download-progress",
@@ -458,7 +475,10 @@ pub async fn delete_ollama_model(
             if e.is_timeout() {
                 format!("Delete request timed out for model: {}", model_name)
             } else if e.is_connect() {
-                format!("Cannot connect to {}. Please check if the Ollama server is running.", base_url)
+                format!(
+                    "Cannot connect to {}. Please check if the Ollama server is running.",
+                    base_url
+                )
             } else {
                 format!("Failed to delete model: {}", e)
             }
@@ -466,8 +486,14 @@ pub async fn delete_ollama_model(
 
     if !response.status().is_success() {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        return Err(format!("Failed to delete model (HTTP {}): {}", status, error_text));
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!(
+            "Failed to delete model (HTTP {}): {}",
+            status, error_text
+        ));
     }
 
     log::info!("Successfully deleted Ollama model: {}", model_name);
@@ -494,7 +520,10 @@ pub async fn get_ollama_model_context(
 ) -> Result<usize, String> {
     log::info!("Fetching context size for model: {}", model_name);
 
-    match SHARED_METADATA_CACHE.get_or_fetch(&model_name, endpoint.as_deref()).await {
+    match SHARED_METADATA_CACHE
+        .get_or_fetch(&model_name, endpoint.as_deref())
+        .await
+    {
         Ok(metadata) => {
             log::info!(
                 "Model {} context size: {} tokens",

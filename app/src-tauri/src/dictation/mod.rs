@@ -4,6 +4,6 @@
 //! `crate::audio::recording_commands` (`DICTATION_ACTIVE` / `can_start`).
 
 pub mod capture;
+pub mod cleanup;
 pub mod commands;
 pub mod inject;
-pub mod cleanup;

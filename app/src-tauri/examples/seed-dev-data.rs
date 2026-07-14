@@ -148,8 +148,20 @@ struct SeedMeeting {
 }
 
 const FOLDERS: &[SeedFolder] = &[
-    SeedFolder { id: "seed-folder-work", name: "Work", emoji: "💼", parent: None, favorite: true },
-    SeedFolder { id: "seed-folder-personal", name: "Personal", emoji: "🏡", parent: None, favorite: false },
+    SeedFolder {
+        id: "seed-folder-work",
+        name: "Work",
+        emoji: "💼",
+        parent: None,
+        favorite: true,
+    },
+    SeedFolder {
+        id: "seed-folder-personal",
+        name: "Personal",
+        emoji: "🏡",
+        parent: None,
+        favorite: false,
+    },
     SeedFolder {
         id: "seed-folder-1on1s",
         name: "1:1s",

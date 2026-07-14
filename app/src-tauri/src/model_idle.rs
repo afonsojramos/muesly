@@ -10,7 +10,12 @@ const MODEL_IDLE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 const CHECK_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Pure unload decision, so it can be unit-tested without engines.
-pub fn should_unload(is_loaded: bool, is_recording: bool, idle: Duration, timeout: Duration) -> bool {
+pub fn should_unload(
+    is_loaded: bool,
+    is_recording: bool,
+    idle: Duration,
+    timeout: Duration,
+) -> bool {
     is_loaded && !is_recording && idle >= timeout
 }
 
@@ -32,14 +37,19 @@ pub fn spawn_idle_unload_watcher() {
 
             // Whisper.
             let whisper = {
-                let guard = crate::whisper_engine::commands::WHISPER_ENGINE.lock().unwrap();
+                let guard = crate::whisper_engine::commands::WHISPER_ENGINE
+                    .lock()
+                    .unwrap();
                 guard.as_ref().cloned()
             };
             if let Some(engine) = whisper {
                 let loaded = engine.is_model_loaded().await;
                 let idle = engine.idle_for().await;
                 if should_unload(loaded, false, idle, MODEL_IDLE_TIMEOUT) {
-                    log::info!("Idle for {:?}, unloading Whisper model to free memory", idle);
+                    log::info!(
+                        "Idle for {:?}, unloading Whisper model to free memory",
+                        idle
+                    );
                     engine.unload_model().await;
                 }
             }
@@ -56,7 +66,7 @@ mod tests {
         let t = Duration::from_secs(300);
         assert!(should_unload(true, false, Duration::from_secs(301), t));
         assert!(!should_unload(false, false, Duration::from_secs(999), t)); // not loaded
-        assert!(!should_unload(true, true, Duration::from_secs(999), t));   // recording
-        assert!(!should_unload(true, false, Duration::from_secs(120), t));  // still recent
+        assert!(!should_unload(true, true, Duration::from_secs(999), t)); // recording
+        assert!(!should_unload(true, false, Duration::from_secs(120), t)); // still recent
     }
 }

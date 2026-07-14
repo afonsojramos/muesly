@@ -1,10 +1,10 @@
-use tauri::{command, AppHandle, Emitter, State};
 use crate::audio::{
-    start_system_audio_capture, list_system_audio_devices, check_system_audio_permissions,
-    SystemAudioDetector, SystemAudioEvent, new_system_audio_callback
+    check_system_audio_permissions, list_system_audio_devices, new_system_audio_callback,
+    start_system_audio_capture, SystemAudioDetector, SystemAudioEvent,
 };
-use std::sync::{Arc, Mutex};
 use anyhow::Result;
+use std::sync::{Arc, Mutex};
+use tauri::{command, AppHandle, Emitter, State};
 
 // Global state for system audio detector
 type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
@@ -18,7 +18,7 @@ pub async fn start_system_audio_capture_command() -> Result<String, String> {
             // TODO: Store the stream in global state if needed for management
             Ok("System audio capture started successfully".to_string())
         }
-        Err(e) => Err(format!("Failed to start system audio capture: {}", e))
+        Err(e) => Err(format!("Failed to start system audio capture: {}", e)),
     }
 }
 
@@ -26,8 +26,7 @@ pub async fn start_system_audio_capture_command() -> Result<String, String> {
 #[command]
 #[specta::specta]
 pub async fn list_system_audio_devices_command() -> Result<Vec<String>, String> {
-    list_system_audio_devices()
-        .map_err(|e| format!("Failed to list system audio devices: {}", e))
+    list_system_audio_devices().map_err(|e| format!("Failed to list system audio devices: {}", e))
 }
 
 /// Check if the app has permission to access system audio
@@ -42,9 +41,10 @@ pub async fn check_system_audio_permissions_command() -> bool {
 #[specta::specta]
 pub async fn start_system_audio_monitoring(
     app_handle: AppHandle,
-    detector_state: State<'_, SystemAudioDetectorState>
+    detector_state: State<'_, SystemAudioDetectorState>,
 ) -> Result<(), String> {
-    let mut detector_guard = detector_state.lock()
+    let mut detector_guard = detector_state
+        .lock()
         .map_err(|e| format!("Failed to acquire detector lock: {}", e))?;
 
     if detector_guard.is_some() {
@@ -54,16 +54,14 @@ pub async fn start_system_audio_monitoring(
     let mut detector = SystemAudioDetector::new();
 
     // Create callback that emits events to the frontend
-    let callback = new_system_audio_callback(move |event| {
-        match event {
-            SystemAudioEvent::SystemAudioStarted(apps) => {
-                tracing::info!("System audio started by apps: {:?}", apps);
-                let _ = app_handle.emit("system-audio-started", apps);
-            }
-            SystemAudioEvent::SystemAudioStopped => {
-                let _ = app_handle.emit("system-audio-stopped", ());
-                tracing::info!("System audio stopped");
-            }
+    let callback = new_system_audio_callback(move |event| match event {
+        SystemAudioEvent::SystemAudioStarted(apps) => {
+            tracing::info!("System audio started by apps: {:?}", apps);
+            let _ = app_handle.emit("system-audio-started", apps);
+        }
+        SystemAudioEvent::SystemAudioStopped => {
+            let _ = app_handle.emit("system-audio-stopped", ());
+            tracing::info!("System audio stopped");
         }
     });
 
@@ -77,9 +75,10 @@ pub async fn start_system_audio_monitoring(
 #[command]
 #[specta::specta]
 pub async fn stop_system_audio_monitoring(
-    detector_state: State<'_, SystemAudioDetectorState>
+    detector_state: State<'_, SystemAudioDetectorState>,
 ) -> Result<(), String> {
-    let mut detector_guard = detector_state.lock()
+    let mut detector_guard = detector_state
+        .lock()
         .map_err(|e| format!("Failed to acquire detector lock: {}", e))?;
 
     if let Some(mut detector) = detector_guard.take() {
@@ -94,9 +93,10 @@ pub async fn stop_system_audio_monitoring(
 #[command]
 #[specta::specta]
 pub async fn get_system_audio_monitoring_status(
-    detector_state: State<'_, SystemAudioDetectorState>
+    detector_state: State<'_, SystemAudioDetectorState>,
 ) -> Result<bool, String> {
-    let detector_guard = detector_state.lock()
+    let detector_guard = detector_state
+        .lock()
         .map_err(|e| format!("Failed to acquire detector lock: {}", e))?;
 
     Ok(detector_guard.is_some())

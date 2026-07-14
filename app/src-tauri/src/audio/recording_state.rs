@@ -1,11 +1,11 @@
+use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Instant;
 use tokio::sync::mpsc;
-use anyhow::Result;
 
-use super::devices::AudioDevice;
 use super::buffer_pool::AudioBufferPool;
+use super::devices::AudioDevice;
 
 /// Lock a mutex, recovering the guard if a previous holder panicked.
 ///
@@ -112,7 +112,7 @@ pub struct RecordingState {
     // Core recording state
     is_recording: AtomicBool,
     is_paused: AtomicBool,
-    is_reconnecting: AtomicBool,  // NEW: Attempting to reconnect to device
+    is_reconnecting: AtomicBool, // NEW: Attempting to reconnect to device
 
     // Audio devices
     microphone_device: Mutex<Option<Arc<AudioDevice>>>,
@@ -267,7 +267,10 @@ impl RecordingState {
         if let Some(pause_start) = self.pause_start.lock_recover().take() {
             let pause_duration = pause_start.elapsed();
             *self.total_pause_duration.lock_recover() += pause_duration;
-            log::info!("Recording resumed after pause of {:.2}s", pause_duration.as_secs_f64());
+            log::info!(
+                "Recording resumed after pause of {:.2}s",
+                pause_duration.as_secs_f64()
+            );
         }
 
         self.is_paused.store(false, Ordering::SeqCst);
@@ -336,7 +339,9 @@ impl RecordingState {
         }
 
         if let Some(sender) = self.audio_sender.lock_recover().as_ref() {
-            sender.send(chunk).map_err(|_| anyhow::anyhow!("Failed to send audio chunk"))?;
+            sender
+                .send(chunk)
+                .map_err(|_| anyhow::anyhow!("Failed to send audio chunk"))?;
 
             // Update statistics
             let mut stats = self.stats.lock_recover();
@@ -345,7 +350,9 @@ impl RecordingState {
             Ok(())
         } else {
             // Return an error when no sender is available (pipeline not ready)
-            Err(anyhow::anyhow!("Audio pipeline not ready - no sender available"))
+            Err(anyhow::anyhow!(
+                "Audio pipeline not ready - no sender available"
+            ))
         }
     }
 
@@ -363,11 +370,18 @@ impl RecordingState {
         // Track recoverable vs non-recoverable errors separately
         if error.is_recoverable() {
             let recoverable_count = self.recoverable_error_count.fetch_add(1, Ordering::SeqCst) + 1;
-            log::warn!("Recoverable audio error ({}): {:?}", recoverable_count, error);
+            log::warn!(
+                "Recoverable audio error ({}): {:?}",
+                recoverable_count,
+                error
+            );
 
             // Allow more recoverable errors before stopping
             if recoverable_count >= 10 {
-                log::error!("Too many recoverable errors ({}), stopping recording", recoverable_count);
+                log::error!(
+                    "Too many recoverable errors ({}), stopping recording",
+                    recoverable_count
+                );
                 self.stop_recording();
             }
         } else {
@@ -385,7 +399,10 @@ impl RecordingState {
 
         // Fallback: stop recording after too many total errors
         if count >= 15 {
-            log::error!("Too many total audio errors ({}), stopping recording", count);
+            log::error!(
+                "Too many total audio errors ({}), stopping recording",
+                count
+            );
             self.stop_recording();
         }
     }
@@ -510,7 +527,9 @@ mod tests {
     #[test]
     fn duration_getters_survive_a_poisoned_lock() {
         let state = RecordingState::new();
-        state.start_recording().expect("start_recording should not fail");
+        state
+            .start_recording()
+            .expect("start_recording should not fail");
 
         // Poison recording_start by panicking while holding it.
         let s = state.clone();
@@ -526,4 +545,3 @@ mod tests {
         let _ = state.get_current_pause_duration();
     }
 }
-

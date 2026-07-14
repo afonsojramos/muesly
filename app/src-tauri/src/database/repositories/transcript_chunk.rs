@@ -69,16 +69,14 @@ mod tests {
 
     async fn insert_meeting(pool: &SqlitePool, id: &str) {
         let now = Utc::now();
-        sqlx::query(
-            "INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind(id)
-        .bind("Test meeting")
-        .bind(now)
-        .bind(now)
-        .execute(pool)
-        .await
-        .expect("insert meeting");
+        sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+            .bind(id)
+            .bind("Test meeting")
+            .bind(now)
+            .bind(now)
+            .execute(pool)
+            .await
+            .expect("insert meeting");
     }
 
     #[tokio::test]
@@ -181,12 +179,13 @@ mod tests {
         assert_eq!(count, 1, "upsert must not create a duplicate row");
 
         // The stored text should be the updated one.
-        let text: String =
-            sqlx::query_scalar("SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?")
-                .bind("m1")
-                .fetch_one(&pool)
-                .await
-                .expect("fetch");
+        let text: String = sqlx::query_scalar(
+            "SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?",
+        )
+        .bind("m1")
+        .fetch_one(&pool)
+        .await
+        .expect("fetch");
         assert_eq!(text, "Updated transcript");
     }
 
@@ -207,18 +206,20 @@ mod tests {
         .await
         .expect("save m2");
 
-        let text_m1: String =
-            sqlx::query_scalar("SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?")
-                .bind("m1")
-                .fetch_one(&pool)
-                .await
-                .expect("fetch m1");
-        let text_m2: String =
-            sqlx::query_scalar("SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?")
-                .bind("m2")
-                .fetch_one(&pool)
-                .await
-                .expect("fetch m2");
+        let text_m1: String = sqlx::query_scalar(
+            "SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?",
+        )
+        .bind("m1")
+        .fetch_one(&pool)
+        .await
+        .expect("fetch m1");
+        let text_m2: String = sqlx::query_scalar(
+            "SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?",
+        )
+        .bind("m2")
+        .fetch_one(&pool)
+        .await
+        .expect("fetch m2");
 
         assert_eq!(text_m1, "For m1");
         assert_eq!(text_m2, "For m2");

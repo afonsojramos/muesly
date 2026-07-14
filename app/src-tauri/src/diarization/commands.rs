@@ -185,10 +185,7 @@ pub async fn diarize_meeting<R: Runtime>(
 
 /// The meeting's remote (non-self) attendee display names, from the persisted
 /// calendar snapshot. Empty when there is no snapshot.
-async fn remote_attendee_names(
-    pool: &SqlitePool,
-    meeting_id: &str,
-) -> Result<Vec<String>, String> {
+async fn remote_attendee_names(pool: &SqlitePool, meeting_id: &str) -> Result<Vec<String>, String> {
     let Some(event) = CalendarEventsRepository::get(pool, meeting_id)
         .await
         .map_err(|e| format!("load calendar event: {e}"))?
@@ -289,10 +286,7 @@ pub async fn get_meeting_speakers(
 
 /// Assemble a meeting's speakers from the diarized clusters, stored names, and
 /// calendar attendees. Pool-level so it is testable without a Tauri `State`.
-async fn meeting_speakers(
-    pool: &SqlitePool,
-    meeting_id: &str,
-) -> Result<MeetingSpeakers, String> {
+async fn meeting_speakers(pool: &SqlitePool, meeting_id: &str) -> Result<MeetingSpeakers, String> {
     let clusters = TranscriptsRepository::distinct_speaker_ids(pool, meeting_id)
         .await
         .map_err(|e| format!("load speaker clusters: {e}"))?;
@@ -364,12 +358,14 @@ pub async fn get_talk_time(
         .map_err(|e| format!("aggregate talk time: {e}"))?;
     Ok(rows
         .into_iter()
-        .map(|(speaker, speaker_id, seconds, first_start)| TalkTimeGroup {
-            speaker,
-            speaker_id,
-            seconds,
-            first_start,
-        })
+        .map(
+            |(speaker, speaker_id, seconds, first_start)| TalkTimeGroup {
+                speaker,
+                speaker_id,
+                seconds,
+                first_start,
+            },
+        )
         .collect())
 }
 
@@ -429,9 +425,7 @@ fn assign_speaker_ids(
                     reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
                 }
                 // Unknown non-empty source: still diarizable (defensive).
-                Some(_) => {
-                    reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64)
-                }
+                Some(_) => reconcile::speaker_for_segment(*start, *end, turns).map(|s| s as i64),
             };
             (id.clone(), speaker_id)
         })
@@ -490,7 +484,12 @@ mod tests {
     use chrono::Utc;
     use sqlx::sqlite::SqlitePoolOptions;
 
-    fn seg(id: &str, start: f64, end: f64, speaker: Option<&str>) -> (String, f64, f64, Option<String>) {
+    fn seg(
+        id: &str,
+        start: f64,
+        end: f64,
+        speaker: Option<&str>,
+    ) -> (String, f64, f64, Option<String>) {
         (id.to_string(), start, end, speaker.map(|s| s.to_string()))
     }
 
@@ -519,7 +518,13 @@ mod tests {
             .expect("insert meeting");
     }
 
-    async fn insert_segment(pool: &SqlitePool, meeting_id: &str, id: &str, speaker: &str, speaker_id: Option<i64>) {
+    async fn insert_segment(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        id: &str,
+        speaker: &str,
+        speaker_id: Option<i64>,
+    ) {
         sqlx::query(
             "INSERT INTO transcripts (id, meeting_id, transcript, timestamp, speaker, speaker_id) \
              VALUES (?, ?, ?, ?, ?, ?)",
@@ -536,17 +541,23 @@ mod tests {
     }
 
     async fn insert_event(pool: &SqlitePool, meeting_id: &str, attendees_json: &str) {
-        sqlx::query("INSERT INTO calendar_events (meeting_id, attendees_json, created_at) VALUES (?, ?, ?)")
-            .bind(meeting_id)
-            .bind(attendees_json)
-            .bind(Utc::now())
-            .execute(pool)
-            .await
-            .expect("insert event");
+        sqlx::query(
+            "INSERT INTO calendar_events (meeting_id, attendees_json, created_at) VALUES (?, ?, ?)",
+        )
+        .bind(meeting_id)
+        .bind(attendees_json)
+        .bind(Utc::now())
+        .execute(pool)
+        .await
+        .expect("insert event");
     }
 
     fn turn(start: f64, end: f64, speaker: i32) -> SpeakerTurn {
-        SpeakerTurn { start, end, speaker }
+        SpeakerTurn {
+            start,
+            end,
+            speaker,
+        }
     }
 
     #[test]
@@ -702,11 +713,12 @@ mod tests {
         assert_eq!(labeled, 1);
 
         // The segment carries the cluster and the cluster carries the name.
-        let sid: Option<i64> = sqlx::query_scalar("SELECT speaker_id FROM transcripts WHERE id = ?")
-            .bind("t-sys")
-            .fetch_one(&pool)
-            .await
-            .expect("segment");
+        let sid: Option<i64> =
+            sqlx::query_scalar("SELECT speaker_id FROM transcripts WHERE id = ?")
+                .bind("t-sys")
+                .fetch_one(&pool)
+                .await
+                .expect("segment");
         assert_eq!(sid, Some(0));
         let names = SpeakerNamesRepository::get_for_meeting(&pool, "m1")
             .await

@@ -138,7 +138,10 @@ impl TranscriptsRepository {
         transcripts: &[TranscriptSegment],
         folder_path: Option<String>,
     ) -> Result<String, SqlxError> {
-        if !transcripts.iter().any(|segment| !segment.text.trim().is_empty()) {
+        if !transcripts
+            .iter()
+            .any(|segment| !segment.text.trim().is_empty())
+        {
             return Err(SqlxError::Protocol(
                 "cannot create a meeting without transcript text".to_string(),
             ));
@@ -261,12 +264,14 @@ impl TranscriptsRepository {
         rows.into_iter()
             .filter(|(id, ..)| seen.insert(id.clone()))
             .take(50)
-            .map(|(id, title, match_context, timestamp)| TranscriptSearchResult {
-                id,
-                title,
-                match_context,
-                timestamp,
-            })
+            .map(
+                |(id, title, match_context, timestamp)| TranscriptSearchResult {
+                    id,
+                    title,
+                    match_context,
+                    timestamp,
+                },
+            )
             .collect()
     }
 
@@ -312,12 +317,14 @@ impl TranscriptsRepository {
             .into_iter()
             .filter(|(id, ..)| seen.insert(id.clone()))
             .take(50)
-            .map(|(id, title, transcript, timestamp)| TranscriptSearchResult {
-                id,
-                title,
-                match_context: Self::get_match_context(&transcript, query),
-                timestamp,
-            })
+            .map(
+                |(id, title, transcript, timestamp)| TranscriptSearchResult {
+                    id,
+                    title,
+                    match_context: Self::get_match_context(&transcript, query),
+                    timestamp,
+                },
+            )
             .collect())
     }
 
@@ -410,10 +417,50 @@ mod talk_time_tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
         // Cluster 1 appears first (at 0s), mic second (at 5s), cluster 0 third.
-        insert_timed_segment(&pool, "m1", "s1", Some("system"), Some(1), Some(0.0), Some(4.0), Some(4.0)).await;
-        insert_timed_segment(&pool, "m1", "s2", Some("mic"), None, Some(5.0), Some(8.0), Some(3.0)).await;
-        insert_timed_segment(&pool, "m1", "s3", Some("system"), Some(0), Some(9.0), Some(10.0), Some(1.0)).await;
-        insert_timed_segment(&pool, "m1", "s4", Some("system"), Some(1), Some(11.0), Some(13.0), Some(2.0)).await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s1",
+            Some("system"),
+            Some(1),
+            Some(0.0),
+            Some(4.0),
+            Some(4.0),
+        )
+        .await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s2",
+            Some("mic"),
+            None,
+            Some(5.0),
+            Some(8.0),
+            Some(3.0),
+        )
+        .await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s3",
+            Some("system"),
+            Some(0),
+            Some(9.0),
+            Some(10.0),
+            Some(1.0),
+        )
+        .await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s4",
+            Some("system"),
+            Some(1),
+            Some(11.0),
+            Some(13.0),
+            Some(2.0),
+        )
+        .await;
 
         let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
             .await
@@ -422,7 +469,10 @@ mod talk_time_tests {
         assert_eq!(groups.len(), 3);
         // Ordered by first appearance: cluster 1, mic, cluster 0.
         assert_eq!(groups[0].1, Some(1));
-        assert!((groups[0].2 - 6.0).abs() < 1e-9, "cluster 1 sums both segments");
+        assert!(
+            (groups[0].2 - 6.0).abs() < 1e-9,
+            "cluster 1 sums both segments"
+        );
         assert_eq!(groups[1].0.as_deref(), Some("mic"));
         assert!((groups[1].2 - 3.0).abs() < 1e-9);
         assert_eq!(groups[2].1, Some(0));
@@ -434,9 +484,29 @@ mod talk_time_tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
         // NULL duration but valid span -> contributes end - start.
-        insert_timed_segment(&pool, "m1", "s1", Some("mic"), None, Some(0.0), Some(2.5), None).await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s1",
+            Some("mic"),
+            None,
+            Some(0.0),
+            Some(2.5),
+            None,
+        )
+        .await;
         // Legacy chunk row: duration 0.0 with zeroed times -> contributes nothing.
-        insert_timed_segment(&pool, "m1", "s2", Some("system"), None, Some(0.0), Some(0.0), Some(0.0)).await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s2",
+            Some("system"),
+            None,
+            Some(0.0),
+            Some(0.0),
+            Some(0.0),
+        )
+        .await;
         // No timing at all -> excluded.
         insert_timed_segment(&pool, "m1", "s3", Some("system"), Some(4), None, None, None).await;
 
@@ -453,7 +523,17 @@ mod talk_time_tests {
     async fn undiarized_system_speech_groups_under_null_cluster() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        insert_timed_segment(&pool, "m1", "s1", Some("system"), None, Some(0.0), Some(3.0), Some(3.0)).await;
+        insert_timed_segment(
+            &pool,
+            "m1",
+            "s1",
+            Some("system"),
+            None,
+            Some(0.0),
+            Some(3.0),
+            Some(3.0),
+        )
+        .await;
 
         let groups = TranscriptsRepository::talk_time_groups(&pool, "m1")
             .await
@@ -510,24 +590,22 @@ mod tests {
         let pool = test_pool().await;
         let segments = vec![make_segment("Hello world", "00:00:01")];
 
-        let meeting_id = TranscriptsRepository::save_transcript(
-            &pool,
-            "Test Meeting",
-            &segments,
-            None,
-        )
-        .await
-        .expect("save");
+        let meeting_id =
+            TranscriptsRepository::save_transcript(&pool, "Test Meeting", &segments, None)
+                .await
+                .expect("save");
 
-        assert!(meeting_id.starts_with("meeting-"), "id should have meeting- prefix");
+        assert!(
+            meeting_id.starts_with("meeting-"),
+            "id should have meeting- prefix"
+        );
 
         // Verify the meeting row was actually inserted.
-        let count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM meetings WHERE id = ?")
-                .bind(&meeting_id)
-                .fetch_one(&pool)
-                .await
-                .expect("count");
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM meetings WHERE id = ?")
+            .bind(&meeting_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count");
         assert_eq!(count, 1);
     }
 
@@ -540,14 +618,10 @@ mod tests {
             make_segment("Third segment", "00:00:10"),
         ];
 
-        let meeting_id = TranscriptsRepository::save_transcript(
-            &pool,
-            "Multi-segment Meeting",
-            &segments,
-            None,
-        )
-        .await
-        .expect("save");
+        let meeting_id =
+            TranscriptsRepository::save_transcript(&pool, "Multi-segment Meeting", &segments, None)
+                .await
+                .expect("save");
 
         let rows: Vec<String> = sqlx::query_scalar(
             "SELECT transcript FROM transcripts WHERE meeting_id = ? ORDER BY timestamp",
@@ -594,14 +668,10 @@ mod tests {
         )
         .await
         .expect("save first recording");
-        let second = TranscriptsRepository::save_transcript(
-            &pool,
-            "Second recording",
-            &[segment],
-            None,
-        )
-        .await
-        .expect("save second recording");
+        let second =
+            TranscriptsRepository::save_transcript(&pool, "Second recording", &[segment], None)
+                .await
+                .expect("save second recording");
 
         let ids: Vec<String> = sqlx::query_scalar(
             "SELECT id FROM transcripts WHERE meeting_id IN (?, ?) ORDER BY meeting_id",
@@ -738,10 +808,13 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("count fts");
-        assert!(fts_count >= 2, "FTS index should be populated by triggers, got {fts_count}");
+        assert!(
+            fts_count >= 2,
+            "FTS index should be populated by triggers, got {fts_count}"
+        );
 
-        let match_q = crate::database::fts::build_fts_match_query("deployment budget")
-            .expect("match query");
+        let match_q =
+            crate::database::fts::build_fts_match_query("deployment budget").expect("match query");
         let fts_results = TranscriptsRepository::search_transcripts_fts(&pool, &match_q)
             .await
             .expect("FTS MATCH must succeed (invalid alias would error here)");
@@ -750,8 +823,10 @@ mod tests {
             "FTS primary path must return hits for multi-word OR query"
         );
         assert!(
-            fts_results.iter().any(|r| r.match_context.to_lowercase().contains("deployment")
-                || r.match_context.to_lowercase().contains("budget")),
+            fts_results
+                .iter()
+                .any(|r| r.match_context.to_lowercase().contains("deployment")
+                    || r.match_context.to_lowercase().contains("budget")),
             "FTS hit context should mention a query token"
         );
 
@@ -782,7 +857,11 @@ mod tests {
         let results = TranscriptsRepository::search_transcripts(&pool, "deployments")
             .await
             .expect("search");
-        assert_eq!(results.len(), 1, "porter stemming should match 'deployment'");
+        assert_eq!(
+            results.len(),
+            1,
+            "porter stemming should match 'deployment'"
+        );
         assert!(
             results[0].match_context.contains("deployment"),
             "context must center on the stemmed hit, not the transcript head: {}",
@@ -804,11 +883,10 @@ mod tests {
         .expect("save");
 
         // Broken shape (what we shipped by mistake): alias on MATCH LHS.
-        let broken = sqlx::query(
-            "SELECT f.transcript FROM transcripts_fts f WHERE f MATCH 'alpha'",
-        )
-        .fetch_all(&pool)
-        .await;
+        let broken =
+            sqlx::query("SELECT f.transcript FROM transcripts_fts f WHERE f MATCH 'alpha'")
+                .fetch_all(&pool)
+                .await;
         assert!(
             broken.is_err(),
             "alias MATCH must fail so we do not reintroduce it"
@@ -880,7 +958,10 @@ mod tests {
         let id_b = TranscriptsRepository::save_transcript(
             &pool,
             "Meeting B",
-            &[make_segment("beta", "00:00:01"), make_segment("gamma", "00:00:02")],
+            &[
+                make_segment("beta", "00:00:01"),
+                make_segment("gamma", "00:00:02"),
+            ],
             None,
         )
         .await

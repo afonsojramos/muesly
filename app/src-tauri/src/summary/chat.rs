@@ -152,12 +152,8 @@ fn format_transcript(
         if text.is_empty() {
             continue;
         }
-        let label = speaker_label_for_llm(
-            line.speaker.as_deref(),
-            line.speaker_id,
-            names,
-            self_name,
-        );
+        let label =
+            speaker_label_for_llm(line.speaker.as_deref(), line.speaker_id, names, self_name);
         if !label.is_empty() {
             joined.push_str(&label);
             joined.push_str(": ");
@@ -194,19 +190,18 @@ pub(crate) async fn load_meeting_context(
                 .into_iter()
                 .map(|n| (n.speaker_id, n.name))
                 .collect::<std::collections::HashMap<_, _>>();
-            let self_name =
-                crate::database::repositories::calendar::CalendarEventsRepository::get(
-                    pool, meeting_id,
-                )
-                .await
-                .ok()
-                .flatten()
-                .and_then(|e| {
-                    crate::calendar::context::snapshot_attendees(&e)
-                        .into_iter()
-                        .find(|a| a.is_self)
-                        .and_then(|a| a.name)
-                });
+            let self_name = crate::database::repositories::calendar::CalendarEventsRepository::get(
+                pool, meeting_id,
+            )
+            .await
+            .ok()
+            .flatten()
+            .and_then(|e| {
+                crate::calendar::context::snapshot_attendees(&e)
+                    .into_iter()
+                    .find(|a| a.is_self)
+                    .and_then(|a| a.name)
+            });
             (
                 details.title,
                 format_transcript(&details.transcripts, &names, self_name.as_deref()),
@@ -411,7 +406,9 @@ pub async fn chat_ask<R: Runtime>(
         }
     } else {
         let client = crate::providers::common::http_client();
-        let max_tokens = settings.custom_openai_max_tokens.or(Some(DEFAULT_MAX_TOKENS));
+        let max_tokens = settings
+            .custom_openai_max_tokens
+            .or(Some(DEFAULT_MAX_TOKENS));
         generate_summary_streaming(
             &client,
             &settings.provider,
@@ -622,7 +619,12 @@ mod tests {
     #[test]
     fn history_is_capped_and_ordered() {
         let history: Vec<ChatTurn> = (0..20)
-            .map(|i| turn(if i % 2 == 0 { "user" } else { "assistant" }, &format!("m{i}")))
+            .map(|i| {
+                turn(
+                    if i % 2 == 0 { "user" } else { "assistant" },
+                    &format!("m{i}"),
+                )
+            })
             .collect();
         let (_s, user) = build_prompts("T", "Me: hi", "", &history, "Q?");
         // Only the last MAX_HISTORY_TURNS turns are kept.
@@ -664,10 +666,7 @@ mod tests {
             speaker_label_for_llm(Some("system"), None, &names, None),
             "Them"
         );
-        assert_eq!(
-            speaker_label_for_llm(None, Some(1), &names, None),
-            "Bruno"
-        );
+        assert_eq!(speaker_label_for_llm(None, Some(1), &names, None), "Bruno");
     }
 
     #[test]

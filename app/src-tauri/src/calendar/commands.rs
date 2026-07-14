@@ -568,8 +568,13 @@ pub async fn calendar_apply_folder_rule(
     ical_uid: String,
     occurrence_minute: i64,
 ) -> Result<(), String> {
-    service::apply_folder_rule(state.db_manager.pool(), &meeting_id, &ical_uid, occurrence_minute)
-        .await;
+    service::apply_folder_rule(
+        state.db_manager.pool(),
+        &meeting_id,
+        &ical_uid,
+        occurrence_minute,
+    )
+    .await;
     Ok(())
 }
 

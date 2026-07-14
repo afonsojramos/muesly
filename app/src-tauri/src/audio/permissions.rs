@@ -1,6 +1,6 @@
 // macOS audio permissions handling
 use anyhow::Result;
-use log::{info, warn, error};
+use log::{error, info, warn};
 
 #[cfg(target_os = "macos")]
 use std::process::Command;
@@ -170,8 +170,7 @@ pub async fn check_screen_recording_permission_command() -> bool {
 #[tauri::command]
 #[specta::specta]
 pub async fn request_screen_recording_permission_command() -> Result<(), String> {
-    request_screen_recording_permission()
-        .map_err(|e| e.to_string())
+    request_screen_recording_permission().map_err(|e| e.to_string())
 }
 
 /// Trigger system audio permission request and verify it was granted.
@@ -223,7 +222,10 @@ pub fn trigger_system_audio_permission() -> Result<bool> {
             }
             SystemAudioPermission::Undetermined => {
                 if waited >= MAX_WAIT_MS {
-                    info!("⏳ Permission still undetermined after {}s (dialog unanswered?)", MAX_WAIT_MS / 1000);
+                    info!(
+                        "⏳ Permission still undetermined after {}s (dialog unanswered?)",
+                        MAX_WAIT_MS / 1000
+                    );
                     return Ok(false);
                 }
             }
@@ -254,12 +256,10 @@ pub fn trigger_system_audio_permission() -> Result<bool> {
 #[specta::specta]
 pub async fn trigger_system_audio_permission_command() -> Result<bool, String> {
     // Run in blocking task to avoid blocking the async runtime
-    tokio::task::spawn_blocking(|| {
-        trigger_system_audio_permission()
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
-    .map_err(|e| e.to_string())
+    tokio::task::spawn_blocking(|| trigger_system_audio_permission())
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| e.to_string())
 }
 
 /// Tauri command: query the System Audio Recording permission status without

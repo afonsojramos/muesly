@@ -246,22 +246,29 @@ pub async fn generate_summary(
         .map_err(|e| e.to_string());
     }
 
-    let (api_url, headers) = build_request_target(
-        provider,
-        api_key,
-        ollama_endpoint,
-        custom_openai_endpoint,
-    )?;
+    let (api_url, headers) =
+        build_request_target(provider, api_key, ollama_endpoint, custom_openai_endpoint)?;
 
     // Build request body based on provider. Sampling params are forwarded for all
     // OpenAI-compatible providers (omitted when None); Claude always needs max_tokens.
     let request_body = if provider != &LLMProvider::Claude {
-        build_openai_compatible_body(model_name, system_prompt, user_prompt, max_tokens, temperature, top_p)
+        build_openai_compatible_body(
+            model_name,
+            system_prompt,
+            user_prompt,
+            max_tokens,
+            temperature,
+            top_p,
+        )
     } else {
         build_claude_body(model_name, system_prompt, user_prompt, max_tokens)
     };
 
-    info!("🐞 LLM Request to {}: model={}", provider_name(provider), model_name);
+    info!(
+        "🐞 LLM Request to {}: model={}",
+        provider_name(provider),
+        model_name
+    );
 
     let response = send_with_retry(
         client,
@@ -329,7 +336,10 @@ async fn send_with_retry(
 ) -> Result<reqwest::Response, String> {
     let mut attempt: u32 = 0;
     loop {
-        let mut request = client.post(api_url).headers(headers.clone()).json(request_body);
+        let mut request = client
+            .post(api_url)
+            .headers(headers.clone())
+            .json(request_body);
         if bound_body {
             request = request.timeout(REQUEST_TIMEOUT_DURATION);
         }
@@ -372,7 +382,11 @@ async fn send_with_retry(
                     let wait = wait + jitter;
                     log::warn!(
                         "{} returned {}; retrying in {:?} (attempt {}/{})",
-                        provider_name(provider), status, wait, attempt + 1, MAX_SEND_ATTEMPTS
+                        provider_name(provider),
+                        status,
+                        wait,
+                        attempt + 1,
+                        MAX_SEND_ATTEMPTS
                     );
                     let body = resp.text().await.unwrap_or_default();
                     log::debug!("{} retryable error body: {}", provider_name(provider), body);
@@ -390,14 +404,24 @@ async fn send_with_retry(
                 }
                 // Non-retryable, or out of attempts: normalize and return.
                 let body = resp.text().await.unwrap_or_default();
-                log::debug!("{} error {} body: {}", provider_name(provider), status, body);
+                log::debug!(
+                    "{} error {} body: {}",
+                    provider_name(provider),
+                    status,
+                    body
+                );
                 return Err(classify_http_error(provider, model_name, status));
             }
             Err(e) => {
                 // Retry connect errors only; timeouts are ambiguous (server may be generating).
                 if e.is_connect() && attempt + 1 < MAX_SEND_ATTEMPTS {
-                    let wait = backoff_base(attempt) + Duration::from_millis(rand::random::<u64>() % 250);
-                    log::warn!("{} connect error; retrying in {:?}", provider_name(provider), wait);
+                    let wait =
+                        backoff_base(attempt) + Duration::from_millis(rand::random::<u64>() % 250);
+                    log::warn!(
+                        "{} connect error; retrying in {:?}",
+                        provider_name(provider),
+                        wait
+                    );
                     if let Some(token) = cancellation_token {
                         tokio::select! {
                             _ = tokio::time::sleep(wait) => {}
@@ -527,21 +551,28 @@ pub async fn generate_summary_streaming(
         }
     }
 
-    let (api_url, headers) = build_request_target(
-        provider,
-        api_key,
-        ollama_endpoint,
-        custom_openai_endpoint,
-    )?;
+    let (api_url, headers) =
+        build_request_target(provider, api_key, ollama_endpoint, custom_openai_endpoint)?;
 
     let mut request_body = if provider != &LLMProvider::Claude {
-        build_openai_compatible_body(model_name, system_prompt, user_prompt, max_tokens, temperature, top_p)
+        build_openai_compatible_body(
+            model_name,
+            system_prompt,
+            user_prompt,
+            max_tokens,
+            temperature,
+            top_p,
+        )
     } else {
         build_claude_body(model_name, system_prompt, user_prompt, max_tokens)
     };
     request_body["stream"] = serde_json::Value::Bool(true);
 
-    info!("🐞 LLM streaming request to {}: model={}", provider_name(provider), model_name);
+    info!(
+        "🐞 LLM streaming request to {}: model={}",
+        provider_name(provider),
+        model_name
+    );
 
     let response = send_with_retry(
         client,
@@ -622,7 +653,10 @@ pub async fn generate_summary_streaming(
         ));
     }
 
-    info!("🐞 LLM streaming response completed from {}", provider_name(provider));
+    info!(
+        "🐞 LLM streaming response completed from {}",
+        provider_name(provider)
+    );
     Ok(full)
 }
 
@@ -653,11 +687,15 @@ fn build_request_target(
         LLMProvider::Claude => {
             headers.insert(
                 "x-api-key",
-                api_key.parse().map_err(|_| "Invalid API key format".to_string())?,
+                api_key
+                    .parse()
+                    .map_err(|_| "Invalid API key format".to_string())?,
             );
             headers.insert(
                 "anthropic-version",
-                "2023-06-01".parse().map_err(|_| "Invalid anthropic version".to_string())?,
+                "2023-06-01"
+                    .parse()
+                    .map_err(|_| "Invalid anthropic version".to_string())?,
             );
             "https://api.anthropic.com/v1/messages".to_string()
         }
@@ -675,7 +713,9 @@ fn build_request_target(
     }
     headers.insert(
         header::CONTENT_TYPE,
-        "application/json".parse().map_err(|_| "Invalid content type".to_string())?,
+        "application/json"
+            .parse()
+            .map_err(|_| "Invalid content type".to_string())?,
     );
 
     Ok((url, headers))
@@ -698,7 +738,10 @@ fn provider_name(provider: &LLMProvider) -> &str {
 /// Map a transport-level send error to a user-facing message (timeout, connect, other).
 fn map_send_error(e: &reqwest::Error) -> String {
     if e.is_timeout() {
-        format!("LLM request timed out after {} seconds", REQUEST_TIMEOUT_DURATION.as_secs())
+        format!(
+            "LLM request timed out after {} seconds",
+            REQUEST_TIMEOUT_DURATION.as_secs()
+        )
     } else if e.is_connect() {
         format!("Could not reach the {} endpoint.", "LLM provider")
     } else {
@@ -708,11 +751,17 @@ fn map_send_error(e: &reqwest::Error) -> String {
 
 /// Map a non-success HTTP status to a normalized, actionable message. The raw
 /// response body is logged at debug by the caller and never surfaced to the UI.
-fn classify_http_error(provider: &LLMProvider, model_name: &str, status: reqwest::StatusCode) -> String {
+fn classify_http_error(
+    provider: &LLMProvider,
+    model_name: &str,
+    status: reqwest::StatusCode,
+) -> String {
     let name = provider_name(provider);
     let code = status.as_u16();
     match code {
-        401 | 403 => format!("{name} rejected the request: authentication failed. Check the API key. [{code}]"),
+        401 | 403 => format!(
+            "{name} rejected the request: authentication failed. Check the API key. [{code}]"
+        ),
         404 => format!("{name}: model '{model_name}' not found or not accessible. [{code}]"),
         429 => format!("{name} rate limit reached. Wait a moment and try again. [429]"),
         500..=599 => format!("{name} had a server error ({code}). Try again shortly."),
@@ -764,8 +813,14 @@ fn build_openai_compatible_body(
     serde_json::json!(ChatRequest {
         model: model_name.to_string(),
         messages: vec![
-            ChatMessage { role: "system".to_string(), content: system_prompt.to_string() },
-            ChatMessage { role: "user".to_string(), content: user_prompt.to_string() },
+            ChatMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string()
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user_prompt.to_string()
+            },
         ],
         max_tokens,
         temperature,
@@ -787,7 +842,10 @@ fn build_claude_body(
         system: system_prompt.to_string(),
         model: model_name.to_string(),
         max_tokens: max_tokens.unwrap_or(DEFAULT_CLAUDE_MAX_TOKENS),
-        messages: vec![ChatMessage { role: "user".to_string(), content: user_prompt.to_string() }],
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: user_prompt.to_string()
+        }],
     })
 }
 
@@ -807,14 +865,21 @@ mod tests {
 
     #[test]
     fn openai_body_forwards_set_params() {
-        let body = build_openai_compatible_body("gpt-4o", "sys", "usr", Some(32), Some(0.5), Some(0.8));
+        let body =
+            build_openai_compatible_body("gpt-4o", "sys", "usr", Some(32), Some(0.5), Some(0.8));
         let obj = body.as_object().unwrap();
         assert_eq!(obj.get("max_tokens").unwrap(), 32);
         // f32 values serialise to JSON with limited precision; compare as f64 with epsilon.
         let temp = obj.get("temperature").unwrap().as_f64().unwrap();
         let top_p = obj.get("top_p").unwrap().as_f64().unwrap();
-        assert!((temp - 0.5_f64).abs() < 1e-6, "temperature {temp} not close to 0.5");
-        assert!((top_p - 0.8_f64).abs() < 1e-6, "top_p {top_p} not close to 0.8");
+        assert!(
+            (temp - 0.5_f64).abs() < 1e-6,
+            "temperature {temp} not close to 0.5"
+        );
+        assert!(
+            (top_p - 0.8_f64).abs() < 1e-6,
+            "top_p {top_p} not close to 0.8"
+        );
     }
 
     #[test]
@@ -833,18 +898,29 @@ mod tests {
     fn classify_http_error_messages() {
         use reqwest::StatusCode;
         let p = LLMProvider::OpenAI;
-        assert!(classify_http_error(&p, "gpt-4o", StatusCode::UNAUTHORIZED).contains("authentication failed"));
+        assert!(classify_http_error(&p, "gpt-4o", StatusCode::UNAUTHORIZED)
+            .contains("authentication failed"));
         assert!(classify_http_error(&p, "gpt-4o", StatusCode::NOT_FOUND).contains("not found"));
-        assert!(classify_http_error(&p, "gpt-4o", StatusCode::TOO_MANY_REQUESTS).contains("rate limit"));
-        assert!(classify_http_error(&p, "gpt-4o", StatusCode::INTERNAL_SERVER_ERROR).contains("server error"));
-        assert!(classify_http_error(&p, "gpt-4o", StatusCode::IM_A_TEAPOT).contains("request failed"));
+        assert!(
+            classify_http_error(&p, "gpt-4o", StatusCode::TOO_MANY_REQUESTS).contains("rate limit")
+        );
+        assert!(
+            classify_http_error(&p, "gpt-4o", StatusCode::INTERNAL_SERVER_ERROR)
+                .contains("server error")
+        );
+        assert!(
+            classify_http_error(&p, "gpt-4o", StatusCode::IM_A_TEAPOT).contains("request failed")
+        );
     }
 
     #[test]
     fn classify_http_error_never_includes_raw_body() {
         use reqwest::StatusCode;
         let msg = classify_http_error(&LLMProvider::Claude, "claude-x", StatusCode::BAD_REQUEST);
-        assert!(!msg.contains("{"), "error message must not embed raw JSON body");
+        assert!(
+            !msg.contains("{"),
+            "error message must not embed raw JSON body"
+        );
     }
 
     #[test]
@@ -869,29 +945,67 @@ mod tests {
     fn parse_retry_after_reads_seconds() {
         let mut h = reqwest::header::HeaderMap::new();
         h.insert(reqwest::header::RETRY_AFTER, "7".parse().unwrap());
-        assert_eq!(parse_retry_after(&h), Some(std::time::Duration::from_secs(7)));
+        assert_eq!(
+            parse_retry_after(&h),
+            Some(std::time::Duration::from_secs(7))
+        );
         assert_eq!(parse_retry_after(&reqwest::header::HeaderMap::new()), None);
     }
 
     #[test]
     fn target_urls_per_provider() {
         let key = "sk-test";
-        assert_eq!(build_request_target(&LLMProvider::OpenAI, key, None, None).unwrap().0, "https://api.openai.com/v1/chat/completions");
-        assert_eq!(build_request_target(&LLMProvider::Groq, key, None, None).unwrap().0, "https://api.groq.com/openai/v1/chat/completions");
-        assert_eq!(build_request_target(&LLMProvider::OpenRouter, key, None, None).unwrap().0, "https://openrouter.ai/api/v1/chat/completions");
-        assert_eq!(build_request_target(&LLMProvider::Claude, key, None, None).unwrap().0, "https://api.anthropic.com/v1/messages");
+        assert_eq!(
+            build_request_target(&LLMProvider::OpenAI, key, None, None)
+                .unwrap()
+                .0,
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            build_request_target(&LLMProvider::Groq, key, None, None)
+                .unwrap()
+                .0,
+            "https://api.groq.com/openai/v1/chat/completions"
+        );
+        assert_eq!(
+            build_request_target(&LLMProvider::OpenRouter, key, None, None)
+                .unwrap()
+                .0,
+            "https://openrouter.ai/api/v1/chat/completions"
+        );
+        assert_eq!(
+            build_request_target(&LLMProvider::Claude, key, None, None)
+                .unwrap()
+                .0,
+            "https://api.anthropic.com/v1/messages"
+        );
     }
 
     #[test]
     fn ollama_uses_default_or_custom_host() {
-        assert_eq!(build_request_target(&LLMProvider::Ollama, "", None, None).unwrap().0, "http://localhost:11434/v1/chat/completions");
-        assert_eq!(build_request_target(&LLMProvider::Ollama, "", Some("http://box:9999/"), None).unwrap().0, "http://box:9999/v1/chat/completions");
+        assert_eq!(
+            build_request_target(&LLMProvider::Ollama, "", None, None)
+                .unwrap()
+                .0,
+            "http://localhost:11434/v1/chat/completions"
+        );
+        assert_eq!(
+            build_request_target(&LLMProvider::Ollama, "", Some("http://box:9999/"), None)
+                .unwrap()
+                .0,
+            "http://box:9999/v1/chat/completions"
+        );
     }
 
     #[test]
     fn custom_openai_requires_endpoint_and_trims_slash() {
         assert!(build_request_target(&LLMProvider::CustomOpenAI, "", None, None).is_err());
-        assert_eq!(build_request_target(&LLMProvider::CustomOpenAI, "k", None, Some("http://x/v1/")).unwrap().0, "http://x/v1/chat/completions");
+        assert_eq!(
+            build_request_target(&LLMProvider::CustomOpenAI, "k", None, Some("http://x/v1/"))
+                .unwrap()
+                .0,
+            "http://x/v1/chat/completions"
+        );
     }
 
     #[test]
@@ -923,7 +1037,10 @@ mod tests {
 
     #[test]
     fn builtin_ai_is_local() {
-        assert_eq!(LLMProvider::BuiltInAI.data_egress(None, None), Egress::Local);
+        assert_eq!(
+            LLMProvider::BuiltInAI.data_egress(None, None),
+            Egress::Local
+        );
     }
 
     #[test]
@@ -978,9 +1095,18 @@ mod tests {
 
     #[test]
     fn host_of_handles_schemes_ports_userinfo_and_ipv6() {
-        assert_eq!(host_of("http://localhost:11434").as_deref(), Some("localhost"));
-        assert_eq!(host_of("https://API.OpenAI.com/v1").as_deref(), Some("api.openai.com"));
-        assert_eq!(host_of("user:pass@127.0.0.1:8000").as_deref(), Some("127.0.0.1"));
+        assert_eq!(
+            host_of("http://localhost:11434").as_deref(),
+            Some("localhost")
+        );
+        assert_eq!(
+            host_of("https://API.OpenAI.com/v1").as_deref(),
+            Some("api.openai.com")
+        );
+        assert_eq!(
+            host_of("user:pass@127.0.0.1:8000").as_deref(),
+            Some("127.0.0.1")
+        );
         assert_eq!(host_of("http://[::1]:11434/v1").as_deref(), Some("::1"));
         assert_eq!(host_of("127.0.0.1").as_deref(), Some("127.0.0.1"));
     }
@@ -1099,7 +1225,10 @@ mod tests {
             SseDelta::Error
         );
         // Event-name lines and other frame types are housekeeping.
-        assert_eq!(parse_claude_sse_line("event: content_block_delta"), SseDelta::Ignore);
+        assert_eq!(
+            parse_claude_sse_line("event: content_block_delta"),
+            SseDelta::Ignore
+        );
         assert_eq!(
             parse_claude_sse_line(r#"data: {"type":"message_start","message":{}}"#),
             SseDelta::Ignore

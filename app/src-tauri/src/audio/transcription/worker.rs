@@ -25,7 +25,10 @@ static TRANSCRIPTION_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Reset the speech detected flag for a new recording session
 pub fn reset_speech_detected_flag() {
     SPEECH_DETECTED_EMITTED.store(false, Ordering::SeqCst);
-    info!("🔍 SPEECH_DETECTED_EMITTED reset to: {}", SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst));
+    info!(
+        "🔍 SPEECH_DETECTED_EMITTED reset to: {}",
+        SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst)
+    );
 }
 
 /// Reset transcription progress counters for a new recording/import session.
@@ -56,7 +59,7 @@ pub struct TranscriptUpdate {
     // NEW: Recording-relative timestamps for playback sync
     pub audio_start_time: f64, // Seconds from recording start (e.g., 125.3)
     pub audio_end_time: f64,   // Seconds from recording start (e.g., 128.6)
-    pub duration: f64,          // Segment duration in seconds (e.g., 3.3)
+    pub duration: f64,         // Segment duration in seconds (e.g., 3.3)
 }
 
 struct VocabularyLearningCandidate {
@@ -85,7 +88,8 @@ pub fn start_transcription_task<R: Runtime>(
         reset_transcription_progress();
 
         // Initialize the local Whisper engine.
-        let transcription_engine = match super::engine::get_or_init_transcription_engine(&app).await {
+        let transcription_engine = match super::engine::get_or_init_transcription_engine(&app).await
+        {
             Ok(engine) => engine,
             Err(e) => {
                 error!("Failed to initialize transcription engine: {}", e);
@@ -118,10 +122,15 @@ pub fn start_transcription_task<R: Runtime>(
         let input_finished = Arc::new(AtomicBool::new(false));
 
         // Text-level mic/system dedup for speaker-playback echo (see crosstalk.rs).
-        let crosstalk_filter =
-            Arc::new(tokio::sync::Mutex::new(super::crosstalk::CrosstalkFilter::new()));
+        let crosstalk_filter = Arc::new(tokio::sync::Mutex::new(
+            super::crosstalk::CrosstalkFilter::new(),
+        ));
 
-        info!("📊 Starting {} transcription worker{} (serial mode for ordered emission)", NUM_WORKERS, if NUM_WORKERS == 1 { "" } else { "s" });
+        info!(
+            "📊 Starting {} transcription worker{} (serial mode for ordered emission)",
+            NUM_WORKERS,
+            if NUM_WORKERS == 1 { "" } else { "s" }
+        );
 
         // Spawn worker tasks
         let mut worker_handles = Vec::new();
@@ -180,7 +189,10 @@ pub fn start_transcription_task<R: Runtime>(
                             if !engine_clone.is_model_loaded().await {
                                 warn!("⚠️ Worker {}: Whisper model unloaded; recovering before chunk {}", worker_id, chunk.chunk_id);
                                 if let Err(error) = engine_clone.load_model(&current_model).await {
-                                    error!("Worker {} could not recover Whisper model '{}': {}", worker_id, current_model, error);
+                                    error!(
+                                        "Worker {} could not recover Whisper model '{}': {}",
+                                        worker_id, current_model, error
+                                    );
                                     let _ = app_clone.emit("transcription-error", serde_json::json!({
                                         "error": error.to_string(),
                                         "userMessage": "Transcription paused because the local model could not be reloaded.",
@@ -213,7 +225,14 @@ pub fn start_transcription_task<R: Runtime>(
                                 warn!("Worker {}: Whisper failed on chunk {}; reloading and retrying once", worker_id, chunk.chunk_id);
                                 engine_clone.unload_model().await;
                                 match engine_clone.load_model(&current_model).await {
-                                    Ok(()) => transcribe_chunk_with_whisper(&engine_clone, chunk, &app_clone).await,
+                                    Ok(()) => {
+                                        transcribe_chunk_with_whisper(
+                                            &engine_clone,
+                                            chunk,
+                                            &app_clone,
+                                        )
+                                        .await
+                                    }
                                     Err(error) => Err(TranscriptionError::EngineFailed(format!(
                                         "failed to reload model '{}': {}",
                                         current_model, error
@@ -223,7 +242,12 @@ pub fn start_transcription_task<R: Runtime>(
                                 first_attempt
                             };
                             match result {
-                                Ok((transcript, confidence_opt, is_partial, learning_candidate)) => {
+                                Ok((
+                                    transcript,
+                                    confidence_opt,
+                                    is_partial,
+                                    learning_candidate,
+                                )) => {
                                     let confidence_threshold = 0.3;
 
                                     let confidence_str = match confidence_opt {
@@ -235,16 +259,24 @@ pub fn start_transcription_task<R: Runtime>(
                                           worker_id, transcript.chars().count(), confidence_str, is_partial, confidence_threshold);
 
                                     // Check confidence threshold (or accept if no confidence provided)
-                                    let meets_threshold = confidence_opt.map_or(true, |c| c >= confidence_threshold);
+                                    let meets_threshold =
+                                        confidence_opt.map_or(true, |c| c >= confidence_threshold);
 
                                     // Quality gate: silence hallucinations and repetition loops.
-                                    let quality_drop = if !transcript.trim().is_empty() && meets_threshold {
-                                        super::segment_filter::should_drop_segment(&transcript, confidence_opt)
-                                    } else {
-                                        None
-                                    };
+                                    let quality_drop =
+                                        if !transcript.trim().is_empty() && meets_threshold {
+                                            super::segment_filter::should_drop_segment(
+                                                &transcript,
+                                                confidence_opt,
+                                            )
+                                        } else {
+                                            None
+                                        };
                                     if let Some(reason) = &quality_drop {
-                                        info!("🚮 Worker {} dropped segment ({:?})", worker_id, reason);
+                                        info!(
+                                            "🚮 Worker {} dropped segment ({:?})",
+                                            worker_id, reason
+                                        );
                                     }
 
                                     // Drop mic segments that duplicate a recent, overlapping
@@ -264,7 +296,10 @@ pub fn start_transcription_task<R: Runtime>(
                                         true
                                     };
                                     if !admitted {
-                                        info!("🔇 Worker {} dropped mic segment as system cross-talk", worker_id);
+                                        info!(
+                                            "🔇 Worker {} dropped mic segment as system cross-talk",
+                                            worker_id
+                                        );
                                     }
 
                                     if !transcript.trim().is_empty()
@@ -273,11 +308,16 @@ pub fn start_transcription_task<R: Runtime>(
                                         && admitted
                                     {
                                         if let Some(candidate) = learning_candidate {
-                                            let mut candidates = learning_candidates_clone.lock().await;
+                                            let mut candidates =
+                                                learning_candidates_clone.lock().await;
                                             if candidates.len() < MAX_VOCABULARY_LEARNING_CANDIDATES
-                                                && !candidates.iter().any(|saved: &VocabularyLearningCandidate| {
-                                                    saved.preferred.eq_ignore_ascii_case(&candidate.preferred)
-                                                })
+                                                && !candidates.iter().any(
+                                                    |saved: &VocabularyLearningCandidate| {
+                                                        saved.preferred.eq_ignore_ascii_case(
+                                                            &candidate.preferred,
+                                                        )
+                                                    },
+                                                )
                                             {
                                                 candidates.push(candidate);
                                             }
@@ -289,7 +329,8 @@ pub fn start_transcription_task<R: Runtime>(
 
                                         // Emit speech-detected event for frontend UX (only on first detection per session)
                                         // This is lightweight and provides better user feedback
-                                        let current_flag = SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst);
+                                        let current_flag =
+                                            SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst);
                                         info!("🔍 Checking speech-detected flag: current={}, will_emit={}", current_flag, !current_flag);
 
                                         if !current_flag {
@@ -305,7 +346,8 @@ pub fn start_transcription_task<R: Runtime>(
                                         }
 
                                         // Generate sequence ID and calculate timestamps FIRST
-                                        let sequence_id = SEQUENCE_COUNTER.fetch_add(1, Ordering::SeqCst);
+                                        let sequence_id =
+                                            SEQUENCE_COUNTER.fetch_add(1, Ordering::SeqCst);
                                         let audio_start_time = chunk_timestamp; // Already in seconds from recording start
                                         let audio_end_time = chunk_timestamp + chunk_duration;
 
@@ -359,14 +401,21 @@ pub fn start_transcription_task<R: Runtime>(
                                             continue;
                                         }
                                         TranscriptionError::ModelNotLoaded => {
-                                            warn!("Worker {}: Model unloaded during transcription", worker_id);
+                                            warn!(
+                                                "Worker {}: Model unloaded during transcription",
+                                                worker_id
+                                            );
                                             chunks_completed_clone.fetch_add(1, Ordering::SeqCst);
                                             CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
                                             continue;
                                         }
                                         _ => {
-                                            warn!("Worker {}: Transcription failed: {}", worker_id, e);
-                                            let _ = app_clone.emit("transcription-warning", e.to_string());
+                                            warn!(
+                                                "Worker {}: Transcription failed: {}",
+                                                worker_id, e
+                                            );
+                                            let _ = app_clone
+                                                .emit("transcription-warning", e.to_string());
                                         }
                                     }
                                 }
@@ -480,7 +529,10 @@ pub fn start_transcription_task<R: Runtime>(
             std::mem::take(&mut *candidates)
         };
         if !learning_candidates.is_empty() {
-            match transcription_engine.prepare_vocabulary_learning_decoder().await {
+            match transcription_engine
+                .prepare_vocabulary_learning_decoder()
+                .await
+            {
                 Ok(decoder) => {
                     for candidate in learning_candidates {
                         match decoder
@@ -492,20 +544,26 @@ pub fn start_transcription_task<R: Runtime>(
                             .await
                         {
                             Ok((baseline, baseline_confidence)) => {
-                                if let Some(observation) = crate::vocabulary::infer_learning_observation_for(
-                                    &candidate.preferred,
-                                    &candidate.prompted,
-                                    candidate.prompted_confidence,
-                                    baseline.trim(),
-                                    baseline_confidence,
-                                ) {
-                                    if observation.preferred.eq_ignore_ascii_case(&candidate.preferred) {
-                                        if let Err(error) = crate::vocabulary::record_learning_observation(
-                                            &app,
-                                            &vocabulary_learning_session,
-                                            observation,
-                                        )
-                                        .await
+                                if let Some(observation) =
+                                    crate::vocabulary::infer_learning_observation_for(
+                                        &candidate.preferred,
+                                        &candidate.prompted,
+                                        candidate.prompted_confidence,
+                                        baseline.trim(),
+                                        baseline_confidence,
+                                    )
+                                {
+                                    if observation
+                                        .preferred
+                                        .eq_ignore_ascii_case(&candidate.preferred)
+                                    {
+                                        if let Err(error) =
+                                            crate::vocabulary::record_learning_observation(
+                                                &app,
+                                                &vocabulary_learning_session,
+                                                observation,
+                                            )
+                                            .await
                                         {
                                             warn!("Could not persist a vocabulary learning observation: {}", error);
                                         }
@@ -579,20 +637,26 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
     chunk: AudioChunk,
     _app: &AppHandle<R>,
 ) -> std::result::Result<
-    (String, Option<f32>, bool, Option<VocabularyLearningCandidate>),
+    (
+        String,
+        Option<f32>,
+        bool,
+        Option<VocabularyLearningCandidate>,
+    ),
     TranscriptionError,
 > {
     // Convert to 16kHz mono for transcription. Propagate failures instead of
     // silently feeding wrong-rate audio to the model, which would otherwise be
     // transcribed at the wrong speed and produce garbage.
     let transcription_data = if chunk.sample_rate != 16000 {
-        crate::audio::audio_processing::resample(&chunk.data, chunk.sample_rate, 16000)
-            .map_err(|e| {
+        crate::audio::audio_processing::resample(&chunk.data, chunk.sample_rate, 16000).map_err(
+            |e| {
                 TranscriptionError::EngineFailed(format!(
                     "Failed to resample chunk {} from {}Hz to 16000Hz: {}",
                     chunk.chunk_id, chunk.sample_rate, e
                 ))
-            })?
+            },
+        )?
     } else {
         chunk.data
     };
@@ -644,29 +708,40 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
                 })
                 .flatten()
                 .and_then(|preferred| {
-                    let baseline_prompt = learning_prompt
-                        .initial_prompt
-                        .as_deref()
-                        .and_then(|prompt| {
-                            crate::vocabulary::remove_term_from_initial_prompt(prompt, &preferred)
-                        });
-                    vocabulary_learning_language(language.as_deref()).and_then(|learning_language| {
-                        baseline_prompt.map(|baseline_prompt| VocabularyLearningCandidate {
+                    let baseline_prompt =
+                        learning_prompt
+                            .initial_prompt
+                            .as_deref()
+                            .and_then(|prompt| {
+                                crate::vocabulary::remove_term_from_initial_prompt(
+                                    prompt, &preferred,
+                                )
+                            });
+                    vocabulary_learning_language(language.as_deref()).and_then(
+                        |learning_language| {
+                            baseline_prompt.map(|baseline_prompt| VocabularyLearningCandidate {
                                 audio: Arc::clone(&speech_samples),
                                 prompted: cleaned_text.clone(),
                                 prompted_confidence: confidence,
                                 preferred,
                                 language: learning_language,
-                                baseline_prompt: (!baseline_prompt.is_empty()).then_some(baseline_prompt),
-                        })
-                    })
+                                baseline_prompt: (!baseline_prompt.is_empty())
+                                    .then_some(baseline_prompt),
+                            })
+                        },
+                    )
                 });
 
             info!(
                 "Whisper transcription complete for chunk {}: {} characters (confidence: {:.2}, partial: {})",
                 chunk.chunk_id, cleaned_text.chars().count(), confidence, is_partial
             );
-            Ok((cleaned_text, Some(confidence), is_partial, learning_candidate))
+            Ok((
+                cleaned_text,
+                Some(confidence),
+                is_partial,
+                learning_candidate,
+            ))
         }
         Err(error) => {
             error!(
@@ -725,7 +800,11 @@ mod tests {
         let (queued, completed) = transcription_progress();
         assert_eq!(queued, 0, "queued should be 0 after reset");
         assert_eq!(completed, 0, "completed should be 0 after reset");
-        assert_eq!(queued.saturating_sub(completed), 0, "queue depth should be 0");
+        assert_eq!(
+            queued.saturating_sub(completed),
+            0,
+            "queue depth should be 0"
+        );
 
         // Simulate enqueuing 3 chunks.
         CHUNKS_QUEUED.fetch_add(1, Ordering::SeqCst);
@@ -735,7 +814,11 @@ mod tests {
         let (queued, completed) = transcription_progress();
         assert_eq!(queued, 3);
         assert_eq!(completed, 0);
-        assert_eq!(queued.saturating_sub(completed), 3, "queue depth should be 3");
+        assert_eq!(
+            queued.saturating_sub(completed),
+            3,
+            "queue depth should be 3"
+        );
 
         // Simulate completing 2 chunks.
         CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
@@ -744,17 +827,29 @@ mod tests {
         let (queued, completed) = transcription_progress();
         assert_eq!(queued, 3);
         assert_eq!(completed, 2);
-        assert_eq!(queued.saturating_sub(completed), 1, "queue depth should be 1");
+        assert_eq!(
+            queued.saturating_sub(completed),
+            1,
+            "queue depth should be 1"
+        );
 
         // Complete the last chunk.
         CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
 
         let (queued, completed) = transcription_progress();
-        assert_eq!(queued.saturating_sub(completed), 0, "queue depth should be 0 when all done");
+        assert_eq!(
+            queued.saturating_sub(completed),
+            0,
+            "queue depth should be 0 when all done"
+        );
 
         // saturating_sub must not underflow if completed somehow exceeds queued.
         CHUNKS_COMPLETED.fetch_add(1, Ordering::SeqCst);
         let (queued, completed) = transcription_progress();
-        assert_eq!(queued.saturating_sub(completed), 0, "saturating_sub must not underflow");
+        assert_eq!(
+            queued.saturating_sub(completed),
+            0,
+            "saturating_sub must not underflow"
+        );
     }
 }

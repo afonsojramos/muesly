@@ -138,7 +138,9 @@ pub fn diarize(
     if !response.ok {
         return Err(anyhow!(
             "diarization sidecar failed: {}",
-            response.error.unwrap_or_else(|| "unknown error".to_string())
+            response
+                .error
+                .unwrap_or_else(|| "unknown error".to_string())
         ));
     }
 

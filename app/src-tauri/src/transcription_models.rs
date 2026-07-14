@@ -17,5 +17,8 @@ pub enum ModelStatus {
     /// An error occurred (message included).
     Error(String),
     /// Present but failed validation (size mismatch).
-    Corrupted { file_size: u64, expected_min_size: u64 },
+    Corrupted {
+        file_size: u64,
+        expected_min_size: u64,
+    },
 }

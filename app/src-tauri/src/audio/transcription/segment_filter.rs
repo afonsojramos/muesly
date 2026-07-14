@@ -90,12 +90,18 @@ mod tests {
             should_drop_segment("Thank you for watching.", Some(0.31)),
             Some(DropReason::SilenceHallucination)
         );
-        assert_eq!(should_drop_segment("you", Some(0.4)), Some(DropReason::SilenceHallucination));
+        assert_eq!(
+            should_drop_segment("you", Some(0.4)),
+            Some(DropReason::SilenceHallucination)
+        );
     }
 
     #[test]
     fn confident_matching_phrase_is_kept() {
-        assert_eq!(should_drop_segment("Thank you for watching.", Some(0.9)), None);
+        assert_eq!(
+            should_drop_segment("Thank you for watching.", Some(0.9)),
+            None
+        );
     }
 
     #[test]

@@ -53,15 +53,24 @@ const PROTOCOL_VERSION: u32 = 2;
 #[derive(Debug, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Response {
-    Response { text: String, error: Option<String> },
+    Response {
+        text: String,
+        error: Option<String>,
+    },
     /// Incremental output chunk, only sent for `stream: true` requests.
-    Token { text: String },
+    Token {
+        text: String,
+    },
     /// Health-check reply. Carries the protocol version so the app can warn
     /// when a rebuilt app talks to an outdated sidecar binary (pre-versioning
     /// binaries send a bare `{"type":"pong"}`, read as version 1).
-    Pong { protocol_version: u32 },
+    Pong {
+        protocol_version: u32,
+    },
     Goodbye,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
 
 /// Decides how much of the accumulated output is safe to emit as a streaming
@@ -700,13 +709,7 @@ fn main() -> Result<()> {
                         }
 
                         // Generate response with sampling parameters
-                        match state.generate(
-                            prompt,
-                            max_tokens,
-                            sampling,
-                            stop_tokens,
-                            stream,
-                        ) {
+                        match state.generate(prompt, max_tokens, sampling, stop_tokens, stream) {
                             Ok(text) => {
                                 send_response(&Response::Response { text, error: None })?;
                             }
@@ -770,7 +773,10 @@ mod tests {
         // at the tail is never emitted.
         let mut e = StreamEmitter::new(&stops(&["<|end|>"]));
         assert_eq!(e.next_chunk("Hi"), None); // entirely within holdback
-        assert_eq!(e.next_chunk("Hi there<|en"), Some("Hi there".get(0..6).unwrap()));
+        assert_eq!(
+            e.next_chunk("Hi there<|en"),
+            Some("Hi there".get(0..6).unwrap())
+        );
         // 12 bytes - 6 holdback = 6 -> "Hi the"; "re<|en" held back.
         assert_eq!(e.emitted, 6);
     }
@@ -792,14 +798,17 @@ mod tests {
                 emitted.push_str(chunk);
             }
         }
-        assert!(!emitted.contains('<'), "emitted leaked stop bytes: {emitted:?}");
+        assert!(
+            !emitted.contains('<'),
+            "emitted leaked stop bytes: {emitted:?}"
+        );
         assert!("Answer: 42".starts_with(&emitted));
     }
 
     #[test]
     fn emitter_respects_char_boundaries() {
         let mut e = StreamEmitter::new(&stops(&["XY"])); // holdback 1
-        // "é" is 2 bytes; safe_end would land mid-char and must floor.
+                                                         // "é" is 2 bytes; safe_end would land mid-char and must floor.
         assert_eq!(e.next_chunk("é"), None);
         assert_eq!(e.next_chunk("éa"), Some("é"));
     }

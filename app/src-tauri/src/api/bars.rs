@@ -17,10 +17,7 @@ pub async fn bars_list(state: State<'_, AppState>) -> Result<Vec<UserBar>, Strin
 /// Create a new bar or update an existing one (when `input.id` is set).
 #[tauri::command]
 #[specta::specta]
-pub async fn bars_upsert(
-    state: State<'_, AppState>,
-    input: BarInput,
-) -> Result<UserBar, String> {
+pub async fn bars_upsert(state: State<'_, AppState>, input: BarInput) -> Result<UserBar, String> {
     BarsRepository::upsert(state.db_manager.pool(), input)
         .await
         .map_err(|e| format!("save bar: {e}"))

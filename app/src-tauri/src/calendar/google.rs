@@ -712,7 +712,9 @@ pub async fn diagnose(account: &CalendarAccount) -> String {
             return lines.join("\n");
         }
         Err(_) => {
-            lines.push("keychain refresh token: read error (keychain locked/unavailable)".to_string());
+            lines.push(
+                "keychain refresh token: read error (keychain locked/unavailable)".to_string(),
+            );
             return lines.join("\n");
         }
     }

@@ -18,7 +18,11 @@ use super::recording_state::{AudioChunk, AudioError, DeviceType, RecordingState}
 use super::vad::{ContinuousVadProcessor, SpeechSegment};
 
 const fn vad_redemption_time_ms(is_macos: bool) -> u32 {
-    if is_macos { 900 } else { 400 }
+    if is_macos {
+        900
+    } else {
+        400
+    }
 }
 
 fn live_vad_redemption_time_ms() -> u32 {
@@ -796,12 +800,19 @@ impl AudioPipeline {
         let make_vad = |lane: &str| -> anyhow::Result<ContinuousVadProcessor> {
             match ContinuousVadProcessor::new(sample_rate, redemption_time) {
                 Ok(processor) => {
-                    info!("VAD-driven pipeline ({} lane): segments sent directly to transcription", lane);
+                    info!(
+                        "VAD-driven pipeline ({} lane): segments sent directly to transcription",
+                        lane
+                    );
                     Ok(processor)
                 }
                 Err(e) => {
                     error!("Failed to create VAD processor ({} lane): {}", lane, e);
-                    Err(anyhow::anyhow!("VAD processor creation failed ({} lane): {}", lane, e))
+                    Err(anyhow::anyhow!(
+                        "VAD processor creation failed ({} lane): {}",
+                        lane,
+                        e
+                    ))
                 }
             }
         };
@@ -843,7 +854,10 @@ impl AudioPipeline {
         let echo_handle = match crate::audio::echo_cancel::EchoCancellerHandle::spawn(48_000) {
             Ok(handle) => Some(handle),
             Err(e) => {
-                warn!("Echo cancellation unavailable; transcription will use raw mic audio: {}", e);
+                warn!(
+                    "Echo cancellation unavailable; transcription will use raw mic audio: {}",
+                    e
+                );
                 None
             }
         };
@@ -1277,7 +1291,10 @@ mod tests {
 
         let (_, sys_win) = buf.extract_window().expect("window");
         // Silence is represented as 0.0.
-        assert!(sys_win.iter().all(|&s| s == 0.0), "no system data → all silence");
+        assert!(
+            sys_win.iter().all(|&s| s == 0.0),
+            "no system data → all silence"
+        );
     }
 
     #[test]

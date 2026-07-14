@@ -74,15 +74,7 @@ impl TranscriptRevisionRepository {
             return Ok(false);
         };
 
-        Self::snapshot_current(
-            &mut tx,
-            meeting_id,
-            "undo_checkpoint",
-            None,
-            None,
-            None,
-        )
-        .await?;
+        Self::snapshot_current(&mut tx, meeting_id, "undo_checkpoint", None, None, None).await?;
 
         sqlx::query("DELETE FROM transcripts WHERE meeting_id = ?")
             .bind(meeting_id)
@@ -160,7 +152,9 @@ mod tests {
             .unwrap();
         tx.commit().await.unwrap();
 
-        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1").await.unwrap());
+        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1")
+            .await
+            .unwrap());
         let text: String =
             sqlx::query_scalar("SELECT transcript FROM transcripts WHERE meeting_id = 'm1'")
                 .fetch_one(&pool)
@@ -168,7 +162,9 @@ mod tests {
                 .unwrap();
         assert_eq!(text, "original");
 
-        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1").await.unwrap());
+        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1")
+            .await
+            .unwrap());
         let text: String =
             sqlx::query_scalar("SELECT transcript FROM transcripts WHERE meeting_id = 'm1'")
                 .fetch_one(&pool)

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
-use silero_rs::{VadConfig, VadSession, VadTransition};
 use log::{debug, info, warn};
+use silero_rs::{VadConfig, VadSession, VadTransition};
 use std::collections::VecDeque;
 use std::time::Duration;
 
@@ -49,20 +49,20 @@ impl ContinuousVadProcessor {
         // CONTINUOUS SPEECH FIX: Tuned for capturing complete 5+ second utterances
         // Previous: 0.55/0.40 with 400ms redemption was fragmenting speech into 40ms segments
         // New: More lenient thresholds + longer redemption for continuous speech
-        config.positive_speech_threshold = 0.50;  // Silero default - good for continuous speech
-        config.negative_speech_threshold = 0.35;  // Silero default - allows natural pauses
+        config.positive_speech_threshold = 0.50; // Silero default - good for continuous speech
+        config.negative_speech_threshold = 0.35; // Silero default - allows natural pauses
 
         // CRITICAL FIX: Removed redemption_time capping to support long continuous speech
         // Previous: capped at 400ms, causing VAD to fragment 5-second speech into 40ms segments
         // New: Use full redemption_time from pipeline (2000ms) to bridge natural pauses
         config.redemption_time = Duration::from_millis(redemption_time_ms as u64);
-        config.pre_speech_pad = Duration::from_millis(300);   // Pre-speech padding for context
-        config.post_speech_pad = Duration::from_millis(400);  // Increased: more context at end
+        config.pre_speech_pad = Duration::from_millis(300); // Pre-speech padding for context
+        config.post_speech_pad = Duration::from_millis(400); // Increased: more context at end
 
         // CRITICAL FIX: Increased min_speech_time to prevent tiny 40ms fragments
         // Previous: 100ms allowed too-short segments that Whisper rejects
         // New: 250ms ensures segments are substantial enough for Whisper (>100ms requirement)
-        config.min_speech_time = Duration::from_millis(250);  // Prevent tiny fragments
+        config.min_speech_time = Duration::from_millis(250); // Prevent tiny fragments
 
         debug!("Creating VAD session with: sample_rate={}Hz, redemption={}ms, min_speech={}ms, input_rate={}Hz",
                VAD_SAMPLE_RATE, redemption_time_ms, 250, input_sample_rate);
@@ -73,8 +73,10 @@ impl ContinuousVadProcessor {
         // VAD uses 30ms chunks at 16kHz (480 samples)
         let vad_chunk_size = (VAD_SAMPLE_RATE as f32 * 0.03) as usize; // 480 samples
 
-        info!("VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples",
-              input_sample_rate, VAD_SAMPLE_RATE, vad_chunk_size);
+        info!(
+            "VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples",
+            input_sample_rate, VAD_SAMPLE_RATE, vad_chunk_size
+        );
 
         Ok(Self {
             session,
@@ -137,11 +139,12 @@ impl ContinuousVadProcessor {
         // Apply simple low-pass filter before downsampling to reduce aliasing
         let cutoff_freq = 0.4; // Normalized frequency (0.4 * Nyquist)
         let mut filtered_samples = Vec::with_capacity(samples.len());
-        
+
         // Simple moving average filter (basic low-pass)
-        let filter_size = (self.sample_rate as f64 / (cutoff_freq * self.sample_rate as f64)) as usize;
+        let filter_size =
+            (self.sample_rate as f64 / (cutoff_freq * self.sample_rate as f64)) as usize;
         let filter_size = std::cmp::max(1, std::cmp::min(filter_size, 5)); // Limit filter size
-        
+
         for i in 0..samples.len() {
             let start = if i >= filter_size { i - filter_size } else { 0 };
             let end = std::cmp::min(i + filter_size + 1, samples.len());
@@ -154,7 +157,7 @@ impl ContinuousVadProcessor {
             let source_pos = i as f64 * ratio;
             let source_index = source_pos as usize;
             let fraction = source_pos - source_index as f64;
-            
+
             if source_index + 1 < filtered_samples.len() {
                 // Linear interpolation
                 let sample1 = filtered_samples[source_index];
@@ -166,8 +169,12 @@ impl ContinuousVadProcessor {
             }
         }
 
-        debug!("Resampled from {} samples ({}Hz) to {} samples (16kHz) with anti-aliasing",
-               samples.len(), self.sample_rate, resampled.len());
+        debug!(
+            "Resampled from {} samples ({}Hz) to {} samples (16kHz) with anti-aliasing",
+            samples.len(),
+            self.sample_rate,
+            resampled.len()
+        );
 
         Ok(resampled)
     }
@@ -199,8 +206,13 @@ impl ContinuousVadProcessor {
             let start_ms = (self.speech_start_sample as f64 / 16000.0) * 1000.0;
             let end_ms = (self.processed_samples as f64 / 16000.0) * 1000.0;
 
-            debug!("VAD flush: Force-ending speech - start={}ms, end={}ms, duration={}ms, samples={}",
-                  start_ms, end_ms, end_ms - start_ms, self.current_speech.len());
+            debug!(
+                "VAD flush: Force-ending speech - start={}ms, end={}ms, duration={}ms, samples={}",
+                start_ms,
+                end_ms,
+                end_ms - start_ms,
+                self.current_speech.len()
+            );
 
             let segment = SpeechSegment {
                 samples: self.current_speech.clone(),
@@ -232,12 +244,18 @@ impl ContinuousVadProcessor {
                   current_speech_size, current_speech_size as f64 / 16000.0);
         }
 
-        let transitions = self.session.process(chunk)
+        let transitions = self
+            .session
+            .process(chunk)
             .map_err(|e| anyhow!("VAD processing failed: {}", e))?;
 
         // Log transitions for debugging
         if !transitions.is_empty() {
-            debug!("VAD transitions at sample {}: {} transitions", self.processed_samples, transitions.len());
+            debug!(
+                "VAD transitions at sample {}: {} transitions",
+                self.processed_samples,
+                transitions.len()
+            );
         }
 
         // Handle VAD transitions
@@ -257,10 +275,18 @@ impl ContinuousVadProcessor {
                     self.current_speech.clear();
                     self.force_emitted_in_utterance = false;
                 }
-                VadTransition::SpeechEnd { start_timestamp_ms, end_timestamp_ms, samples } => {
+                VadTransition::SpeechEnd {
+                    start_timestamp_ms,
+                    end_timestamp_ms,
+                    samples,
+                } => {
                     // Only log if we were previously in speech state
                     if self.last_logged_state {
-                        debug!("VAD: Speech ended at {}ms (duration: {}ms)", end_timestamp_ms, end_timestamp_ms - start_timestamp_ms);
+                        debug!(
+                            "VAD: Speech ended at {}ms (duration: {}ms)",
+                            end_timestamp_ms,
+                            end_timestamp_ms - start_timestamp_ms
+                        );
                         self.last_logged_state = false;
                     }
                     self.in_speech = false;
@@ -296,8 +322,11 @@ impl ContinuousVadProcessor {
                             confidence: 0.9, // VAD confidence
                         };
 
-                        info!("VAD: Completed speech segment: {:.1}ms duration, {} samples",
-                              segment_end_ms - segment_start_ms, segment.samples.len());
+                        info!(
+                            "VAD: Completed speech segment: {:.1}ms duration, {} samples",
+                            segment_end_ms - segment_start_ms,
+                            segment.samples.len()
+                        );
 
                         self.speech_segments.push_back(segment);
                     }
@@ -392,10 +421,15 @@ pub fn extract_speech_16k(samples_mono_16k: &[f32]) -> Result<Vec<f32>> {
     }
 
     // Apply balanced energy filtering for very short segments
-    if result.len() < 1600 { // Less than 100ms at 16kHz
-        let input_energy: f32 = samples_mono_16k.iter().map(|&x| x * x).sum::<f32>() / samples_mono_16k.len() as f32;
+    if result.len() < 1600 {
+        // Less than 100ms at 16kHz
+        let input_energy: f32 =
+            samples_mono_16k.iter().map(|&x| x * x).sum::<f32>() / samples_mono_16k.len() as f32;
         let rms = input_energy.sqrt();
-        let peak = samples_mono_16k.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
+        let peak = samples_mono_16k
+            .iter()
+            .map(|&x| x.abs())
+            .fold(0.0f32, f32::max);
 
         // BALANCED FIX: Lowered thresholds to preserve quiet speech while still filtering silence
         // Previous aggressive values (0.08/0.15) were discarding valid quiet speech
@@ -404,20 +438,30 @@ pub fn extract_speech_16k(samples_mono_16k: &[f32]) -> Result<Vec<f32>> {
             info!("-----VAD detected silence/noise (RMS: {:.6}, Peak: {:.6}), skipping to prevent hallucinations-----", rms, peak);
             return Ok(Vec::new());
         } else {
-            info!("VAD detected speech with sufficient energy (RMS: {:.6}, Peak: {:.6})", rms, peak);
+            info!(
+                "VAD detected speech with sufficient energy (RMS: {:.6}, Peak: {:.6})",
+                rms, peak
+            );
             return Ok(samples_mono_16k.to_vec());
         }
     }
 
-    debug!("VAD: Processed {} samples, extracted {} speech samples from {} segments",
-           samples_mono_16k.len(), result.len(), num_segments);
+    debug!(
+        "VAD: Processed {} samples, extracted {} speech samples from {} segments",
+        samples_mono_16k.len(),
+        result.len(),
+        num_segments
+    );
 
     Ok(result)
 }
 
 /// Simple convenience function to get speech chunks from audio
 /// Uses the optimized ContinuousVadProcessor with configurable redemption time
-pub fn get_speech_chunks(samples_mono_16k: &[f32], redemption_time_ms: u32) -> Result<Vec<SpeechSegment>> {
+pub fn get_speech_chunks(
+    samples_mono_16k: &[f32],
+    redemption_time_ms: u32,
+) -> Result<Vec<SpeechSegment>> {
     get_speech_chunks_with_progress(samples_mono_16k, redemption_time_ms, |_, _| true)
 }
 
@@ -442,8 +486,11 @@ where
     let mut all_segments = Vec::new();
 
     if total_samples > LARGE_FILE_THRESHOLD {
-        info!("VAD: Processing large file ({} samples = {:.1}s), will log progress...",
-              total_samples, total_samples as f64 / 16000.0);
+        info!(
+            "VAD: Processing large file ({} samples = {:.1}s), will log progress...",
+            total_samples,
+            total_samples as f64 / 16000.0
+        );
 
         let mut processed = 0;
         let mut last_progress = 0u32;
@@ -458,12 +505,20 @@ where
             let elapsed = start_time.elapsed();
 
             // Debug log for chunk processing details
-            debug!("VAD: Chunk {}/{} processed in {:?}, found {} segments",
-                  chunk_count, total_chunks, elapsed, segments.len());
+            debug!(
+                "VAD: Chunk {}/{} processed in {:?}, found {} segments",
+                chunk_count,
+                total_chunks,
+                elapsed,
+                segments.len()
+            );
 
             // Warn if chunk processing took too long (>1 second)
             if elapsed.as_secs() > 1 {
-                warn!("VAD: Chunk {} took {:?} - possible performance issue", chunk_count, elapsed);
+                warn!(
+                    "VAD: Chunk {} took {:?} - possible performance issue",
+                    chunk_count, elapsed
+                );
             }
 
             all_segments.extend(segments);
@@ -473,7 +528,11 @@ where
 
             // Call progress callback every 5%
             if progress >= last_progress + 5 {
-                debug!("VAD: Progress {}% ({} segments found so far)", progress, all_segments.len());
+                debug!(
+                    "VAD: Progress {}% ({} segments found so far)",
+                    progress,
+                    all_segments.len()
+                );
 
                 // Check for cancellation
                 if !progress_callback(progress, all_segments.len()) {
@@ -488,7 +547,10 @@ where
         let final_segments = processor.flush()?;
         all_segments.extend(final_segments);
 
-        info!("VAD: Complete! Found {} speech segments", all_segments.len());
+        info!(
+            "VAD: Complete! Found {} speech segments",
+            all_segments.len()
+        );
     } else {
         // Small file - process all at once
         all_segments = processor.process_audio(samples_mono_16k)?;
@@ -511,7 +573,7 @@ mod tests {
         // Create speech-like patterns: bursts of sine waves with varying amplitude
         // Speech every 10 seconds for 5 seconds
         let speech_interval = 10.0; // seconds between speech starts
-        let speech_duration = 5.0;  // seconds of speech
+        let speech_duration = 5.0; // seconds of speech
 
         for i in 0..total_samples {
             let time = i as f32 / sample_rate as f32;
@@ -525,11 +587,10 @@ mod tests {
                 let freq3 = freq1 * 3.0; // Another harmonic
 
                 let amplitude = 0.3 + 0.1 * (time * 5.0).sin(); // Amplitude modulation
-                samples[i] = amplitude * (
-                    0.5 * (2.0 * std::f32::consts::PI * freq1 * time).sin() +
-                    0.3 * (2.0 * std::f32::consts::PI * freq2 * time).sin() +
-                    0.2 * (2.0 * std::f32::consts::PI * freq3 * time).sin()
-                );
+                samples[i] = amplitude
+                    * (0.5 * (2.0 * std::f32::consts::PI * freq1 * time).sin()
+                        + 0.3 * (2.0 * std::f32::consts::PI * freq2 * time).sin()
+                        + 0.2 * (2.0 * std::f32::consts::PI * freq3 * time).sin());
             }
             // else: silence (already 0.0)
         }
@@ -541,25 +602,38 @@ mod tests {
     fn test_vad_chunked_vs_single_processing() {
         // Generate 60 seconds of audio with speech patterns at 16kHz
         let audio = generate_test_audio_with_speech(60.0, 16000);
-        println!("Generated {} samples ({:.1}s)", audio.len(), audio.len() as f32 / 16000.0);
+        println!(
+            "Generated {} samples ({:.1}s)",
+            audio.len(),
+            audio.len() as f32 / 16000.0
+        );
 
         // Process all at once (like small files)
         let segments_single = get_speech_chunks(&audio, 2000).expect("Single processing failed");
         println!("Single processing found {} segments", segments_single.len());
 
         // Process in chunks (like large files)
-        let segments_chunked = get_speech_chunks_with_progress(&audio, 2000, |progress, segments| {
-            println!("Chunked progress: {}%, {} segments", progress, segments);
-            true // Don't cancel
-        }).expect("Chunked processing failed");
-        println!("Chunked processing found {} segments", segments_chunked.len());
+        let segments_chunked =
+            get_speech_chunks_with_progress(&audio, 2000, |progress, segments| {
+                println!("Chunked progress: {}%, {} segments", progress, segments);
+                true // Don't cancel
+            })
+            .expect("Chunked processing failed");
+        println!(
+            "Chunked processing found {} segments",
+            segments_chunked.len()
+        );
 
         // Both should find the same number of segments (approximately)
         // Allow some variance due to chunk boundary effects
         let diff = (segments_single.len() as i32 - segments_chunked.len() as i32).abs();
-        assert!(diff <= 1,
+        assert!(
+            diff <= 1,
             "Chunked and single processing found different segment counts: {} vs {} (diff: {})",
-            segments_single.len(), segments_chunked.len(), diff);
+            segments_single.len(),
+            segments_chunked.len(),
+            diff
+        );
     }
 
     #[test]
@@ -567,18 +641,30 @@ mod tests {
         // Generate 120 seconds (2 minutes) of audio - triggers large file threshold
         let audio = generate_test_audio_with_speech(120.0, 16000);
         let total_samples = audio.len();
-        println!("Generated {} samples ({:.1}s)", total_samples, total_samples as f32 / 16000.0);
+        println!(
+            "Generated {} samples ({:.1}s)",
+            total_samples,
+            total_samples as f32 / 16000.0
+        );
 
         // This should trigger the large file path (>960,000 samples)
-        assert!(total_samples > 960_000, "Audio should be large enough to trigger chunked processing");
+        assert!(
+            total_samples > 960_000,
+            "Audio should be large enough to trigger chunked processing"
+        );
 
         let mut progress_updates = Vec::new();
         let segments = get_speech_chunks_with_progress(&audio, 2000, |progress, segments| {
             progress_updates.push((progress, segments));
             true // Don't cancel
-        }).expect("Processing failed");
+        })
+        .expect("Processing failed");
 
-        println!("Found {} segments with {} progress updates", segments.len(), progress_updates.len());
+        println!(
+            "Found {} segments with {} progress updates",
+            segments.len(),
+            progress_updates.len()
+        );
 
         // The synthetic signal is sine-wave bursts, not real speech, so the Silero
         // ML model does not segment it into the 12 nominal bursts — asserting an
@@ -586,10 +672,16 @@ mod tests {
         // large-file chunked path runs end-to-end, detects the speech-like signal,
         // and reports progress. (The single-vs-chunked equivalence is covered by
         // test_chunked_matches_single.)
-        assert!(!segments.is_empty(), "Expected at least one speech segment, found none");
+        assert!(
+            !segments.is_empty(),
+            "Expected at least one speech segment, found none"
+        );
 
         // Should have received progress updates
-        assert!(!progress_updates.is_empty(), "Expected progress updates for large file");
+        assert!(
+            !progress_updates.is_empty(),
+            "Expected progress updates for large file"
+        );
     }
 
     #[test]
@@ -604,13 +696,18 @@ mod tests {
         // Should return error due to cancellation
         assert!(result.is_err(), "Expected cancellation error");
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("cancelled"), "Error should mention cancellation: {}", err_msg);
+        assert!(
+            err_msg.contains("cancelled"),
+            "Error should mention cancellation: {}",
+            err_msg
+        );
     }
 
     #[test]
     fn test_vad_continuous_processor_state_across_chunks() {
         // Test that VAD state is correctly maintained across chunk boundaries
-        let mut processor = ContinuousVadProcessor::new(16000, 2000).expect("Failed to create processor");
+        let mut processor =
+            ContinuousVadProcessor::new(16000, 2000).expect("Failed to create processor");
 
         // Generate audio with a speech segment that spans a chunk boundary
         let chunk_size = 160_000; // 10 seconds
@@ -620,7 +717,12 @@ mod tests {
         let mut all_segments = Vec::new();
         for (i, chunk) in audio.chunks(chunk_size).enumerate() {
             let segments = processor.process_audio(chunk).expect("Processing failed");
-            println!("Chunk {}: processed {} samples, found {} segments", i, chunk.len(), segments.len());
+            println!(
+                "Chunk {}: processed {} samples, found {} segments",
+                i,
+                chunk.len(),
+                segments.len()
+            );
             all_segments.extend(segments);
         }
 
@@ -631,7 +733,10 @@ mod tests {
         println!("Total segments found: {}", all_segments.len());
 
         // Should find speech segments
-        assert!(all_segments.len() >= 1, "Expected at least 1 speech segment");
+        assert!(
+            all_segments.len() >= 1,
+            "Expected at least 1 speech segment"
+        );
     }
 
     #[test]
@@ -665,11 +770,15 @@ mod tests {
             let duration_ms = seg.end_timestamp_ms - seg.start_timestamp_ms;
             println!("2000ms segment {}: {:.0}ms duration", i, duration_ms);
             // Each segment should be at least 250ms (min_speech_time)
-            assert!(duration_ms >= 200.0, "Segment {} too short: {:.0}ms", i, duration_ms);
+            assert!(
+                duration_ms >= 200.0,
+                "Segment {} too short: {:.0}ms",
+                i,
+                duration_ms
+            );
         }
     }
 }
-
 
 #[cfg(test)]
 mod repro_tests {

@@ -287,19 +287,16 @@ pub async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String
 async fn current_transcription_metadata<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Option<crate::audio::recording_saver::TranscriptionMetadata> {
-    let config = crate::api::api_get_transcript_config(
-        app.clone(),
-        app.clone().state(),
-        None,
-    )
-    .await
-    .ok()
-    .flatten()?;
-    let quality_pass = crate::database::repositories::setting::SettingsRepository::get_post_meeting_quality_pass(
-        app.state::<crate::state::AppState>().db_manager.pool(),
-    )
-    .await
-    .unwrap_or(false);
+    let config = crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
+        .await
+        .ok()
+        .flatten()?;
+    let quality_pass =
+        crate::database::repositories::setting::SettingsRepository::get_post_meeting_quality_pass(
+            app.state::<crate::state::AppState>().db_manager.pool(),
+        )
+        .await
+        .unwrap_or(false);
 
     Some(crate::audio::recording_saver::TranscriptionMetadata {
         provider: config.provider,
@@ -555,12 +552,12 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     // Store listener ID for cleanup during stop_recording to ensure microphone is released
     {
         use tauri::Listener;
-		let transcript_sink = RECORDING_MANAGER
-			.lock()
-			.await
-			.as_ref()
-			.expect("recording manager must exist while registering transcript listener")
-			.transcript_segment_sink();
+        let transcript_sink = RECORDING_MANAGER
+            .lock()
+            .await
+            .as_ref()
+            .expect("recording manager must exist while registering transcript listener")
+            .transcript_segment_sink();
         let listener_id = app.listen("transcript-update", move |event: tauri::Event| {
             // Parse the transcript update from the event payload
             if let Ok(update) = serde_json::from_str::<TranscriptUpdate>(event.payload()) {
@@ -580,19 +577,19 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                 // Save to recording manager. This runs in a synchronous Tauri event
                 // callback, so use the non-blocking `try_lock` (matching the original
                 // best-effort `if let Ok` behavior — skip if momentarily contended).
-				let mut saved_through_manager = false;
+                let mut saved_through_manager = false;
                 if let Ok(manager_guard) = RECORDING_MANAGER.try_lock() {
                     if let Some(manager) = manager_guard.as_ref() {
-						manager.add_transcript_segment(segment.clone());
-						saved_through_manager = true;
+                        manager.add_transcript_segment(segment.clone());
+                        saved_through_manager = true;
                     }
                 }
-				if !saved_through_manager {
-					crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(
-						&transcript_sink,
-						segment,
-					);
-				}
+                if !saved_through_manager {
+                    crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(
+                        &transcript_sink,
+                        segment,
+                    );
+                }
             }
         });
         let mut global_listener = TRANSCRIPT_LISTENER_ID.lock().unwrap();
@@ -780,12 +777,12 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // Store listener ID for cleanup during stop_recording to ensure microphone is released
     {
         use tauri::Listener;
-		let transcript_sink = RECORDING_MANAGER
-			.lock()
-			.await
-			.as_ref()
-			.expect("recording manager must exist while registering transcript listener")
-			.transcript_segment_sink();
+        let transcript_sink = RECORDING_MANAGER
+            .lock()
+            .await
+            .as_ref()
+            .expect("recording manager must exist while registering transcript listener")
+            .transcript_segment_sink();
         let listener_id = app.listen("transcript-update", move |event: tauri::Event| {
             // Parse the transcript update from the event payload
             if let Ok(update) = serde_json::from_str::<TranscriptUpdate>(event.payload()) {
@@ -805,19 +802,19 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
                 // Save to recording manager. This runs in a synchronous Tauri event
                 // callback, so use the non-blocking `try_lock` (matching the original
                 // best-effort `if let Ok` behavior — skip if momentarily contended).
-				let mut saved_through_manager = false;
+                let mut saved_through_manager = false;
                 if let Ok(manager_guard) = RECORDING_MANAGER.try_lock() {
                     if let Some(manager) = manager_guard.as_ref() {
-						manager.add_transcript_segment(segment.clone());
-						saved_through_manager = true;
+                        manager.add_transcript_segment(segment.clone());
+                        saved_through_manager = true;
                     }
                 }
-				if !saved_through_manager {
-					crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(
-						&transcript_sink,
-						segment,
-					);
-				}
+                if !saved_through_manager {
+                    crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(
+                        &transcript_sink,
+                        segment,
+                    );
+                }
             }
         });
         let mut global_listener = TRANSCRIPT_LISTENER_ID.lock().unwrap();
@@ -1244,9 +1241,7 @@ pub async fn stop_recording<R: Runtime>(
 /// path. Once `recording-stopped` has been emitted, the answer is always yes —
 /// stream soft-failures must not surface as invoke `Err` or the frontend/tray
 /// skip the SQLite save pipeline.
-pub(crate) fn stop_invoke_succeeds_after_best_effort(
-    recording_stopped_emitted: bool,
-) -> bool {
+pub(crate) fn stop_invoke_succeeds_after_best_effort(recording_stopped_emitted: bool) -> bool {
     recording_stopped_emitted
 }
 

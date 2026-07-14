@@ -1,4 +1,6 @@
+use chrono::{DateTime, Utc};
 use posthog_rs::{Client, Event};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
@@ -6,8 +8,6 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use regex::Regex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyticsConfig {
@@ -102,9 +102,9 @@ fn redact_exception_text(text: &str) -> String {
         ]
     });
     let capped: String = text.chars().take(MAX_LEN).collect();
-    patterns
-        .iter()
-        .fold(capped, |acc, (re, repl)| re.replace_all(&acc, *repl).into_owned())
+    patterns.iter().fold(capped, |acc, (re, repl)| {
+        re.replace_all(&acc, *repl).into_owned()
+    })
 }
 
 /// Build the PostHog `$exception_list` value from a redacted type/message and
@@ -178,7 +178,11 @@ impl AnalyticsClient {
         }
     }
 
-    pub async fn identify(&self, user_id: String, properties: Option<HashMap<String, String>>) -> Result<(), String> {
+    pub async fn identify(
+        &self,
+        user_id: String,
+        properties: Option<HashMap<String, String>>,
+    ) -> Result<(), String> {
         let client = match &self.client {
             Some(client) => Arc::clone(client),
             None => return Ok(()),
@@ -190,20 +194,24 @@ impl AnalyticsClient {
         let properties = strip_sensitive_properties(properties.unwrap_or_default());
 
         let mut event = Event::new("$identify", &user_id);
-        
+
         // Add user properties
         for (key, value) in properties {
             if let Err(e) = event.insert_prop(&key, value) {
                 eprintln!("Failed to add property {}: {}", key, e);
             }
         }
-        
+
         client.capture(event);
-        
+
         Ok(())
     }
 
-    pub async fn track_event(&self, event_name: &str, properties: Option<HashMap<String, String>>) -> Result<(), String> {
+    pub async fn track_event(
+        &self,
+        event_name: &str,
+        properties: Option<HashMap<String, String>>,
+    ) -> Result<(), String> {
         let client = match &self.client {
             Some(client) => Arc::clone(client),
             None => return Ok(()),
@@ -213,7 +221,10 @@ impl AnalyticsClient {
             Some(id) => id,
             None => {
                 // Don't create anonymous users, wait for proper identification
-                log::warn!("Attempted to track event '{}' before user identification", event_name);
+                log::warn!(
+                    "Attempted to track event '{}' before user identification",
+                    event_name
+                );
                 return Ok(());
             }
         };
@@ -222,25 +233,31 @@ impl AnalyticsClient {
         let mut properties = strip_sensitive_properties(properties.unwrap_or_default());
 
         // Add app version to all events
-        properties.insert("app_version".to_string(), env!("CARGO_PKG_VERSION").to_string());
+        properties.insert(
+            "app_version".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
 
         // Add session information to all events
         if let Some(session) = self.current_session.lock().await.as_ref() {
             properties.insert("session_id".to_string(), session.session_id.clone());
-            properties.insert("session_duration".to_string(), session.duration_seconds().to_string());
+            properties.insert(
+                "session_duration".to_string(),
+                session.duration_seconds().to_string(),
+            );
         }
-        
+
         let mut event = Event::new(&event_name, &user_id);
-        
+
         // Add event properties
         for (key, value) in properties {
             if let Err(e) = event.insert_prop(&key, value) {
                 log::warn!("Failed to add property {}: {}", key, e);
             }
         }
-        
+
         client.capture(event);
-        
+
         Ok(())
     }
 
@@ -248,34 +265,36 @@ impl AnalyticsClient {
     pub async fn start_session(&self, user_id: String) -> Result<String, String> {
         let session = UserSession::new(user_id.clone());
         let session_id = session.session_id.clone();
-        
+
         *self.current_session.lock().await = Some(session);
-        
+
         let mut properties = HashMap::new();
         properties.insert("session_id".to_string(), session_id.clone());
         properties.insert("timestamp".to_string(), Utc::now().to_rfc3339());
-        
-        self.track_event("session_started", Some(properties)).await?;
-        
+
+        self.track_event("session_started", Some(properties))
+            .await?;
+
         Ok(session_id)
     }
 
     pub async fn end_session(&self) -> Result<(), String> {
         let mut session_guard = self.current_session.lock().await;
-        
+
         if let Some(session) = session_guard.take() {
             let mut properties = HashMap::new();
             properties.insert("session_id".to_string(), session.session_id.clone());
-            properties.insert("session_duration".to_string(), session.duration_seconds().to_string());
+            properties.insert(
+                "session_duration".to_string(),
+                session.duration_seconds().to_string(),
+            );
             properties.insert("timestamp".to_string(), Utc::now().to_rfc3339());
-            
+
             self.track_event("session_ended", Some(properties)).await?;
         }
-        
+
         Ok(())
     }
-
-
 
     pub async fn track_daily_active_user(&self) -> Result<(), String> {
         let user_id = match self.user_id.lock().await.clone() {
@@ -285,21 +304,29 @@ impl AnalyticsClient {
                 return Ok(());
             }
         };
-        
+
         let mut properties = HashMap::new();
         properties.insert("user_id".to_string(), user_id);
-        properties.insert("date".to_string(), Utc::now().format("%Y-%m-%d").to_string());
+        properties.insert(
+            "date".to_string(),
+            Utc::now().format("%Y-%m-%d").to_string(),
+        );
         properties.insert("timestamp".to_string(), Utc::now().to_rfc3339());
-        
-        self.track_event("daily_active_user", Some(properties)).await
+
+        self.track_event("daily_active_user", Some(properties))
+            .await
     }
 
     pub async fn track_user_first_launch(&self) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("timestamp".to_string(), Utc::now().to_rfc3339());
-        properties.insert("app_version".to_string(), env!("CARGO_PKG_VERSION").to_string());
-        
-        self.track_event("user_first_launch", Some(properties)).await
+        properties.insert(
+            "app_version".to_string(),
+            env!("CARGO_PKG_VERSION").to_string(),
+        );
+
+        self.track_event("user_first_launch", Some(properties))
+            .await
     }
 
     pub async fn get_current_session(&self) -> Option<UserSession> {
@@ -318,12 +345,16 @@ impl AnalyticsClient {
         self.track_event("meeting_deleted", Some(properties)).await
     }
 
-    pub async fn track_settings_changed(&self, setting_type: &str, new_value: &str) -> Result<(), String> {
+    pub async fn track_settings_changed(
+        &self,
+        setting_type: &str,
+        new_value: &str,
+    ) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("setting_type".to_string(), setting_type.to_string());
         properties.insert("new_value".to_string(), new_value.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
+
         self.track_event("settings_changed", Some(properties)).await
     }
 
@@ -331,7 +362,7 @@ impl AnalyticsClient {
         let mut properties = HashMap::new();
         properties.insert("app_version".to_string(), version.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
+
         self.track_event("app_started", Some(properties)).await
     }
 
@@ -339,46 +370,65 @@ impl AnalyticsClient {
         let mut properties = HashMap::new();
         properties.insert("feature_name".to_string(), feature_name.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
+
         self.track_event("feature_used", Some(properties)).await
     }
 
     // Summary generation analytics
-    pub async fn track_summary_generation_completed(&self, model_provider: &str, model_name: &str, success: bool, duration_seconds: Option<u64>, error_message: Option<&str>) -> Result<(), String> {
+    pub async fn track_summary_generation_completed(
+        &self,
+        model_provider: &str,
+        model_name: &str,
+        success: bool,
+        duration_seconds: Option<u64>,
+        error_message: Option<&str>,
+    ) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("model_provider".to_string(), model_provider.to_string());
         properties.insert("model_name".to_string(), model_name.to_string());
         properties.insert("success".to_string(), success.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
+
         if let Some(duration) = duration_seconds {
             properties.insert("duration_seconds".to_string(), duration.to_string());
         }
-        
+
         if let Some(error) = error_message {
             properties.insert("error_message".to_string(), error.to_string());
         }
-        
-        self.track_event("summary_generation_completed", Some(properties)).await
+
+        self.track_event("summary_generation_completed", Some(properties))
+            .await
     }
 
-    pub async fn track_summary_regenerated(&self, model_provider: &str, model_name: &str) -> Result<(), String> {
+    pub async fn track_summary_regenerated(
+        &self,
+        model_provider: &str,
+        model_name: &str,
+    ) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("model_provider".to_string(), model_provider.to_string());
         properties.insert("model_name".to_string(), model_name.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
-        self.track_event("summary_regenerated", Some(properties)).await
+
+        self.track_event("summary_regenerated", Some(properties))
+            .await
     }
 
-    pub async fn track_model_changed(&self, old_provider: &str, old_model: &str, new_provider: &str, new_model: &str) -> Result<(), String> {
+    pub async fn track_model_changed(
+        &self,
+        old_provider: &str,
+        old_model: &str,
+        new_provider: &str,
+        new_model: &str,
+    ) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("old_provider".to_string(), old_provider.to_string());
         properties.insert("old_model".to_string(), old_model.to_string());
         properties.insert("new_provider".to_string(), new_provider.to_string());
         properties.insert("new_model".to_string(), new_model.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
-        
+
         self.track_event("model_changed", Some(properties)).await
     }
 
@@ -387,7 +437,8 @@ impl AnalyticsClient {
         properties.insert("prompt_length".to_string(), prompt_length.to_string());
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
 
-        self.track_event("custom_prompt_used", Some(properties)).await
+        self.track_event("custom_prompt_used", Some(properties))
+            .await
     }
 
     pub async fn track_meeting_ended(
@@ -408,8 +459,14 @@ impl AnalyticsClient {
         let mut properties = HashMap::new();
 
         // Model information
-        properties.insert("transcription_provider".to_string(), transcription_provider.to_string());
-        properties.insert("transcription_model".to_string(), transcription_model.to_string());
+        properties.insert(
+            "transcription_provider".to_string(),
+            transcription_provider.to_string(),
+        );
+        properties.insert(
+            "transcription_model".to_string(),
+            transcription_model.to_string(),
+        );
         properties.insert("summary_provider".to_string(), summary_provider.to_string());
         properties.insert("summary_model".to_string(), summary_model.to_string());
 
@@ -417,16 +474,31 @@ impl AnalyticsClient {
         if let Some(duration) = total_duration_seconds {
             properties.insert("total_duration_seconds".to_string(), duration.to_string());
         }
-        properties.insert("active_duration_seconds".to_string(), active_duration_seconds.to_string());
-        properties.insert("pause_duration_seconds".to_string(), pause_duration_seconds.to_string());
+        properties.insert(
+            "active_duration_seconds".to_string(),
+            active_duration_seconds.to_string(),
+        );
+        properties.insert(
+            "pause_duration_seconds".to_string(),
+            pause_duration_seconds.to_string(),
+        );
 
         // Privacy-safe device types
-        properties.insert("microphone_device_type".to_string(), microphone_device_type.to_string());
-        properties.insert("system_audio_device_type".to_string(), system_audio_device_type.to_string());
+        properties.insert(
+            "microphone_device_type".to_string(),
+            microphone_device_type.to_string(),
+        );
+        properties.insert(
+            "system_audio_device_type".to_string(),
+            system_audio_device_type.to_string(),
+        );
 
         // Processing stats
         properties.insert("chunks_processed".to_string(), chunks_processed.to_string());
-        properties.insert("transcript_segments_count".to_string(), transcript_segments_count.to_string());
+        properties.insert(
+            "transcript_segments_count".to_string(),
+            transcript_segments_count.to_string(),
+        );
         properties.insert("had_fatal_error".to_string(), had_fatal_error.to_string());
 
         // Timestamp
@@ -440,28 +512,34 @@ impl AnalyticsClient {
         let mut properties = HashMap::new();
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
 
-        self.track_event("analytics_enabled", Some(properties)).await
+        self.track_event("analytics_enabled", Some(properties))
+            .await
     }
 
     pub async fn track_analytics_disabled(&self) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
 
-        self.track_event("analytics_disabled", Some(properties)).await
+        self.track_event("analytics_disabled", Some(properties))
+            .await
     }
 
     pub async fn track_analytics_transparency_viewed(&self) -> Result<(), String> {
         let mut properties = HashMap::new();
         properties.insert("timestamp".to_string(), chrono::Utc::now().to_rfc3339());
 
-        self.track_event("analytics_transparency_viewed", Some(properties)).await
+        self.track_event("analytics_transparency_viewed", Some(properties))
+            .await
     }
 
     pub fn is_enabled(&self) -> bool {
         self.config.enabled && self.client.is_some()
     }
 
-    pub async fn set_user_properties(&self, properties: HashMap<String, String>) -> Result<(), String> {
+    pub async fn set_user_properties(
+        &self,
+        properties: HashMap<String, String>,
+    ) -> Result<(), String> {
         let client = match &self.client {
             Some(client) => Arc::clone(client),
             None => return Ok(()),
@@ -474,7 +552,7 @@ impl AnalyticsClient {
                 return Ok(());
             }
         };
-        
+
         let properties = strip_sensitive_properties(properties);
         let mut event = Event::new("$set", &user_id);
 
@@ -484,7 +562,7 @@ impl AnalyticsClient {
                 eprintln!("Failed to add property {}: {}", key, e);
             }
         }
-        
+
         client.capture(event);
 
         Ok(())
@@ -510,7 +588,14 @@ impl AnalyticsClient {
             .await
             .clone()
             .unwrap_or_else(|| "unidentified".to_string());
-        self.emit_exception(&distinct_id, exception_type, message, &frames, handled, source);
+        self.emit_exception(
+            &distinct_id,
+            exception_type,
+            message,
+            &frames,
+            handled,
+            source,
+        );
         Ok(())
     }
 
@@ -566,7 +651,10 @@ mod tests {
     use std::collections::HashMap;
 
     fn props(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -576,7 +664,11 @@ mod tests {
             ("meeting_title", "Q3 layoffs"),
             ("user_agent", "Mozilla/5.0 ..."),
         ]));
-        assert!(out.is_empty(), "all sensitive keys must be removed, got {:?}", out);
+        assert!(
+            out.is_empty(),
+            "all sensitive keys must be removed, got {:?}",
+            out
+        );
     }
 
     #[test]

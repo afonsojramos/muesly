@@ -324,7 +324,11 @@ mod tests {
         assert_eq!(lock.resolve(9, TWO_SECONDS), LangDecision::ForceStable(5));
         assert_eq!(lock.resolve(9, TWO_SECONDS), LangDecision::ForceStable(5));
         assert_eq!(lock.resolve(9, TWO_SECONDS), LangDecision::UseDetected);
-        assert_eq!(lock.stable_id(), Some(9), "stable switched to the challenger");
+        assert_eq!(
+            lock.stable_id(),
+            Some(9),
+            "stable switched to the challenger"
+        );
         // And the new stable holds: a matching detection uses detected.
         assert_eq!(lock.resolve(9, TWO_SECONDS), LangDecision::UseDetected);
     }

@@ -11,9 +11,7 @@ use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Runtime};
 
 use crate::audio::audio_processing::resample;
-use crate::audio::recording_commands::{
-    release_dictation_claim, try_claim_dictation,
-};
+use crate::audio::recording_commands::{release_dictation_claim, try_claim_dictation};
 use crate::database::repositories::dictation_preset::{
     DictationCleanupPreset, DictationCleanupPresetsRepository,
 };

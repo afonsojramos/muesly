@@ -22,7 +22,11 @@ pub struct XaiApiModel {
 static MODELS_CACHE: ModelCache<XaiModel> = ModelCache::new();
 
 /// Fallback models when API fetch fails (verified from https://docs.x.ai/docs/models as of 2026-06-16)
-const FALLBACK_MODELS: &[&str] = &["grok-4.3", "grok-4.20-0309-reasoning", "grok-4.20-0309-non-reasoning"];
+const FALLBACK_MODELS: &[&str] = &[
+    "grok-4.3",
+    "grok-4.20-0309-reasoning",
+    "grok-4.20-0309-non-reasoning",
+];
 
 /// Check if model is a chat-capable model (filter out image and embedding models)
 fn is_chat_model(model_id: &str) -> bool {

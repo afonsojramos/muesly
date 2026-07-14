@@ -97,8 +97,7 @@ pub fn sync_visibility<R: Runtime>(app: &AppHandle<R>) {
 /// on a real visibility transition, so repeated focus toggles don't re-anchor
 /// the pill to the cursor's monitor or churn global-shortcut registration.
 pub fn sync_visibility_with_main_focus<R: Runtime>(app: &AppHandle<R>, main_focused: bool) {
-    let want_visible =
-        crate::audio::recording_commands::is_recording_active() && !main_focused;
+    let want_visible = crate::audio::recording_commands::is_recording_active() && !main_focused;
 
     let currently_visible = app
         .get_webview_window(PILL_LABEL)
@@ -270,8 +269,7 @@ fn raise_above_fullscreen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
         unsafe {
             let ns_window = ns_window_addr as *mut Object;
             let _: () = msg_send![ns_window, setLevel: NS_SCREEN_SAVER_WINDOW_LEVEL];
-            let _: () =
-                msg_send![ns_window, setCollectionBehavior: NS_WINDOW_COLLECTION_BEHAVIOR];
+            let _: () = msg_send![ns_window, setCollectionBehavior: NS_WINDOW_COLLECTION_BEHAVIOR];
         }
     });
 

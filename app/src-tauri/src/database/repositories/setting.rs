@@ -229,7 +229,9 @@ impl SettingsRepository {
     }
 
     /// Whether to also open the meeting's conference link on auto-start (default off).
-    pub async fn get_auto_join_meeting(pool: &SqlitePool) -> std::result::Result<bool, sqlx::Error> {
+    pub async fn get_auto_join_meeting(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
         let value: Option<i64> =
             sqlx::query_scalar("SELECT auto_join_meeting FROM settings WHERE id = '1' LIMIT 1")
                 .fetch_optional(pool)
@@ -277,11 +279,10 @@ impl SettingsRepository {
     pub async fn get_calendar_excluded_ids(
         pool: &SqlitePool,
     ) -> std::result::Result<Option<String>, sqlx::Error> {
-        let value: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT calendar_excluded_ids FROM settings WHERE id = '1' LIMIT 1",
-        )
-        .fetch_optional(pool)
-        .await?;
+        let value: Option<Option<String>> =
+            sqlx::query_scalar("SELECT calendar_excluded_ids FROM settings WHERE id = '1' LIMIT 1")
+                .fetch_optional(pool)
+                .await?;
         Ok(value.flatten())
     }
 
@@ -314,12 +315,10 @@ impl SettingsRepository {
         pool: &SqlitePool,
         enabled: bool,
     ) -> std::result::Result<(), sqlx::Error> {
-        sqlx::query(
-            "UPDATE settings SET calendar_send_attendee_names_to_cloud = ? WHERE id = '1'",
-        )
-        .bind(enabled as i64)
-        .execute(pool)
-        .await?;
+        sqlx::query("UPDATE settings SET calendar_send_attendee_names_to_cloud = ? WHERE id = '1'")
+            .bind(enabled as i64)
+            .execute(pool)
+            .await?;
         Ok(())
     }
 
@@ -653,13 +652,11 @@ impl SettingsRepository {
                 config.api_key = None;
                 let config_json = serde_json::to_string(&config)
                     .map_err(|e| format!("Failed to serialize config: {}", e))?;
-                sqlx::query(
-                    "UPDATE settings SET customOpenAIConfig = $1 WHERE id = '1'",
-                )
-                .bind(config_json)
-                .execute(pool)
-                .await
-                .map_err(|e| e.to_string())?;
+                sqlx::query("UPDATE settings SET customOpenAIConfig = $1 WHERE id = '1'")
+                    .bind(config_json)
+                    .execute(pool)
+                    .await
+                    .map_err(|e| e.to_string())?;
             }
             return Ok(());
         }
@@ -734,12 +731,11 @@ impl SettingsRepository {
             Some(record) => {
                 let config_json: Option<String> = record.get("customOpenAIConfig");
                 if let Some(json) = config_json {
-                    let config: CustomOpenAIConfig =
-                        serde_json::from_str(&json).map_err(|e| {
-                            sqlx::Error::Protocol(
-                                format!("Invalid JSON in customOpenAIConfig: {}", e).into(),
-                            )
-                        })?;
+                    let config: CustomOpenAIConfig = serde_json::from_str(&json).map_err(|e| {
+                        sqlx::Error::Protocol(
+                            format!("Invalid JSON in customOpenAIConfig: {}", e).into(),
+                        )
+                    })?;
                     Ok(Some(config))
                 } else {
                     Ok(None)
@@ -814,12 +810,10 @@ impl SettingsRepository {
         ];
 
         for (provider, column) in &settings_keys {
-            let query = format!(
-                "SELECT {} FROM settings WHERE id = '1' LIMIT 1",
-                column
-            );
-            let value: Option<Option<String>> =
-                sqlx::query_scalar(AssertSqlSafe(query)).fetch_optional(pool).await?;
+            let query = format!("SELECT {} FROM settings WHERE id = '1' LIMIT 1", column);
+            let value: Option<Option<String>> = sqlx::query_scalar(AssertSqlSafe(query))
+                .fetch_optional(pool)
+                .await?;
             let value = value.flatten();
 
             if let Some(v) = value {
@@ -902,8 +896,9 @@ impl SettingsRepository {
                 "SELECT {} FROM transcript_settings WHERE id = '1' LIMIT 1",
                 column
             );
-            let value: Option<Option<String>> =
-                sqlx::query_scalar(AssertSqlSafe(query)).fetch_optional(pool).await?;
+            let value: Option<Option<String>> = sqlx::query_scalar(AssertSqlSafe(query))
+                .fetch_optional(pool)
+                .await?;
             let value = value.flatten();
 
             if let Some(v) = value {
@@ -939,11 +934,9 @@ impl SettingsRepository {
         // Set the migration flag only when everything succeeded.
         // ------------------------------------------------------------------
         if !any_failed {
-            sqlx::query(
-                "UPDATE settings SET keychainMigrated = 1 WHERE id = '1'",
-            )
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE settings SET keychainMigrated = 1 WHERE id = '1'")
+                .execute(pool)
+                .await?;
             Ok(MigrationOutcome::Complete)
         } else {
             Ok(MigrationOutcome::Partial)
@@ -1048,11 +1041,21 @@ mod tests {
     #[tokio::test]
     async fn post_meeting_quality_pass_defaults_off_and_roundtrips() {
         let pool = test_pool().await;
-        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
-        SettingsRepository::set_post_meeting_quality_pass(&pool, true).await.unwrap();
-        assert!(SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
-        SettingsRepository::set_post_meeting_quality_pass(&pool, false).await.unwrap();
-        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool).await.unwrap());
+        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool)
+            .await
+            .unwrap());
+        SettingsRepository::set_post_meeting_quality_pass(&pool, true)
+            .await
+            .unwrap();
+        assert!(SettingsRepository::get_post_meeting_quality_pass(&pool)
+            .await
+            .unwrap());
+        SettingsRepository::set_post_meeting_quality_pass(&pool, false)
+            .await
+            .unwrap();
+        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -1060,8 +1063,14 @@ mod tests {
         let pool = test_pool().await;
 
         // Unset defaults to None for both shortcuts.
-        assert!(SettingsRepository::get_recording_shortcut(&pool).await.unwrap().is_none());
-        assert!(SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().is_none());
+        assert!(SettingsRepository::get_recording_shortcut(&pool)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(SettingsRepository::get_dictation_shortcut(&pool)
+            .await
+            .unwrap()
+            .is_none());
 
         SettingsRepository::set_recording_shortcut(&pool, Some("CmdOrCtrl+Shift+F9"))
             .await
@@ -1070,19 +1079,35 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            SettingsRepository::get_recording_shortcut(&pool).await.unwrap().as_deref(),
+            SettingsRepository::get_recording_shortcut(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("CmdOrCtrl+Shift+F9")
         );
         assert_eq!(
-            SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().as_deref(),
+            SettingsRepository::get_dictation_shortcut(&pool)
+                .await
+                .unwrap()
+                .as_deref(),
             Some("Alt+Space")
         );
 
         // None resets to default; empty strings read back as None too.
-        SettingsRepository::set_recording_shortcut(&pool, None).await.unwrap();
-        SettingsRepository::set_dictation_shortcut(&pool, Some("  ")).await.unwrap();
-        assert!(SettingsRepository::get_recording_shortcut(&pool).await.unwrap().is_none());
-        assert!(SettingsRepository::get_dictation_shortcut(&pool).await.unwrap().is_none());
+        SettingsRepository::set_recording_shortcut(&pool, None)
+            .await
+            .unwrap();
+        SettingsRepository::set_dictation_shortcut(&pool, Some("  "))
+            .await
+            .unwrap();
+        assert!(SettingsRepository::get_recording_shortcut(&pool)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(SettingsRepository::get_dictation_shortcut(&pool)
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
@@ -1325,12 +1350,7 @@ mod tests {
         );
 
         // Keychain received the value under the correct entry key.
-        let stored = store
-            .data
-            .lock()
-            .unwrap()
-            .get("openai-api-key")
-            .cloned();
+        let stored = store.data.lock().unwrap().get("openai-api-key").cloned();
         assert_eq!(stored.as_deref(), Some("test-key-123"));
 
         // SQLite column is NULL.

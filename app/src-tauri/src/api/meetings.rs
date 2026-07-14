@@ -77,7 +77,10 @@ pub async fn api_restore_latest_transcript_revision(
                 std::path::Path::new(&folder_path),
                 &segments,
             ) {
-                log_warn!("Restored transcript in SQLite but could not update transcripts.json: {}", error);
+                log_warn!(
+                    "Restored transcript in SQLite but could not update transcripts.json: {}",
+                    error
+                );
             }
         }
     }
@@ -189,7 +192,8 @@ pub async fn api_delete_meeting<R: Runtime>(
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Meeting moved to trash"
-            }).into())
+            })
+            .into())
         }
         Ok(false) => {
             log_warn!("Meeting not found or already in trash: {}", meeting_id);
@@ -213,7 +217,10 @@ pub async fn api_get_trashed_meetings<R: Runtime>(
     state: tauri::State<'_, AppState>,
     auth_token: Option<String>,
 ) -> Result<Vec<Meeting>, String> {
-    log_info!("api_get_trashed_meetings called, auth_token: {}", auth_token.is_some());
+    log_info!(
+        "api_get_trashed_meetings called, auth_token: {}",
+        auth_token.is_some()
+    );
     let pool = state.db_manager.pool();
     match MeetingsRepository::get_trashed_meetings(pool).await {
         Ok(models) => Ok(models
@@ -368,7 +375,10 @@ pub async fn api_get_meeting_metadata<R: Runtime>(
     meeting_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<MeetingMetadata, String> {
-    log_info!("api_get_meeting_metadata called for meeting_id: {}", meeting_id);
+    log_info!(
+        "api_get_meeting_metadata called for meeting_id: {}",
+        meeting_id
+    );
 
     let pool = state.db_manager.pool();
 
@@ -413,7 +423,9 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
 
     let pool = state.db_manager.pool();
 
-    match MeetingsRepository::get_meeting_transcripts_paginated(pool, &meeting_id, limit, offset).await {
+    match MeetingsRepository::get_meeting_transcripts_paginated(pool, &meeting_id, limit, offset)
+        .await
+    {
         Ok((transcripts, total_count)) => {
             log_info!(
                 "Successfully retrieved {} transcripts for meeting {} (total: {})",
@@ -446,7 +458,11 @@ pub async fn api_get_meeting_transcripts<R: Runtime>(
             })
         }
         Err(e) => {
-            log_error!("Error retrieving transcripts for meeting {}: {}", meeting_id, e);
+            log_error!(
+                "Error retrieving transcripts for meeting {}: {}",
+                meeting_id,
+                e
+            );
             Err(format!("Failed to retrieve transcripts: {}", e))
         }
     }
@@ -506,7 +522,10 @@ pub async fn api_export_meeting_markdown<R: Runtime>(
             let _ = tx.send(path);
         });
 
-    match rx.await.map_err(|_| "Save dialog was dismissed".to_string())? {
+    match rx
+        .await
+        .map_err(|_| "Save dialog was dismissed".to_string())?
+    {
         Some(file_path) => {
             let path = file_path
                 .into_path()
@@ -602,8 +621,11 @@ pub async fn api_save_meeting_summary_context<R: Runtime>(
         auth_token.is_some()
     );
     let pool = state.db_manager.pool();
-    match MeetingNotesRepository::upsert_summary_context(pool, &meeting_id, &summary_context).await {
-        Ok(true) => Ok(serde_json::json!({"message": "Meeting summary context saved successfully"}).into()),
+    match MeetingNotesRepository::upsert_summary_context(pool, &meeting_id, &summary_context).await
+    {
+        Ok(true) => {
+            Ok(serde_json::json!({"message": "Meeting summary context saved successfully"}).into())
+        }
         Ok(false) => {
             log_error!("No meeting found with id {}", meeting_id);
             Err(format!("No meeting found with id {}", meeting_id))
@@ -649,7 +671,10 @@ pub async fn api_save_transcript<R: Runtime>(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| {
             log_error!("Failed to parse transcript segments: {}", e);
-            format!("Invalid transcript data format: {}. Please check the data structure.", e)
+            format!(
+                "Invalid transcript data format: {}. Please check the data structure.",
+                e
+            )
         })?;
 
     // Log parsed segments count and first segment details
@@ -681,7 +706,8 @@ pub async fn api_save_transcript<R: Runtime>(
                 "status": "success",
                 "message": "Transcript saved successfully",
                 "meeting_id": meeting_id
-            }).into())
+            })
+            .into())
         }
         Err(e) => {
             log_error!(

@@ -114,7 +114,6 @@ impl CalendarEventRulesRepository {
         .await?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -288,7 +287,9 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        FoldersRepository::delete_folder(&pool, &doomed).await.unwrap();
+        FoldersRepository::delete_folder(&pool, &doomed)
+            .await
+            .unwrap();
 
         assert!(CalendarEventRulesRepository::rule_for(&pool, "uid-a", 100)
             .await

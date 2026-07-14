@@ -410,8 +410,14 @@ mod tests {
         let snapshot = build_snapshot("m1", &candidate, MatchConfidence::High);
         let parsed = context::snapshot_attendees(&snapshot);
         assert_eq!(parsed.len(), 2);
-        let ana = parsed.iter().find(|a| a.name.as_deref() == Some("Ana")).unwrap();
-        let bruno = parsed.iter().find(|a| a.name.as_deref() == Some("Bruno")).unwrap();
+        let ana = parsed
+            .iter()
+            .find(|a| a.name.as_deref() == Some("Ana"))
+            .unwrap();
+        let bruno = parsed
+            .iter()
+            .find(|a| a.name.as_deref() == Some("Bruno"))
+            .unwrap();
         assert!(ana.is_self, "the self attendee must round-trip as is_self");
         assert!(!bruno.is_self, "a remote attendee must not be marked self");
     }

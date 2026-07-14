@@ -56,7 +56,8 @@ pub async fn api_save_meeting_summary<R: Runtime>(
             log_info!("Summary saved successfully for meeting_id: {}", meeting_id);
             Ok(serde_json::json!({
                 "message": "Meeting summary saved successfully"
-            }).into())
+            })
+            .into())
         }
         Ok(false) => {
             log_warn!(
@@ -109,21 +110,21 @@ pub async fn api_get_summary<R: Runtime>(
             };
 
             // Title only — never load full transcript rows for a status poll.
-            let meeting_name = match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await
-            {
-                Ok(Some(meta)) => {
-                    log_info!("Fetched meeting title: {}", &meta.title);
-                    Some(meta.title)
-                }
-                Ok(None) => {
-                    log_warn!("Meeting not found for meeting_id: {}", meeting_id);
-                    None
-                }
-                Err(e) => {
-                    log_error!("Failed to fetch meeting title: {}", e);
-                    None
-                }
-            };
+            let meeting_name =
+                match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await {
+                    Ok(Some(meta)) => {
+                        log_info!("Fetched meeting title: {}", &meta.title);
+                        Some(meta.title)
+                    }
+                    Ok(None) => {
+                        log_warn!("Meeting not found for meeting_id: {}", meeting_id);
+                        None
+                    }
+                    Err(e) => {
+                        log_error!("Failed to fetch meeting title: {}", e);
+                        None
+                    }
+                };
 
             let response = SummaryResponse {
                 status: status.clone(),
@@ -148,11 +149,11 @@ pub async fn api_get_summary<R: Runtime>(
             log_info!("No summary process found for meeting_id: {}", meeting_id);
 
             // Still fetch meeting title for idle state (metadata only).
-            let meeting_name = match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await
-            {
-                Ok(Some(meta)) => Some(meta.title),
-                _ => None,
-            };
+            let meeting_name =
+                match MeetingsRepository::get_meeting_metadata(pool, &meeting_id).await {
+                    Ok(Some(meta)) => Some(meta.title),
+                    _ => None,
+                };
 
             Ok(SummaryResponse {
                 status: "idle".to_string(),
@@ -406,21 +407,35 @@ pub async fn api_cancel_summary<R: Runtime>(
     if cancelled {
         // Update database status to cancelled
         let pool = state.db_manager.pool();
-        if let Err(e) = SummaryProcessesRepository::update_process_cancelled(pool, &meeting_id).await {
-            log_error!("Failed to update DB status to cancelled for {}: {}", meeting_id, e);
+        if let Err(e) =
+            SummaryProcessesRepository::update_process_cancelled(pool, &meeting_id).await
+        {
+            log_error!(
+                "Failed to update DB status to cancelled for {}: {}",
+                meeting_id,
+                e
+            );
             return Err(format!("Failed to update cancellation status: {}", e));
         }
 
-        log_info!("Successfully cancelled summary generation for meeting_id: {}", meeting_id);
+        log_info!(
+            "Successfully cancelled summary generation for meeting_id: {}",
+            meeting_id
+        );
         Ok(serde_json::json!({
             "message": "Summary generation cancelled successfully",
             "meeting_id": meeting_id,
-        }).into())
+        })
+        .into())
     } else {
-        log_warn!("No active summary generation found for meeting_id: {}", meeting_id);
+        log_warn!(
+            "No active summary generation found for meeting_id: {}",
+            meeting_id
+        );
         Ok(serde_json::json!({
             "message": "No active summary generation to cancel",
             "meeting_id": meeting_id,
-        }).into())
+        })
+        .into())
     }
 }

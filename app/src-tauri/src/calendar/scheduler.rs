@@ -18,7 +18,9 @@ use crate::audio::recording_commands;
 use crate::calendar::matching::{CalendarEventCandidate, ParticipantStatus};
 use crate::calendar::{conference, dedup, matching, service};
 use crate::database::repositories::setting::SettingsRepository;
-use crate::notifications::commands::{show_recording_started_notification, NotificationManagerState};
+use crate::notifications::commands::{
+    show_recording_started_notification, NotificationManagerState,
+};
 
 /// How often the fire-check runs.
 const TICK: StdDuration = StdDuration::from_secs(30);
@@ -70,13 +72,12 @@ async fn claim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) -> boo
 /// transiently (model still downloading, mic busy) so the occurrence is not
 /// permanently skipped within `MAX_STALE_MINUTES`.
 async fn unclaim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) {
-    if let Err(e) = sqlx::query(
-        "DELETE FROM scheduler_fired WHERE ical_uid = ? AND occurrence_minute = ?",
-    )
-    .bind(ical_uid)
-    .bind(minute)
-    .execute(pool)
-    .await
+    if let Err(e) =
+        sqlx::query("DELETE FROM scheduler_fired WHERE ical_uid = ? AND occurrence_minute = ?")
+            .bind(ical_uid)
+            .bind(minute)
+            .execute(pool)
+            .await
     {
         log::warn!("scheduler unclaim_fire failed: {e}");
     }
@@ -275,7 +276,10 @@ mod tests {
     async fn claim_fire_is_once_and_unclaim_allows_retry() {
         let pool = test_pool().await;
         assert!(claim_fire(&pool, "uid-1", 100).await);
-        assert!(!claim_fire(&pool, "uid-1", 100).await, "second claim must fail");
+        assert!(
+            !claim_fire(&pool, "uid-1", 100).await,
+            "second claim must fail"
+        );
         unclaim_fire(&pool, "uid-1", 100).await;
         assert!(
             claim_fire(&pool, "uid-1", 100).await,

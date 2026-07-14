@@ -58,7 +58,12 @@ impl CrosstalkFilter {
                 return false;
             }
         }
-        self.recent.push_back(Seg { is_system: !is_mic, tokens, start, end });
+        self.recent.push_back(Seg {
+            is_system: !is_mic,
+            tokens,
+            start,
+            end,
+        });
         true
     }
 
@@ -114,7 +119,12 @@ mod tests {
     #[test]
     fn mic_echo_of_system_segment_is_dropped() {
         let mut f = CrosstalkFilter::new();
-        assert!(f.admit(false, "let's finalize the budget for the launch", 10.0, 14.0));
+        assert!(f.admit(
+            false,
+            "let's finalize the budget for the launch",
+            10.0,
+            14.0
+        ));
         // Same words picked up by the mic a moment later, slightly offset.
         assert!(!f.admit(true, "let's finalize the budget for the launch", 10.5, 14.5));
     }
@@ -122,14 +132,24 @@ mod tests {
     #[test]
     fn near_duplicate_with_asr_noise_is_dropped() {
         let mut f = CrosstalkFilter::new();
-        assert!(f.admit(false, "We will ship the beta on March tenth, right?", 5.0, 9.0));
+        assert!(f.admit(
+            false,
+            "We will ship the beta on March tenth, right?",
+            5.0,
+            9.0
+        ));
         assert!(!f.admit(true, "we will ship the beta on march tenth", 5.2, 8.8));
     }
 
     #[test]
     fn different_text_in_same_window_is_kept() {
         let mut f = CrosstalkFilter::new();
-        assert!(f.admit(false, "the deployment finished ahead of schedule", 10.0, 14.0));
+        assert!(f.admit(
+            false,
+            "the deployment finished ahead of schedule",
+            10.0,
+            14.0
+        ));
         assert!(f.admit(true, "great, then let's move to the next topic", 10.5, 14.5));
     }
 
@@ -151,7 +171,12 @@ mod tests {
     fn mic_first_then_system_keeps_both() {
         let mut f = CrosstalkFilter::new();
         assert!(f.admit(true, "let's finalize the budget for the launch", 10.0, 14.0));
-        assert!(f.admit(false, "let's finalize the budget for the launch", 10.2, 14.2));
+        assert!(f.admit(
+            false,
+            "let's finalize the budget for the launch",
+            10.2,
+            14.2
+        ));
     }
 
     #[test]

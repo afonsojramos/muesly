@@ -136,13 +136,15 @@ pub fn aggregate_people(
             // Key by normalized name so case-variants of the same attendee
             // ("Bob" / "bob") collapse into one person; the first-seen spelling is
             // kept for display.
-            let entry = map.entry(norm_name(&att.name)).or_insert_with(|| PersonGroup {
-                name: att.name.clone(),
-                company: att.company.clone(),
-                meeting_count: 0,
-                meetings: Vec::new(),
-                speech_seconds: None,
-            });
+            let entry = map
+                .entry(norm_name(&att.name))
+                .or_insert_with(|| PersonGroup {
+                    name: att.name.clone(),
+                    company: att.company.clone(),
+                    meeting_count: 0,
+                    meetings: Vec::new(),
+                    speech_seconds: None,
+                });
             // Prefer the first non-empty company we see for this person.
             if entry.company.is_none() {
                 entry.company = att.company;
@@ -272,7 +274,10 @@ mod tests {
         assert_eq!(g[0].name, "Bruno");
         assert_eq!(g[0].meeting_count, 2);
         assert_eq!(g[0].company.as_deref(), Some("Acme"));
-        assert!(g[0].speech_seconds.is_none(), "no data stays None, not zero");
+        assert!(
+            g[0].speech_seconds.is_none(),
+            "no data stays None, not zero"
+        );
         assert_eq!(g[1].name, "Cara");
         assert_eq!(g[1].meeting_count, 1);
         assert!(g[1].company.is_none());
@@ -430,13 +435,42 @@ mod integration_tests {
         )
         .await;
         // Bruno = cluster 0: 30s + 90s of system speech; mic speech must not count.
-        sqlx::query("INSERT INTO speaker_names (meeting_id, speaker_id, name) VALUES ('m1', 0, 'Bruno')")
-            .execute(&pool)
-            .await
-            .expect("name");
-        insert_segment(&pool, "m1", "s1", "system", Some(0), Some(30.0), Some((0.0, 30.0))).await;
-        insert_segment(&pool, "m1", "s2", "system", Some(0), None, Some((40.0, 130.0))).await;
-        insert_segment(&pool, "m1", "s3", "mic", None, Some(500.0), Some((0.0, 500.0))).await;
+        sqlx::query(
+            "INSERT INTO speaker_names (meeting_id, speaker_id, name) VALUES ('m1', 0, 'Bruno')",
+        )
+        .execute(&pool)
+        .await
+        .expect("name");
+        insert_segment(
+            &pool,
+            "m1",
+            "s1",
+            "system",
+            Some(0),
+            Some(30.0),
+            Some((0.0, 30.0)),
+        )
+        .await;
+        insert_segment(
+            &pool,
+            "m1",
+            "s2",
+            "system",
+            Some(0),
+            None,
+            Some((40.0, 130.0)),
+        )
+        .await;
+        insert_segment(
+            &pool,
+            "m1",
+            "s3",
+            "mic",
+            None,
+            Some(500.0),
+            Some((0.0, 500.0)),
+        )
+        .await;
 
         let people = list_people(&pool).await.expect("list");
         let bruno = people.iter().find(|p| p.name == "Bruno").expect("bruno");

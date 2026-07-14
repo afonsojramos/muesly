@@ -165,7 +165,10 @@ mod tests {
         let b = SpeakerNamesRepository::get_for_meeting(&pool, "meeting-b")
             .await
             .expect("get b");
-        assert!(b.is_empty(), "a name in meeting-a must not leak into meeting-b");
+        assert!(
+            b.is_empty(),
+            "a name in meeting-a must not leak into meeting-b"
+        );
     }
 
     #[tokio::test]

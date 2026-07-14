@@ -1,16 +1,17 @@
 use crate::database::repositories::{
     meeting::MeetingsRepository, setting::SettingsRepository, summary::SummaryProcessesRepository,
 };
-use crate::summary::llm_client::{generate_summary, LLMProvider};
-use crate::summary::processor::{
-    clean_llm_markdown_output, extract_meeting_name_from_markdown, generate_meeting_summary,
-};
+use crate::providers::ollama::metadata::SHARED_METADATA_CACHE;
 use crate::summary::language_detection::detect_summary_language;
+use crate::summary::llm_client::{generate_summary, LLMProvider};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
     write_detected_summary_language_to_metadata,
 };
-use crate::providers::ollama::metadata::SHARED_METADATA_CACHE;
+use crate::summary::processor::{
+    clean_llm_markdown_output, extract_meeting_name_from_markdown, generate_meeting_summary,
+};
+use once_cell::sync::Lazy;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -19,7 +20,6 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
-use once_cell::sync::Lazy;
 
 // Global registry for cancellation tokens (thread-safe).
 // Each entry carries a generation counter so an older job's cleanup cannot
@@ -99,7 +99,12 @@ impl SummaryService {
             custom_openai_temperature,
             custom_openai_top_p,
         ) = if provider == LLMProvider::CustomOpenAI {
-            match SettingsRepository::get_custom_openai_config(pool, crate::keychain::keyring_store()).await {
+            match SettingsRepository::get_custom_openai_config(
+                pool,
+                crate::keychain::keyring_store(),
+            )
+            .await
+            {
                 Ok(Some(config)) => {
                     info!("✓ Using custom OpenAI endpoint: {}", config.endpoint);
                     (
@@ -167,7 +172,11 @@ impl SummaryService {
             return String::new();
         }
 
-        line.chars().take(120).collect::<String>().trim().to_string()
+        line.chars()
+            .take(120)
+            .collect::<String>()
+            .trim()
+            .to_string()
     }
 
     /// Template scaffolding occasionally survives a small model's generation.
@@ -212,7 +221,8 @@ impl SummaryService {
 
     fn is_replaceable_title(title: &str) -> bool {
         let normalized = title.trim();
-        if normalized.eq_ignore_ascii_case("new meeting") || Self::is_title_placeholder(normalized) {
+        if normalized.eq_ignore_ascii_case("new meeting") || Self::is_title_placeholder(normalized)
+        {
             return true;
         }
         let Some(suffix) = normalized.strip_prefix("Meeting ") else {
@@ -350,8 +360,8 @@ impl SummaryService {
             &expected_title,
             &title,
         )
-            .await
-            .map_err(|e| format!("Failed to update meeting title: {}", e))?;
+        .await
+        .map_err(|e| format!("Failed to update meeting title: {}", e))?;
         if !updated {
             return Err("Meeting title changed while a title was being generated".to_string());
         }
@@ -363,7 +373,10 @@ impl SummaryService {
             serde_json::json!({ "meeting_id": meeting_id, "title": title }),
         );
 
-        info!("✓ Auto-generated title for meeting {}: {}", meeting_id, title);
+        info!(
+            "✓ Auto-generated title for meeting {}: {}",
+            meeting_id, title
+        );
         Ok(title)
     }
 
@@ -428,7 +441,10 @@ impl SummaryService {
                 return true;
             }
         }
-        warn!("No active summary generation found for meeting: {}", meeting_id);
+        warn!(
+            "No active summary generation found for meeting: {}",
+            meeting_id
+        );
         false
     }
 
@@ -489,10 +505,7 @@ impl SummaryService {
     /// Test-only: how many meetings currently have a registered cancel token.
     #[cfg(test)]
     fn registry_len() -> usize {
-        CANCELLATION_REGISTRY
-            .lock()
-            .map(|r| r.len())
-            .unwrap_or(0)
+        CANCELLATION_REGISTRY.lock().map(|r| r.len()).unwrap_or(0)
     }
 
     /// Test-only: whether a meeting has a registered cancel token.
@@ -566,7 +579,10 @@ impl SummaryService {
             crate::summary::summary_engine::models::DEFAULT_MAX_TOKENS as usize + 300;
 
         let token_threshold = if provider == LLMProvider::Ollama {
-            match SHARED_METADATA_CACHE.get_or_fetch(&model_name, ollama_endpoint.as_deref()).await {
+            match SHARED_METADATA_CACHE
+                .get_or_fetch(&model_name, ollama_endpoint.as_deref())
+                .await
+            {
                 Ok(metadata) => {
                     let optimal = metadata.context_size.saturating_sub(generation_reserve);
                     info!(
@@ -580,7 +596,7 @@ impl SummaryService {
                         "Failed to fetch context for {}: {}. Using default 4000",
                         model_name, e
                     );
-                    4000  // Fallback to safe default
+                    4000 // Fallback to safe default
                 }
             }
         } else if provider == LLMProvider::BuiltInAI {
@@ -601,12 +617,12 @@ impl SummaryService {
                 }
                 Err(e) => {
                     warn!("{}, using conservative single-pass floor", e);
-                    512  // Safe floor: cannot overflow even a tiny context window
+                    512 // Safe floor: cannot overflow even a tiny context window
                 }
             }
         } else {
             // Cloud providers (OpenAI, Claude, Groq, CustomOpenAI) handle large contexts automatically
-            100000  // Effectively unlimited for single-pass processing
+            100000 // Effectively unlimited for single-pass processing
         };
 
         // Get app data directory for BuiltInAI provider
@@ -622,9 +638,7 @@ impl SummaryService {
         let cleanup_env = std::env::var("MUESLY_TRANSCRIPT_CLEANUP")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        if (cleanup_setting || cleanup_env)
-            && crate::summary::cleanup::should_cleanup(&text, 200)
-        {
+        if (cleanup_setting || cleanup_env) && crate::summary::cleanup::should_cleanup(&text, 200) {
             info!("Running transcript cleanup before summary");
             // Surface phase so the UI can show "Cleaning transcript…" while this runs.
             let _ = app.emit(
@@ -699,7 +713,11 @@ impl SummaryService {
 
         let detected_summary_language = folder
             .as_deref()
-            .and_then(|f| read_detected_summary_language_from_metadata(f).ok().flatten())
+            .and_then(|f| {
+                read_detected_summary_language_from_metadata(f)
+                    .ok()
+                    .flatten()
+            })
             .or_else(|| Self::detect_summary_language_from_text(&text));
         if let Some(code) = &detected_summary_language {
             if let Some(f) = folder.as_deref() {
@@ -801,13 +819,17 @@ impl SummaryService {
                                 )
                                 .await
                                 {
-                                    error!("Failed to update meeting name for {}: {}", meeting_id, e);
+                                    error!(
+                                        "Failed to update meeting name for {}: {}",
+                                        meeting_id, e
+                                    );
                                 }
                             }
                             Ok(_) => info!("Meeting title changed; preserving the current title"),
-                            Err(e) => error!("Failed to load meeting name for {}: {}", meeting_id, e),
+                            Err(e) => {
+                                error!("Failed to load meeting name for {}: {}", meeting_id, e)
+                            }
                         }
-
                     }
 
                     // The first H1 is summary metadata, not body content. Remove it
@@ -831,23 +853,26 @@ impl SummaryService {
                 )
                 .await
                 {
-                    error!(
-                        "Failed to save completed process for {}: {}",
-                        meeting_id, e
-                    );
+                    error!("Failed to save completed process for {}: {}", meeting_id, e);
                 } else {
-                    info!(
-                        "Summary saved successfully for meeting_id: {}",
-                        meeting_id
-                    );
+                    info!("Summary saved successfully for meeting_id: {}", meeting_id);
                 }
             }
             Err(e) => {
                 // Check if error is due to cancellation
                 if e.contains("cancelled") {
-                    info!("Summary generation was cancelled for meeting_id: {}", meeting_id);
-                    if let Err(db_err) = SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id).await {
-                        error!("Failed to update DB status to cancelled for {}: {}", meeting_id, db_err);
+                    info!(
+                        "Summary generation was cancelled for meeting_id: {}",
+                        meeting_id
+                    );
+                    if let Err(db_err) =
+                        SummaryProcessesRepository::update_process_cancelled(&pool, &meeting_id)
+                            .await
+                    {
+                        error!(
+                            "Failed to update DB status to cancelled for {}: {}",
+                            meeting_id, db_err
+                        );
                     }
                 } else {
                     Self::update_process_failed(&pool, &meeting_id, &e).await;
@@ -880,8 +905,8 @@ impl SummaryService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::SummaryService;
+    use super::*;
 
     #[test]
     fn register_cancels_previous_token_for_same_meeting() {
@@ -889,7 +914,10 @@ mod tests {
         assert!(!t1.is_cancelled());
         assert!(SummaryService::registry_has("m-reg"));
         let (g2, t2) = SummaryService::register_cancellation_token("m-reg");
-        assert!(t1.is_cancelled(), "prior token must be cancelled on re-register");
+        assert!(
+            t1.is_cancelled(),
+            "prior token must be cancelled on re-register"
+        );
         assert!(!t2.is_cancelled());
         SummaryService::cleanup_cancellation_token("m-reg", g2);
         assert!(!SummaryService::registry_has("m-reg"));
@@ -987,7 +1015,11 @@ mod tests {
         ] {
             assert!(SummaryService::is_replaceable_title(title), "{title}");
         }
-        for title in ["Project Roadmap", "Meeting Room Booking", "Meeting 2026 roadmap"] {
+        for title in [
+            "Project Roadmap",
+            "Meeting Room Booking",
+            "Meeting 2026 roadmap",
+        ] {
             assert!(!SummaryService::is_replaceable_title(title), "{title}");
         }
     }
@@ -1037,7 +1069,8 @@ mod tests {
     fn summary_heading_path_strips_label_prefix() {
         // The summary path takes the markdown H1 and cleans it as the title; a
         // label the model put in the heading must not survive.
-        let markdown = "# Meeting Report: Spanish Travel Planning Discussion\n\n## Summary\n- point";
+        let markdown =
+            "# Meeting Report: Spanish Travel Planning Discussion\n\n## Summary\n- point";
         let raw = crate::summary::processor::extract_meeting_name_from_markdown(markdown)
             .expect("h1 present");
         assert_eq!(

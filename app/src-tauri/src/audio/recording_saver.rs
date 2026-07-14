@@ -1,15 +1,15 @@
-use std::sync::{Arc, Mutex};
-use tokio::sync::Mutex as AsyncMutex;
 use anyhow::Result;
-use log::{info, warn, error};
-use tauri::{AppHandle, Runtime, Emitter};
-use tokio::sync::mpsc;
-use serde::{Serialize, Deserialize};
+use log::{error, info, warn};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter, Runtime};
+use tokio::sync::mpsc;
+use tokio::sync::Mutex as AsyncMutex;
 
-use super::recording_state::AudioChunk;
 use super::audio_processing::create_meeting_folder;
 use super::incremental_saver::IncrementalAudioSaver;
+use super::recording_state::AudioChunk;
 
 /// Structured transcript segment for JSON export
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -18,8 +18,8 @@ pub struct TranscriptSegment {
     pub text: String,
     pub audio_start_time: f64, // Seconds from recording start
     pub audio_end_time: f64,   // Seconds from recording start
-    pub duration: f64,          // Segment duration in seconds
-    pub display_time: String,   // Formatted time for display like "[02:15]"
+    pub duration: f64,         // Segment duration in seconds
+    pub display_time: String,  // Formatted time for display like "[02:15]"
     /// Measured ASR confidence.
     pub confidence: Option<f32>,
     pub sequence_id: u64,
@@ -41,7 +41,7 @@ pub struct MeetingMetadata {
     pub audio_file: String,
     pub transcript_file: String,
     pub sample_rate: u32,
-    pub status: String,  // "recording", "completed", "error"
+    pub status: String, // "recording", "completed", "error"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transcription: Option<TranscriptionMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -183,7 +183,9 @@ impl RecordingSaver {
         if auto_save {
             info!("Initializing incremental audio saver for recording (auto-save ENABLED)");
         } else {
-            info!("Starting recording without audio saving (auto-save DISABLED - transcripts only)");
+            info!(
+                "Starting recording without audio saving (auto-save DISABLED - transcripts only)"
+            );
         }
 
         // Create channel for receiving audio chunks
@@ -228,7 +230,10 @@ impl RecordingSaver {
 
         if let Some(mut receiver) = self.chunk_receiver.take() {
             tokio::spawn(async move {
-                info!("Recording saver accumulation task started (save_audio: {})", save_audio);
+                info!(
+                    "Recording saver accumulation task started (save_audio: {})",
+                    save_audio
+                );
 
                 while let Some(chunk) = receiver.recv().await {
                     // Persist the chunk we just received *before* honoring a stop
@@ -282,7 +287,11 @@ impl RecordingSaver {
     /// # Arguments
     /// * `meeting_name` - Name of the meeting
     /// * `create_checkpoints` - Whether to create .checkpoints/ directory and IncrementalAudioSaver
-    fn initialize_meeting_folder(&mut self, meeting_name: &str, create_checkpoints: bool) -> Result<()> {
+    fn initialize_meeting_folder(
+        &mut self,
+        meeting_name: &str,
+        create_checkpoints: bool,
+    ) -> Result<()> {
         // Load preferences to get base recordings folder
         let base_folder = super::recording_preferences::get_default_recordings_folder();
 
@@ -293,7 +302,10 @@ impl RecordingSaver {
         if create_checkpoints {
             let incremental_saver = IncrementalAudioSaver::new(meeting_folder.clone(), 48000)?;
             self.incremental_saver = Some(Arc::new(AsyncMutex::new(incremental_saver)));
-            info!("✅ Incremental audio saver initialized for meeting: {}", meeting_name);
+            info!(
+                "✅ Incremental audio saver initialized for meeting: {}",
+                meeting_name
+            );
         } else {
             info!("⚠️  Skipped incremental audio saver (auto-save disabled)");
         }
@@ -301,16 +313,20 @@ impl RecordingSaver {
         // Create initial metadata
         let metadata = MeetingMetadata {
             version: "1.0".to_string(),
-            meeting_id: None,  // Will be set by backend
+            meeting_id: None, // Will be set by backend
             meeting_name: Some(meeting_name.to_string()),
             created_at: chrono::Utc::now().to_rfc3339(),
             completed_at: None,
             duration_seconds: None,
             devices: DeviceInfo {
-                microphone: None,  // Could be enhanced to store actual device names
+                microphone: None, // Could be enhanced to store actual device names
                 system_audio: None,
             },
-            audio_file: if create_checkpoints { "audio.mp4".to_string() } else { "".to_string() },
+            audio_file: if create_checkpoints {
+                "audio.mp4".to_string()
+            } else {
+                "".to_string()
+            },
             transcript_file: "transcripts.json".to_string(),
             sample_rate: 48000,
             status: "recording".to_string(),
@@ -334,13 +350,14 @@ impl RecordingSaver {
 
         let json_string = serde_json::to_string_pretty(metadata)?;
         std::fs::write(&temp_path, json_string)?;
-        std::fs::rename(&temp_path, &metadata_path)?;  // Atomic
+        std::fs::rename(&temp_path, &metadata_path)?; // Atomic
 
         Ok(())
     }
 
     fn finalize_metadata(&self, recording_duration: Option<f64>) -> Result<(), String> {
-        let (Some(folder), Some(mut metadata)) = (&self.meeting_folder, self.metadata.clone()) else {
+        let (Some(folder), Some(mut metadata)) = (&self.meeting_folder, self.metadata.clone())
+        else {
             return Ok(());
         };
 
@@ -392,7 +409,10 @@ impl RecordingSaver {
             return Err(anyhow::anyhow!("Failed to lock transcript segments"));
         };
 
-        info!("Writing {} transcript segments to JSON", segments_clone.len());
+        info!(
+            "Writing {} transcript segments to JSON",
+            segments_clone.len()
+        );
 
         // Create JSON structure (live-recording schema: serializes the IPC
         // TranscriptSegment directly, which carries display_time/confidence).
@@ -404,13 +424,15 @@ impl RecordingSaver {
         });
 
         // Atomic temp-write + rename via the shared helper.
-        super::common::write_json_atomic(folder, "transcripts.json", &json)
-            .map_err(|e| {
-                error!("Failed to write transcripts.json: {}", e);
-                e
-            })?;
+        super::common::write_json_atomic(folder, "transcripts.json", &json).map_err(|e| {
+            error!("Failed to write transcripts.json: {}", e);
+            e
+        })?;
 
-        info!("Successfully wrote transcripts.json with {} segments", segments_clone.len());
+        info!(
+            "Successfully wrote transcripts.json with {} segments",
+            segments_clone.len()
+        );
         Ok(())
     }
 
@@ -435,7 +457,7 @@ impl RecordingSaver {
     pub async fn stop_and_save<R: Runtime>(
         &mut self,
         app: &AppHandle<R>,
-        recording_duration: Option<f64>
+        recording_duration: Option<f64>,
     ) -> Result<Option<String>, String> {
         info!("Stopping recording saver");
 

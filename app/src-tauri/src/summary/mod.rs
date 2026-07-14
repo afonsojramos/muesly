@@ -6,7 +6,6 @@
 /// - Service layer for orchestrating summary generation
 /// - Templates for structured meeting summary generation
 /// - Tauri commands for frontend integration
-
 use serde::{Deserialize, Serialize};
 
 /// Custom OpenAI-compatible endpoint configuration
@@ -31,9 +30,9 @@ pub struct CustomOpenAIConfig {
 }
 
 pub mod chat;
-pub mod global_chat;
 pub mod cleanup;
 pub mod commands;
+pub mod global_chat;
 pub mod language_detection;
 pub mod llm_client;
 pub mod metadata;

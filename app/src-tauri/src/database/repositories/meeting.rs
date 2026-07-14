@@ -36,9 +36,7 @@ impl MeetingsRepository {
     }
 
     /// Meetings currently in the trash, most-recently-deleted first.
-    pub async fn get_trashed_meetings(
-        pool: &SqlitePool,
-    ) -> Result<Vec<MeetingModel>, sqlx::Error> {
+    pub async fn get_trashed_meetings(pool: &SqlitePool) -> Result<Vec<MeetingModel>, sqlx::Error> {
         sqlx::query_as::<_, MeetingModel>(
             "SELECT id, title, created_at, updated_at, folder_path, folder_id FROM meetings \
              WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
@@ -54,7 +52,9 @@ impl MeetingsRepository {
         meeting_id: &str,
     ) -> Result<bool, SqlxError> {
         if meeting_id.trim().is_empty() {
-            return Err(SqlxError::Protocol("meeting_id cannot be empty".to_string()));
+            return Err(SqlxError::Protocol(
+                "meeting_id cannot be empty".to_string(),
+            ));
         }
         let now = Utc::now();
         let result = sqlx::query(
@@ -71,7 +71,9 @@ impl MeetingsRepository {
     /// Restore a trashed meeting back to the active list.
     pub async fn restore_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<bool, SqlxError> {
         if meeting_id.trim().is_empty() {
-            return Err(SqlxError::Protocol("meeting_id cannot be empty".to_string()));
+            return Err(SqlxError::Protocol(
+                "meeting_id cannot be empty".to_string(),
+            ));
         }
         let now = Utc::now();
         let result = sqlx::query(
@@ -215,19 +217,17 @@ impl MeetingsRepository {
         }
 
         // Get total count of transcripts for this meeting
-        let total: (i64,) = sqlx::query_as(
-            "SELECT COUNT(*) FROM transcripts WHERE meeting_id = ?"
-        )
-        .bind(meeting_id)
-        .fetch_one(pool)
-        .await?;
+        let total: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM transcripts WHERE meeting_id = ?")
+            .bind(meeting_id)
+            .fetch_one(pool)
+            .await?;
 
         // Get paginated transcripts ordered by audio_start_time
         let transcripts = sqlx::query_as::<_, Transcript>(
             "SELECT * FROM transcripts
              WHERE meeting_id = ?
              ORDER BY audio_start_time ASC
-             LIMIT ? OFFSET ?"
+             LIMIT ? OFFSET ?",
         )
         .bind(meeting_id)
         .bind(limit)
@@ -276,15 +276,14 @@ impl MeetingsRepository {
         new_title: &str,
     ) -> Result<bool, SqlxError> {
         let now = Utc::now().naive_utc();
-        let result = sqlx::query(
-            "UPDATE meetings SET title = ?, updated_at = ? WHERE id = ? AND title = ?",
-        )
-        .bind(new_title)
-        .bind(now)
-        .bind(meeting_id)
-        .bind(expected_title)
-        .execute(pool)
-        .await?;
+        let result =
+            sqlx::query("UPDATE meetings SET title = ?, updated_at = ? WHERE id = ? AND title = ?")
+                .bind(new_title)
+                .bind(now)
+                .bind(meeting_id)
+                .bind(expected_title)
+                .execute(pool)
+                .await?;
         Ok(result.rows_affected() == 1)
     }
 
@@ -433,7 +432,9 @@ mod tests {
             .await
             .expect("name");
 
-        assert!(MeetingsRepository::delete_meeting(&pool, "m1").await.unwrap());
+        assert!(MeetingsRepository::delete_meeting(&pool, "m1")
+            .await
+            .unwrap());
 
         let remaining: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM speaker_names WHERE meeting_id = ?")
@@ -441,7 +442,10 @@ mod tests {
                 .fetch_one(&pool)
                 .await
                 .expect("count");
-        assert_eq!(remaining, 0, "speaker_names must be cleaned up on hard delete");
+        assert_eq!(
+            remaining, 0,
+            "speaker_names must be cleaned up on hard delete"
+        );
     }
 
     #[tokio::test]
@@ -450,15 +454,27 @@ mod tests {
         insert_meeting(&pool, "m1").await;
         insert_meeting(&pool, "m2").await;
 
-        assert_eq!(MeetingsRepository::get_meetings(&pool, None, None).await.unwrap().len(), 2);
+        assert_eq!(
+            MeetingsRepository::get_meetings(&pool, None, None)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
 
-        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1").await.unwrap());
+        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1")
+            .await
+            .unwrap());
 
-        let active = MeetingsRepository::get_meetings(&pool, None, None).await.unwrap();
+        let active = MeetingsRepository::get_meetings(&pool, None, None)
+            .await
+            .unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].id, "m2");
 
-        let trashed = MeetingsRepository::get_trashed_meetings(&pool).await.unwrap();
+        let trashed = MeetingsRepository::get_trashed_meetings(&pool)
+            .await
+            .unwrap();
         assert_eq!(trashed.len(), 1);
         assert_eq!(trashed[0].id, "m1");
     }
@@ -467,11 +483,24 @@ mod tests {
     async fn restore_returns_meeting_to_active() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        MeetingsRepository::soft_delete_meeting(&pool, "m1").await.unwrap();
+        MeetingsRepository::soft_delete_meeting(&pool, "m1")
+            .await
+            .unwrap();
 
-        assert!(MeetingsRepository::restore_meeting(&pool, "m1").await.unwrap());
-        assert_eq!(MeetingsRepository::get_meetings(&pool, None, None).await.unwrap().len(), 1);
-        assert!(MeetingsRepository::get_trashed_meetings(&pool).await.unwrap().is_empty());
+        assert!(MeetingsRepository::restore_meeting(&pool, "m1")
+            .await
+            .unwrap());
+        assert_eq!(
+            MeetingsRepository::get_meetings(&pool, None, None)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(MeetingsRepository::get_trashed_meetings(&pool)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -479,23 +508,41 @@ mod tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
 
-        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1").await.unwrap());
+        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1")
+            .await
+            .unwrap());
         // Already trashed → no rows affected.
-        assert!(!MeetingsRepository::soft_delete_meeting(&pool, "m1").await.unwrap());
+        assert!(!MeetingsRepository::soft_delete_meeting(&pool, "m1")
+            .await
+            .unwrap());
         // Restoring an active meeting → no rows affected.
-        MeetingsRepository::restore_meeting(&pool, "m1").await.unwrap();
-        assert!(!MeetingsRepository::restore_meeting(&pool, "m1").await.unwrap());
+        MeetingsRepository::restore_meeting(&pool, "m1")
+            .await
+            .unwrap();
+        assert!(!MeetingsRepository::restore_meeting(&pool, "m1")
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
     async fn hard_delete_removes_trashed_meeting() {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
-        MeetingsRepository::soft_delete_meeting(&pool, "m1").await.unwrap();
+        MeetingsRepository::soft_delete_meeting(&pool, "m1")
+            .await
+            .unwrap();
 
-        assert!(MeetingsRepository::delete_meeting(&pool, "m1").await.unwrap());
-        assert!(MeetingsRepository::get_trashed_meetings(&pool).await.unwrap().is_empty());
-        assert!(MeetingsRepository::get_meetings(&pool, None, None).await.unwrap().is_empty());
+        assert!(MeetingsRepository::delete_meeting(&pool, "m1")
+            .await
+            .unwrap());
+        assert!(MeetingsRepository::get_trashed_meetings(&pool)
+            .await
+            .unwrap()
+            .is_empty());
+        assert!(MeetingsRepository::get_meetings(&pool, None, None)
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -506,34 +553,44 @@ mod tests {
         for i in 1..=5u32 {
             let id = format!("m{}", i);
             let ts = chrono::Utc::now() + chrono::Duration::seconds(i as i64);
-            sqlx::query("INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
-                .bind(&id)
-                .bind(format!("Meeting {}", i))
-                .bind(ts)
-                .bind(ts)
-                .execute(&pool)
-                .await
-                .expect("insert meeting");
+            sqlx::query(
+                "INSERT INTO meetings (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(format!("Meeting {}", i))
+            .bind(ts)
+            .bind(ts)
+            .execute(&pool)
+            .await
+            .expect("insert meeting");
         }
 
         // Unbounded: all 5 rows returned.
-        let all = MeetingsRepository::get_meetings(&pool, None, None).await.unwrap();
+        let all = MeetingsRepository::get_meetings(&pool, None, None)
+            .await
+            .unwrap();
         assert_eq!(all.len(), 5);
 
         // First page: 2 rows, offset 0 (most recent first: m5, m4).
-        let page1 = MeetingsRepository::get_meetings(&pool, Some(2), Some(0)).await.unwrap();
+        let page1 = MeetingsRepository::get_meetings(&pool, Some(2), Some(0))
+            .await
+            .unwrap();
         assert_eq!(page1.len(), 2);
         assert_eq!(page1[0].id, "m5");
         assert_eq!(page1[1].id, "m4");
 
         // Second page: 2 rows, offset 2 (m3, m2).
-        let page2 = MeetingsRepository::get_meetings(&pool, Some(2), Some(2)).await.unwrap();
+        let page2 = MeetingsRepository::get_meetings(&pool, Some(2), Some(2))
+            .await
+            .unwrap();
         assert_eq!(page2.len(), 2);
         assert_eq!(page2[0].id, "m3");
         assert_eq!(page2[1].id, "m2");
 
         // Third page: 1 remaining row (m1).
-        let page3 = MeetingsRepository::get_meetings(&pool, Some(2), Some(4)).await.unwrap();
+        let page3 = MeetingsRepository::get_meetings(&pool, Some(2), Some(4))
+            .await
+            .unwrap();
         assert_eq!(page3.len(), 1);
         assert_eq!(page3[0].id, "m1");
     }

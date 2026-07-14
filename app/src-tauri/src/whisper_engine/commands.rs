@@ -1,8 +1,8 @@
-use crate::whisper_engine::{WhisperModelInfo, WhisperEngine};
-use std::sync::{Arc, Mutex};
-use std::path::PathBuf;
-use tauri::{command, Emitter, Manager, AppHandle, Runtime};
 use crate::config::WHISPER_MODEL_CATALOG;
+use crate::whisper_engine::{WhisperEngine, WhisperModelInfo};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use tauri::{command, AppHandle, Emitter, Manager, Runtime};
 
 // Global whisper engine
 pub static WHISPER_ENGINE: Mutex<Option<Arc<WhisperEngine>>> = Mutex::new(None);
@@ -13,7 +13,9 @@ static MODELS_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// Initialize the models directory path using app_data_dir
 /// This should be called during app setup before whisper_init
 pub fn set_models_directory<R: Runtime>(app: &AppHandle<R>) {
-    let app_data_dir = app.path().app_data_dir()
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
         .expect("Failed to get app data dir");
 
     let models_dir = app_data_dir.join("models");
@@ -83,8 +85,8 @@ pub fn whisper_get_recommended_model() -> String {
 fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {
     use crate::whisper_engine::ModelStatus;
 
-    let models_dir = get_models_directory()
-        .ok_or_else(|| "Models directory not initialized".to_string())?;
+    let models_dir =
+        get_models_directory().ok_or_else(|| "Models directory not initialized".to_string())?;
 
     // Whisper models are stored directly in the models directory (not in a whisper subdirectory)
     let whisper_dir = models_dir.clone();
@@ -125,7 +127,10 @@ fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {
         });
     }
 
-    let downloaded_count = models.iter().filter(|m| matches!(m.status, ModelStatus::Available)).count();
+    let downloaded_count = models
+        .iter()
+        .filter(|m| matches!(m.status, ModelStatus::Available))
+        .count();
     log::info!("Found {} downloaded Whisper models", downloaded_count);
 
     Ok(models)
@@ -135,7 +140,7 @@ fn discover_models_standalone() -> Result<Vec<WhisperModelInfo>, String> {
 #[specta::specta]
 pub async fn whisper_load_model(
     app_handle: tauri::AppHandle,
-    model_name: String
+    model_name: String,
 ) -> Result<(), String> {
     let engine = {
         let guard = WHISPER_ENGINE.lock().unwrap();
@@ -308,42 +313,37 @@ pub async fn whisper_validate_model_ready_with_config<R: tauri::Runtime>(
         }
 
         // No model loaded - try to load user's configured model from transcript config
-        let model_to_load = match crate::api::api_get_transcript_config(
-            app.clone(),
-            app.state(),
-            None,
-        )
-        .await
-        {
-            Ok(Some(config)) => {
-                log::info!(
-                    "Got transcript config from API - provider: {}, model: {}",
-                    config.provider,
-                    config.model
-                );
-                if config.provider == "localWhisper" && !config.model.is_empty() {
-                    log::info!("Using user's configured model: {}", config.model);
-                    Some(config.model)
-                } else {
+        let model_to_load =
+            match crate::api::api_get_transcript_config(app.clone(), app.state(), None).await {
+                Ok(Some(config)) => {
                     log::info!(
+                        "Got transcript config from API - provider: {}, model: {}",
+                        config.provider,
+                        config.model
+                    );
+                    if config.provider == "localWhisper" && !config.model.is_empty() {
+                        log::info!("Using user's configured model: {}", config.model);
+                        Some(config.model)
+                    } else {
+                        log::info!(
                         "API config uses non-local provider ({}) or empty model, will auto-select",
                         config.provider
                     );
+                        None
+                    }
+                }
+                Ok(None) => {
+                    log::info!("No transcript config found in API, will auto-select model");
                     None
                 }
-            }
-            Ok(None) => {
-                log::info!("No transcript config found in API, will auto-select model");
-                None
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to get transcript config from API: {}, will auto-select model",
-                    e
-                );
-                None
-            }
-        };
+                Err(e) => {
+                    log::warn!(
+                        "Failed to get transcript config from API: {}, will auto-select model",
+                        e
+                    );
+                    None
+                }
+            };
 
         // Check available models
         let models = engine
@@ -540,8 +540,8 @@ pub async fn whisper_delete_corrupted_model(model_name: String) -> Result<String
 #[command]
 #[specta::specta]
 pub async fn open_models_folder() -> Result<(), String> {
-    let models_dir = get_models_directory()
-        .ok_or_else(|| "Models directory not initialized".to_string())?;
+    let models_dir =
+        get_models_directory().ok_or_else(|| "Models directory not initialized".to_string())?;
 
     // Ensure directory exists before trying to open it
     if !models_dir.exists() {

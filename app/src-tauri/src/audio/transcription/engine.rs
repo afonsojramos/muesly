@@ -13,16 +13,24 @@ pub type TranscriptionEngine = Arc<crate::whisper_engine::WhisperEngine>;
 // ============================================================================
 
 /// Validate that a local Whisper model is ready before starting recording.
-pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+pub async fn validate_transcription_model_ready<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<(), String> {
     info!("🔍 Validating Whisper model...");
     if let Err(init_error) = crate::whisper_engine::commands::whisper_init().await {
         warn!("❌ Failed to initialize Whisper engine: {}", init_error);
-        return Err(format!("Failed to initialize speech recognition: {}", init_error));
+        return Err(format!(
+            "Failed to initialize speech recognition: {}",
+            init_error
+        ));
     }
 
     match crate::whisper_engine::commands::whisper_validate_model_ready_with_config(app).await {
         Ok(model_name) => {
-            info!("✅ Whisper model validation successful: {} is ready", model_name);
+            info!(
+                "✅ Whisper model validation successful: {} is ready",
+                model_name
+            );
             Ok(())
         }
         Err(error) => {
@@ -62,33 +70,30 @@ pub async fn get_or_init_whisper<R: Runtime>(
                 .unwrap_or_else(|| "unknown".to_string());
 
             // NEW: Check if loaded model matches saved config
-            let configured_model = match crate::api::api_get_transcript_config(
-                app.clone(),
-                app.clone().state(),
-                None,
-            )
-            .await
-            {
-                Ok(Some(config)) => {
-                    info!(
-                        "📝 Saved transcript config - provider: {}, model: {}",
-                        config.provider, config.model
-                    );
-                    if config.provider == "localWhisper" && !config.model.is_empty() {
-                        Some(config.model)
-                    } else {
+            let configured_model =
+                match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
+                    .await
+                {
+                    Ok(Some(config)) => {
+                        info!(
+                            "📝 Saved transcript config - provider: {}, model: {}",
+                            config.provider, config.model
+                        );
+                        if config.provider == "localWhisper" && !config.model.is_empty() {
+                            Some(config.model)
+                        } else {
+                            None
+                        }
+                    }
+                    Ok(None) => {
+                        info!("📝 No transcript config found in database");
                         None
                     }
-                }
-                Ok(None) => {
-                    info!("📝 No transcript config found in database");
-                    None
-                }
-                Err(e) => {
-                    warn!("⚠️ Failed to get transcript config: {}", e);
-                    None
-                }
-            };
+                    Err(e) => {
+                        warn!("⚠️ Failed to get transcript config: {}", e);
+                        None
+                    }
+                };
 
             // If loaded model matches config, reuse it
             if let Some(ref expected_model) = configured_model {
@@ -141,35 +146,41 @@ pub async fn get_or_init_whisper<R: Runtime>(
     };
 
     // Get model configuration from API
-    let model_to_load =
-        match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
-            .await
-        {
-            Ok(Some(config)) => {
-                info!(
-                    "Got transcript config from API - provider: {}, model: {}",
-                    config.provider, config.model
-                );
-                if config.provider == "localWhisper" && !config.model.is_empty() {
-                    info!("Using model from API config: {}", config.model);
-                    config.model
-                } else {
-                    warn!("Ignoring obsolete transcription provider '{}'; using the recommended Whisper model", config.provider);
-                    crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
-                }
+    let model_to_load = match crate::api::api_get_transcript_config(
+        app.clone(),
+        app.clone().state(),
+        None,
+    )
+    .await
+    {
+        Ok(Some(config)) => {
+            info!(
+                "Got transcript config from API - provider: {}, model: {}",
+                config.provider, config.model
+            );
+            if config.provider == "localWhisper" && !config.model.is_empty() {
+                info!("Using model from API config: {}", config.model);
+                config.model
+            } else {
+                warn!("Ignoring obsolete transcription provider '{}'; using the recommended Whisper model", config.provider);
+                crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
+                    .to_string()
             }
-            Ok(None) => {
-                info!("No transcript config found; using the recommended Whisper model");
-                crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to get transcript config from API: {}; using the recommended Whisper model",
-                    e
-                );
-                crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
-            }
-        };
+        }
+        Ok(None) => {
+            info!("No transcript config found; using the recommended Whisper model");
+            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
+                .to_string()
+        }
+        Err(e) => {
+            warn!(
+                "Failed to get transcript config from API: {}; using the recommended Whisper model",
+                e
+            );
+            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
+                .to_string()
+        }
+    };
 
     info!("Selected model to load: {}", model_to_load);
 

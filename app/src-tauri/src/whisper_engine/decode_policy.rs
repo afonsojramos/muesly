@@ -31,7 +31,10 @@ pub fn prior_segment_prompt(previous: &str, max_chars: usize) -> Option<String> 
 
 /// Merge vocabulary prompt with prior segment text for whisper initial_prompt.
 pub fn merge_initial_prompt(vocab: Option<&str>, prior: Option<&str>) -> Option<String> {
-    match (vocab.map(str::trim).filter(|s| !s.is_empty()), prior.map(str::trim).filter(|s| !s.is_empty())) {
+    match (
+        vocab.map(str::trim).filter(|s| !s.is_empty()),
+        prior.map(str::trim).filter(|s| !s.is_empty()),
+    ) {
         (Some(v), Some(p)) => Some(format!("{v} {p}")),
         (Some(v), None) => Some(v.to_string()),
         (None, Some(p)) => Some(p.to_string()),

@@ -12,9 +12,7 @@
 // build-script compile time — so this targets the build HOST, not an arbitrary
 // cargo TARGET. CI builds run on per-platform native runners, which is fine.
 
-use ffmpeg_sidecar::download::{
-    download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg,
-};
+use ffmpeg_sidecar::download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg};
 
 /// Download and bundle FFmpeg binary for the build host.
 /// Skips download if a working cached binary is already present.
@@ -23,9 +21,16 @@ pub fn ensure_ffmpeg_binary() {
         .or_else(|_| std::env::var("HOST"))
         .expect("Neither TARGET nor HOST environment variable set");
 
-    println!("cargo:warning=🎬 Checking FFmpeg binary for target: {}", target);
+    println!(
+        "cargo:warning=🎬 Checking FFmpeg binary for target: {}",
+        target
+    );
 
-    let exe_name = if target.contains("windows") { "ffmpeg.exe" } else { "ffmpeg" };
+    let exe_name = if target.contains("windows") {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
     let binary_name = if target.contains("windows") {
         format!("ffmpeg-{}.exe", target)
     } else {
@@ -39,7 +44,10 @@ pub fn ensure_ffmpeg_binary() {
 
     if binary_path.exists() {
         if verify_ffmpeg_binary(&binary_path) {
-            println!("cargo:warning=✅ FFmpeg binary already cached and verified: {}", binary_name);
+            println!(
+                "cargo:warning=✅ FFmpeg binary already cached and verified: {}",
+                binary_name
+            );
             return;
         }
         println!("cargo:warning=⚠️  Cached FFmpeg binary appears corrupted, re-downloading...");
@@ -48,19 +56,18 @@ pub fn ensure_ffmpeg_binary() {
 
     std::fs::create_dir_all(&binaries_dir).expect("Failed to create binaries directory");
 
-    let url = ffmpeg_download_url()
-        .expect("Failed to resolve FFmpeg download URL for host platform");
+    let url =
+        ffmpeg_download_url().expect("Failed to resolve FFmpeg download URL for host platform");
     println!("cargo:warning=⬇️  Downloading FFmpeg from: {}", url);
 
     let extract_dir = std::env::temp_dir().join(format!("muesly-ffmpeg-{}", target));
     let _ = std::fs::remove_dir_all(&extract_dir);
     std::fs::create_dir_all(&extract_dir).expect("Failed to create extract dir");
 
-    let archive_path = download_ffmpeg_package(url, &extract_dir)
-        .expect("Failed to download FFmpeg package");
+    let archive_path =
+        download_ffmpeg_package(url, &extract_dir).expect("Failed to download FFmpeg package");
 
-    unpack_ffmpeg(&archive_path, &extract_dir)
-        .expect("Failed to unpack FFmpeg archive");
+    unpack_ffmpeg(&archive_path, &extract_dir).expect("Failed to unpack FFmpeg archive");
 
     let extracted = extract_dir.join(exe_name);
     if !extracted.is_file() {
@@ -70,8 +77,7 @@ pub fn ensure_ffmpeg_binary() {
         );
     }
 
-    std::fs::copy(&extracted, &binary_path)
-        .expect("Failed to copy ffmpeg binary to binaries/");
+    std::fs::copy(&extracted, &binary_path).expect("Failed to copy ffmpeg binary to binaries/");
 
     #[cfg(unix)]
     {
@@ -99,7 +105,10 @@ fn verify_ffmpeg_binary(path: &std::path::Path) -> bool {
         Ok(output) if output.status.success() => {
             let stdout = String::from_utf8_lossy(&output.stdout);
             if let Some(version_line) = stdout.lines().next() {
-                println!("cargo:warning=✅ FFmpeg verification passed: {}", version_line);
+                println!(
+                    "cargo:warning=✅ FFmpeg verification passed: {}",
+                    version_line
+                );
             }
             true
         }

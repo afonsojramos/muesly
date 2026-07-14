@@ -43,7 +43,9 @@ mod tests {
     fn accepts_known_hosts_and_subdomains() {
         assert!(is_allowed_conference_url("https://zoom.us/j/123?pwd=x"));
         assert!(is_allowed_conference_url("https://acme.zoom.us/j/123"));
-        assert!(is_allowed_conference_url("https://meet.google.com/abc-defg-hij"));
+        assert!(is_allowed_conference_url(
+            "https://meet.google.com/abc-defg-hij"
+        ));
         assert!(is_allowed_conference_url(
             "https://teams.microsoft.com/l/meetup-join/x"
         ));
@@ -52,8 +54,12 @@ mod tests {
     #[test]
     fn rejects_lookalikes_and_non_https() {
         // A substring host check would wrongly accept these.
-        assert!(!is_allowed_conference_url("https://phish-zoom.us.evil.io/creds"));
-        assert!(!is_allowed_conference_url("https://evil.com/meet.google.com"));
+        assert!(!is_allowed_conference_url(
+            "https://phish-zoom.us.evil.io/creds"
+        ));
+        assert!(!is_allowed_conference_url(
+            "https://evil.com/meet.google.com"
+        ));
         assert!(!is_allowed_conference_url("https://notzoom.us.com/j/1"));
         assert!(!is_allowed_conference_url("http://zoom.us/j/1"));
         assert!(!is_allowed_conference_url("not a url"));
