@@ -71,7 +71,43 @@ pub fn should_drop_segment(text: &str, confidence: Option<f32>) -> Option<DropRe
         }
     }
 
+    // A segment that is NOTHING but a URL is a subtitle-credit artifact
+    // ("www.cdc.gov.br", "amara.org"), not speech: spoken URLs decode with
+    // surrounding words. Not confidence-gated; these often decode confidently.
+    if is_bare_url(text) {
+        return Some(DropReason::SilenceHallucination);
+    }
+
     None
+}
+
+/// The entire (trimmed) segment is one URL-shaped token: an optional scheme or
+/// `www.` prefix, a plausible dotted host, and no whitespace.
+fn is_bare_url(text: &str) -> bool {
+    let trimmed = text.trim().trim_end_matches(['.', '!', '?']);
+    if trimmed.contains(char::is_whitespace) {
+        return false;
+    }
+    let (has_scheme, rest) = match trimmed
+        .strip_prefix("http://")
+        .or_else(|| trimmed.strip_prefix("https://"))
+    {
+        Some(rest) => (true, rest),
+        None => (false, trimmed),
+    };
+    let host = rest.split('/').next().unwrap_or("").to_lowercase();
+    if host.is_empty()
+        || !host
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '.' || c == '-')
+    {
+        return false;
+    }
+    let dots = host.matches('.').count();
+    // With a scheme, any dotted host is a URL. Without one, require the
+    // unmistakable shapes ("www.x.y" or "x.y.z"): a single dot without "www."
+    // ("etc.", "Sr.") is normal text, not a URL.
+    (has_scheme && dots >= 1) || (host.starts_with("www.") && dots >= 2) || dots >= 2
 }
 
 fn is_degenerate_repetition(tokens: &[String]) -> bool {
@@ -143,6 +179,35 @@ mod tests {
             should_drop_segment("the the the the the the the the the the", Some(0.9)),
             Some(DropReason::DegenerateRepetition)
         );
+    }
+
+    #[test]
+    fn bare_url_segments_are_dropped_even_when_confident() {
+        // The observed failure: whisper credits a Brazilian subtitle site over
+        // near-silence, confidently.
+        for url in [
+            "www.cdc.gov.br",
+            "http://www.cdc.gov.br",
+            "https://amara.org/subtitles",
+            "www.youtube.com/watch",
+        ] {
+            assert_eq!(
+                should_drop_segment(url, Some(0.95)),
+                Some(DropReason::SilenceHallucination),
+                "expected {url:?} to be dropped",
+            );
+        }
+    }
+
+    #[test]
+    fn urls_inside_speech_and_plain_abbreviations_are_kept() {
+        assert_eq!(
+            should_drop_segment("vai a www.cdc.gov.br para ver", Some(0.9)),
+            None
+        );
+        // Ordinary dotted tokens are not URLs.
+        assert_eq!(should_drop_segment("etc.", Some(0.9)), None);
+        assert_eq!(should_drop_segment("Ok.", Some(0.9)), None);
     }
 
     #[test]
