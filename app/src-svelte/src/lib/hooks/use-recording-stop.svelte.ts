@@ -319,25 +319,23 @@ export function useRecordingStop(
 
 					await sidebar.refetchMeetings();
 
-					// Auto-generate a concise title in the background so finished meetings
-					// aren't left as "New Meeting". When full auto-summary is enabled the
-					// summary already sets the title, so skip the extra call then.
-					if (!config.isAutoSummary) {
-						const provider = config.modelConfig?.provider;
-						const model = config.modelConfig?.model;
-						const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
-						const titleText = formatTranscriptForLlm(freshTranscripts);
+					// Always run the dedicated, lightweight title pass. Auto-summary can
+					// also suggest a title, but small models sometimes preserve the summary
+					// template's placeholder heading instead of replacing it.
+					const provider = config.modelConfig?.provider;
+					const model = config.modelConfig?.model;
+					const { formatTranscriptForLlm } = await import('$lib/format-transcript-for-llm');
+					const titleText = formatTranscriptForLlm(freshTranscripts);
 
-						if (provider && model && titleText) {
-							void invoke('api_generate_meeting_title', {
-								meetingId,
-								text: titleText,
-								model: provider,
-								modelName: model,
-							})
-								.then(() => sidebar.refetchMeetings())
-								.catch((err) => console.error('Auto title generation failed:', err));
-						}
+					if (provider && model && titleText) {
+						void invoke('api_generate_meeting_title', {
+							meetingId,
+							text: titleText,
+							model: provider,
+							modelName: model,
+						})
+							.then(() => sidebar.refetchMeetings())
+							.catch((err) => console.error('Auto title generation failed:', err));
 					}
 
 					try {
