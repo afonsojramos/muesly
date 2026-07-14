@@ -6,8 +6,12 @@
 //! stdout output (logs go to stderr) so a caller can capture it directly.
 //!
 //! Usage: cargo run -p muesly --example transcribe-fixture --
-//!        [--language en] [--vad]
+//!        [--language en] [--vad] [--segments]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
+//!
+//! `--segments` (implies `--vad`) prints one line per VAD segment instead of a
+//! single joined transcript:
+//! `<index>\t<start-seconds>\t<confidence>\t<kept|DROPPED(reason)>\t<text>`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -25,9 +29,12 @@ fn fail(msg: String) -> ! {
 
 #[tokio::main]
 async fn main() {
+    // Surface engine logs (e.g. lang-lock decisions) on stderr under RUST_LOG.
+    let _ = env_logger::try_init();
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
     let mut language = None;
     let mut use_vad = false;
+    let mut per_segment = false;
     let mut prompt = None;
     let mut positional = Vec::new();
     let mut index = 0;
@@ -41,6 +48,10 @@ async fn main() {
                     }));
             }
             "--vad" => use_vad = true,
+            "--segments" => {
+                use_vad = true;
+                per_segment = true;
+            }
             "--prompt" => {
                 index += 1;
                 prompt = Some(raw_args.get(index).cloned().unwrap_or_else(|| {
@@ -106,6 +117,9 @@ async fn main() {
                 .collect(),
         );
     }
+    // A stale lock from a previous run can never exist in a fresh process, but
+    // mirror the app's session boundaries anyway (recording start does this).
+    app_lib::whisper_engine::reset_session_detected_language();
     let text = if use_vad {
         let segments =
             get_speech_chunks(&samples, 2000).unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
@@ -116,6 +130,7 @@ async fn main() {
                 continue;
             }
             eprintln!("transcribing VAD segment {}", index + 1);
+            let start = segment.start_timestamp_ms / 1000.0;
             let (text, confidence, _) = engine
                 .transcribe_audio_with_confidence(segment.samples, language.clone())
                 .await
@@ -129,11 +144,28 @@ async fn main() {
                 &text,
                 Some(confidence),
             );
+            if per_segment {
+                let status = match &drop_reason {
+                    Some(reason) => format!("DROPPED({reason:?})"),
+                    None => "kept".to_string(),
+                };
+                println!(
+                    "{}\t{:.1}s\t{:.2}\t{}\t{}",
+                    index + 1,
+                    start,
+                    confidence,
+                    status,
+                    text.trim()
+                );
+            }
             if let Some(reason) = drop_reason {
                 eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
             } else if !text.trim().is_empty() {
                 transcripts.push(text.trim().to_string());
             }
+        }
+        if per_segment {
+            return;
         }
         transcripts.join(" ")
     } else {
