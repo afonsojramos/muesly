@@ -26,6 +26,6 @@
 >
 	<SwitchPrimitive.Thumb
 		data-slot="switch-thumb"
-		class="bg-background dark:data-[state=unchecked]:bg-foreground dark:data-[state=checked]:bg-brand-foreground rounded-sm group-data-[size=default]/switch:size-3.5 group-data-[size=sm]/switch:size-2.5 group-data-[size=default]/switch:data-[state=checked]:translate-x-4 group-data-[size=sm]/switch:data-[state=checked]:translate-x-3 group-data-[size=default]/switch:data-[state=unchecked]:translate-x-0.5 group-data-[size=sm]/switch:data-[state=unchecked]:translate-x-0.5 pointer-events-none block ring-0 transition-transform rtl:data-[state=checked]:-translate-x-4"
+		class="bg-background dark:data-[state=unchecked]:bg-foreground dark:data-[state=checked]:bg-brand-foreground group-data-[size=default]/switch:h-3 group-data-[size=default]/switch:w-4 group-data-[size=default]/switch:rounded-[3px] group-data-[size=sm]/switch:h-2 group-data-[size=sm]/switch:w-3 group-data-[size=sm]/switch:rounded-[2px] group-data-[size=default]/switch:data-[state=checked]:translate-x-3.5 group-data-[size=sm]/switch:data-[state=checked]:translate-x-2.5 group-data-[size=default]/switch:data-[state=unchecked]:translate-x-0.5 group-data-[size=sm]/switch:data-[state=unchecked]:translate-x-0.5 pointer-events-none block ring-0 transition-transform rtl:data-[state=checked]:-translate-x-3.5"
 	/>
 </SwitchPrimitive.Root>
