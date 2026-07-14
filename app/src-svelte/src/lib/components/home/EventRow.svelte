@@ -224,7 +224,7 @@
 		</div>
 	</div>
 
-	<div class="flex flex-shrink-0 items-center gap-1.5">
+	<div class="flex flex-shrink-0 self-center items-center gap-1.5">
 		{#if ev.conference_url && (showStart || minutesUntilStart <= 30)}
 			<Button size="sm" variant="outline" onclick={() => void onJoin()} aria-label="Join meeting">
 				<ExternalLink data-icon="inline-start" />
