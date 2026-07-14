@@ -23,7 +23,7 @@ nub run build && nub run test:smoke # verify every production route and required
 
 The whole site is prerendered to static HTML. The only client JavaScript is a small enhancement script (`src/scripts/client.ts`): scroll reveal, sticky-nav state, OS-aware download CTAs, and download-card promotion. Everything works without it.
 
-Installers and updater payloads are served publicly from the `muesly-downloads` R2 bucket through `downloads.muesly.ai`. The source repository is private, so GitHub Release URLs must not be used for anonymous download links. The release workflow publishes immutable versioned updater payloads, stable aliases under `/latest/`, checksums, and `/releases/latest.json`.
+Website download links use GitHub's `/releases/latest/download/` URLs so downloads are counted against the corresponding GitHub Release assets. The release workflow also publishes installers and updater payloads to the `muesly-downloads` R2 bucket through `downloads.muesly.ai` for application updates and stable infrastructure aliases.
 
 Pull requests and pushes to `main` that touch the site run formatting, lint, type checks, unit tests, a production build, route smoke tests, and a high-severity dependency audit in `.github/workflows/site-check.yml`. After review, run the manual `Deploy Site` workflow; it repeats the full verification suite, validates the Wrangler bundle, and deploys through the protected `production` environment.
 
