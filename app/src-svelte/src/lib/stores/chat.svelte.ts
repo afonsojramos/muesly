@@ -13,7 +13,7 @@ import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bind
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
-import { reduceChatStreamEvent, type StreamOutcome } from '$lib/chat/stream';
+import { reduceChatStreamEvent, stopChatStream, type StreamOutcome } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -145,12 +145,15 @@ class ChatStore {
 	}
 
 	stop(): void {
-		if (this.#genId) {
-			void commands.chatCancel(this.#genId);
-			this.streamOutcome = 'cancelled';
-		}
-		this.isStreaming = false;
-		this.#genId = null;
+		if (this.#genId) void commands.chatCancel(this.#genId);
+		const stopped = stopChatStream({
+			isStreaming: this.isStreaming,
+			activeGenerationId: this.#genId,
+			streamOutcome: this.streamOutcome,
+		});
+		this.isStreaming = stopped.isStreaming;
+		this.#genId = stopped.activeGenerationId;
+		this.streamOutcome = stopped.streamOutcome;
 	}
 
 	clear(): void {

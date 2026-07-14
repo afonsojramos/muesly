@@ -12,7 +12,7 @@ import { Channel } from '@tauri-apps/api/core';
 import { commands, type GlobalChatEvent } from '$lib/bindings';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
-import { reduceGlobalChatStreamEvent, type StreamOutcome } from '$lib/chat/stream';
+import { reduceGlobalChatStreamEvent, stopChatStream, type StreamOutcome } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 
@@ -111,12 +111,15 @@ class GlobalChatStore {
 
 	stop(): void {
 		// Same cancellation registry as the per-meeting chat.
-		if (this.#genId) {
-			void commands.chatCancel(this.#genId);
-			this.streamOutcome = 'cancelled';
-		}
-		this.isStreaming = false;
-		this.#genId = null;
+		if (this.#genId) void commands.chatCancel(this.#genId);
+		const stopped = stopChatStream({
+			isStreaming: this.isStreaming,
+			activeGenerationId: this.#genId,
+			streamOutcome: this.streamOutcome,
+		});
+		this.isStreaming = stopped.isStreaming;
+		this.#genId = stopped.activeGenerationId;
+		this.streamOutcome = stopped.streamOutcome;
 	}
 
 	clear(): void {

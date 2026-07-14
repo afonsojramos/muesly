@@ -4,6 +4,7 @@ import {
 	getStreamAnnouncement,
 	reduceChatStreamEvent,
 	reduceGlobalChatStreamEvent,
+	stopChatStream,
 	type ChatStreamState,
 	type GlobalChatStreamState,
 } from './stream';
@@ -84,6 +85,31 @@ describe('getStreamAnnouncement', () => {
 		expect(getStreamAnnouncement('completed')).toBe('Response ready');
 		expect(getStreamAnnouncement('error')).toBe('Response failed');
 		expect(getStreamAnnouncement('cancelled')).toBe('');
+	});
+});
+
+describe('stopChatStream', () => {
+	it('transitions an active stream to cancelled', () => {
+		const stopped = stopChatStream(streaming('partial answer'));
+
+		expect(stopped).toEqual({
+			content: 'partial answer',
+			isStreaming: false,
+			activeGenerationId: null,
+			streamOutcome: 'cancelled',
+		});
+		expect(getStreamAnnouncement(stopped.streamOutcome)).toBe('');
+	});
+
+	it('preserves an inactive terminal outcome', () => {
+		const completed: ChatStreamState = {
+			content: 'complete answer',
+			isStreaming: false,
+			activeGenerationId: null,
+			streamOutcome: 'completed',
+		};
+
+		expect(stopChatStream(completed)).toBe(completed);
 	});
 });
 

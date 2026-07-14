@@ -2,11 +2,14 @@ import type { ChatStreamEvent, GlobalChatEvent } from '$lib/bindings';
 
 export type StreamOutcome = 'idle' | 'streaming' | 'completed' | 'error' | 'cancelled';
 
-export interface ChatStreamState {
-	content: string;
+export interface StreamLifecycleState {
 	isStreaming: boolean;
 	activeGenerationId: string | null;
 	streamOutcome: StreamOutcome;
+}
+
+export interface ChatStreamState extends StreamLifecycleState {
+	content: string;
 }
 
 export interface GlobalChatStreamState extends ChatStreamState {
@@ -30,6 +33,16 @@ export function getStreamAnnouncement(outcome: StreamOutcome): string {
 		case 'cancelled':
 			return '';
 	}
+}
+
+export function stopChatStream<T extends StreamLifecycleState>(state: T): T {
+	if (!state.activeGenerationId) return state;
+	return {
+		...state,
+		isStreaming: false,
+		activeGenerationId: null,
+		streamOutcome: 'cancelled',
+	};
 }
 
 export function reduceChatStreamEvent(
