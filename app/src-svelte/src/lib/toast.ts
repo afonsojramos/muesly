@@ -18,6 +18,8 @@ export interface ToastOptions {
 	description?: string;
 	duration?: number;
 	action?: ToastAction;
+	/** Re-issuing with the same id updates that toast in place. */
+	id?: string | number;
 }
 
 export interface ToastImpl {
@@ -35,6 +37,7 @@ function toSonner(options?: ToastOptions) {
 		action: options.action
 			? { label: options.action.label, onClick: options.action.onClick }
 			: undefined,
+		id: options.id,
 	};
 }
 
@@ -58,5 +61,12 @@ export const toast = {
 	},
 	info(message: string, options?: ToastOptions): void {
 		sonner.info(message, toSonner(options));
+	},
+	/** A spinner toast that persists until dismissed (or updated via `id`). */
+	loading(message: string, options?: ToastOptions): string | number {
+		return sonner.loading(message, toSonner(options));
+	},
+	dismiss(id: string | number): void {
+		sonner.dismiss(id);
 	},
 };

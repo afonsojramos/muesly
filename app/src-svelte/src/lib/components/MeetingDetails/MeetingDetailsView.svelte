@@ -11,10 +11,12 @@
 	import EllipsisVerticalIcon from '@lucide/svelte/icons/ellipsis-vertical';
 	import FileTextIcon from '@lucide/svelte/icons/file-text';
 	import LanguagesIcon from '@lucide/svelte/icons/languages';
+	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
+	import UsersIcon from '@lucide/svelte/icons/users';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
@@ -38,6 +40,7 @@
 		transcriptMarkdownBody,
 		useCopyOperations,
 	} from '$lib/hooks/use-copy-operations.svelte';
+	import { useDiarization } from '$lib/hooks/use-diarization.svelte';
 	import { useMeetingOperations } from '$lib/hooks/use-meeting-operations.svelte';
 	import { useSummaryGeneration } from '$lib/hooks/use-summary-generation.svelte';
 	import { Button } from '$lib/components/ui/button';
@@ -48,6 +51,7 @@
 	import ParticipantsTooltip from '$lib/components/ParticipantsTooltip.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
 	import NotesView from './NotesView.svelte';
+	import RetranscribeDialog from './RetranscribeDialog.svelte';
 
 	interface MeetingDetailsData {
 		id: string;
@@ -260,6 +264,13 @@
 	let deleteConfirmOpen = $state(false);
 	let deleting = $state(false);
 
+	// Transcript maintenance actions (menu-driven; dialogs live at this level so
+	// they don't unmount with the transcript drop-up popover). Diarization needs
+	// no onComplete: its `diarization-complete` event already refreshes both the
+	// page's paginated transcripts and an open transcript drop-up.
+	let retranscribeOpen = $state(false);
+	const diarization = useDiarization(() => meeting.id);
+
 	// Opening the actions menu, and the focus restore when it closes, both make
 	// the tooltip open (or stick). bits-ui components own their state unless
 	// bind:open is used, so bind both and force the tooltip shut while the menu
@@ -426,7 +437,6 @@
 			sidePanelState.jumpToSegment(hit.id);
 		} else {
 			sidePanelState.open = true;
-			sidePanelState.activeTab = 'transcript';
 			toast.info('No matching transcript moment', {
 				description: 'Try regenerating the summary with timestamps, or open the transcript.',
 			});
@@ -606,6 +616,28 @@
 									Copy summary
 								</DropdownMenu.Item>
 								<DropdownMenu.Separator />
+								<DropdownMenu.Item onSelect={() => void copyOperations.handleCopyTranscript()}>
+									<CopyIcon />
+									Copy transcript
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									disabled={!meeting.folder_path}
+									onSelect={() => {
+										Analytics.trackButtonClick('enhance_transcript', 'meeting_details');
+										retranscribeOpen = true;
+									}}
+								>
+									<RefreshCwIcon />
+									Retranscribe audio
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									disabled={diarization.busy || !meeting.folder_path}
+									onSelect={() => void diarization.identifySpeakers()}
+								>
+									<UsersIcon />
+									Identify speakers
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
 								<DropdownMenu.Item onSelect={() => void handleCopyNotes()}>
 									<CopyIcon />
 									Copy notes
@@ -773,6 +805,37 @@
 			</Button>
 			<Button variant="destructive" onclick={() => void handleDeleteMeeting()} disabled={deleting}>
 				{deleting ? 'Deleting…' : 'Delete'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<RetranscribeDialog
+	bind:open={retranscribeOpen}
+	onOpenChange={(o) => (retranscribeOpen = o)}
+	meetingId={meeting.id}
+	meetingFolderPath={meeting.folder_path ?? null}
+	onComplete={() => void onRefetchTranscripts?.()}
+/>
+
+<!-- Re-diarization clears assigned speaker names, so it confirms first. -->
+<Dialog.Root bind:open={diarization.confirmOpen}>
+	<Dialog.Content class="sm:max-w-[420px]">
+		<Dialog.Title>Re-identify speakers?</Dialog.Title>
+		<Dialog.Description>
+			Speaker groups are rebuilt from scratch, so the names you assigned to speakers in this meeting
+			will be cleared.
+		</Dialog.Description>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (diarization.confirmOpen = false)}>Cancel</Button>
+			<Button
+				variant="brand"
+				onclick={() => {
+					diarization.confirmOpen = false;
+					void diarization.runDiarization();
+				}}
+			>
+				Re-identify
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
