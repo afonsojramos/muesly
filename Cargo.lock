@@ -3866,7 +3866,7 @@ dependencies = [
 
 [[package]]
 name = "muesly"
-version = "0.2.0"
+version = "0.2.0" # x-release-please-version
 dependencies = [
  "aec3",
  "anyhow",

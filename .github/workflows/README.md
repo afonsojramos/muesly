@@ -12,6 +12,7 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 | `build-linux.yml` | Linux standalone build | Linux | Optional | 30 days |
 | `build-test.yml` | Pre-release builds, signed | All | ON | 30 days |
 | `build.yml` | Reusable build / sign / verify workflow (called by every `build-*` and `release` workflow) | - | - | - |
+| `release-please.yml` | Conventional-commit release PRs with synchronized app versions and changelog | - | - | - |
 | `release.yml` | Validated production release (draft by default, optional publish) | macOS + Windows + Linux | macOS only | Permanent |
 | `deploy-site.yml` | Manual verified deployment of muesly.ai | Site | - | - |
 | `site-check.yml` | Auto: format, lint, type, test, build, smoke, and dependency gates for muesly.ai | Site | - | - |
@@ -24,6 +25,7 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 - **Routine development** → `build-dev.yml` (fastest; unsigned ~25-30 min, signed ~35-45 min)
 - **Platform-specific testing** → `build-macos.yml` / `build-windows.yml` / `build-linux.yml`
 - **Pre-release verification** → `build-test.yml` (signed, all platforms)
+- **Version and changelog PR** → `release-please.yml` (automatic on `main`)
 - **Publishing** → `release.yml`
 
 ## Running a Workflow
@@ -50,6 +52,12 @@ Required secrets:
 - Public downloads: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` in the `production` environment. The token needs R2 object write access to `muesly-downloads`.
 
 ## Releases (`release.yml`)
+
+Release Please maintains a release PR from conventional commits. Merging that PR synchronizes
+`tauri.conf.json`, Cargo metadata and lockfile, both app package manifests, the About fallback,
+`version.txt`, the release manifest, and `CHANGELOG.md`. It intentionally does not create a GitHub
+release or tag; run `release.yml` after merging so the existing signing, updater validation, and R2
+publishing pipeline remains authoritative.
 
 - Version comes from `tauri.conf.json` and must be plain `X.Y.Z` (no pre-release suffixes; Windows MSI rejects them)
 - If the version tag already exists, update the plain `X.Y.Z` version in `tauri.conf.json` before releasing.
