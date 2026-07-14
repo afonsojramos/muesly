@@ -47,6 +47,7 @@
 	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
 	// expanded, so opening a meeting isn't dominated by the chat panel.
 	let chatOpen = $state(false);
+	const hasRecentChats = $derived(chat.messages.length > 0);
 	const barGroups = $derived(bars.groupsForSurface('meeting'));
 	const slashCommands = $derived.by(() => {
 		const items = bars.forSurface('meeting');
@@ -236,25 +237,23 @@
 	{/snippet}
 
 	{#snippet rail({ open })}
-		<Popover.Root bind:open={recentOpen} onOpenChange={(o) => void onRecentOpenChange(o)}>
-			<Popover.Trigger>
-				{#snippet child({ props })}
-					<ChatRailButton
-						triggerProps={props}
-						tooltip="Recent meeting chats"
-						ariaLabel="Recent chats"
-						overlayOpen={recentOpen}
-					>
-						<History data-icon />
-					</ChatRailButton>
-				{/snippet}
-			</Popover.Trigger>
-			<Popover.Content align="start" side="top" class="w-80 p-0">
-				<Command.Root>
-					<Command.List>
-						{#if recentThreads.length === 0}
-							<div class="p-4 text-center text-sm text-muted-foreground">No chats yet.</div>
-						{:else}
+		{#if hasRecentChats}
+			<Popover.Root bind:open={recentOpen} onOpenChange={(o) => void onRecentOpenChange(o)}>
+				<Popover.Trigger>
+					{#snippet child({ props })}
+						<ChatRailButton
+							triggerProps={props}
+							tooltip="Recent meeting chats"
+							ariaLabel="Recent chats"
+							overlayOpen={recentOpen}
+						>
+							<History data-icon />
+						</ChatRailButton>
+					{/snippet}
+				</Popover.Trigger>
+				<Popover.Content align="start" side="top" class="w-80 p-0">
+					<Command.Root>
+						<Command.List>
 							<Command.Group heading="Recent chats">
 								{#each recentThreads as thread (thread.meeting_id)}
 									<Command.Item
@@ -270,11 +269,11 @@
 									</Command.Item>
 								{/each}
 							</Command.Group>
-						{/if}
-					</Command.List>
-				</Command.Root>
-			</Popover.Content>
-		</Popover.Root>
+						</Command.List>
+					</Command.Root>
+				</Popover.Content>
+			</Popover.Root>
+		{/if}
 
 		<Popover.Root bind:open={barsOpen}>
 			<Popover.Trigger>
