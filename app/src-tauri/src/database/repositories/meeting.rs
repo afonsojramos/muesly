@@ -269,6 +269,25 @@ impl MeetingsRepository {
         Ok(true)
     }
 
+    pub async fn update_meeting_title_if_current(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        expected_title: &str,
+        new_title: &str,
+    ) -> Result<bool, SqlxError> {
+        let now = Utc::now().naive_utc();
+        let result = sqlx::query(
+            "UPDATE meetings SET title = ?, updated_at = ? WHERE id = ? AND title = ?",
+        )
+        .bind(new_title)
+        .bind(now)
+        .bind(meeting_id)
+        .bind(expected_title)
+        .execute(pool)
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     pub async fn update_meeting_name(
         pool: &SqlitePool,
         meeting_id: &str,

@@ -163,7 +163,66 @@ impl SummaryService {
             line = rest.trim_matches('"').trim_matches('\'').trim();
         }
 
+        if Self::is_title_placeholder(line) {
+            return String::new();
+        }
+
         line.chars().take(120).collect::<String>().trim().to_string()
+    }
+
+    /// Template scaffolding occasionally survives a small model's generation.
+    /// It is an instruction leak, never a meaningful meeting title.
+    fn is_title_placeholder(line: &str) -> bool {
+        let normalized = line
+            .trim()
+            .trim_matches(|character| {
+                matches!(
+                    character,
+                    '<' | '>' | '[' | ']' | '{' | '}' | '.' | ',' | ':' | ';' | '!' | '?'
+                )
+            })
+            .trim()
+            .to_ascii_lowercase()
+            .replace('-', " ");
+        let normalized = normalized.split_whitespace().collect::<Vec<_>>().join(" ");
+        matches!(
+            normalized.as_str(),
+            "add title"
+                | "add title here"
+                | "ai generated title"
+                | "meeting title"
+                | "title"
+                | "untitled"
+        )
+    }
+
+    fn strip_summary_title(markdown: &str) -> String {
+        let lines = markdown.lines();
+        let Some(title_index) = lines.clone().position(|line| line.starts_with("# ")) else {
+            return String::new();
+        };
+        lines
+            .enumerate()
+            .filter_map(|(index, line)| (index != title_index).then_some(line))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim_start()
+            .to_string()
+    }
+
+    fn is_replaceable_title(title: &str) -> bool {
+        let normalized = title.trim();
+        if normalized.eq_ignore_ascii_case("new meeting") || Self::is_title_placeholder(normalized) {
+            return true;
+        }
+        let Some(suffix) = normalized.strip_prefix("Meeting ") else {
+            return false;
+        };
+        suffix.len() >= 10
+            && suffix.chars().all(|character| {
+                character.is_ascii_digit()
+                    || matches!(character, '-' | '_' | ':' | ' ' | 'T' | 'Z' | '+')
+            })
     }
 
     /// Generic label words a model may prepend before the real title.
@@ -243,6 +302,15 @@ impl SummaryService {
             return Err("Cannot generate a title from an empty transcript".to_string());
         }
 
+        let meeting = MeetingsRepository::get_meeting_metadata(&pool, &meeting_id)
+            .await
+            .map_err(|e| format!("Failed to load meeting title: {e}"))?
+            .ok_or_else(|| format!("Meeting not found: {meeting_id}"))?;
+        let expected_title = meeting.title;
+        if !Self::is_replaceable_title(&expected_title) {
+            return Ok(expected_title);
+        }
+
         let settings = Self::resolve_llm_call_settings(&pool, &model_provider).await?;
         let app_data_dir = app.path().app_data_dir().ok();
 
@@ -276,9 +344,17 @@ impl SummaryService {
             return Err("Model returned an empty title".to_string());
         }
 
-        MeetingsRepository::update_meeting_title(&pool, &meeting_id, &title)
+        let updated = MeetingsRepository::update_meeting_title_if_current(
+            &pool,
+            &meeting_id,
+            &expected_title,
+            &title,
+        )
             .await
             .map_err(|e| format!("Failed to update meeting title: {}", e))?;
+        if !updated {
+            return Err("Meeting title changed while a title was being generated".to_string());
+        }
 
         // Let the UI update the title live (the user may have already navigated
         // to the meeting while generation was in flight).
@@ -715,29 +791,29 @@ impl SummaryService {
                             "Updating meeting name to '{}' for meeting_id: {}",
                             name, meeting_id
                         );
-                        if let Err(e) =
-                            MeetingsRepository::update_meeting_title(&pool, &meeting_id, &name).await
-                        {
-                            error!("Failed to update meeting name for {}: {}", meeting_id, e);
+                        match MeetingsRepository::get_meeting_metadata(&pool, &meeting_id).await {
+                            Ok(Some(meeting)) if Self::is_replaceable_title(&meeting.title) => {
+                                if let Err(e) = MeetingsRepository::update_meeting_title_if_current(
+                                    &pool,
+                                    &meeting_id,
+                                    &meeting.title,
+                                    &name,
+                                )
+                                .await
+                                {
+                                    error!("Failed to update meeting name for {}: {}", meeting_id, e);
+                                }
+                            }
+                            Ok(_) => info!("Meeting title changed; preserving the current title"),
+                            Err(e) => error!("Failed to load meeting name for {}: {}", meeting_id, e),
                         }
 
-                        // Strip the title line from markdown
-                        info!("Stripping title from final_markdown");
-                        if let Some(hash_pos) = final_markdown.find('#') {
-                            // Find end of first line after '#'
-                            let body_start =
-                                if let Some(line_end) = final_markdown[hash_pos..].find('\n') {
-                                    hash_pos + line_end
-                                } else {
-                                    final_markdown.len() // No newline, whole string is title
-                                };
-
-                            final_markdown = final_markdown[body_start..].trim_start().to_string();
-                        } else {
-                            // No '#' found, clear the string
-                            final_markdown.clear();
-                        }
                     }
+
+                    // The first H1 is summary metadata, not body content. Remove it
+                    // even when its value is rejected as template scaffolding.
+                    info!("Stripping title from final_markdown");
+                    final_markdown = Self::strip_summary_title(&final_markdown);
                 }
 
                 // Create result JSON with markdown only (summary_json will be added on first edit)
@@ -870,6 +946,50 @@ mod tests {
     #[test]
     fn clean_generated_title_handles_empty() {
         assert_eq!(SummaryService::clean_generated_title("   \n  "), "");
+    }
+
+    #[test]
+    fn clean_generated_title_rejects_template_placeholders() {
+        for placeholder in [
+            "<Add Title here>",
+            "<Add Title here>.",
+            "Add Title Here:",
+            "[AI-Generated Title]",
+            "# {{meeting title}}",
+            "Title:",
+            "Untitled",
+            "Untitled.",
+        ] {
+            assert_eq!(
+                SummaryService::clean_generated_title(placeholder),
+                "",
+                "placeholder should not become a persisted meeting title: {placeholder}"
+            );
+        }
+    }
+
+    #[test]
+    fn strip_summary_title_removes_rejected_placeholder_heading() {
+        let markdown = "## Preamble\n# <Add Title here>\n\n## Summary\nUseful content";
+        assert_eq!(
+            SummaryService::strip_summary_title(markdown),
+            "## Preamble\n\n## Summary\nUseful content"
+        );
+    }
+
+    #[test]
+    fn replaceable_titles_are_limited_to_generated_defaults() {
+        for title in [
+            "New Meeting",
+            "Meeting 2026-07-13",
+            "Meeting 2026-07-13_23-17-39",
+            "<Add Title here>",
+        ] {
+            assert!(SummaryService::is_replaceable_title(title), "{title}");
+        }
+        for title in ["Project Roadmap", "Meeting Room Booking", "Meeting 2026 roadmap"] {
+            assert!(!SummaryService::is_replaceable_title(title), "{title}");
+        }
     }
 
     #[test]
