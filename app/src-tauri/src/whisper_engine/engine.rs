@@ -50,10 +50,29 @@ pub struct WhisperEngine {
     active_downloads: Arc<RwLock<HashSet<String>>>, // Set of models currently being downloaded
     // Wall-clock of the last transcription, for the idle-unload watcher.
     last_used: Arc<RwLock<std::time::Instant>>,
-    /// Tail of the last successful transcript for `initial_prompt` continuity.
-    /// Cleared via [`Self::reset_segment_context`] at recording/job boundaries so
-    /// prompts never leak across meetings.
-    last_segment_text: Arc<RwLock<String>>,
+    /// Tail of the last successful transcript for `initial_prompt` continuity,
+    /// keyed by stream ("mic" / "system" live, "default" for offline jobs) so
+    /// interleaved streams never prompt each other. Only text that passed the
+    /// hallucination gate and (in `auto` mode) matched the stable language is
+    /// stored, so a bad decode cannot bias the next one. Cleared via
+    /// [`Self::reset_segment_context`] at recording/job boundaries so prompts
+    /// never leak across meetings.
+    last_segment_text: Arc<RwLock<HashMap<String, String>>>,
+}
+
+/// Stream key for prompt continuity when the caller has no stream identity
+/// (offline import, retranscription, one-shot commands).
+pub const DEFAULT_PROMPT_STREAM: &str = "default";
+
+/// How a finished decode may interact with prompt continuity.
+#[derive(Clone, Copy)]
+struct PromptOutcome {
+    /// The emitted text's language is verified; safe to store as the stream's
+    /// next prior prompt.
+    safe_to_store: bool,
+    /// The pass that produced the text actually consumed the prior prompt
+    /// (false for stable-language re-decodes, which drop it).
+    used_prior: bool,
 }
 
 /// A model-context snapshot used for bounded, post-recording vocabulary
@@ -88,7 +107,9 @@ impl VocabularyLearningDecoder {
                 beam_size,
                 temperature,
                 initial_prompt,
+                None,
             )
+            .map(|(text, confidence, _)| (text, confidence))
         })
         .await
         .map_err(|error| anyhow!("Vocabulary comparison task failed: {error}"))?
@@ -96,7 +117,8 @@ impl VocabularyLearningDecoder {
 }
 
 impl WhisperEngine {
-    /// Drop prior-segment prompt context (call at recording start / retranscribe start).
+    /// Drop prior-segment prompt context for every stream (call at recording
+    /// start / retranscribe start).
     pub async fn reset_segment_context(&self) {
         self.last_segment_text.write().await.clear();
     }
@@ -242,7 +264,7 @@ impl WhisperEngine {
             // Initialize active downloads tracking
             active_downloads: Arc::new(RwLock::new(HashSet::new())),
             last_used: Arc::new(RwLock::new(std::time::Instant::now())),
-            last_segment_text: Arc::new(RwLock::new(String::new())),
+            last_segment_text: Arc::new(RwLock::new(HashMap::new())),
         };
 
         Ok(engine)
@@ -760,12 +782,29 @@ impl WhisperEngine {
         Some(average * (1.0 - no_speech_probability.clamp(0.0, 1.0)))
     }
 
+    /// Threads for the explicit `lang_detect` probability pass. Only runs while
+    /// the session language is undecided or on a locked disagreement, never on
+    /// the steady-state agreement path.
+    const LANG_DETECT_THREADS: usize = 4;
+
     /// Synchronous whisper inference shared by both transcribe entry points.
     ///
     /// `state.full` blocks for seconds (CPU/GPU bound), so this MUST be run via
     /// `tokio::task::spawn_blocking`, never directly on an async worker. `FullParams`
     /// borrows the language string, so params are built here from owned data rather
-    /// than passed in. Returns the cleaned transcript and an average confidence.
+    /// than passed in.
+    ///
+    /// `vocab_prompt` (custom vocabulary) is applied to every pass;
+    /// `prior_prompt` (previous-segment tail) is applied only to passes that
+    /// trust it — a stable-language re-transcribe drops it, because a
+    /// wrong-language or hallucinated prior would bias the forced decode toward
+    /// exactly the failure the second pass exists to fix.
+    ///
+    /// Returns the cleaned transcript, an average confidence, and a
+    /// [`PromptOutcome`] describing whether the text may be carried forward as
+    /// the next segment's `prior_prompt` (not while the auto-detect language is
+    /// still undecided, where the emitted language is unverified) and whether
+    /// the emitting pass actually consumed the prior prompt.
     ///
     /// Language modes:
     /// - explicit ISO code: a single pass forced to that code (unchanged).
@@ -775,39 +814,51 @@ impl WhisperEngine {
     ///   involvement, no second pass.
     /// - `auto` (keep original language): an adaptive two-phase scheme. Pass 1
     ///   always auto-detects (`set_language(None)`, no translate). The detected
-    ///   id is fed to `lang_lock::resolve_detection`, which returns either
-    ///   `UseDetected` (emit pass 1) or `ForceStable(id)` (run a second pass
-    ///   forced to the stable language). The second pass only runs on a genuine
-    ///   disagreement, so steady single-language audio stays at one pass.
+    ///   id — plus its detection probability when the lock is still deciding or
+    ///   disagrees — is fed to `lang_lock::resolve_detection`, which returns
+    ///   either `UseDetected` (emit pass 1) or `ForceStable(id)` (run a second
+    ///   pass forced to the stable language). The second pass only runs on a
+    ///   genuine disagreement, so steady single-language audio stays at one pass.
+    #[allow(clippy::too_many_arguments)]
     fn run_full_blocking(
         ctx: &WhisperContext,
         audio_data: &[f32],
         language: Option<String>,
         beam_size: usize,
         temperature: f32,
-        initial_prompt: Option<String>,
-    ) -> Result<(String, f32)> {
+        vocab_prompt: Option<String>,
+        prior_prompt: Option<String>,
+    ) -> Result<(String, f32, PromptOutcome)> {
         // Run one whisper pass with a given language selection / translate flag and
         // return the finished state. A fresh state per pass keeps the forced
         // re-transcribe independent of the detect pass. The state is returned (not
         // its transcript) so the detect pass can both read the detected language id
         // and collect segments from the SAME pass without re-running inference.
-        let run_pass_state = |lang: Option<&str>, translate: bool| -> Result<WhisperState> {
-            let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-                beam_size: beam_size as i32,
-                patience: 1.0,
-            });
-            if let Some(prompt) = initial_prompt.as_deref() {
-                params.set_initial_prompt(prompt);
-            }
-            params.set_language(lang);
-            params.set_translate(translate);
-            Self::apply_common_params(&mut params, temperature);
+        let run_pass_state =
+            |lang: Option<&str>, translate: bool, with_prior: bool| -> Result<WhisperState> {
+                let initial_prompt = super::decode_policy::merge_initial_prompt(
+                    vocab_prompt.as_deref(),
+                    if with_prior {
+                        prior_prompt.as_deref()
+                    } else {
+                        None
+                    },
+                );
+                let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+                    beam_size: beam_size as i32,
+                    patience: 1.0,
+                });
+                if let Some(prompt) = initial_prompt.as_deref() {
+                    params.set_initial_prompt(prompt);
+                }
+                params.set_language(lang);
+                params.set_translate(translate);
+                Self::apply_common_params(&mut params, temperature);
 
-            let mut state = ctx.create_state()?;
-            state.full(params, audio_data)?;
-            Ok(state)
-        };
+                let mut state = ctx.create_state()?;
+                state.full(params, audio_data)?;
+                Ok(state)
+            };
 
         let is_auto = matches!(
             language.as_deref(),
@@ -815,26 +866,53 @@ impl WhisperEngine {
         );
         let should_translate = matches!(language.as_deref(), Some("auto-translate"));
 
+        const TRUSTED_WITH_PRIOR: PromptOutcome = PromptOutcome {
+            safe_to_store: true,
+            used_prior: true,
+        };
+
         // Explicit code path, byte-for-byte unchanged: set code, no translate.
         if !is_auto {
-            return Self::collect_segments(&run_pass_state(language.as_deref(), false)?);
+            let (text, confidence) =
+                Self::collect_segments(&run_pass_state(language.as_deref(), false, true)?)?;
+            return Ok((text, confidence, TRUSTED_WITH_PRIOR));
         }
 
         // auto-translate: detect + translate to English in one pass. The output is
         // English regardless of the spoken language, so the adaptive lang lock
         // (which exists to keep the ORIGINAL language stable) does not apply.
         if should_translate {
-            return Self::collect_segments(&run_pass_state(None, true)?);
+            let (text, confidence) = Self::collect_segments(&run_pass_state(None, true, true)?)?;
+            return Ok((text, confidence, TRUSTED_WITH_PRIOR));
         }
 
         // auto (keep original language): pass 1 always auto-detects.
-        let state = run_pass_state(None, false)?;
+        let state = run_pass_state(None, false, true)?;
 
         // `full_lang_id_from_state` is only meaningful after a `full(..)` that ran
         // with `set_language(None)`. It returns -1 when there is no detection.
         let detected_id = state.full_lang_id_from_state();
+
+        // The detection probability costs an extra encoder pass, so only compute
+        // it when the lock will actually gate on it (still deciding, or a locked
+        // disagreement). The steady agreement path stays at one pass.
+        let detection_prob = if super::lang_lock::wants_probability(detected_id) {
+            match state.lang_detect(0, Self::LANG_DETECT_THREADS) {
+                Ok((_, probs)) => usize::try_from(detected_id)
+                    .ok()
+                    .and_then(|id| probs.get(id).copied()),
+                Err(error) => {
+                    log::debug!("Language probability pass failed: {error}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         let prev_stable = super::lang_lock::current_stable();
-        let decision = super::lang_lock::resolve_detection(detected_id, audio_data.len());
+        let decision =
+            super::lang_lock::resolve_detection(detected_id, audio_data.len(), detection_prob);
 
         match decision {
             super::lang_lock::LangDecision::UseDetected => {
@@ -854,24 +932,48 @@ impl WhisperEngine {
                     }
                 } else {
                     perf_debug!(
-                        "Auto-detected language id {} ({} samples), used as-is",
+                        "Auto-detected language id {} ({} samples, prob {:?}), used as-is",
                         detected_id,
-                        audio_data.len()
+                        audio_data.len(),
+                        detection_prob
                     );
                 }
-                Self::collect_segments(&state)
+                // Text emitted before the language settles (or via the plurality
+                // edge where the locking vote disagrees with the winner) is in an
+                // unverified language: never feed it forward as a prompt.
+                let outcome = PromptOutcome {
+                    safe_to_store: new_stable == Some(detected_id),
+                    used_prior: true,
+                };
+                let (text, confidence) = Self::collect_segments(&state)?;
+                Ok((text, confidence, outcome))
             }
             super::lang_lock::LangDecision::ForceStable(id) => {
                 // A short/odd disagreement: re-transcribe forced to the stable
                 // language rather than emit the flapped detection. Drop pass 1's
-                // state before the second pass; a fresh pass runs pinned to `id`.
+                // state before the second pass; a fresh pass runs pinned to `id`,
+                // without the prior prompt (which may carry the very
+                // wrong-language text that caused the disagreement).
                 drop(state);
                 perf_debug!(
-                    "Auto-detect forcing stable language id {} (segment detected {})",
+                    "Auto-detect forcing stable language id {} (segment detected {}, prob {:?})",
                     id,
-                    detected_id
+                    detected_id,
+                    detection_prob
                 );
-                Self::collect_segments(&run_pass_state(whisper_rs::get_lang_str(id), false)?)
+                let (text, confidence) = Self::collect_segments(&run_pass_state(
+                    whisper_rs::get_lang_str(id),
+                    false,
+                    false,
+                )?)?;
+                Ok((
+                    text,
+                    confidence,
+                    PromptOutcome {
+                        safe_to_store: true,
+                        used_prior: false,
+                    },
+                ))
             }
         }
     }
@@ -883,7 +985,11 @@ impl WhisperEngine {
         language: Option<String>,
     ) -> Result<(String, f32, bool)> {
         let (text, confidence, is_partial, _) = self
-            .transcribe_audio_with_learning_context(Arc::new(audio_data), language)
+            .transcribe_audio_with_learning_context(
+                Arc::new(audio_data),
+                language,
+                DEFAULT_PROMPT_STREAM,
+            )
             .await?;
         Ok((text, confidence, is_partial))
     }
@@ -891,10 +997,15 @@ impl WhisperEngine {
     /// The live decode plus the exact prior-segment prompt used for it. The
     /// latter lets background vocabulary learning remove only the candidate
     /// term while preserving every other piece of decode context.
+    ///
+    /// `prompt_stream` identifies the audio stream ("mic" / "system" live,
+    /// [`DEFAULT_PROMPT_STREAM`] otherwise) so prompt continuity never crosses
+    /// interleaved streams.
     pub async fn transcribe_audio_with_learning_context(
         &self,
         audio_data: Arc<Vec<f32>>,
         language: Option<String>,
+        prompt_stream: &str,
     ) -> Result<(String, f32, bool, VocabularyLearningPrompt)> {
         *self.last_used.write().await = std::time::Instant::now();
         // Clone the context handle and release the read lock before the blocking
@@ -919,33 +1030,28 @@ impl WhisperEngine {
         let vocab = crate::vocabulary::whisper_initial_prompt();
         let prior = {
             let prev = self.last_segment_text.read().await;
-            super::decode_policy::prior_segment_prompt(&prev, 224)
+            prev.get(prompt_stream)
+                .and_then(|text| super::decode_policy::prior_segment_prompt(text, 224))
         };
-        let initial_prompt =
-            super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
-        let learning_prompt = VocabularyLearningPrompt {
-            initial_prompt: initial_prompt.clone(),
-            preferred_terms: crate::vocabulary::learnable_preferred_terms(),
-        };
-
         // Same temperature ladder family as offline `transcribe_audio`.
         // Arc the buffer so ladder retries don't deep-copy the audio per pass.
         let mut temperature = temperature;
-        let (cleaned_result, avg_confidence) = loop {
+        let (cleaned_result, avg_confidence, prompt_outcome) = loop {
             let ctx_c = ctx.clone();
             let audio_c = std::sync::Arc::clone(&audio_data);
             let lang_c = language.clone();
-            let prompt_c = initial_prompt.clone();
+            let vocab_c = vocab.clone();
+            let prior_c = prior.clone();
             let temp = temperature;
             let beam = beam_size;
-            let (text, conf) = tokio::task::spawn_blocking(move || {
-                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam, temp, prompt_c)
+            let (text, conf, outcome) = tokio::task::spawn_blocking(move || {
+                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam, temp, vocab_c, prior_c)
             })
             .await
             .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
             let cleaned = crate::vocabulary::apply_cached_corrections(&text);
             if !super::decode_policy::should_retry_decode(&cleaned, 1) {
-                break (cleaned, conf);
+                break (cleaned, conf, outcome);
             }
             match super::decode_policy::next_temperature(temperature) {
                 Some(next) => {
@@ -956,14 +1062,57 @@ impl WhisperEngine {
                     );
                     temperature = next;
                 }
-                None => break (cleaned, conf),
+                None => break (cleaned, conf, outcome),
             }
         };
-        if !cleaned_result.trim().is_empty() {
-            *self.last_segment_text.write().await = cleaned_result.clone();
-        }
+        self.store_prompt_context(
+            prompt_stream,
+            &cleaned_result,
+            avg_confidence,
+            prompt_outcome.safe_to_store,
+        )
+        .await;
+
+        // Record the prompt the emitting pass ACTUALLY used (a stable-language
+        // re-decode drops the prior), so the vocabulary-learning baseline
+        // replays under the same conditions.
+        let learning_prompt = VocabularyLearningPrompt {
+            initial_prompt: super::decode_policy::merge_initial_prompt(
+                vocab.as_deref(),
+                prompt_outcome
+                    .used_prior
+                    .then_some(prior.as_deref())
+                    .flatten(),
+            ),
+            preferred_terms: crate::vocabulary::learnable_preferred_terms(),
+        };
 
         Ok((cleaned_result, avg_confidence, is_partial, learning_prompt))
+    }
+
+    /// Carry a finished transcript forward as the stream's next `prior_prompt`,
+    /// unless it is empty, language-unverified (`prompt_safe == false`), or a
+    /// known silence hallucination / repetition loop. Feeding a hallucination
+    /// back as a prompt is the classic way Whisper gets stuck repeating it.
+    async fn store_prompt_context(
+        &self,
+        prompt_stream: &str,
+        text: &str,
+        confidence: f32,
+        prompt_safe: bool,
+    ) {
+        if !prompt_safe || text.trim().is_empty() {
+            return;
+        }
+        if crate::audio::transcription::segment_filter::should_drop_segment(text, Some(confidence))
+            .is_some()
+        {
+            return;
+        }
+        self.last_segment_text
+            .write()
+            .await
+            .insert(prompt_stream.to_string(), text.to_string());
     }
 
     pub async fn prepare_vocabulary_learning_decoder(&self) -> Result<VocabularyLearningDecoder> {
@@ -1063,28 +1212,28 @@ impl WhisperEngine {
         let vocab = crate::vocabulary::whisper_initial_prompt();
         let prior = {
             let prev = self.last_segment_text.read().await;
-            super::decode_policy::prior_segment_prompt(&prev, 224)
+            prev.get(DEFAULT_PROMPT_STREAM)
+                .and_then(|text| super::decode_policy::prior_segment_prompt(text, 224))
         };
-        let initial_prompt =
-            super::decode_policy::merge_initial_prompt(vocab.as_deref(), prior.as_deref());
 
         // Temperature ladder: retry empty/near-empty decodes with warmer settings.
         // Arc the buffer so ladder retries don't deep-copy the audio per pass.
         let audio_data = std::sync::Arc::new(audio_data);
-        let cleaned_result = loop {
+        let (cleaned_result, avg_confidence, prompt_outcome) = loop {
             let ctx_c = ctx.clone();
             let audio_c = std::sync::Arc::clone(&audio_data);
             let lang_c = language.clone();
-            let prompt_c = initial_prompt.clone();
+            let vocab_c = vocab.clone();
+            let prior_c = prior.clone();
             let temp = temperature;
-            let (text, _conf) = tokio::task::spawn_blocking(move || {
-                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam_size, temp, prompt_c)
+            let (text, conf, outcome) = tokio::task::spawn_blocking(move || {
+                Self::run_full_blocking(&ctx_c, &audio_c, lang_c, beam_size, temp, vocab_c, prior_c)
             })
             .await
             .map_err(|e| anyhow!("Transcription task failed: {}", e))??;
             let cleaned = crate::vocabulary::apply_cached_corrections(&text);
             if !super::decode_policy::should_retry_decode(&cleaned, 1) {
-                break cleaned;
+                break (cleaned, conf, outcome);
             }
             match super::decode_policy::next_temperature(temperature) {
                 Some(next) => {
@@ -1095,12 +1244,16 @@ impl WhisperEngine {
                     );
                     temperature = next;
                 }
-                None => break cleaned,
+                None => break (cleaned, conf, outcome),
             }
         };
-        if !cleaned_result.trim().is_empty() {
-            *self.last_segment_text.write().await = cleaned_result.clone();
-        }
+        self.store_prompt_context(
+            DEFAULT_PROMPT_STREAM,
+            &cleaned_result,
+            avg_confidence,
+            prompt_outcome.safe_to_store,
+        )
+        .await;
 
         // Performance optimization: smart logging for transcription results
         if cleaned_result.is_empty() {

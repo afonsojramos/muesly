@@ -221,7 +221,28 @@ class TranscriptStore {
 	}
 
 	#handleTranscriptUpdate(update: TranscriptUpdate): void {
-		if (this.#buffer.has(update.sequence_id)) return;
+		// A re-emitted sequence_id is an in-place correction (the backend re-checks
+		// early segments once the auto-detected language locks). Replace the text
+		// wherever the segment currently lives. IndexedDB is intentionally not
+		// re-written here (its store is append-only); the backend sink upserts by
+		// sequence_id and is the source of truth on reload.
+		const buffered = this.#buffer.get(update.sequence_id);
+		if (buffered) {
+			this.#buffer.set(update.sequence_id, {
+				...buffered,
+				text: update.text,
+				confidence: update.confidence,
+			});
+			return;
+		}
+		if (this.transcripts.some((t) => t.sequence_id === update.sequence_id)) {
+			this.transcripts = this.transcripts.map((t) =>
+				t.sequence_id === update.sequence_id
+					? { ...t, text: update.text, confidence: update.confidence }
+					: t,
+			);
+			return;
+		}
 
 		const newTranscript: Transcript = {
 			id: `${Date.now()}-${this.#transcriptCounter++}`,

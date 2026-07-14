@@ -442,6 +442,10 @@ async fn run_retranscription<R: Runtime>(
     // Process each speech segment with progress updates
     let mut all_transcripts: Vec<(String, f64, f64)> = Vec::new(); // (text, start_ms, end_ms)
     let mut total_confidence = 0.0f32;
+    // Entries transcribed while the auto-detect language was still deciding:
+    // (all_transcripts index, processable_segments index, original confidence).
+    let auto_language = matches!(language.as_deref(), None | Some("auto"));
+    let mut deciding_repairs: Vec<(usize, usize, f32)> = Vec::new();
 
     for (i, segment) in processable_segments.iter().enumerate() {
         // Check for cancellation before each segment
@@ -476,6 +480,8 @@ async fn run_retranscription<R: Runtime>(
         }
 
         // Transcribe this segment
+        let deciding_before =
+            auto_language && crate::whisper_engine::lang_lock::current_stable().is_none();
         let engine = whisper_engine.as_ref().unwrap();
         let (text, conf, _) = engine
             .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
@@ -505,6 +511,9 @@ async fn run_retranscription<R: Runtime>(
             );
             all_transcripts.push((text, segment.start_timestamp_ms, segment.end_timestamp_ms));
             total_confidence += conf;
+            if deciding_before {
+                deciding_repairs.push((all_transcripts.len() - 1, i, conf));
+            }
         } else {
             debug!(
                 "Segment {}/{}: {:.1}s — skipped ({:?})",
@@ -513,6 +522,36 @@ async fn run_retranscription<R: Runtime>(
                 segment_duration_sec,
                 drop_reason
             );
+        }
+    }
+
+    // Mirror the live worker's post-lock repair: segments decoded while the
+    // auto-detect language was still deciding may be in the wrong language, so
+    // once the session locked, re-decode them forced to the stable language.
+    if !deciding_repairs.is_empty() {
+        if let Some(stable_code) =
+            crate::whisper_engine::lang_lock::current_stable().and_then(whisper_rs::get_lang_str)
+        {
+            info!(
+                "Language locked to '{}'; re-checking {} early segment(s)",
+                stable_code,
+                deciding_repairs.len()
+            );
+            let engine = whisper_engine.as_ref().unwrap();
+            for (transcript_index, segment_index, original_conf) in deciding_repairs {
+                if let Some((text, conf)) =
+                    crate::audio::transcription::worker::redecode_deciding_segment(
+                        engine,
+                        Arc::new(processable_segments[segment_index].samples.clone()),
+                        stable_code,
+                        &all_transcripts[transcript_index].0,
+                    )
+                    .await
+                {
+                    all_transcripts[transcript_index].0 = text;
+                    total_confidence += conf - original_conf;
+                }
+            }
         }
     }
 

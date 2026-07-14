@@ -73,6 +73,76 @@ struct VocabularyLearningCandidate {
 
 const MAX_VOCABULARY_LEARNING_CANDIDATES: usize = 2;
 
+/// One transcribed chunk, plus the exact 16 kHz samples the engine saw so a
+/// Deciding-phase segment can be re-decoded once the session language locks.
+struct ChunkTranscription {
+    text: String,
+    confidence: Option<f32>,
+    is_partial: bool,
+    learning_candidate: Option<VocabularyLearningCandidate>,
+    samples_16k: Arc<Vec<f32>>,
+}
+
+/// A segment already emitted while the auto-detect language was still
+/// deciding, kept (with its audio) so it can be re-checked against the stable
+/// language once the lock settles.
+struct PendingLangRepair {
+    samples: Arc<Vec<f32>>,
+    original_text: String,
+    update: TranscriptUpdate,
+}
+
+/// Upper bound on Deciding-phase segments retained for repair. The lock
+/// normally settles within a handful of segments; if pathological audio keeps
+/// it deciding, stop accumulating audio rather than growing without bound.
+const MAX_PENDING_LANG_REPAIRS: usize = 12;
+
+/// Prompt-continuity stream key for repair re-decodes, distinct from the live
+/// "mic"/"system" keys so a repair never rewinds a live stream's prompt tail.
+const REPAIR_PROMPT_STREAM: &str = "lang-repair";
+
+/// Confidence floor a repair re-decode must meet to replace the original text,
+/// matching the bar the live emission path enforces (`confidence_threshold`).
+const REPAIR_MIN_CONFIDENCE: f32 = 0.3;
+
+/// Re-decode one Deciding-phase segment forced to the stable language and
+/// return the replacement `(text, confidence)` when it should supersede the
+/// original: non-empty, actually different, past the hallucination gate, and
+/// at least as confident as the live emission floor. Shared by the live
+/// worker's post-lock repair and the offline import/retranscription repairs.
+pub(crate) async fn redecode_deciding_segment(
+    engine: &crate::whisper_engine::WhisperEngine,
+    samples: Arc<Vec<f32>>,
+    stable_code: &str,
+    original_text: &str,
+) -> Option<(String, f32)> {
+    let (text, confidence, _, _) = match engine
+        .transcribe_audio_with_learning_context(
+            samples,
+            Some(stable_code.to_string()),
+            REPAIR_PROMPT_STREAM,
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            warn!("Language repair decode failed: {}", error);
+            return None;
+        }
+    };
+    let text = text.trim().to_string();
+    // Keep the original when the forced decode agrees, comes back empty or
+    // weak, or trips the hallucination gate: the original already passed the
+    // live path's gates.
+    if text.is_empty() || text == original_text.trim() || confidence < REPAIR_MIN_CONFIDENCE {
+        return None;
+    }
+    if super::segment_filter::should_drop_segment(&text, Some(confidence)).is_some() {
+        return None;
+    }
+    Some((text, confidence))
+}
+
 // NOTE: get_transcript_history and get_recording_meeting_name functions
 // have been moved to recording_commands.rs where they have access to RECORDING_MANAGER
 
@@ -147,6 +217,10 @@ pub fn start_transcription_task<R: Runtime>(
             let worker_handle = tokio::spawn(async move {
                 info!("👷 Worker {} started", worker_id);
 
+                // Segments emitted while the auto-detect language was still
+                // deciding; re-checked (and re-emitted if wrong) once it locks.
+                let mut pending_lang_repairs: Vec<PendingLangRepair> = Vec::new();
+
                 // PRE-VALIDATE model state to avoid repeated async calls per chunk
                 let initial_model_loaded = engine_clone.is_model_loaded().await;
                 let current_model = engine_clone
@@ -218,9 +292,19 @@ pub fn start_transcription_task<R: Runtime>(
                                 crate::audio::recording_state::DeviceType::System => "system",
                             };
 
+                            // Whether the auto-detect language is still deciding
+                            // going INTO this chunk: such chunks are candidates
+                            // for the post-lock repair pass below.
+                            let deciding_before = matches!(
+                                crate::get_language_preference_internal().as_deref(),
+                                None | Some("auto")
+                            )
+                                && crate::whisper_engine::lang_lock::current_stable().is_none();
+
                             let first_attempt = transcribe_chunk_with_whisper(
                                 &engine_clone,
                                 chunk.clone(),
+                                chunk_source,
                                 &app_clone,
                             )
                             .await;
@@ -238,6 +322,7 @@ pub fn start_transcription_task<R: Runtime>(
                                         transcribe_chunk_with_whisper(
                                             &engine_clone,
                                             chunk,
+                                            chunk_source,
                                             &app_clone,
                                         )
                                         .await
@@ -251,12 +336,13 @@ pub fn start_transcription_task<R: Runtime>(
                                 first_attempt
                             };
                             match result {
-                                Ok((
-                                    transcript,
-                                    confidence_opt,
+                                Ok(ChunkTranscription {
+                                    text: transcript,
+                                    confidence: confidence_opt,
                                     is_partial,
                                     learning_candidate,
-                                )) => {
+                                    samples_16k,
+                                }) => {
                                     let confidence_threshold = 0.3;
 
                                     let confidence_str = match confidence_opt {
@@ -414,6 +500,18 @@ pub fn start_transcription_task<R: Runtime>(
                                                 worker_id, e
                                             );
                                         }
+
+                                        // Emitted while the language was still
+                                        // deciding: keep for the post-lock repair.
+                                        if deciding_before
+                                            && pending_lang_repairs.len() < MAX_PENDING_LANG_REPAIRS
+                                        {
+                                            pending_lang_repairs.push(PendingLangRepair {
+                                                samples: samples_16k,
+                                                original_text: update.text.clone(),
+                                                update,
+                                            });
+                                        }
                                         // PERFORMANCE: Removed verbose logging of every emission
                                     } else if !transcript.trim().is_empty() && should_log_this_chunk
                                     {
@@ -454,6 +552,31 @@ pub fn start_transcription_task<R: Runtime>(
                                                 .emit("transcription-warning", e.to_string());
                                         }
                                     }
+                                }
+                            }
+
+                            // The language lock settled on this chunk: re-check
+                            // every segment emitted while it was still deciding.
+                            // Detached so the re-decodes (which contend for the
+                            // model, not the worker) never stall live captions;
+                            // re-emits are order-safe because the sink and the
+                            // frontend both upsert by sequence_id.
+                            if deciding_before && !pending_lang_repairs.is_empty() {
+                                if let Some(stable_id) =
+                                    crate::whisper_engine::lang_lock::current_stable()
+                                {
+                                    let pending = std::mem::take(&mut pending_lang_repairs);
+                                    let repair_engine = engine_clone.clone();
+                                    let repair_app = app_clone.clone();
+                                    tokio::spawn(async move {
+                                        repair_deciding_segments(
+                                            &repair_engine,
+                                            &repair_app,
+                                            stable_id,
+                                            pending,
+                                        )
+                                        .await;
+                                    });
                                 }
                             }
 
@@ -681,21 +804,67 @@ pub fn start_transcription_task<R: Runtime>(
     })
 }
 
+/// Re-transcribe segments that were emitted while the auto-detect language was
+/// still deciding, forced to the now-stable language, and re-emit the ones
+/// whose text changed. Deciding-phase segments transcribe in whatever language
+/// each individually detected, so the first line(s) of a meeting can come out
+/// in the wrong language; the transcript sink and the frontend both upsert by
+/// `sequence_id`, so a re-emitted update replaces the original segment in the
+/// live UI and in the saved transcript.
+async fn repair_deciding_segments<R: Runtime>(
+    engine: &TranscriptionEngine,
+    app: &AppHandle<R>,
+    stable_id: i32,
+    pending: Vec<PendingLangRepair>,
+) {
+    let Some(stable_code) = whisper_rs::get_lang_str(stable_id) else {
+        warn!(
+            "Language repair skipped: no language code for stable id {}",
+            stable_id
+        );
+        return;
+    };
+    info!(
+        "🔁 Language locked to '{}'; re-checking {} early segment(s)",
+        stable_code,
+        pending.len()
+    );
+    for item in pending {
+        let Some((text, confidence)) = redecode_deciding_segment(
+            engine,
+            Arc::clone(&item.samples),
+            stable_code,
+            &item.original_text,
+        )
+        .await
+        else {
+            continue;
+        };
+        info!(
+            "🔁 Repaired early segment {} into '{}'",
+            item.update.sequence_id, stable_code
+        );
+        let update = TranscriptUpdate {
+            text,
+            confidence: Some(confidence),
+            ..item.update
+        };
+        if let Err(error) = app.emit("transcript-update", &update) {
+            error!(
+                "Failed to emit language-repair transcript update: {}",
+                error
+            );
+        }
+    }
+}
+
 /// Transcribe an audio chunk with local Whisper.
-/// Returns: (text, confidence Option, is_partial)
 async fn transcribe_chunk_with_whisper<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
+    chunk_source: &str,
     _app: &AppHandle<R>,
-) -> std::result::Result<
-    (
-        String,
-        Option<f32>,
-        bool,
-        Option<VocabularyLearningCandidate>,
-    ),
-    TranscriptionError,
-> {
+) -> std::result::Result<ChunkTranscription, TranscriptionError> {
     // Convert to 16kHz mono for transcription. Propagate failures instead of
     // silently feeding wrong-rate audio to the model, which would otherwise be
     // transcribed at the wrong speed and produce garbage.
@@ -740,13 +909,23 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
     let language = crate::get_language_preference_internal();
     let speech_samples = Arc::new(speech_samples);
     match engine
-        .transcribe_audio_with_learning_context(Arc::clone(&speech_samples), language.clone())
+        .transcribe_audio_with_learning_context(
+            Arc::clone(&speech_samples),
+            language.clone(),
+            chunk_source,
+        )
         .await
     {
         Ok((text, confidence, is_partial, learning_prompt)) => {
             let cleaned_text = text.trim().to_string();
             if cleaned_text.is_empty() {
-                return Ok((String::new(), Some(confidence), is_partial, None));
+                return Ok(ChunkTranscription {
+                    text: String::new(),
+                    confidence: Some(confidence),
+                    is_partial,
+                    learning_candidate: None,
+                    samples_16k: speech_samples,
+                });
             }
 
             let learning_candidate = (0.45..=0.85)
@@ -790,12 +969,13 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
                 confidence,
                 is_partial
             );
-            Ok((
-                cleaned_text,
-                Some(confidence),
+            Ok(ChunkTranscription {
+                text: cleaned_text,
+                confidence: Some(confidence),
                 is_partial,
                 learning_candidate,
-            ))
+                samples_16k: speech_samples,
+            })
         }
         Err(error) => {
             error!(
