@@ -1,6 +1,7 @@
 <script lang="ts">
+	import type { Component } from 'svelte';
 	import { fly, slide } from 'svelte/transition';
-	import { Trash2 } from '@lucide/svelte';
+	import { Box, CircleCheck, Gauge, HardDrive, Target, Trash2 } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -17,7 +18,7 @@
 
 	interface Props {
 		title: string;
-		icon?: string;
+		icon?: Component;
 		tagline?: string;
 		sizeLabel?: string;
 		accuracyLabel?: string;
@@ -38,7 +39,7 @@
 
 	let {
 		title,
-		icon = '📦',
+		icon: Icon = Box,
 		tagline,
 		sizeLabel,
 		accuracyLabel,
@@ -70,9 +71,9 @@
 		onclick={() => isAvailable && onSelect()}
 		onkeydown={(e) => e.key === 'Enter' && isAvailable && onSelect()}
 		class={cn(
-			'relative gap-0 overflow-visible border-2 p-3 transition-[border-color,background-color,box-shadow]',
+			'relative gap-0 overflow-visible p-4 transition-[border-color,background-color,box-shadow]',
 			isSelected && isAvailable
-				? 'border-brand bg-brand/5'
+				? 'border-brand bg-brand/8 shadow-[inset_0_0_0_1px_var(--brand)]'
 				: isAvailable
 					? 'cursor-pointer hover:border-muted-foreground/40'
 					: 'cursor-default bg-secondary/50',
@@ -83,36 +84,61 @@
 		{/if}
 
 		<div class="flex items-start justify-between gap-4">
-			<div class="min-w-0 flex-1">
-				<div class="mb-2 flex flex-wrap items-center gap-2">
-					<span class="text-2xl">{icon}</span>
-					<h3 class="font-semibold">{title}</h3>
+			<div class="flex min-w-0 flex-1 items-start gap-3">
+				<div
+					class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"
+				>
+					<Icon class="size-4" />
+				</div>
+				<div class="min-w-0 flex-1">
+					<div class="flex flex-wrap items-center gap-2">
+						<h3 class="font-semibold text-foreground">{title}</h3>
+						{#if perfBadge}
+							<Badge class={perfBadge.class}>{perfBadge.label}</Badge>
+						{/if}
+					</div>
 					{#if tagline}
-						<span class="text-sm text-muted-foreground">•</span>
-						<span class="text-sm text-muted-foreground">{tagline}</span>
+						<p class="mt-1 text-pretty text-sm text-muted-foreground">{tagline}</p>
 					{/if}
-					{#if perfBadge}
-						<Badge class={perfBadge.class}>{perfBadge.label}</Badge>
+					{#if sizeLabel || accuracyLabel || speedLabel}
+						<div
+							class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground"
+						>
+							{#if sizeLabel}
+								<span class="flex items-center gap-1.5 tabular-nums"
+									><HardDrive class="size-3.5" /> {sizeLabel}</span
+								>
+							{/if}
+							{#if accuracyLabel}
+								<span class="flex items-center gap-1.5"
+									><Target class="size-3.5" /> {accuracyLabel}</span
+								>
+							{/if}
+							{#if speedLabel}
+								<span class="flex items-center gap-1.5"
+									><Gauge class="size-3.5" /> {speedLabel}</span
+								>
+							{/if}
+						</div>
 					{/if}
 				</div>
-				{#if sizeLabel || accuracyLabel || speedLabel}
-					<div class="ml-9 mt-1.5 flex items-center gap-4 text-sm text-muted-foreground">
-						{#if sizeLabel}<span>📦 {sizeLabel}</span>{/if}
-						{#if accuracyLabel}<span>🎯 {accuracyLabel}</span>{/if}
-						{#if speedLabel}<span>⚡ {speedLabel}</span>{/if}
-					</div>
-				{/if}
 			</div>
 
 			<div class="flex items-center gap-2">
 				{#if isDownloading}
 					<!-- Progress + cancel render below the row. -->
 				{:else if isAvailable}
-					{#if onDelete}
-						<div class="flex items-center gap-1.5 text-success">
-							<div class="size-2 rounded-full bg-success"></div>
+					{#if isSelected}
+						<Badge class="shrink-0 bg-brand text-brand-foreground">
+							<CircleCheck /> Selected
+						</Badge>
+					{:else}
+						<div class="flex shrink-0 items-center gap-1.5 text-success">
+							<CircleCheck class="size-3.5" />
 							<span class="text-xs font-medium">Ready</span>
 						</div>
+					{/if}
+					{#if onDelete}
 						{#if isHovered}
 							<div in:fly={{ duration: 150 }}>
 								<Tooltip.Provider delayDuration={300}>

@@ -18,10 +18,10 @@
 	import { fly } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { AudioWaveform, Box, Gauge, WandSparkles } from '@lucide/svelte';
 
 	import {
 		formatFileSize,
-		getModelIcon,
 		getModelPerformanceBadge,
 		getModelTagline,
 		isQuantizedModel,
@@ -64,21 +64,21 @@
 		{
 			modelName: recommendedModel,
 			title: 'Automatic',
-			icon: '✨',
+			icon: WandSparkles,
 			tagline: 'Best balance for this computer',
 			recommended: true,
 		},
 		{
 			modelName: fasterModel,
 			title: 'Faster',
-			icon: '⚡',
+			icon: Gauge,
 			tagline: 'Lower memory use and quicker results',
 			recommended: false,
 		},
 		{
 			modelName: 'large-v3-q5_0',
 			title: 'Highest quality',
-			icon: '🎯',
+			icon: AudioWaveform,
 			tagline: 'Best for difficult audio and important meetings',
 			recommended: false,
 		},
@@ -222,17 +222,13 @@
 			push(
 				await listen<{ modelName: string }>('model-download-complete', (event) => {
 					const { modelName } = event.payload;
-					const model = models.find((m) => m.name === modelName);
 					setModelStatus(modelName, 'Available');
 					downloadingModels.delete(modelName);
 					progressThrottle.delete(modelName);
-					toast.success(
-						`${getModelIcon(model?.accuracy ?? 'Good')} ${modelDisplayName(modelName)} ready!`,
-						{
-							description: 'Model downloaded and ready to use',
-							duration: 4000,
-						},
-					);
+					toast.success(`${modelDisplayName(modelName)} ready`, {
+						description: 'Model downloaded and ready to use',
+						duration: 4000,
+					});
 					onModelSelect?.(modelName);
 					if (autoSave) void saveModelSelection(modelName);
 				}),
@@ -274,7 +270,7 @@
 		const { status, downloadProgress } = normalizeModelStatus(model.status);
 		return {
 			title: profile?.title ?? whisperDisplayName(model.name),
-			icon: profile?.icon ?? getModelIcon(model.accuracy),
+			icon: profile?.icon ?? Box,
 			tagline: profile?.tagline ?? getModelTagline(model.name, model.speed, model.accuracy),
 			sizeLabel: formatFileSize(model.size_mb),
 			accuracyLabel: `${model.accuracy} accuracy`,

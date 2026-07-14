@@ -1,18 +1,13 @@
 <script lang="ts">
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { BadgeAlert, Download, RefreshCw, Trash2 } from '@lucide/svelte';
+	import { BrainCircuit, RefreshCw } from '@lucide/svelte';
 	import { onMount } from 'svelte';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 
 	import * as Alert from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { Button } from '$lib/components/ui/button';
-	import { Progress } from '$lib/components/ui/progress';
-	import { Separator } from '$lib/components/ui/separator';
-	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { toast } from '$lib/toast';
-	import { cn } from '$lib/utils';
+	import ModelCard from './ModelCard.svelte';
 
 	interface ModelInfo {
 		name: string;
@@ -53,6 +48,25 @@
 		if (tokens < 1024) return `${tokens}`;
 		const k = tokens / 1024;
 		return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
+	}
+
+	function modelStatus(model: ModelInfo): 'available' | 'missing' | 'error' | 'corrupted' {
+		switch (model.status.type) {
+			case 'available':
+				return 'available';
+			case 'corrupted':
+				return 'corrupted';
+			case 'error':
+				return 'error';
+			default:
+				return 'missing';
+		}
+	}
+
+	function progressLabel(model: ModelInfo, info?: DownloadProgressInfo): string {
+		if (!info || info.totalMb <= 0) return `${model.size_mb} MB`;
+		const transferred = `${info.downloadedMb.toFixed(1)} MB / ${info.totalMb.toFixed(1)} MB`;
+		return info.speedMbps > 0 ? `${transferred} · ${info.speedMbps.toFixed(1)} MB/s` : transferred;
 	}
 
 	async function fetchModels(): Promise<void> {
@@ -166,7 +180,7 @@
 {#if isLoading && downloadingModels.size === 0}
 	<div class="py-8 text-center text-muted-foreground">
 		<RefreshCw class="mx-auto mb-2 size-8 animate-spin" />
-		Loading models...
+		Loading models…
 	</div>
 {:else if hasFetched && models.length === 0}
 	<Alert.Root>
@@ -175,168 +189,37 @@
 		</Alert.Description>
 	</Alert.Root>
 {:else}
-	<div>
-		<div class="mb-4 flex items-center justify-between">
-			<h4 class="text-sm font-bold">Built-in AI Models</h4>
+	<div class="flex flex-col gap-3">
+		<div>
+			<h4 class="font-medium">Built-in models</h4>
+			<p class="text-pretty text-sm text-muted-foreground">
+				Private, on-device models for summaries and chat. Larger context can handle longer meetings.
+			</p>
 		</div>
 
-		<div class="grid gap-4">
+		<div class="grid gap-3">
 			{#each models as model (model.name)}
 				{@const progress = downloadProgress.get(model.name)}
 				{@const progressInfo = downloadProgressInfo.get(model.name)}
 				{@const modelIsDownloading = downloadingModels.has(model.name)}
-				{@const isAvailable = model.status.type === 'available'}
-				{@const isNotDownloaded = model.status.type === 'not_downloaded'}
-				{@const isCorrupted = model.status.type === 'corrupted'}
-				{@const isError = model.status.type === 'error'}
-				<div
-					role="button"
-					tabindex="0"
-					onclick={() => isAvailable && !modelIsDownloading && onModelSelect(model.name)}
-					onkeydown={(e) =>
-						e.key === 'Enter' && isAvailable && !modelIsDownloading && onModelSelect(model.name)}
-					class={cn(
-						'rounded-lg border p-4 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-						selectedModel === model.name
-							? 'border-brand ring-1 ring-inset ring-brand'
-							: 'border-border hover:border-muted-foreground/40',
-						isAvailable && !modelIsDownloading ? 'cursor-pointer bg-card' : 'bg-card',
-					)}
-				>
-					<div class="flex items-start justify-between">
-						<div class="flex-1">
-							<div class="mb-1 flex items-center gap-2">
-								<span class="text-base font-bold">{model.display_name || model.name}</span>
-								{#if isAvailable}
-									<span class="flex items-center gap-1 text-xs font-medium text-success">
-										<span class="size-2 rounded-full bg-success"></span> Ready
-									</span>
-									{#if selectedModel === model.name}
-										<Badge class="bg-brand/15 text-brand">Selected</Badge>
-									{/if}
-								{:else if isCorrupted}
-									<Badge variant="destructive">
-										<BadgeAlert /> Corrupted
-									</Badge>
-								{:else if isError}
-									<Badge variant="destructive">Error</Badge>
-								{:else if isNotDownloaded && !modelIsDownloading}
-									<span class="text-xs font-medium text-muted-foreground">Not Downloaded</span>
-								{/if}
-							</div>
-							<div class="text-sm text-muted-foreground">
-								{#if model.description}<p class="mb-1">{model.description}</p>{/if}
-								<div class="text-xs text-muted-foreground/80">
-									{model.size_mb}MB • {formatContext(model.context_size)} context
-								</div>
-							</div>
-						</div>
-
-						<div class="ml-4 flex items-center gap-2">
-							{#if isNotDownloaded && !modelIsDownloading}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={(e) => {
-										e.stopPropagation();
-										downloadModel(model.name);
-									}}
-								>
-									<Download data-icon="inline-start" /> Download
-								</Button>
-							{:else if modelIsDownloading}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={(e) => {
-										e.stopPropagation();
-										cancelDownload(model.name);
-									}}
-								>
-									Cancel
-								</Button>
-							{:else if isError}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={(e) => {
-										e.stopPropagation();
-										downloadModel(model.name);
-									}}
-								>
-									<RefreshCw data-icon="inline-start" /> Retry
-								</Button>
-							{:else if isCorrupted}
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={(e) => {
-										e.stopPropagation();
-										downloadModel(model.name);
-									}}
-								>
-									<RefreshCw data-icon="inline-start" /> Retry
-								</Button>
-								<Button
-									variant="outline"
-									size="sm"
-									onclick={(e) => {
-										e.stopPropagation();
-										deleteModel(model.name);
-									}}
-								>
-									<Trash2 data-icon="inline-start" /> Delete
-								</Button>
-							{:else if isAvailable && selectedModel !== model.name}
-								<Tooltip.Provider delayDuration={300}>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon-sm"
-													class="text-muted-foreground hover:text-destructive"
-													onclick={(e) => {
-														e.stopPropagation();
-														deleteModel(model.name);
-													}}
-													aria-label="Delete model"
-												>
-													<Trash2 />
-												</Button>
-											{/snippet}
-										</Tooltip.Trigger>
-										<Tooltip.Content>Delete model</Tooltip.Content>
-									</Tooltip.Root>
-								</Tooltip.Provider>
-							{/if}
-						</div>
-					</div>
-
-					{#if modelIsDownloading && progress !== undefined}
-						<div class="mt-3">
-							<Separator class="mb-3" />
-							<div class="mb-1 flex items-center justify-between">
-								<span class="text-sm font-medium">Downloading...</span>
-								<span class="text-sm font-semibold">{Math.round(progress)}%</span>
-							</div>
-							<div class="mb-2 text-sm text-muted-foreground">
-								{#if progressInfo && progressInfo.totalMb > 0}
-									{progressInfo.downloadedMb.toFixed(1)} MB / {progressInfo.totalMb.toFixed(1)} MB
-									{#if progressInfo.speedMbps > 0}
-										<span class="ml-2 text-muted-foreground/70"
-											>({progressInfo.speedMbps.toFixed(1)} MB/s)</span
-										>
-									{/if}
-								{:else}
-									{model.size_mb} MB
-								{/if}
-							</div>
-							<Progress value={progress} class="h-2.5" />
-						</div>
-					{/if}
-				</div>
+				<ModelCard
+					title={model.display_name || model.name}
+					icon={BrainCircuit}
+					tagline={model.description}
+					sizeLabel={`${model.size_mb} MB`}
+					perfBadge={{
+						label: `${formatContext(model.context_size)} context`,
+						class: 'bg-secondary text-muted-foreground',
+					}}
+					isSelected={selectedModel === model.name}
+					status={modelStatus(model)}
+					downloadProgress={modelIsDownloading ? (progress ?? 0) : null}
+					progressLabel={modelIsDownloading ? progressLabel(model, progressInfo) : undefined}
+					onSelect={() => onModelSelect(model.name)}
+					onDownload={() => downloadModel(model.name)}
+					onCancel={() => cancelDownload(model.name)}
+					onDelete={selectedModel === model.name ? undefined : () => deleteModel(model.name)}
+				/>
 			{/each}
 		</div>
 	</div>
