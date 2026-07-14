@@ -41,7 +41,15 @@ class ChatStore {
 
 	/** The meeting the chat is about: the live recording, else the opened saved meeting. */
 	get meetingId(): string | null {
-		return transcripts.currentMeetingId ?? sidebar.currentMeeting?.id ?? null;
+		const liveStatus =
+			recordingState.isRecording ||
+			recordingState.status === RecordingStatus.STARTING ||
+			recordingState.status === RecordingStatus.RECORDING ||
+			recordingState.status === RecordingStatus.STOPPING ||
+			recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS ||
+			recordingState.status === RecordingStatus.SAVING;
+		if (liveStatus && transcripts.currentMeetingId) return transcripts.currentMeetingId;
+		return sidebar.currentMeeting?.id ?? transcripts.currentMeetingId ?? null;
 	}
 
 	async send(text?: string, execution?: BarExecution): Promise<void> {

@@ -17,8 +17,13 @@
 	let loading = $state(false);
 
 	$effect(() => {
-		if (live || !meetingId) return;
+		if (live || !meetingId) {
+			savedTranscripts = [];
+			loading = false;
+			return;
+		}
 		const id = meetingId;
+		savedTranscripts = [];
 		loading = true;
 		void invoke<{ transcripts: Transcript[] }>('api_get_meeting_transcripts', {
 			meetingId: id,

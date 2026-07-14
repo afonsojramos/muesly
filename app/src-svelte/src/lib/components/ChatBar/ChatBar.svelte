@@ -65,6 +65,9 @@
 		}));
 	});
 	const isLiveNote = $derived(page.url.pathname === '/note');
+	const transcriptMeetingId = $derived(
+		isLiveNote ? chat.meetingId : (page.url.searchParams.get('id') ?? chat.meetingId),
+	);
 	const transcriptPanelOpen = $derived(isLiveNote ? liveTranscriptPanel.open : sidePanelState.open);
 	const transcriptPanelLabel = 'transcript';
 	const showDraftStart = $derived(
@@ -269,7 +272,7 @@
 				class="transcript-dropup origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
-				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
+				<TranscriptDropup meetingId={transcriptMeetingId} live={isLiveNote} />
 			</Popover.Content>
 		</Popover.Root>
 
