@@ -42,6 +42,7 @@
 	let pendingAdditionalInstructions = '';
 	let recentThreads = $state<RecentChatThread[]>([]);
 	let isStoppingRecording = $state(false);
+	let isResumingRecording = $state(false);
 	const stopRequested = $derived(isStoppingRecording || recordingState.isStopping);
 	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
 	// expanded, so opening a meeting isn't dominated by the chat panel.
@@ -77,6 +78,16 @@
 			if (stopped) await emit('recording-stop-complete', true);
 		} finally {
 			isStoppingRecording = false;
+		}
+	}
+
+	async function resumeRecording(): Promise<void> {
+		if (isResumingRecording) return;
+		isResumingRecording = true;
+		try {
+			await recordingState.resume();
+		} finally {
+			isResumingRecording = false;
 		}
 	}
 
@@ -183,6 +194,7 @@
 						shortcut="⌘T"
 						pressed={transcriptPanelOpen}
 						overlayOpen={transcriptPanelOpen}
+						class="aria-expanded:bg-transparent dark:aria-expanded:bg-transparent"
 					>
 						<AudioLinesIndicator
 							active={recordingState.isRecording}
@@ -199,8 +211,9 @@
 				side="top"
 				sideOffset={8}
 				class="w-[min(42rem,calc(100vw-3rem))] p-0"
+				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
-				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
+				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} onResume={resumeRecording} />
 			</Popover.Content>
 		</Popover.Root>
 

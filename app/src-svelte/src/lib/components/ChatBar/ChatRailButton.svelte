@@ -4,6 +4,7 @@
 
 	import { Button, type ButtonProps } from '$lib/components/ui/button';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import { cn } from '$lib/utils';
 
 	interface Props {
 		children: Snippet;
@@ -16,6 +17,7 @@
 		onclick?: ButtonProps['onclick'];
 		/** Props supplied by a Popover/Dialog trigger. */
 		triggerProps?: Record<string, unknown>;
+		class?: string;
 	}
 
 	let {
@@ -28,6 +30,7 @@
 		overlayOpen = false,
 		onclick,
 		triggerProps = {},
+		class: className,
 	}: Props = $props();
 
 	let tooltipOpen = $state(false);
@@ -51,7 +54,7 @@
 					})}
 					variant="ghost"
 					size="icon"
-					class="group shrink-0 rounded-full text-muted-foreground"
+					class={cn('group shrink-0 rounded-full text-muted-foreground', className)}
 					{disabled}
 					aria-label={ariaLabel}
 					aria-pressed={pressed}
