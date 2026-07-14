@@ -3,7 +3,7 @@ use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::devices::{list_audio_devices, AudioDevice};
+use super::devices::{AudioDevice, list_audio_devices};
 
 #[cfg(target_os = "macos")]
 use super::devices::get_safe_recording_devices_macos;
@@ -135,11 +135,14 @@ impl RecordingManager {
 
         // Start device monitoring to detect disconnects
         if let Some(ref mut monitor) = self.device_monitor {
-            if let Err(e) = monitor.start_monitoring(microphone_device, system_device) {
-                warn!("Failed to start device monitoring: {}", e);
-                // Non-fatal - continue without monitoring
-            } else {
-                info!("✅ Device monitoring started");
+            match monitor.start_monitoring(microphone_device, system_device) {
+                Err(e) => {
+                    warn!("Failed to start device monitoring: {}", e);
+                    // Non-fatal - continue without monitoring
+                }
+                _ => {
+                    info!("✅ Device monitoring started");
+                }
             }
         }
 
@@ -183,7 +186,9 @@ impl RecordingManager {
     ) -> Result<mpsc::UnboundedReceiver<AudioChunk>> {
         #[cfg(target_os = "macos")]
         {
-            info!("🎙️ [macOS] Starting recording with smart device selection (Bluetooth override enabled)");
+            info!(
+                "🎙️ [macOS] Starting recording with smart device selection (Bluetooth override enabled)"
+            );
 
             // Get safe recording devices with automatic Bluetooth fallback
             // This function handles all the detection and override logic for macOS

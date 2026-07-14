@@ -162,7 +162,10 @@ pub async fn get_or_init_whisper<R: Runtime>(
                 info!("Using model from API config: {}", config.model);
                 config.model
             } else {
-                warn!("Ignoring obsolete transcription provider '{}'; using the recommended Whisper model", config.provider);
+                warn!(
+                    "Ignoring obsolete transcription provider '{}'; using the recommended Whisper model",
+                    config.provider
+                );
                 crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
                     .to_string()
             }
@@ -212,33 +215,40 @@ pub async fn get_or_init_whisper<R: Runtime>(
     }
 
     match model_info {
-        Some(model) => {
-            match model.status {
-                crate::whisper_engine::ModelStatus::Available => {
-                    info!("Loading model: {}", model_to_load);
-                    engine
-                        .load_model(&model_to_load)
-                        .await
-                        .map_err(|e| format!("Failed to load model '{}': {}", model_to_load, e))?;
-                    info!("✅ Model '{}' loaded successfully", model_to_load);
-                }
-                crate::whisper_engine::ModelStatus::Missing => {
-                    return Err(format!(
-                        "Model '{}' is not downloaded. Please download it first from the settings.",
-                        model_to_load
-                    ));
-                }
-                crate::whisper_engine::ModelStatus::Downloading { progress } => {
-                    return Err(format!("Model '{}' is currently downloading ({}%). Please wait for it to complete.", model_to_load, progress));
-                }
-                crate::whisper_engine::ModelStatus::Error(ref err) => {
-                    return Err(format!("Model '{}' has an error: {}. Please check the model or try downloading it again.", model_to_load, err));
-                }
-                crate::whisper_engine::ModelStatus::Corrupted { .. } => {
-                    return Err(format!("Model '{}' is corrupted. Please delete it and download again from the settings.", model_to_load));
-                }
+        Some(model) => match model.status {
+            crate::whisper_engine::ModelStatus::Available => {
+                info!("Loading model: {}", model_to_load);
+                engine
+                    .load_model(&model_to_load)
+                    .await
+                    .map_err(|e| format!("Failed to load model '{}': {}", model_to_load, e))?;
+                info!("✅ Model '{}' loaded successfully", model_to_load);
             }
-        }
+            crate::whisper_engine::ModelStatus::Missing => {
+                return Err(format!(
+                    "Model '{}' is not downloaded. Please download it first from the settings.",
+                    model_to_load
+                ));
+            }
+            crate::whisper_engine::ModelStatus::Downloading { progress } => {
+                return Err(format!(
+                    "Model '{}' is currently downloading ({}%). Please wait for it to complete.",
+                    model_to_load, progress
+                ));
+            }
+            crate::whisper_engine::ModelStatus::Error(ref err) => {
+                return Err(format!(
+                    "Model '{}' has an error: {}. Please check the model or try downloading it again.",
+                    model_to_load, err
+                ));
+            }
+            crate::whisper_engine::ModelStatus::Corrupted { .. } => {
+                return Err(format!(
+                    "Model '{}' is corrupted. Please delete it and download again from the settings.",
+                    model_to_load
+                ));
+            }
+        },
         None => {
             // Check if we have any available models and try to load the first one
             let available_models: Vec<_> = models
@@ -262,7 +272,10 @@ pub async fn get_or_init_whisper<R: Runtime>(
                     fallback_model.name
                 );
             } else {
-                return Err(format!("Model '{}' is not supported and no other models are available. Please download a model from the settings.", model_to_load));
+                return Err(format!(
+                    "Model '{}' is not supported and no other models are available. Please download a model from the settings.",
+                    model_to_load
+                ));
             }
         }
     }

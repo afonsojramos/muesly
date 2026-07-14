@@ -1,7 +1,7 @@
 //! Tauri commands for the calendar feature. All boundary errors are `String`.
 //! Any user action is exposed here (agent-reachable), not UI-only.
 
-use crate::calendar::{eventkit, google, permissions, service, CalendarAuthStatus, CalendarInfo};
+use crate::calendar::{CalendarAuthStatus, CalendarInfo, eventkit, google, permissions, service};
 use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;

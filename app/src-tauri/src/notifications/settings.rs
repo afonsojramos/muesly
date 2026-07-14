@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use dirs;
 use log::info as log_info;
 use serde::{Deserialize, Serialize};

@@ -45,7 +45,7 @@ pub mod utils;
 pub mod vocabulary;
 pub mod whisper_engine;
 
-use audio::{list_audio_devices, trigger_audio_permission, AudioDevice};
+use audio::{AudioDevice, list_audio_devices, trigger_audio_permission};
 use log::{error as log_error, info as log_info, warn as log_warn};
 use notifications::commands::NotificationManagerState;
 use std::sync::Arc;
@@ -108,16 +108,19 @@ async fn start_recording<R: Runtime>(
             // Show recording started notification through NotificationManager
             // This respects user's notification preferences
             let notification_manager_state = app.state::<NotificationManagerState<R>>();
-            if let Err(e) = notifications::commands::show_recording_started_notification(
+            match notifications::commands::show_recording_started_notification(
                 &app,
                 &notification_manager_state,
                 meeting_name.clone(),
             )
             .await
             {
-                log_error!("Failed to show recording started notification: {}", e);
-            } else {
-                log_info!("Successfully showed recording started notification");
+                Err(e) => {
+                    log_error!("Failed to show recording started notification: {}", e);
+                }
+                _ => {
+                    log_info!("Successfully showed recording started notification");
+                }
             }
 
             Ok(())
@@ -167,15 +170,18 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
             // Show recording stopped notification through NotificationManager
             // This respects user's notification preferences
             let notification_manager_state = app.state::<NotificationManagerState<R>>();
-            if let Err(e) = notifications::commands::show_recording_stopped_notification(
+            match notifications::commands::show_recording_stopped_notification(
                 &app,
                 &notification_manager_state,
             )
             .await
             {
-                log_error!("Failed to show recording stopped notification: {}", e);
-            } else {
-                log_info!("Successfully showed recording stopped notification");
+                Err(e) => {
+                    log_error!("Failed to show recording stopped notification: {}", e);
+                }
+                _ => {
+                    log_info!("Successfully showed recording stopped notification");
+                }
             }
 
             Ok(())
@@ -522,8 +528,12 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
     system_device_name: Option<String>,
     meeting_name: Option<String>,
 ) -> Result<(), String> {
-    log_info!("🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
-             mic_device_name, system_device_name, meeting_name);
+    log_info!(
+        "🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
+        mic_device_name,
+        system_device_name,
+        meeting_name
+    );
 
     // System Audio Recording permission check (macOS 14.4+): without it the
     // Core Audio tap silently records zeros, so warn the user up front rather
@@ -534,7 +544,7 @@ async fn start_recording_with_devices_and_meeting<R: Runtime>(
     // authorized, and a false warning for every recording would be worse.
     #[cfg(target_os = "macos")]
     {
-        use audio::permissions::{system_audio_permission_status, SystemAudioPermission};
+        use audio::permissions::{SystemAudioPermission, system_audio_permission_status};
         let status = tokio::task::spawn_blocking(system_audio_permission_status)
             .await
             .unwrap_or(SystemAudioPermission::Unknown);
@@ -967,7 +977,7 @@ async fn set_dictation_shortcut_enabled<R: Runtime>(
 /// invoke handler and the generated TypeScript bindings. Generic `R: Runtime`
 /// commands are monomorphized to `tauri::Wry` here.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
-    use tauri_specta::{collect_commands, Builder};
+    use tauri_specta::{Builder, collect_commands};
     Builder::<tauri::Wry>::new().commands(collect_commands![
         start_recording::<tauri::Wry>,
         stop_recording::<tauri::Wry>,
@@ -1533,13 +1543,13 @@ pub fn run() {
 
             // Initialize bundled templates directory for dynamic template discovery
             log::info!("Initializing bundled templates directory...");
-            if let Ok(resource_path) = _app.handle().path().resource_dir() {
+            match _app.handle().path().resource_dir() { Ok(resource_path) => {
                 let templates_dir = resource_path.join("templates");
                 log::info!("Setting bundled templates directory to: {:?}", templates_dir);
                 summary::templates::set_bundled_templates_dir(templates_dir);
-            } else {
+            } _ => {
                 log::warn!("Failed to resolve resource directory for templates");
-            }
+            }}
 
             Ok(())
         })
@@ -1560,11 +1570,11 @@ pub fn run() {
                 match window.label() {
                     "main" => {
                         api.prevent_close();
-                        if let Err(e) = window.hide() {
+                        match window.hide() { Err(e) => {
                             log::error!("Failed to hide main window on close request: {}", e);
-                        } else {
+                        } _ => {
                             log::info!("Main window hidden to tray on close request");
-                        }
+                        }}
                     }
                     // Never destroy the pre-warmed pill: a stray Cmd+W must hide
                     // it, otherwise `pill_window::show` would no-op forever.
@@ -1593,11 +1603,11 @@ pub fn run() {
                         // Clean up database connection and checkpoint WAL
                         if let Some(app_state) = _app_handle.try_state::<state::AppState>() {
                             log::info!("Starting database cleanup...");
-                            if let Err(e) = app_state.db_manager.cleanup().await {
+                            match app_state.db_manager.cleanup().await { Err(e) => {
                                 log::error!("Failed to cleanup database: {}", e);
-                            } else {
+                            } _ => {
                                 log::info!("Database cleanup completed successfully");
-                            }
+                            }}
                         } else {
                             log::warn!("AppState not available for database cleanup (likely first launch)");
                         }

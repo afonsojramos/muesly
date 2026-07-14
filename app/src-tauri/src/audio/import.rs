@@ -5,12 +5,12 @@ use crate::audio::decoder::{decode_audio_file, decode_audio_file_with_progress};
 use crate::audio::vad::get_speech_chunks_with_progress;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
@@ -485,8 +485,11 @@ async fn run_import<R: Runtime>(
             .fold(f64::NEG_INFINITY, f64::max);
         info!(
             "VAD segment stats: avg={:.0}ms, min={:.0}ms, max={:.0}ms, total_speech={:.1}s/{:.1}s ({:.0}%)",
-            avg_duration, min_duration, max_duration,
-            total_speech_ms / 1000.0, duration_seconds,
+            avg_duration,
+            min_duration,
+            max_duration,
+            total_speech_ms / 1000.0,
+            duration_seconds,
             (total_speech_ms / 1000.0 / duration_seconds) * 100.0
         );
         // Log first 10 segments for detailed inspection
@@ -1067,10 +1070,12 @@ mod tests {
 
         let result = validate_audio_file(&temp_file);
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Unsupported format"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Unsupported format")
+        );
 
         // Cleanup
         let _ = std::fs::remove_file(temp_file);
@@ -1284,7 +1289,9 @@ mod tests {
 
                 println!(
                     "Stats: avg={:.0}ms, min={:.0}ms, max={:.0}ms, total_speech={:.1}s/{:.1}s ({:.0}%)",
-                    avg, min, max,
+                    avg,
+                    min,
+                    max,
                     total_speech / 1000.0,
                     decoded.duration_seconds,
                     (total_speech / 1000.0 / decoded.duration_seconds) * 100.0

@@ -4,8 +4,8 @@ use anyhow::Result;
 use futures_util::Stream;
 use log::{error, info, warn};
 use ringbuf::{
-    traits::{Consumer, Producer, Split},
     HeapCons, HeapProd, HeapRb,
+    traits::{Consumer, Producer, Split},
 };
 #[cfg(target_os = "macos")]
 use std::pin::Pin;
@@ -185,23 +185,29 @@ impl CoreAudioCapture {
             }
 
             // Try to get audio data from the buffer list
-            if let Some(view) =
-                av::AudioPcmBuf::with_buf_list_no_copy(&ctx.format, input_data, None)
-            {
-                if let Some(data) = view.data_f32_at(0) {
-                    process_audio_data(ctx, data);
+            match av::AudioPcmBuf::with_buf_list_no_copy(&ctx.format, input_data, None) {
+                Some(view) => {
+                    if let Some(data) = view.data_f32_at(0) {
+                        process_audio_data(ctx, data);
+                    }
                 }
-            } else if ctx.format.common_format() == av::audio::CommonFormat::PcmF32 {
-                // Fallback: manual extraction if AudioPcmBuf fails
-                let first_buffer = &input_data.buffers[0];
-                let byte_count = first_buffer.data_bytes_size as usize;
-                let float_count = byte_count / std::mem::size_of::<f32>();
+                _ => {
+                    if ctx.format.common_format() == av::audio::CommonFormat::PcmF32 {
+                        // Fallback: manual extraction if AudioPcmBuf fails
+                        let first_buffer = &input_data.buffers[0];
+                        let byte_count = first_buffer.data_bytes_size as usize;
+                        let float_count = byte_count / std::mem::size_of::<f32>();
 
-                if float_count > 0 && first_buffer.data != std::ptr::null_mut() {
-                    let data = unsafe {
-                        std::slice::from_raw_parts(first_buffer.data as *const f32, float_count)
-                    };
-                    process_audio_data(ctx, data);
+                        if float_count > 0 && first_buffer.data != std::ptr::null_mut() {
+                            let data = unsafe {
+                                std::slice::from_raw_parts(
+                                    first_buffer.data as *const f32,
+                                    float_count,
+                                )
+                            };
+                            process_audio_data(ctx, data);
+                        }
+                    }
                 }
             }
 

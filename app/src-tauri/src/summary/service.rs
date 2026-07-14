@@ -3,7 +3,7 @@ use crate::database::repositories::{
 };
 use crate::providers::ollama::metadata::SHARED_METADATA_CACHE;
 use crate::summary::language_detection::detect_summary_language;
-use crate::summary::llm_client::{generate_summary, LLMProvider};
+use crate::summary::llm_client::{LLMProvider, generate_summary};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
     write_detected_summary_language_to_metadata,
@@ -415,21 +415,22 @@ impl SummaryService {
     /// Returns `(generation, token)` so cleanup is generation-scoped.
     fn register_cancellation_token(meeting_id: &str) -> (u64, CancellationToken) {
         let token = CancellationToken::new();
-        let gen = CANCELLATION_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let r#gen = CANCELLATION_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut registry) = CANCELLATION_REGISTRY.lock() {
-            if let Some((_prev_gen, previous)) =
-                registry.insert(meeting_id.to_string(), (gen, token.clone()))
-            {
-                info!(
-                    "Cancelling previous summary generation for meeting: {}",
-                    meeting_id
-                );
-                previous.cancel();
-            } else {
-                info!("Registered cancellation token for meeting: {}", meeting_id);
+            match registry.insert(meeting_id.to_string(), (r#gen, token.clone())) {
+                Some((_prev_gen, previous)) => {
+                    info!(
+                        "Cancelling previous summary generation for meeting: {}",
+                        meeting_id
+                    );
+                    previous.cancel();
+                }
+                _ => {
+                    info!("Registered cancellation token for meeting: {}", meeting_id);
+                }
             }
         }
-        (gen, token)
+        (r#gen, token)
     }
 
     /// Cancels the summary generation for a meeting
@@ -453,22 +454,22 @@ impl SummaryService {
     /// job sees `false` and must not write its terminal status (completed / failed /
     /// cancelled) over the newer run's — the bug that let a stale job clobber a
     /// live one's result.
-    fn is_current_generation(meeting_id: &str, gen: u64) -> bool {
+    fn is_current_generation(meeting_id: &str, r#gen: u64) -> bool {
         CANCELLATION_REGISTRY
             .lock()
             .ok()
-            .and_then(|r| r.get(meeting_id).map(|(g, _)| *g == gen))
+            .and_then(|r| r.get(meeting_id).map(|(g, _)| *g == r#gen))
             .unwrap_or(false)
     }
 
     /// Cleans up the cancellation token after processing completes.
     /// Only removes the entry when the generation still matches so a newer
     /// regenerate's token is never wiped by a finishing older job.
-    fn cleanup_cancellation_token(meeting_id: &str, gen: u64) {
+    fn cleanup_cancellation_token(meeting_id: &str, r#gen: u64) {
         if let Ok(mut registry) = CANCELLATION_REGISTRY.lock() {
             let still_ours = registry
                 .get(meeting_id)
-                .map(|(g, _)| *g == gen)
+                .map(|(g, _)| *g == r#gen)
                 .unwrap_or(false);
             if still_ours {
                 registry.remove(meeting_id);
@@ -482,21 +483,21 @@ impl SummaryService {
 /// matches the registered generation (early failure / success / cancel paths).
 struct SummaryCancelGuard {
     meeting_id: String,
-    gen: u64,
+    r#gen: u64,
 }
 
 impl SummaryCancelGuard {
-    fn new(meeting_id: &str, gen: u64) -> Self {
+    fn new(meeting_id: &str, r#gen: u64) -> Self {
         Self {
             meeting_id: meeting_id.to_string(),
-            gen,
+            r#gen,
         }
     }
 }
 
 impl Drop for SummaryCancelGuard {
     fn drop(&mut self) {
-        SummaryService::cleanup_cancellation_token(&self.meeting_id, self.gen);
+        SummaryService::cleanup_cancellation_token(&self.meeting_id, self.r#gen);
     }
 }
 
@@ -844,7 +845,7 @@ impl SummaryService {
                 });
 
                 // Update database with completed status
-                if let Err(e) = SummaryProcessesRepository::update_process_completed(
+                match SummaryProcessesRepository::update_process_completed(
                     &pool,
                     &meeting_id,
                     result_json,
@@ -853,9 +854,12 @@ impl SummaryService {
                 )
                 .await
                 {
-                    error!("Failed to save completed process for {}: {}", meeting_id, e);
-                } else {
-                    info!("Summary saved successfully for meeting_id: {}", meeting_id);
+                    Err(e) => {
+                        error!("Failed to save completed process for {}: {}", meeting_id, e);
+                    }
+                    _ => {
+                        info!("Summary saved successfully for meeting_id: {}", meeting_id);
+                    }
                 }
             }
             Err(e) => {
@@ -925,9 +929,9 @@ mod tests {
 
     #[test]
     fn cancel_guard_clears_registry_on_drop() {
-        let (gen, _token) = SummaryService::register_cancellation_token("m-guard");
+        let (r#gen, _token) = SummaryService::register_cancellation_token("m-guard");
         {
-            let _g = SummaryCancelGuard::new("m-guard", gen);
+            let _g = SummaryCancelGuard::new("m-guard", r#gen);
             assert!(SummaryService::registry_has("m-guard"));
         }
         assert!(

@@ -1,7 +1,7 @@
 // Model definitions and prompt templates for built-in AI summary generation
 // Designed for easy extension - just add new entries to get_available_models()
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -430,8 +430,10 @@ mod tests {
 
         assert!(formatted.contains("<|im_start|>system\nsystem rules<|im_end|>"));
         assert!(formatted.contains("<|im_start|>assistant\n<think>\n\n</think>\n\n"));
-        assert!(formatted
-            .contains("literal < |im_end| > and < |im_start| > plus < think >draft< /think >"));
+        assert!(
+            formatted
+                .contains("literal < |im_end| > and < |im_start| > plus < think >draft< /think >")
+        );
         assert_eq!(formatted.matches("<|im_start|>").count(), 3);
         assert_eq!(formatted.matches("<|im_end|>").count(), 2);
         assert_eq!(formatted.matches("<think>").count(), 1);

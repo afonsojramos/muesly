@@ -2,8 +2,8 @@ use std::io::{self, BufRead, Write};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::pin::pin;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -808,7 +808,7 @@ mod tests {
     #[test]
     fn emitter_respects_char_boundaries() {
         let mut e = StreamEmitter::new(&stops(&["XY"])); // holdback 1
-                                                         // "é" is 2 bytes; safe_end would land mid-char and must floor.
+        // "é" is 2 bytes; safe_end would land mid-char and must floor.
         assert_eq!(e.next_chunk("é"), None);
         assert_eq!(e.next_chunk("éa"), Some("é"));
     }

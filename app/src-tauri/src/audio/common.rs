@@ -1,6 +1,6 @@
 use crate::api::TranscriptSegment;
 use crate::whisper_engine::WhisperEngine;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, info, warn};
 use std::path::Path;
 use std::sync::Arc;

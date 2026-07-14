@@ -22,10 +22,10 @@ use tracing::{info, warn};
 
 use crate::state::AppState;
 use crate::summary::chat::{
-    load_meeting_context, load_meeting_summary, register_cancellation, strip_leading_role_label,
-    CancelGuard, ChatTurn,
+    CancelGuard, ChatTurn, load_meeting_context, load_meeting_summary, register_cancellation,
+    strip_leading_role_label,
 };
-use crate::summary::llm_client::{generate_summary_streaming, LLMProvider};
+use crate::summary::llm_client::{LLMProvider, generate_summary_streaming};
 use crate::summary::service::SummaryService;
 use crate::summary::summary_engine;
 

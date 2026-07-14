@@ -2,7 +2,7 @@ use crate::config::WHISPER_MODEL_CATALOG;
 use crate::whisper_engine::{WhisperEngine, WhisperModelInfo};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{command, AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Emitter, Manager, Runtime, command};
 
 // Global whisper engine
 pub static WHISPER_ENGINE: Mutex<Option<Arc<WhisperEngine>>> = Mutex::new(None);
@@ -313,37 +313,42 @@ pub async fn whisper_validate_model_ready_with_config<R: tauri::Runtime>(
         }
 
         // No model loaded - try to load user's configured model from transcript config
-        let model_to_load =
-            match crate::api::api_get_transcript_config(app.clone(), app.state(), None).await {
-                Ok(Some(config)) => {
+        let model_to_load = match crate::api::api_get_transcript_config(
+            app.clone(),
+            app.state(),
+            None,
+        )
+        .await
+        {
+            Ok(Some(config)) => {
+                log::info!(
+                    "Got transcript config from API - provider: {}, model: {}",
+                    config.provider,
+                    config.model
+                );
+                if config.provider == "localWhisper" && !config.model.is_empty() {
+                    log::info!("Using user's configured model: {}", config.model);
+                    Some(config.model)
+                } else {
                     log::info!(
-                        "Got transcript config from API - provider: {}, model: {}",
-                        config.provider,
-                        config.model
-                    );
-                    if config.provider == "localWhisper" && !config.model.is_empty() {
-                        log::info!("Using user's configured model: {}", config.model);
-                        Some(config.model)
-                    } else {
-                        log::info!(
                         "API config uses non-local provider ({}) or empty model, will auto-select",
                         config.provider
                     );
-                        None
-                    }
-                }
-                Ok(None) => {
-                    log::info!("No transcript config found in API, will auto-select model");
                     None
                 }
-                Err(e) => {
-                    log::warn!(
-                        "Failed to get transcript config from API: {}, will auto-select model",
-                        e
-                    );
-                    None
-                }
-            };
+            }
+            Ok(None) => {
+                log::info!("No transcript config found in API, will auto-select model");
+                None
+            }
+            Err(e) => {
+                log::warn!(
+                    "Failed to get transcript config from API: {}, will auto-select model",
+                    e
+                );
+                None
+            }
+        };
 
         // Check available models
         let models = engine

@@ -158,10 +158,12 @@ mod tests {
         assert_eq!(rule.folder_id, work);
         assert!(!rule.applies_to_series);
         // A different occurrence of the same uid has no rule.
-        assert!(CalendarEventRulesRepository::rule_for(&pool, "uid-a", 200)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            CalendarEventRulesRepository::rule_for(&pool, "uid-a", 200)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -291,9 +293,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(CalendarEventRulesRepository::rule_for(&pool, "uid-a", 100)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            CalendarEventRulesRepository::rule_for(&pool, "uid-a", 100)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }

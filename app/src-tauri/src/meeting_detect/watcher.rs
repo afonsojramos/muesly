@@ -58,7 +58,7 @@ pub fn is_running() -> bool {
 
 #[cfg(target_os = "macos")]
 fn watch_loop<R: Runtime>(app: AppHandle<R>) {
-    use crate::meeting_detect::known::{match_meeting_app, DEFAULT_MEETING_APPS};
+    use crate::meeting_detect::known::{DEFAULT_MEETING_APPS, match_meeting_app};
 
     let mut last_bundle_id: Option<String> = None;
     while RUNNING.load(Ordering::SeqCst) {

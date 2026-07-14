@@ -7,8 +7,8 @@ use super::provider::TranscriptionError;
 use crate::audio::AudioChunk;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Runtime};
 
 // Sequence counter for transcript updates
@@ -160,7 +160,10 @@ pub fn start_transcription_task<R: Runtime>(
                         worker_id, current_model
                     );
                 } else {
-                    warn!("⚠️ Worker {} pre-validation: Whisper model not loaded - chunks may be skipped", worker_id);
+                    warn!(
+                        "⚠️ Worker {} pre-validation: Whisper model not loaded - chunks may be skipped",
+                        worker_id
+                    );
                 }
 
                 loop {
@@ -187,7 +190,10 @@ pub fn start_transcription_task<R: Runtime>(
 
                             // Check if model is still loaded before processing
                             if !engine_clone.is_model_loaded().await {
-                                warn!("⚠️ Worker {}: Whisper model unloaded; recovering before chunk {}", worker_id, chunk.chunk_id);
+                                warn!(
+                                    "⚠️ Worker {}: Whisper model unloaded; recovering before chunk {}",
+                                    worker_id, chunk.chunk_id
+                                );
                                 if let Err(error) = engine_clone.load_model(&current_model).await {
                                     error!(
                                         "Worker {} could not recover Whisper model '{}': {}",
@@ -222,7 +228,10 @@ pub fn start_transcription_task<R: Runtime>(
                                 &first_attempt,
                                 Err(TranscriptionError::EngineFailed(_))
                             ) {
-                                warn!("Worker {}: Whisper failed on chunk {}; reloading and retrying once", worker_id, chunk.chunk_id);
+                                warn!(
+                                    "Worker {}: Whisper failed on chunk {}; reloading and retrying once",
+                                    worker_id, chunk.chunk_id
+                                );
                                 engine_clone.unload_model().await;
                                 match engine_clone.load_model(&current_model).await {
                                     Ok(()) => {
@@ -255,8 +264,14 @@ pub fn start_transcription_task<R: Runtime>(
                                         None => "N/A".to_string(),
                                     };
 
-                                    info!("🔍 Worker {} transcription result: characters={}, confidence={}, partial={}, threshold={:.2}",
-                                          worker_id, transcript.chars().count(), confidence_str, is_partial, confidence_threshold);
+                                    info!(
+                                        "🔍 Worker {} transcription result: characters={}, confidence={}, partial={}, threshold={:.2}",
+                                        worker_id,
+                                        transcript.chars().count(),
+                                        confidence_str,
+                                        is_partial,
+                                        confidence_threshold
+                                    );
 
                                     // Check confidence threshold (or accept if no confidence provided)
                                     let meets_threshold =
@@ -324,25 +339,43 @@ pub fn start_transcription_task<R: Runtime>(
                                         }
 
                                         // PERFORMANCE: Only log transcription results, not every processing step
-                                        info!("✅ Worker {} transcribed {} characters (confidence: {}, partial: {})",
-                                              worker_id, transcript.chars().count(), confidence_str, is_partial);
+                                        info!(
+                                            "✅ Worker {} transcribed {} characters (confidence: {}, partial: {})",
+                                            worker_id,
+                                            transcript.chars().count(),
+                                            confidence_str,
+                                            is_partial
+                                        );
 
                                         // Emit speech-detected event for frontend UX (only on first detection per session)
                                         // This is lightweight and provides better user feedback
                                         let current_flag =
                                             SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst);
-                                        info!("🔍 Checking speech-detected flag: current={}, will_emit={}", current_flag, !current_flag);
+                                        info!(
+                                            "🔍 Checking speech-detected flag: current={}, will_emit={}",
+                                            current_flag, !current_flag
+                                        );
 
                                         if !current_flag {
                                             SPEECH_DETECTED_EMITTED.store(true, Ordering::SeqCst);
-                                            match app_clone.emit("speech-detected", serde_json::json!({
-                                                "message": "Speech activity detected"
-                                            })) {
-                                                Ok(_) => info!("🎤 ✅ First speech detected - successfully emitted speech-detected event"),
-                                                Err(e) => error!("🎤 ❌ Failed to emit speech-detected event: {}", e),
+                                            match app_clone.emit(
+                                                "speech-detected",
+                                                serde_json::json!({
+                                                    "message": "Speech activity detected"
+                                                }),
+                                            ) {
+                                                Ok(_) => info!(
+                                                    "🎤 ✅ First speech detected - successfully emitted speech-detected event"
+                                                ),
+                                                Err(e) => error!(
+                                                    "🎤 ❌ Failed to emit speech-detected event: {}",
+                                                    e
+                                                ),
                                             }
                                         } else {
-                                            info!("🔍 Speech already detected in this session, not re-emitting");
+                                            info!(
+                                                "🔍 Speech already detected in this session, not re-emitting"
+                                            );
                                         }
 
                                         // Generate sequence ID and calculate timestamps FIRST
@@ -386,7 +419,10 @@ pub fn start_transcription_task<R: Runtime>(
                                     {
                                         // PERFORMANCE: Only log low-confidence results occasionally
                                         if let Some(c) = confidence_opt {
-                                            info!("Worker {} low-confidence transcription (confidence: {:.2}), skipping", worker_id, c);
+                                            info!(
+                                                "Worker {} low-confidence transcription (confidence: {:.2}), skipping",
+                                                worker_id, c
+                                            );
                                         }
                                     }
                                 }
@@ -467,7 +503,10 @@ pub fn start_transcription_task<R: Runtime>(
                                     );
                                     break;
                                 } else {
-                                    warn!("👷 Worker {} detected potential chunk loss: {}/{} completed, waiting...", worker_id, final_completed, final_queued);
+                                    warn!(
+                                        "👷 Worker {} detected potential chunk loss: {}/{} completed, waiting...",
+                                        worker_id, final_completed, final_queued
+                                    );
                                     // AGGRESSIVE POLLING: Reduced from 50ms to 5ms for faster chunk detection during shutdown
                                     tokio::time::sleep(tokio::time::Duration::from_millis(5)).await;
                                 }
@@ -506,8 +545,10 @@ pub fn start_transcription_task<R: Runtime>(
         drop(work_sender); // Close the channel to signal workers
 
         let total_chunks_queued = chunks_queued.load(Ordering::SeqCst);
-        info!("📭 Input finished with {} total chunks queued. Waiting for all {} workers to complete...",
-              total_chunks_queued, NUM_WORKERS);
+        info!(
+            "📭 Input finished with {} total chunks queued. Waiting for all {} workers to complete...",
+            total_chunks_queued, NUM_WORKERS
+        );
 
         // Emit final chunk count to frontend
         let _ = app.emit("transcription-queue-complete", serde_json::json!({
@@ -517,10 +558,13 @@ pub fn start_transcription_task<R: Runtime>(
 
         // Wait for all workers to complete
         for (worker_id, handle) in worker_handles.into_iter().enumerate() {
-            if let Err(e) = handle.await {
-                error!("❌ Worker {} panicked: {:?}", worker_id, e);
-            } else {
-                info!("✅ Worker {} completed successfully", worker_id);
+            match handle.await {
+                Err(e) => {
+                    error!("❌ Worker {} panicked: {:?}", worker_id, e);
+                }
+                _ => {
+                    info!("✅ Worker {} completed successfully", worker_id);
+                }
             }
         }
 
@@ -565,7 +609,10 @@ pub fn start_transcription_task<R: Runtime>(
                                             )
                                             .await
                                         {
-                                            warn!("Could not persist a vocabulary learning observation: {}", error);
+                                            warn!(
+                                                "Could not persist a vocabulary learning observation: {}",
+                                                error
+                                            );
                                         }
                                     }
                                 }
@@ -600,8 +647,10 @@ pub fn start_transcription_task<R: Runtime>(
                 break;
             } else if verification_attempts < MAX_VERIFICATION_ATTEMPTS {
                 verification_attempts += 1;
-                warn!("⚠️ Chunk count mismatch (attempt {}): {} queued, {} completed - waiting for stragglers...",
-                     verification_attempts, final_queued, final_completed);
+                warn!(
+                    "⚠️ Chunk count mismatch (attempt {}): {} queued, {} completed - waiting for stragglers...",
+                    verification_attempts, final_queued, final_completed
+                );
 
                 // Wait a bit for any remaining chunks to be processed
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -626,7 +675,9 @@ pub fn start_transcription_task<R: Runtime>(
         }
 
         TRANSCRIPTION_ACTIVE.store(false, Ordering::SeqCst);
-        info!("✅ Parallel transcription task completed - all workers finished, ready for model unload");
+        info!(
+            "✅ Parallel transcription task completed - all workers finished, ready for model unload"
+        );
     })
 }
 
@@ -734,7 +785,10 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
 
             info!(
                 "Whisper transcription complete for chunk {}: {} characters (confidence: {:.2}, partial: {})",
-                chunk.chunk_id, cleaned_text.chars().count(), confidence, is_partial
+                chunk.chunk_id,
+                cleaned_text.chars().count(),
+                confidence,
+                is_partial
             );
             Ok((
                 cleaned_text,

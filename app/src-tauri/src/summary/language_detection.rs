@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::Serialize;
-use whatlang::{detect, Lang};
+use whatlang::{Lang, detect};
 
 use super::processor::language_name_from_code;
 

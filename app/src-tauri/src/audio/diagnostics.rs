@@ -6,7 +6,7 @@
 use cpal::SupportedStreamConfig;
 use log::{info, warn};
 
-use super::device_detection::{calculate_buffer_timeout, InputDeviceKind};
+use super::device_detection::{InputDeviceKind, calculate_buffer_timeout};
 use super::devices::AudioDevice;
 
 /// Log comprehensive device capabilities and detection results

@@ -1,10 +1,10 @@
 use crate::audio::{
-    check_system_audio_permissions, list_system_audio_devices, new_system_audio_callback,
-    start_system_audio_capture, SystemAudioDetector, SystemAudioEvent,
+    SystemAudioDetector, SystemAudioEvent, check_system_audio_permissions,
+    list_system_audio_devices, new_system_audio_callback, start_system_audio_capture,
 };
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
-use tauri::{command, AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, State, command};
 
 // Global state for system audio detector
 type SystemAudioDetectorState = Arc<Mutex<Option<SystemAudioDetector>>>;
@@ -81,11 +81,12 @@ pub async fn stop_system_audio_monitoring(
         .lock()
         .map_err(|e| format!("Failed to acquire detector lock: {}", e))?;
 
-    if let Some(mut detector) = detector_guard.take() {
-        detector.stop();
-        Ok(())
-    } else {
-        Err("System audio monitoring is not active".to_string())
+    match detector_guard.take() {
+        Some(mut detector) => {
+            detector.stop();
+            Ok(())
+        }
+        _ => Err("System audio monitoring is not active".to_string()),
     }
 }
 
@@ -126,7 +127,6 @@ mod tests {
         match devices {
             Ok(device_list) => {
                 println!("System audio devices: {:?}", device_list);
-                assert!(device_list.len() >= 0); // Should at least not crash
             }
             Err(e) => {
                 println!("Error listing devices: {}", e);

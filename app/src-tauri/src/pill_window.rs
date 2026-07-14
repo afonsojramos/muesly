@@ -119,10 +119,13 @@ pub fn sync_visibility_with_main_focus<R: Runtime>(app: &AppHandle<R>, main_focu
 pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     unregister_shortcuts(app);
     if let Some(window) = app.get_webview_window(PILL_LABEL) {
-        if let Err(e) = window.hide() {
-            log::warn!("pill hide failed: {e}");
-        } else {
-            log::debug!("pill window hidden");
+        match window.hide() {
+            Err(e) => {
+                log::warn!("pill hide failed: {e}");
+            }
+            _ => {
+                log::debug!("pill window hidden");
+            }
         }
     }
 }

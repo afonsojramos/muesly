@@ -11,18 +11,14 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 use super::audio_processing::{
-    audio_to_mono, HighPassFilter, LoudnessNormalizer, NoiseSuppressionProcessor,
+    HighPassFilter, LoudnessNormalizer, NoiseSuppressionProcessor, audio_to_mono,
 };
 use super::devices::AudioDevice;
 use super::recording_state::{AudioChunk, AudioError, DeviceType, RecordingState};
 use super::vad::{ContinuousVadProcessor, SpeechSegment};
 
 const fn vad_redemption_time_ms(is_macos: bool) -> u32 {
-    if is_macos {
-        900
-    } else {
-        400
-    }
+    if is_macos { 900 } else { 400 }
 }
 
 fn live_vad_redemption_time_ms() -> u32 {
@@ -97,9 +93,12 @@ impl AudioMixerRingBuffer {
             );
         }
         if self.system_buffer.len() > self.max_buffer_size {
-            error!("🔴 SYSTEM AUDIO BUFFER OVERFLOW: {} > {} samples, dropping {} samples - THIS CAUSES DISTORTION!",
-                  self.system_buffer.len(), self.max_buffer_size,
-                  self.system_buffer.len() - self.max_buffer_size);
+            error!(
+                "🔴 SYSTEM AUDIO BUFFER OVERFLOW: {} > {} samples, dropping {} samples - THIS CAUSES DISTORTION!",
+                self.system_buffer.len(),
+                self.max_buffer_size,
+                self.system_buffer.len() - self.max_buffer_size
+            );
         }
 
         // Safety: prevent buffer overflow (keep only last 200ms)
@@ -274,16 +273,25 @@ impl AudioCapture {
             let ns = if super::ffmpeg_mixer::RNNOISE_APPLY_ENABLED {
                 match NoiseSuppressionProcessor::new(TARGET_SAMPLE_RATE) {
                     Ok(processor) => {
-                        info!("✅ RNNoise noise suppression ENABLED for microphone '{}' (10-15 dB reduction)", device.name);
+                        info!(
+                            "✅ RNNoise noise suppression ENABLED for microphone '{}' (10-15 dB reduction)",
+                            device.name
+                        );
                         Some(processor)
                     }
                     Err(e) => {
-                        warn!("⚠️ Failed to create noise suppressor: {}, continuing without noise suppression", e);
+                        warn!(
+                            "⚠️ Failed to create noise suppressor: {}, continuing without noise suppression",
+                            e
+                        );
                         None
                     }
                 }
             } else {
-                info!("ℹ️ RNNoise noise suppression DISABLED for microphone '{}' (flag: RNNOISE_APPLY_ENABLED=false)", device.name);
+                info!(
+                    "ℹ️ RNNoise noise suppression DISABLED for microphone '{}' (flag: RNNOISE_APPLY_ENABLED=false)",
+                    device.name
+                );
                 info!("   Whisper handles noise well internally - RNNoise is optional");
                 None
             };
@@ -367,7 +375,9 @@ impl AudioCapture {
                         "✅ Persistent resampler initialized for '{}' ({}Hz → {}Hz, chunk_size={})",
                         device.name, sample_rate, TARGET_SAMPLE_RATE, RESAMPLER_CHUNK_SIZE
                     );
-                    info!("   Buffering enabled for variable-size chunks (e.g., 320, 512, 1024, etc.)");
+                    info!(
+                        "   Buffering enabled for variable-size chunks (e.g., 320, 512, 1024, etc.)"
+                    );
                     Some(resampler)
                 }
                 Err(e) => {
@@ -532,10 +542,9 @@ impl AudioCapture {
                     100.0
                 };
 
-                let buffer_size = if let Ok(buf) = self.resampler_input_buffer.lock() {
-                    buf.len()
-                } else {
-                    0
+                let buffer_size = match self.resampler_input_buffer.lock() {
+                    Ok(buf) => buf.len(),
+                    _ => 0,
                 };
 
                 info!(
@@ -574,16 +583,27 @@ impl AudioCapture {
                             let buffered = suppressor.buffered_samples();
                             let length_delta = (before_len as i32 - after_len as i32).abs();
 
-                            debug!("🔇 Noise suppression health: in={}, out={}, delta={}, buffered={}, RMS={:.4}",
-                                   before_len, after_len, length_delta, buffered,
-                                   if !mono_data.is_empty() {
-                                       (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32).sqrt()
-                                   } else { 0.0 });
+                            debug!(
+                                "🔇 Noise suppression health: in={}, out={}, delta={}, buffered={}, RMS={:.4}",
+                                before_len,
+                                after_len,
+                                length_delta,
+                                buffered,
+                                if !mono_data.is_empty() {
+                                    (mono_data.iter().map(|&x| x * x).sum::<f32>()
+                                        / mono_data.len() as f32)
+                                        .sqrt()
+                                } else {
+                                    0.0
+                                }
+                            );
 
                             // WARN if accumulating samples (potential latency buildup)
                             if buffered > 1000 {
-                                warn!("⚠️ RNNoise accumulating samples: {} buffered (potential latency issue!)",
-                                      buffered);
+                                warn!(
+                                    "⚠️ RNNoise accumulating samples: {} buffered (potential latency issue!)",
+                                    buffered
+                                );
                             }
 
                             // WARN if significant length mismatch
@@ -675,26 +695,29 @@ impl AudioCapture {
         // Individual raw streams go only to the transcription pipeline below
 
         // Send to processing pipeline for transcription
-        if let Err(e) = self.state.send_audio_chunk(audio_chunk) {
-            // Check if this is the "pipeline not ready" error
-            if e.to_string().contains("Audio pipeline not ready") {
-                // This is expected during initialization, just log it as debug
-                debug!("Audio pipeline not ready yet, skipping chunk {}", chunk_id);
-                return;
-            }
+        match self.state.send_audio_chunk(audio_chunk) {
+            Err(e) => {
+                // Check if this is the "pipeline not ready" error
+                if e.to_string().contains("Audio pipeline not ready") {
+                    // This is expected during initialization, just log it as debug
+                    debug!("Audio pipeline not ready yet, skipping chunk {}", chunk_id);
+                    return;
+                }
 
-            warn!("Failed to send audio chunk: {}", e);
-            // More specific error handling based on failure reason
-            let error = if e.to_string().contains("channel closed") {
-                AudioError::ChannelClosed
-            } else if e.to_string().contains("full") {
-                AudioError::BufferOverflow
-            } else {
-                AudioError::ProcessingFailed
-            };
-            self.state.report_error(error);
-        } else {
-            debug!("Sent audio chunk {} ({} samples)", chunk_id, data.len());
+                warn!("Failed to send audio chunk: {}", e);
+                // More specific error handling based on failure reason
+                let error = if e.to_string().contains("channel closed") {
+                    AudioError::ChannelClosed
+                } else if e.to_string().contains("full") {
+                    AudioError::BufferOverflow
+                } else {
+                    AudioError::ProcessingFailed
+                };
+                self.state.report_error(error);
+            }
+            _ => {
+                debug!("Sent audio chunk {} ({} samples)", chunk_id, data.len());
+            }
         }
     }
 
@@ -846,7 +869,9 @@ impl AudioPipeline {
 
     /// Run the VAD-driven audio processing pipeline
     pub async fn run(mut self) -> Result<()> {
-        info!("VAD-driven audio pipeline started - segments sent in real-time based on speech detection");
+        info!(
+            "VAD-driven audio pipeline started - segments sent in real-time based on speech detection"
+        );
 
         // Acoustic echo cancellation for the transcription path only.
         // Built once per recording so it adapts over time. If it fails to build,
@@ -1164,16 +1189,15 @@ impl AudioPipelineManager {
         self.audio_sender = None;
 
         // Wait for pipeline to finish
-        if let Some(handle) = self.pipeline_handle.take() {
-            match handle.await {
+        match self.pipeline_handle.take() {
+            Some(handle) => match handle.await {
                 Ok(result) => result,
                 Err(e) => {
                     error!("Pipeline task failed: {}", e);
                     Ok(())
                 }
-            }
-        } else {
-            Ok(())
+            },
+            _ => Ok(()),
         }
     }
 

@@ -152,9 +152,11 @@ mod tests {
             .unwrap();
         tx.commit().await.unwrap();
 
-        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            TranscriptRevisionRepository::restore_latest(&pool, "m1")
+                .await
+                .unwrap()
+        );
         let text: String =
             sqlx::query_scalar("SELECT transcript FROM transcripts WHERE meeting_id = 'm1'")
                 .fetch_one(&pool)
@@ -162,9 +164,11 @@ mod tests {
                 .unwrap();
         assert_eq!(text, "original");
 
-        assert!(TranscriptRevisionRepository::restore_latest(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            TranscriptRevisionRepository::restore_latest(&pool, "m1")
+                .await
+                .unwrap()
+        );
         let text: String =
             sqlx::query_scalar("SELECT transcript FROM transcripts WHERE meeting_id = 'm1'")
                 .fetch_one(&pool)

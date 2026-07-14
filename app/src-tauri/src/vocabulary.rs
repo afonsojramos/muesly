@@ -918,13 +918,15 @@ mod tests {
     fn rejects_alias_when_prompt_does_not_improve_confidence() {
         let _guard = lock_prompt_state();
         set_vocabulary(vec![entry("", "Kubernetes")]);
-        assert!(infer_learning_observation(
-            "We deployed Kubernetes yesterday",
-            0.70,
-            "We deployed cooper netties yesterday",
-            0.68,
-        )
-        .is_none());
+        assert!(
+            infer_learning_observation(
+                "We deployed Kubernetes yesterday",
+                0.70,
+                "We deployed cooper netties yesterday",
+                0.68,
+            )
+            .is_none()
+        );
         set_vocabulary(Vec::new());
     }
 
@@ -986,9 +988,11 @@ mod tests {
             let _scope = scoped_meeting_prompt_terms(vec!["LXP Refinement".into()]);
             assert!(whisper_initial_prompt().unwrap().contains("LXP Refinement"));
         }
-        assert!(!whisper_initial_prompt()
-            .unwrap_or_default()
-            .contains("LXP Refinement"));
+        assert!(
+            !whisper_initial_prompt()
+                .unwrap_or_default()
+                .contains("LXP Refinement")
+        );
     }
 
     #[test]

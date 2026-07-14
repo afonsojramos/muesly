@@ -7,12 +7,12 @@ use crate::audio::vad::get_speech_chunks_with_progress;
 use crate::config::DEFAULT_WHISPER_MODEL;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 /// Global flag to track if retranscription is in progress
@@ -369,8 +369,11 @@ async fn run_retranscription<R: Runtime>(
             .fold(f64::NEG_INFINITY, f64::max);
         info!(
             "VAD segment stats: avg={:.0}ms, min={:.0}ms, max={:.0}ms, total_speech={:.1}s/{:.1}s ({:.0}%)",
-            avg_duration, min_duration, max_duration,
-            total_speech_ms / 1000.0, duration_seconds,
+            avg_duration,
+            min_duration,
+            max_duration,
+            total_speech_ms / 1000.0,
+            duration_seconds,
             (total_speech_ms / 1000.0 / duration_seconds) * 100.0
         );
         // Log first 10 segments for detailed inspection
@@ -783,7 +786,10 @@ async fn get_configured_whisper_model<R: Runtime>(app: &AppHandle<R>) -> Result<
                     "Retranscription requires Whisper provider, but configured provider is: {}",
                     provider
                 );
-                Err(anyhow!("Retranscription requires Whisper. Current provider '{}' does not support retranscription with language selection.", provider))
+                Err(anyhow!(
+                    "Retranscription requires Whisper. Current provider '{}' does not support retranscription with language selection.",
+                    provider
+                ))
             }
         }
         None => {
@@ -1075,10 +1081,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let result = find_audio_file(dir.path());
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No audio file found"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No audio file found")
+        );
     }
 
     #[test]

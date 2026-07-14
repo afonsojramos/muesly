@@ -1,7 +1,7 @@
 [package]
 name = "diarization-helper"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 # Speaker diarization sidecar. Runs in its own process because `sherpa-onnx`
 # statically links its own ONNX Runtime, which would collide with the main app's

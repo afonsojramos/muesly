@@ -1,7 +1,7 @@
 use tauri::{
+    AppHandle, Emitter, Manager, Runtime,
     menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, Runtime,
 };
 
 #[derive(Debug, Clone)]
@@ -110,9 +110,9 @@ pub fn toggle_recording_handler<R: Runtime>(app: &AppHandle<R>) {
             log::info!("Emitting start recording event from tray");
             if let Some(window) = app_clone.get_webview_window("main") {
                 let _ = window.eval("sessionStorage.setItem('autoStartRecording', 'true')"); // Set the flag to start recording automatically
-                                                                                             // Land on /note: that route mounts useRecordingStart, which consumes
-                                                                                             // the flag. Navigating to '/' left the flag unread, so the tray's
-                                                                                             // "Start Recording" silently did nothing.
+                // Land on /note: that route mounts useRecordingStart, which consumes
+                // the flag. Navigating to '/' left the flag unread, so the tray's
+                // "Start Recording" silently did nothing.
                 let _ = window.eval("window.location.assign('/note')");
             }
         }
@@ -249,15 +249,19 @@ pub fn set_tray_state<R: Runtime>(app: &AppHandle<R>, state: RecordingState) {
     let dispatched = app.run_on_main_thread(move || {
         // During recording state transitions, we assume recording is allowed
         // (we're already recording).
-        if let Ok(menu) = build_menu(&app_handle, state, true) {
-            if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                let result = tray.set_menu(Some(menu));
-                log::info!("Tray: Intermediate state menu update result: {:?}", result);
-            } else {
-                log::warn!("Tray: Could not find tray with id 'main-tray'");
+        match build_menu(&app_handle, state, true) {
+            Ok(menu) => match app_handle.tray_by_id("main-tray") {
+                Some(tray) => {
+                    let result = tray.set_menu(Some(menu));
+                    log::info!("Tray: Intermediate state menu update result: {:?}", result);
+                }
+                _ => {
+                    log::warn!("Tray: Could not find tray with id 'main-tray'");
+                }
+            },
+            _ => {
+                log::error!("Tray: Failed to build menu for intermediate state");
             }
-        } else {
-            log::error!("Tray: Failed to build menu for intermediate state");
         }
     });
     if let Err(e) = dispatched {
@@ -347,29 +351,35 @@ pub async fn update_tray_menu_async<R: Runtime>(app: &AppHandle<R>) {
     // with EXC_BREAKPOINT (BSServiceMainRunLoopQueue assertBarrierOnQueue).
     let app_handle = app.clone();
     let dispatched = app.run_on_main_thread(move || {
-        if let Ok(menu) = build_menu(&app_handle, recording_state.clone(), can_record) {
-            if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                let result = tray.set_menu(Some(menu));
-                log::info!("Tray: Menu update result: {:?}", result);
-                // Animated-level bars aren't available on all OS tray APIs; use a
-                // clear recording-state tooltip so the menu bar indicator is obvious.
-                let tip = match recording_state {
-                    RecordingState::Recording => "muesly · Recording",
-                    RecordingState::Paused => "muesly · Paused",
-                    RecordingState::Starting => "muesly · Starting…",
-                    RecordingState::Stopping => "muesly · Stopping…",
-                    RecordingState::Pausing => "muesly · Pausing…",
-                    RecordingState::Resuming => "muesly · Resuming…",
-                    RecordingState::Stopped => "muesly",
-                };
-                if let Err(e) = tray.set_tooltip(Some(tip)) {
-                    log::warn!("Tray: Failed to set tooltip: {}", e);
+        match build_menu(&app_handle, recording_state.clone(), can_record) {
+            Ok(menu) => {
+                match app_handle.tray_by_id("main-tray") {
+                    Some(tray) => {
+                        let result = tray.set_menu(Some(menu));
+                        log::info!("Tray: Menu update result: {:?}", result);
+                        // Animated-level bars aren't available on all OS tray APIs; use a
+                        // clear recording-state tooltip so the menu bar indicator is obvious.
+                        let tip = match recording_state {
+                            RecordingState::Recording => "muesly · Recording",
+                            RecordingState::Paused => "muesly · Paused",
+                            RecordingState::Starting => "muesly · Starting…",
+                            RecordingState::Stopping => "muesly · Stopping…",
+                            RecordingState::Pausing => "muesly · Pausing…",
+                            RecordingState::Resuming => "muesly · Resuming…",
+                            RecordingState::Stopped => "muesly",
+                        };
+                        if let Err(e) = tray.set_tooltip(Some(tip)) {
+                            log::warn!("Tray: Failed to set tooltip: {}", e);
+                        }
+                    }
+                    _ => {
+                        log::warn!("Tray: Could not find tray with id 'main-tray'");
+                    }
                 }
-            } else {
-                log::warn!("Tray: Could not find tray with id 'main-tray'");
             }
-        } else {
-            log::error!("Tray: Failed to build menu");
+            _ => {
+                log::error!("Tray: Failed to build menu");
+            }
         }
     });
     if let Err(e) = dispatched {
@@ -472,23 +482,26 @@ fn build_menu<R: Runtime>(
 }
 
 pub(crate) fn focus_main_window<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Err(e) = window.unminimize() {
-            log::error!("Failed to unminimize main window: {}", e);
-        }
+    match app.get_webview_window("main") {
+        Some(window) => {
+            if let Err(e) = window.unminimize() {
+                log::error!("Failed to unminimize main window: {}", e);
+            }
 
-        if let Err(e) = window.show() {
-            log::error!("Failed to show main window: {}", e);
-        }
+            if let Err(e) = window.show() {
+                log::error!("Failed to show main window: {}", e);
+            }
 
-        if let Err(e) = window.set_focus() {
-            log::error!("Failed to focus main window: {}", e);
-        }
+            if let Err(e) = window.set_focus() {
+                log::error!("Failed to focus main window: {}", e);
+            }
 
-        if let Err(e) = window.eval("window.focus()") {
-            log::error!("Failed to focus main webview: {}", e);
+            if let Err(e) = window.eval("window.focus()") {
+                log::error!("Failed to focus main webview: {}", e);
+            }
         }
-    } else {
-        log::warn!("Could not find main window");
+        _ => {
+            log::warn!("Could not find main window");
+        }
     }
 }

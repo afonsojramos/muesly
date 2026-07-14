@@ -179,11 +179,26 @@ const MEETINGS: &[SeedMeeting] = &[
         folder: Some("seed-folder-work"),
         trashed: false,
         segments: &[
-            ("mic", "Morning everyone, let's lock the scope for this sprint."),
-            ("system", "I think the Kubernetes migration should be the top priority."),
-            ("mic", "Agreed. Let's also finalize the budget for the mobile launch."),
-            ("system", "Action item for Alex: send the revised timeline by Friday."),
-            ("mic", "Great, decision made: we ship the beta on March tenth."),
+            (
+                "mic",
+                "Morning everyone, let's lock the scope for this sprint.",
+            ),
+            (
+                "system",
+                "I think the Kubernetes migration should be the top priority.",
+            ),
+            (
+                "mic",
+                "Agreed. Let's also finalize the budget for the mobile launch.",
+            ),
+            (
+                "system",
+                "Action item for Alex: send the revised timeline by Friday.",
+            ),
+            (
+                "mic",
+                "Great, decision made: we ship the beta on March tenth.",
+            ),
         ],
         attendees: &["Alex Rivera", "Priya Shah"],
         summary_markdown: "## Sprint Planning\n\n**Decisions**\n- Ship the beta on March 10.\n- Kubernetes migration is top priority this sprint.\n\n**Action items**\n- Alex: send the revised timeline by Friday.\n- Finalize the mobile launch budget.",
@@ -191,9 +206,15 @@ const MEETINGS: &[SeedMeeting] = &[
         speaker_names: &[(0, "Alex Rivera"), (1, "Priya Shah")],
         chat: &[
             ("user", "What did we decide about the beta launch?"),
-            ("assistant", "You decided to ship the beta on March 10, with the Kubernetes migration as the top priority for this sprint."),
+            (
+                "assistant",
+                "You decided to ship the beta on March 10, with the Kubernetes migration as the top priority for this sprint.",
+            ),
             ("user", "Who owns the timeline?"),
-            ("assistant", "Alex is the action-item owner: send the revised timeline by Friday."),
+            (
+                "assistant",
+                "Alex is the action-item owner: send the revised timeline by Friday.",
+            ),
         ],
     },
     SeedMeeting {
@@ -204,9 +225,18 @@ const MEETINGS: &[SeedMeeting] = &[
         trashed: false,
         segments: &[
             ("mic", "Let's walk through the Q3 roadmap and hiring plan."),
-            ("system", "We need two more engineers to hit the analytics milestone."),
-            ("mic", "The roadmap looks solid, but the timeline for search is tight."),
-            ("system", "Let's revisit the search rollout after the budget review."),
+            (
+                "system",
+                "We need two more engineers to hit the analytics milestone.",
+            ),
+            (
+                "mic",
+                "The roadmap looks solid, but the timeline for search is tight.",
+            ),
+            (
+                "system",
+                "Let's revisit the search rollout after the budget review.",
+            ),
         ],
         attendees: &["Priya Shah", "Marcus Lee"],
         summary_markdown: "## Q3 Roadmap Review\n\n- Hiring: two engineers needed for the analytics milestone.\n- Search rollout timeline is tight; revisit after budget review.",
@@ -222,9 +252,18 @@ const MEETINGS: &[SeedMeeting] = &[
         trashed: false,
         segments: &[
             ("mic", "How are things going on the migration work?"),
-            ("system", "Good, though I'm blocked on the staging environment access."),
-            ("mic", "I'll get you access today. Anything else on your mind?"),
-            ("system", "I'd love to take on more of the roadmap planning next quarter."),
+            (
+                "system",
+                "Good, though I'm blocked on the staging environment access.",
+            ),
+            (
+                "mic",
+                "I'll get you access today. Anything else on your mind?",
+            ),
+            (
+                "system",
+                "I'd love to take on more of the roadmap planning next quarter.",
+            ),
         ],
         attendees: &["Alex Rivera"],
         summary_markdown: "## 1:1 with Alex\n\n- Alex blocked on staging access (unblocking today).\n- Interested in owning more roadmap planning next quarter.",
@@ -240,8 +279,14 @@ const MEETINGS: &[SeedMeeting] = &[
         trashed: false,
         segments: &[
             ("mic", "Let's review the new onboarding flow designs."),
-            ("system", "The empty states feel a little sparse, maybe add guidance."),
-            ("mic", "Good call. The color contrast on the buttons needs work too."),
+            (
+                "system",
+                "The empty states feel a little sparse, maybe add guidance.",
+            ),
+            (
+                "mic",
+                "Good call. The color contrast on the buttons needs work too.",
+            ),
         ],
         attendees: &["Dana Wu", "Marcus Lee"],
         summary_markdown: "## Design Critique\n\n- Add guidance to empty states in onboarding.\n- Improve button color contrast for accessibility.",
@@ -257,7 +302,10 @@ const MEETINGS: &[SeedMeeting] = &[
         trashed: false,
         segments: &[
             ("mic", "Quick standup: what's everyone working on today?"),
-            ("system", "Finishing the search indexing, then reviewing the budget doc."),
+            (
+                "system",
+                "Finishing the search indexing, then reviewing the budget doc.",
+            ),
             ("mic", "I'm pairing with Dana on the onboarding flow."),
         ],
         attendees: &["Dana Wu", "Alex Rivera", "Priya Shah"],
@@ -273,7 +321,10 @@ const MEETINGS: &[SeedMeeting] = &[
         folder: Some("seed-folder-personal"),
         trashed: false,
         segments: &[
-            ("mic", "Reminder to book the follow-up cleaning for next month."),
+            (
+                "mic",
+                "Reminder to book the follow-up cleaning for next month.",
+            ),
             ("system", "Everything looks healthy, see you in six months."),
         ],
         attendees: &[],
@@ -289,8 +340,14 @@ const MEETINGS: &[SeedMeeting] = &[
         folder: None,
         trashed: false,
         segments: &[
-            ("mic", "Thanks for grabbing coffee. How's the new team treating you?"),
-            ("system", "Really well. The hiring push is paying off already."),
+            (
+                "mic",
+                "Thanks for grabbing coffee. How's the new team treating you?",
+            ),
+            (
+                "system",
+                "Really well. The hiring push is paying off already.",
+            ),
         ],
         attendees: &["Marcus Lee"],
         summary_markdown: "## Coffee Chat\n\n- Marcus settling into the new team well.\n- Hiring push is paying off.",
@@ -306,8 +363,14 @@ const MEETINGS: &[SeedMeeting] = &[
         trashed: false,
         segments: &[
             ("mic", "Welcome to the analytics project kickoff."),
-            ("system", "Our goal is a self-serve dashboard by end of quarter."),
-            ("mic", "Let's define the key metrics and the data pipeline first."),
+            (
+                "system",
+                "Our goal is a self-serve dashboard by end of quarter.",
+            ),
+            (
+                "mic",
+                "Let's define the key metrics and the data pipeline first.",
+            ),
         ],
         attendees: &["Priya Shah", "Dana Wu"],
         summary_markdown: "## Analytics Kickoff\n\n- Goal: self-serve dashboard by end of quarter.\n- Next: define key metrics and the data pipeline.",

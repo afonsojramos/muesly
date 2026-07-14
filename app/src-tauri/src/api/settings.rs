@@ -63,7 +63,9 @@ pub async fn api_get_model_config<R: Runtime>(
             }
         }
         Ok(None) => {
-            log_warn!("⚠️ No model config found in database - database may be empty or settings table not initialized");
+            log_warn!(
+                "⚠️ No model config found in database - database may be empty or settings table not initialized"
+            );
             Ok(None)
         }
         Err(e) => {
@@ -520,7 +522,9 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
                                             .is_some();
 
                                         if has_message_structure {
-                                            log_info!("✅ Custom OpenAI connection test successful - response validated");
+                                            log_info!(
+                                                "✅ Custom OpenAI connection test successful - response validated"
+                                            );
                                             return Ok(serde_json::json!({
                                                 "status": "success",
                                                 "message": "Connection successful and response validated",

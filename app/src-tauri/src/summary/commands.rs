@@ -3,7 +3,7 @@ use crate::database::repositories::{
     transcript_chunk::TranscriptChunksRepository,
 };
 use crate::state::AppState;
-use crate::summary::language_detection::{detect_summary_language, SummaryLanguageDetection};
+use crate::summary::language_detection::{SummaryLanguageDetection, detect_summary_language};
 use crate::summary::metadata::{
     read_detected_summary_language_from_metadata, read_summary_language_from_metadata,
     write_summary_language_to_metadata,

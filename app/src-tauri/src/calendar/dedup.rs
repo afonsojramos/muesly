@@ -10,8 +10,8 @@
 //! candidates without an iCalUID are kept distinct (biases toward two cards over
 //! a false merge / lost meeting).
 
-use crate::calendar::matching::CalendarEventCandidate;
 use crate::calendar::SourceKind;
+use crate::calendar::matching::CalendarEventCandidate;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
@@ -108,7 +108,7 @@ fn fill_if_empty(target: &mut Option<String>, src: Option<String>) {
 mod tests {
     use super::*;
     use crate::calendar::matching::{
-        match_event, Attendee, EventStatus, MatchConfidence, ParticipantStatus,
+        Attendee, EventStatus, MatchConfidence, ParticipantStatus, match_event,
     };
     use chrono::TimeZone;
 

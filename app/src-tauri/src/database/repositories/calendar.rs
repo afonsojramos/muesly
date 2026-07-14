@@ -227,10 +227,12 @@ mod tests {
             .expect("upsert");
         assert!(!ok);
         // Nothing was written.
-        assert!(CalendarEventsRepository::get(&pool, "nope")
-            .await
-            .expect("query")
-            .is_none());
+        assert!(
+            CalendarEventsRepository::get(&pool, "nope")
+                .await
+                .expect("query")
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -245,10 +247,12 @@ mod tests {
             .await
             .expect("delete");
 
-        assert!(CalendarEventsRepository::get(&pool, "meeting-1")
-            .await
-            .expect("query")
-            .is_none());
+        assert!(
+            CalendarEventsRepository::get(&pool, "meeting-1")
+                .await
+                .expect("query")
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -267,9 +271,11 @@ mod tests {
             .await
             .expect("purge");
         assert_eq!(deleted, 2);
-        assert!(CalendarEventsRepository::get(&pool, "meeting-1")
-            .await
-            .expect("query")
-            .is_none());
+        assert!(
+            CalendarEventsRepository::get(&pool, "meeting-1")
+                .await
+                .expect("query")
+                .is_none()
+        );
     }
 }

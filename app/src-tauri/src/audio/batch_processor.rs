@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 use tokio::time::sleep;
 
 /// Smart batching processor for reducing operation frequency
@@ -201,7 +201,7 @@ impl Default for AudioMetricsBatcher {
 /// Macro for batched audio metrics logging
 #[macro_export]
 macro_rules! batch_audio_metric {
-    ($batcher:expr, $chunk_id:expr, $sample_count:expr, $duration_ms:expr, $level:expr) => {
+    ($batcher:expr_2021, $chunk_id:expr_2021, $sample_count:expr_2021, $duration_ms:expr_2021, $level:expr_2021) => {
         if let Some(batcher) = $batcher {
             let metric = $crate::audio::batch_processor::AudioMetric {
                 timestamp: std::time::Instant::now(),

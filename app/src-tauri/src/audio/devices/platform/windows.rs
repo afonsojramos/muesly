@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use cpal::traits::{DeviceTrait, HostTrait};
 use log::{debug, info, warn};
 
@@ -129,13 +129,19 @@ pub fn get_windows_device(
                                 return Ok((device, default_config));
                             }
                             Err(e) => {
-                                warn!("Failed to get default input config: {}. Trying supported configs...", e);
+                                warn!(
+                                    "Failed to get default input config: {}. Trying supported configs...",
+                                    e
+                                );
 
                                 // Try to find a supported configuration
                                 if let Ok(supported_configs) = device.supported_input_configs() {
                                     let configs: Vec<_> = supported_configs.collect();
                                     if configs.is_empty() {
-                                        warn!("No supported input configurations found for device: {}", name);
+                                        warn!(
+                                            "No supported input configurations found for device: {}",
+                                            name
+                                        );
                                     } else {
                                         // info!("Found {} supported input configurations", configs.len());
 
@@ -165,7 +171,10 @@ pub fn get_windows_device(
                                         return Ok((device, config));
                                     }
                                 } else {
-                                    warn!("Could not enumerate supported configurations for device: {}", name);
+                                    warn!(
+                                        "Could not enumerate supported configurations for device: {}",
+                                        name
+                                    );
                                 }
 
                                 return Err(anyhow!(

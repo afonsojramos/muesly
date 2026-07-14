@@ -2,8 +2,8 @@ use anyhow::Result;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use nnnoiseless::DenoiseState;
-use realfft::num_complex::{Complex32, ComplexFloat};
 use realfft::RealFftPlanner;
+use realfft::num_complex::{Complex32, ComplexFloat};
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
 };
@@ -476,13 +476,7 @@ pub fn spectral_subtraction(audio: &[f32], d: f32) -> Result<Vec<f32>> {
 
             let div = 1.0 - (d / magnitude_y);
 
-            let gain = {
-                if div > 0.0 {
-                    f32::sqrt(div)
-                } else {
-                    0.0f32
-                }
-            };
+            let gain = { if div > 0.0 { f32::sqrt(div) } else { 0.0f32 } };
 
             x * gain
         })

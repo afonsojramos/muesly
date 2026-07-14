@@ -1,4 +1,4 @@
-use reqwest::{header, Client};
+use reqwest::{Client, header};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -898,8 +898,10 @@ mod tests {
     fn classify_http_error_messages() {
         use reqwest::StatusCode;
         let p = LLMProvider::OpenAI;
-        assert!(classify_http_error(&p, "gpt-4o", StatusCode::UNAUTHORIZED)
-            .contains("authentication failed"));
+        assert!(
+            classify_http_error(&p, "gpt-4o", StatusCode::UNAUTHORIZED)
+                .contains("authentication failed")
+        );
         assert!(classify_http_error(&p, "gpt-4o", StatusCode::NOT_FOUND).contains("not found"));
         assert!(
             classify_http_error(&p, "gpt-4o", StatusCode::TOO_MANY_REQUESTS).contains("rate limit")

@@ -7,11 +7,11 @@
 //! after the paste has had a chance to read it. macOS requires Accessibility
 //! permission; other platforms do a best-effort paste with no permission gate.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use tauri::{AppHandle, Runtime};
 
 #[cfg(target_os = "macos")]
-extern "C" {
+unsafe extern "C" {
     /// Whether this process is trusted for the Accessibility (AX) APIs that back
     /// synthesized keyboard input. Linked via the ApplicationServices framework
     /// (also pulled in by `enigo`'s CoreGraphics usage).

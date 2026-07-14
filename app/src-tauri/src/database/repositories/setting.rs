@@ -1,5 +1,5 @@
 use crate::database::models::{Setting, TranscriptSetting};
-use crate::keychain::{entry_key, SecretStore};
+use crate::keychain::{SecretStore, entry_key};
 use crate::summary::CustomOpenAIConfig;
 use sqlx::{AssertSqlSafe, SqlitePool};
 
@@ -1041,21 +1041,27 @@ mod tests {
     #[tokio::test]
     async fn post_meeting_quality_pass_defaults_off_and_roundtrips() {
         let pool = test_pool().await;
-        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool)
-            .await
-            .unwrap());
+        assert!(
+            !SettingsRepository::get_post_meeting_quality_pass(&pool)
+                .await
+                .unwrap()
+        );
         SettingsRepository::set_post_meeting_quality_pass(&pool, true)
             .await
             .unwrap();
-        assert!(SettingsRepository::get_post_meeting_quality_pass(&pool)
-            .await
-            .unwrap());
+        assert!(
+            SettingsRepository::get_post_meeting_quality_pass(&pool)
+                .await
+                .unwrap()
+        );
         SettingsRepository::set_post_meeting_quality_pass(&pool, false)
             .await
             .unwrap();
-        assert!(!SettingsRepository::get_post_meeting_quality_pass(&pool)
-            .await
-            .unwrap());
+        assert!(
+            !SettingsRepository::get_post_meeting_quality_pass(&pool)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -1063,14 +1069,18 @@ mod tests {
         let pool = test_pool().await;
 
         // Unset defaults to None for both shortcuts.
-        assert!(SettingsRepository::get_recording_shortcut(&pool)
-            .await
-            .unwrap()
-            .is_none());
-        assert!(SettingsRepository::get_dictation_shortcut(&pool)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            SettingsRepository::get_recording_shortcut(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            SettingsRepository::get_dictation_shortcut(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         SettingsRepository::set_recording_shortcut(&pool, Some("CmdOrCtrl+Shift+F9"))
             .await
@@ -1100,14 +1110,18 @@ mod tests {
         SettingsRepository::set_dictation_shortcut(&pool, Some("  "))
             .await
             .unwrap();
-        assert!(SettingsRepository::get_recording_shortcut(&pool)
-            .await
-            .unwrap()
-            .is_none());
-        assert!(SettingsRepository::get_dictation_shortcut(&pool)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            SettingsRepository::get_recording_shortcut(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            SettingsRepository::get_dictation_shortcut(&pool)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]

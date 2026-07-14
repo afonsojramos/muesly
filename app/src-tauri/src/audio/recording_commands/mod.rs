@@ -7,18 +7,18 @@ use anyhow::Result;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
 };
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::task::JoinHandle;
 
 use super::recording_state::RecordingState;
 use super::{
+    RecordingManager,
     default_input_device,  // Get default microphone
     default_output_device, // Get default system audio
     parse_audio_device,
-    RecordingManager,
 };
 
 // Import transcription modules
@@ -351,8 +351,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
     let (auto_save, preferred_mic_name, preferred_system_name) =
         match super::recording_preferences::load_recording_preferences(&app).await {
             Ok(prefs) => {
-                info!("📋 Loaded recording preferences: auto_save={}, preferred_mic={:?}, preferred_system={:?}",
-                      prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device);
+                info!(
+                    "📋 Loaded recording preferences: auto_save={}, preferred_mic={:?}, preferred_system={:?}",
+                    prefs.auto_save, prefs.preferred_mic_device, prefs.preferred_system_device
+                );
                 (
                     prefs.auto_save,
                     prefs.preferred_mic_device,
@@ -446,7 +448,10 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                             Some(Arc::new(device))
                         }
                         Err(default_err) => {
-                            warn!("⚠️ No system audio available (preferred and default both failed): {}", default_err);
+                            warn!(
+                                "⚠️ No system audio available (preferred and default both failed): {}",
+                                default_err
+                            );
                             warn!("   Recording will continue with microphone only");
                             None // System audio is optional
                         }
@@ -922,7 +927,9 @@ pub async fn stop_recording<R: Runtime>(
     };
 
     if let Some(task_handle) = transcription_task {
-        info!("⏳ Waiting for ALL transcription chunks to be processed (no timeout - preserving every chunk)");
+        info!(
+            "⏳ Waiting for ALL transcription chunks to be processed (no timeout - preserving every chunk)"
+        );
 
         // Enhanced progress monitoring during shutdown
         let progress_app = app.clone();
@@ -962,7 +969,9 @@ pub async fn stop_recording<R: Runtime>(
                 // Continue anyway - the worker may have processed most chunks
             }
             Err(_) => {
-                warn!("⏱️ Transcription timeout (10 minutes) reached, continuing shutdown to prevent indefinite hang");
+                warn!(
+                    "⏱️ Transcription timeout (10 minutes) reached, continuing shutdown to prevent indefinite hang"
+                );
                 // Continue shutdown even on timeout - better to lose some chunks than hang forever
             }
         }

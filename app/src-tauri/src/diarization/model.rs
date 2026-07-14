@@ -12,7 +12,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 
 /// Pyannote segmentation model file name on disk.
 pub const SEGMENTATION_MODEL_FILE: &str = "sherpa-onnx-pyannote-segmentation-3.onnx";

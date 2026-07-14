@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, info, warn};
 use silero_rs::{VadConfig, VadSession, VadTransition};
 use std::collections::VecDeque;
@@ -64,8 +64,10 @@ impl ContinuousVadProcessor {
         // New: 250ms ensures segments are substantial enough for Whisper (>100ms requirement)
         config.min_speech_time = Duration::from_millis(250); // Prevent tiny fragments
 
-        debug!("Creating VAD session with: sample_rate={}Hz, redemption={}ms, min_speech={}ms, input_rate={}Hz",
-               VAD_SAMPLE_RATE, redemption_time_ms, 250, input_sample_rate);
+        debug!(
+            "Creating VAD session with: sample_rate={}Hz, redemption={}ms, min_speech={}ms, input_rate={}Hz",
+            VAD_SAMPLE_RATE, redemption_time_ms, 250, input_sample_rate
+        );
 
         let session = VadSession::new(config)
             .map_err(|e| anyhow!("Failed to create VAD session: {:?}", e))?;
@@ -181,8 +183,13 @@ impl ContinuousVadProcessor {
 
     /// Flush any remaining audio and return final speech segments
     pub fn flush(&mut self) -> Result<Vec<SpeechSegment>> {
-        debug!("VAD flush: in_speech={}, current_speech_len={}, buffer_len={}, speech_segments_queued={}",
-              self.in_speech, self.current_speech.len(), self.buffer.len(), self.speech_segments.len());
+        debug!(
+            "VAD flush: in_speech={}, current_speech_len={}, buffer_len={}, speech_segments_queued={}",
+            self.in_speech,
+            self.current_speech.len(),
+            self.buffer.len(),
+            self.speech_segments.len()
+        );
 
         let mut completed_segments = Vec::new();
 
@@ -240,8 +247,11 @@ impl ContinuousVadProcessor {
         let current_speech_size = self.current_speech.len();
         if current_speech_size > 1_000_000 {
             // More than ~62 seconds of accumulated speech at 16kHz
-            warn!("VAD: Accumulated speech buffer is large: {} samples ({:.1}s) - possible memory issue",
-                  current_speech_size, current_speech_size as f64 / 16000.0);
+            warn!(
+                "VAD: Accumulated speech buffer is large: {} samples ({:.1}s) - possible memory issue",
+                current_speech_size,
+                current_speech_size as f64 / 16000.0
+            );
         }
 
         let transitions = self
@@ -393,7 +403,9 @@ impl ContinuousVadProcessor {
                 self.obs_chunks, self.obs_speech_chunks, active_pct, self.in_speech
             );
             if self.obs_speech_chunks == 0 {
-                warn!("VAD detected no speech in the last ~60s of audio - check the microphone/system input if this persists");
+                warn!(
+                    "VAD detected no speech in the last ~60s of audio - check the microphone/system input if this persists"
+                );
             }
             self.obs_window_samples = 0;
             self.obs_chunks = 0;
@@ -435,7 +447,10 @@ pub fn extract_speech_16k(samples_mono_16k: &[f32]) -> Result<Vec<f32>> {
         // Previous aggressive values (0.08/0.15) were discarding valid quiet speech
         // New values (0.03/0.08) are more balanced - catch quiet speech, reject pure silence
         if rms < 0.2 || peak < 0.20 {
-            info!("-----VAD detected silence/noise (RMS: {:.6}, Peak: {:.6}), skipping to prevent hallucinations-----", rms, peak);
+            info!(
+                "-----VAD detected silence/noise (RMS: {:.6}, Peak: {:.6}), skipping to prevent hallucinations-----",
+                rms, peak
+            );
             return Ok(Vec::new());
         } else {
             info!(

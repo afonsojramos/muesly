@@ -29,7 +29,7 @@ use crate::database::repositories::{
     summary::SummaryProcessesRepository,
 };
 use crate::state::AppState;
-use crate::summary::llm_client::{generate_summary_streaming, LLMProvider};
+use crate::summary::llm_client::{LLMProvider, generate_summary_streaming};
 use crate::summary::service::SummaryService;
 use crate::summary::summary_engine;
 

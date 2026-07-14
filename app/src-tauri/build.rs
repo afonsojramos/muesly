@@ -48,11 +48,15 @@ fn detect_and_report_gpu_capabilities() {
                 println!(
                     "cargo:warning=💡 For AMD/Intel GPU: cargo build --release --features vulkan"
                 );
-                println!("cargo:warning=💡 For CPU optimization: cargo build --release --features openblas");
+                println!(
+                    "cargo:warning=💡 For CPU optimization: cargo build --release --features openblas"
+                );
 
                 // Try to detect NVIDIA GPU
                 if which::which("nvidia-smi").is_ok() {
-                    println!("cargo:warning=🎯 NVIDIA GPU detected! Consider rebuilding with --features cuda");
+                    println!(
+                        "cargo:warning=🎯 NVIDIA GPU detected! Consider rebuilding with --features cuda"
+                    );
                 }
             }
         }
@@ -74,16 +78,22 @@ fn detect_and_report_gpu_capabilities() {
                 println!(
                     "cargo:warning=💡 For other GPUs: cargo build --release --features vulkan"
                 );
-                println!("cargo:warning=💡 For CPU optimization: cargo build --release --features openblas");
+                println!(
+                    "cargo:warning=💡 For CPU optimization: cargo build --release --features openblas"
+                );
 
                 // Try to detect NVIDIA GPU
                 if which::which("nvidia-smi").is_ok() {
-                    println!("cargo:warning=🎯 NVIDIA GPU detected! Consider rebuilding with --features cuda");
+                    println!(
+                        "cargo:warning=🎯 NVIDIA GPU detected! Consider rebuilding with --features cuda"
+                    );
                 }
 
                 // Try to detect AMD GPU
                 if which::which("rocm-smi").is_ok() {
-                    println!("cargo:warning=🎯 AMD GPU detected! Consider rebuilding with --features hipblas");
+                    println!(
+                        "cargo:warning=🎯 AMD GPU detected! Consider rebuilding with --features hipblas"
+                    );
                 }
             }
         }
@@ -99,7 +109,9 @@ fn detect_and_report_gpu_capabilities() {
         && !cfg!(feature = "openblas")
         && target_os != "macos"
     {
-        println!("cargo:warning=📊 Performance: CPU-only builds are significantly slower than GPU/BLAS builds");
+        println!(
+            "cargo:warning=📊 Performance: CPU-only builds are significantly slower than GPU/BLAS builds"
+        );
         println!("cargo:warning=📚 See README.md for GPU/BLAS setup instructions");
     }
 }

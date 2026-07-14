@@ -63,7 +63,7 @@ pub async fn api_create_folder<R: Runtime>(
         match FoldersRepository::folder_parent_id(pool, pid).await {
             Ok(None) => return Err(format!("Parent folder not found: {}", pid)),
             Ok(Some(Some(_))) => {
-                return Err("Subfolders can't contain further subfolders".to_string())
+                return Err("Subfolders can't contain further subfolders".to_string());
             }
             Ok(Some(None)) => {}
             Err(e) => {

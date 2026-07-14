@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
-use super::devices::{list_audio_devices, AudioDevice};
+use super::devices::{AudioDevice, list_audio_devices};
 
 /// Device monitoring events
 #[derive(Debug, Clone)]

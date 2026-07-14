@@ -420,10 +420,9 @@ impl RecordingState {
     }
 
     pub fn has_fatal_error(&self) -> bool {
-        if let Some(error) = &*self.last_error.lock_recover() {
-            !error.is_recoverable() && self.error_count.load(Ordering::SeqCst) > 0
-        } else {
-            false
+        match &*self.last_error.lock_recover() {
+            Some(error) => !error.is_recoverable() && self.error_count.load(Ordering::SeqCst) > 0,
+            _ => false,
         }
     }
 

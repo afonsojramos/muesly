@@ -51,12 +51,12 @@ impl AudioCaptureBackend {
         }
     }
 
-    /// Convert to string (lowercase)
-    pub fn to_string(&self) -> String {
+    /// Stable lowercase identifier used in persisted settings.
+    pub fn id(&self) -> &'static str {
         match self {
-            AudioCaptureBackend::ScreenCaptureKit => "screencapturekit".to_string(),
+            AudioCaptureBackend::ScreenCaptureKit => "screencapturekit",
             #[cfg(target_os = "macos")]
-            AudioCaptureBackend::CoreAudio => "coreaudio".to_string(),
+            AudioCaptureBackend::CoreAudio => "coreaudio",
         }
     }
 
@@ -157,11 +157,11 @@ mod tests {
     #[test]
     fn test_backend_to_string() {
         assert_eq!(
-            AudioCaptureBackend::ScreenCaptureKit.to_string(),
+            AudioCaptureBackend::ScreenCaptureKit.id(),
             "screencapturekit"
         );
         #[cfg(target_os = "macos")]
-        assert_eq!(AudioCaptureBackend::CoreAudio.to_string(), "coreaudio");
+        assert_eq!(AudioCaptureBackend::CoreAudio.id(), "coreaudio");
     }
 
     #[test]

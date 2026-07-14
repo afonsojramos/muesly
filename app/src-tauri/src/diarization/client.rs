@@ -4,7 +4,7 @@
 //! a temp file, sends a JSON request over stdin, and parses the JSON speaker
 //! turns from stdout. The sidecar owns `sherpa-onnx`; this side never links it.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};

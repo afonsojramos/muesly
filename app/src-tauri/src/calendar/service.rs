@@ -4,7 +4,7 @@
 //! work must never block a recording or a summary.
 
 use crate::calendar::matching::{self, CalendarEventCandidate, MatchConfidence, ParticipantStatus};
-use crate::calendar::{context, dedup, eventkit, google, CalendarAuthStatus, SourceKind};
+use crate::calendar::{CalendarAuthStatus, SourceKind, context, dedup, eventkit, google};
 use crate::database::models::{CalendarAccount, CalendarEvent};
 use crate::database::repositories::calendar::CalendarEventsRepository;
 use crate::database::repositories::calendar_accounts::CalendarAccountsRepository;

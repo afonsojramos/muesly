@@ -1,4 +1,4 @@
-use crate::summary::llm_client::{generate_summary, LLMProvider};
+use crate::summary::llm_client::{LLMProvider, generate_summary};
 use crate::summary::templates;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -215,8 +215,7 @@ pub fn extract_meeting_name_from_markdown(markdown: &str) -> Option<String> {
 /// Forces the AI passes to always produce an English base summary. Translation
 /// to the requested output language (if any) happens in a dedicated second pass,
 /// which keeps quality high and the pipeline deterministic.
-const ENGLISH_BASE_SUMMARY_INSTRUCTION: &str =
-    "**Write the summary/report in English regardless of transcript language; non-English prose is invalid.**";
+const ENGLISH_BASE_SUMMARY_INSTRUCTION: &str = "**Write the summary/report in English regardless of transcript language; non-English prose is invalid.**";
 
 fn resolve_cached_english<'a>(
     cached: Option<&'a str>,
@@ -588,9 +587,9 @@ pub async fn generate_meeting_summary(
 
                 info!("Processing chunk {}/{}", i + 1, num_chunks);
                 let user_prompt_chunk = format!(
-                        "{ENGLISH_BASE_SUMMARY_INSTRUCTION}\n\nProvide a concise but comprehensive summary of the following transcript chunk. Capture all key points, decisions, action items, and mentioned individuals.\n\n<transcript_chunk>\n{}\n</transcript_chunk>",
-                        chunk
-                    );
+                    "{ENGLISH_BASE_SUMMARY_INSTRUCTION}\n\nProvide a concise but comprehensive summary of the following transcript chunk. Capture all key points, decisions, action items, and mentioned individuals.\n\n<transcript_chunk>\n{}\n</transcript_chunk>",
+                    chunk
+                );
 
                 match generate_summary(
                     client,
@@ -646,9 +645,9 @@ pub async fn generate_meeting_summary(
                 let combined_text = chunk_summaries.join("\n---\n");
                 let system_prompt_combine = "You are an expert at synthesizing meeting summaries.";
                 let user_prompt_combine = format!(
-                        "{ENGLISH_BASE_SUMMARY_INSTRUCTION}\n\nThe following are consecutive summaries of a meeting. Combine them into a single, coherent, and detailed narrative summary that retains all important details, organized logically.\n\n<summaries>\n{}\n</summaries>",
-                        combined_text
-                    );
+                    "{ENGLISH_BASE_SUMMARY_INSTRUCTION}\n\nThe following are consecutive summaries of a meeting. Combine them into a single, coherent, and detailed narrative summary that retains all important details, organized logically.\n\n<summaries>\n{}\n</summaries>",
+                    combined_text
+                );
                 generate_summary(
                     client,
                     provider,

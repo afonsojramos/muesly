@@ -5,8 +5,8 @@ use log::{error, info, warn};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-use super::capture::{get_current_backend, AudioCaptureBackend};
-use super::devices::{get_device_and_config, AudioDevice};
+use super::capture::{AudioCaptureBackend, get_current_backend};
+use super::devices::{AudioDevice, get_device_and_config};
 use super::pipeline::AudioCapture;
 use super::recording_state::{DeviceType, RecordingState};
 

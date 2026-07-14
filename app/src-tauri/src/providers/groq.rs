@@ -1,4 +1,4 @@
-use crate::providers::common::{fetch_models, ModelCache, ModelProvider};
+use crate::providers::common::{ModelCache, ModelProvider, fetch_models};
 use serde::{Deserialize, Serialize};
 use tauri::command;
 

@@ -13,8 +13,8 @@ use tokio_util::sync::CancellationToken;
 use crate::database::repositories::dictation_preset::DictationCleanupPresetsRepository;
 use crate::database::repositories::setting::SettingsRepository;
 use crate::state::AppState;
-use crate::summary::summary_engine::commands::{init_model_manager, ModelManagerState};
-use crate::summary::summary_engine::{generate_with_builtin, ModelStatus};
+use crate::summary::summary_engine::commands::{ModelManagerState, init_model_manager};
+use crate::summary::summary_engine::{ModelStatus, generate_with_builtin};
 
 /// Cleanup must finish within this budget or the raw text is injected instead.
 /// A starting point; tune against the local model on-device.

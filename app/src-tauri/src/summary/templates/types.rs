@@ -59,11 +59,13 @@ impl Template {
             }
 
             match section.format.as_str() {
-                "paragraph" | "list" | "string" => {},
-                other => return Err(format!(
-                    "Section '{}' has invalid format '{}'. Must be 'paragraph', 'list', or 'string'",
-                    section.title, other
-                )),
+                "paragraph" | "list" | "string" => {}
+                other => {
+                    return Err(format!(
+                        "Section '{}' has invalid format '{}'. Must be 'paragraph', 'list', or 'string'",
+                        section.title, other
+                    ));
+                }
             }
         }
 
@@ -84,7 +86,7 @@ impl Template {
     /// Generates section-specific instructions for the LLM
     pub fn to_section_instructions(&self) -> String {
         let mut instructions = String::from(
-            "- **For the main title (`# [AI-Generated Title]`):** Analyze the entire transcript and create a concise, descriptive title for the meeting. Use only the subject itself; do not prefix it with a label or category such as 'Meeting Summary:', 'Meeting Report:', or 'Title:'. For example, write '# Travel Plans and Logistics', not '# Meeting Report: Travel Plans and Logistics'.\n"
+            "- **For the main title (`# [AI-Generated Title]`):** Analyze the entire transcript and create a concise, descriptive title for the meeting. Use only the subject itself; do not prefix it with a label or category such as 'Meeting Summary:', 'Meeting Report:', or 'Title:'. For example, write '# Travel Plans and Logistics', not '# Meeting Report: Travel Plans and Logistics'.\n",
         );
 
         for section in &self.sections {

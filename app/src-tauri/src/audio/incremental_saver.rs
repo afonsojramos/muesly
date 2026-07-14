@@ -1,6 +1,6 @@
 use super::encode::encode_single_audio;
 use super::recording_state::AudioChunk;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -525,9 +525,11 @@ mod tests {
         // Try to finalize without adding any chunks
         let result = saver.finalize().await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("No audio checkpoints"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("No audio checkpoints")
+        );
     }
 }

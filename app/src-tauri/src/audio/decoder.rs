@@ -2,7 +2,7 @@
 // Uses Symphonia to decode MP4/AAC audio files, with ffmpeg fallback for
 // formats Symphonia can't handle (MKV, WebM, WMA)
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{debug, error, info, warn};
 use rayon::prelude::*;
 use std::borrow::Cow;
@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -628,7 +628,7 @@ mod tests {
 
         let result = audio.to_whisper_format();
         assert_eq!(result.len(), 2); // Should be mono now
-                                     // Average of (0.2, 0.4) = 0.3 and (0.6, 0.8) = 0.7
+        // Average of (0.2, 0.4) = 0.3 and (0.6, 0.8) = 0.7
         assert!((result[0] - 0.3).abs() < 0.001);
         assert!((result[1] - 0.7).abs() < 0.001);
     }

@@ -5,7 +5,7 @@
 
 use std::sync::atomic::Ordering;
 
-use super::{TranscriptionStatus, IS_RECORDING, RECORDING_MANAGER};
+use super::{IS_RECORDING, RECORDING_MANAGER, TranscriptionStatus};
 
 /// Check if recording is active
 pub async fn is_recording() -> bool {
@@ -84,8 +84,8 @@ pub async fn get_meeting_folder_path() -> Result<Option<String>, String> {
 /// Used for syncing frontend state after page reload during active recording
 #[tauri::command]
 #[specta::specta]
-pub async fn get_transcript_history(
-) -> Result<Vec<crate::audio::recording_saver::TranscriptSegment>, String> {
+pub async fn get_transcript_history()
+-> Result<Vec<crate::audio::recording_saver::TranscriptSegment>, String> {
     let manager_guard = RECORDING_MANAGER.lock().await;
 
     if let Some(manager) = manager_guard.as_ref() {

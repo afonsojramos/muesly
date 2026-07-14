@@ -1,7 +1,7 @@
 //! Calendar permission status, request, and the System Settings deep-link.
 //! Thin wrappers over [`crate::calendar::eventkit`] plus the OS settings pane.
 
-use crate::calendar::{eventkit, CalendarAuthStatus};
+use crate::calendar::{CalendarAuthStatus, eventkit};
 use tauri::{AppHandle, Runtime};
 
 /// Current read-access status. Cheap, synchronous, thread-agnostic.

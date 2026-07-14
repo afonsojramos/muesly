@@ -3,11 +3,11 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SampleRate, StreamConfig};
 use log::{debug, error, info, warn};
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::sync::Mutex;
-use tokio::time::{interval, Duration};
+use tokio::time::{Duration, interval};
 
 use super::audio_processing::audio_to_mono;
 
@@ -73,18 +73,24 @@ impl AudioLevelMonitor {
 
         // Create audio streams for each device
         for device_name in &device_names {
-            if let Ok(device) = self.find_device_by_name(&host, device_name) {
-                if let Ok(stream) = self
-                    .create_level_stream(&device, device_name, level_data.clone())
-                    .await
-                {
-                    let mut streams = self.streams.lock().await;
-                    streams.push(stream);
-                } else {
-                    warn!("Failed to create audio stream for device: {}", device_name);
+            match self.find_device_by_name(&host, device_name) {
+                Ok(device) => {
+                    match self
+                        .create_level_stream(&device, device_name, level_data.clone())
+                        .await
+                    {
+                        Ok(stream) => {
+                            let mut streams = self.streams.lock().await;
+                            streams.push(stream);
+                        }
+                        _ => {
+                            warn!("Failed to create audio stream for device: {}", device_name);
+                        }
+                    }
                 }
-            } else {
-                warn!("Device not found: {}", device_name);
+                _ => {
+                    warn!("Device not found: {}", device_name);
+                }
             }
         }
 

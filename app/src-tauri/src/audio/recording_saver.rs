@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::mpsc;
 
 use super::audio_processing::create_meeting_folder;
 use super::incremental_saver::IncrementalAudioSaver;
@@ -255,10 +255,9 @@ impl RecordingSaver {
                     // Stop requested: drain whatever is still buffered (chunks that
                     // arrived before the flag flipped) via non-blocking `try_recv`,
                     // then finish — otherwise those queued chunks would be lost.
-                    let stopped = if let Ok(is_saving) = is_saving_clone.lock() {
-                        !*is_saving
-                    } else {
-                        true
+                    let stopped = match is_saving_clone.lock() {
+                        Ok(is_saving) => !*is_saving,
+                        _ => true,
                     };
                     if stopped {
                         while let Ok(chunk) = receiver.try_recv() {
@@ -402,11 +401,12 @@ impl RecordingSaver {
     /// Write transcripts.json to disk (atomic write with temp file and validation)
     fn write_transcripts_json(&self, folder: &PathBuf) -> Result<()> {
         // Clone segments to avoid holding lock during I/O
-        let segments_clone = if let Ok(segments) = self.transcript_segments.lock() {
-            segments.clone()
-        } else {
-            error!("Failed to lock transcript segments for writing");
-            return Err(anyhow::anyhow!("Failed to lock transcript segments"));
+        let segments_clone = match self.transcript_segments.lock() {
+            Ok(segments) => segments.clone(),
+            _ => {
+                error!("Failed to lock transcript segments for writing");
+                return Err(anyhow::anyhow!("Failed to lock transcript segments"));
+            }
         };
 
         info!(
@@ -439,10 +439,9 @@ impl RecordingSaver {
     // in app/src-tauri/src/audio/recording_saver.rs
     pub fn get_stats(&self) -> (usize, u32) {
         if let Some(ref saver) = self.incremental_saver {
-            if let Ok(guard) = saver.try_lock() {
-                (guard.get_checkpoint_count() as usize, 48000)
-            } else {
-                (0, 48000)
+            match saver.try_lock() {
+                Ok(guard) => (guard.get_checkpoint_count() as usize, 48000),
+                _ => (0, 48000),
             }
         } else {
             (0, 48000)
@@ -496,7 +495,9 @@ impl RecordingSaver {
         }
 
         if !should_save_audio {
-            info!("⚠️  No audio saver initialized (auto-save was disabled) - skipping audio finalization");
+            info!(
+                "⚠️  No audio saver initialized (auto-save was disabled) - skipping audio finalization"
+            );
             self.finalize_metadata(recording_duration)?;
             info!("✅ Final transcript snapshot saved");
             return Ok(None);
@@ -552,10 +553,9 @@ impl RecordingSaver {
 
     /// Get accumulated transcript segments (for reload sync)
     pub fn get_transcript_segments(&self) -> Vec<TranscriptSegment> {
-        if let Ok(segments) = self.transcript_segments.lock() {
-            segments.clone()
-        } else {
-            Vec::new()
+        match self.transcript_segments.lock() {
+            Ok(segments) => segments.clone(),
+            _ => Vec::new(),
         }
     }
 

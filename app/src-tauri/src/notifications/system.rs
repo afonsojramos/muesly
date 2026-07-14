@@ -1,5 +1,5 @@
 use crate::notifications::types::{Notification, NotificationPriority, NotificationTimeout};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use log::{error as log_error, info as log_info};
 use std::time::Duration;
 use tauri::{AppHandle, Runtime};

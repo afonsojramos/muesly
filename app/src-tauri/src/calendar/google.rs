@@ -14,8 +14,8 @@
 //! REST fetch are wired separately; they require a Google OAuth client id and a
 //! bundled build to verify the consent round-trip.
 
-use crate::calendar::matching::{Attendee, CalendarEventCandidate, EventStatus, ParticipantStatus};
 use crate::calendar::SourceKind;
+use crate::calendar::matching::{Attendee, CalendarEventCandidate, EventStatus, ParticipantStatus};
 use crate::database::models::CalendarAccount;
 use crate::keychain::SecretStore;
 use base64::Engine;

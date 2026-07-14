@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::process::Command;
 use std::sync::Arc;
-use tauri::{command, AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Runtime, command};
 use tokio::sync::RwLock;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{Duration, sleep, timeout};
 
 // Global set to track models currently being downloaded
 static DOWNLOADING_MODELS: Lazy<Arc<RwLock<HashSet<String>>>> =
@@ -27,11 +27,23 @@ pub enum OllamaError {
 impl std::fmt::Display for OllamaError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            OllamaError::Timeout => write!(f, "Request timed out after 5 seconds. Please check if the Ollama server is running."),
-            OllamaError::NetworkError(msg) => write!(f, "Network error: {}. Please check your connection and endpoint URL.", msg),
-            OllamaError::InvalidEndpoint(msg) => write!(f, "Invalid endpoint: {}. Please check the URL format.", msg),
+            OllamaError::Timeout => write!(
+                f,
+                "Request timed out after 5 seconds. Please check if the Ollama server is running."
+            ),
+            OllamaError::NetworkError(msg) => write!(
+                f,
+                "Network error: {}. Please check your connection and endpoint URL.",
+                msg
+            ),
+            OllamaError::InvalidEndpoint(msg) => {
+                write!(f, "Invalid endpoint: {}. Please check the URL format.", msg)
+            }
             OllamaError::ServerError(msg) => write!(f, "Ollama server error: {}", msg),
-            OllamaError::NoModelsFound => write!(f, "No models found on the Ollama server. Please pull models using 'ollama pull <model>'."),
+            OllamaError::NoModelsFound => write!(
+                f,
+                "No models found on the Ollama server. Please pull models using 'ollama pull <model>'."
+            ),
             OllamaError::ParseError(msg) => write!(f, "Failed to parse server response: {}", msg),
         }
     }

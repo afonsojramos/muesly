@@ -3,11 +3,11 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{Mutex, RwLock};
@@ -956,9 +956,11 @@ mod tests {
     fn manager_with_fake(name: &str, body: &str) -> SidecarManager {
         let script = write_fake_helper(name, body);
         let _guard = ENV_LOCK.lock().unwrap();
-        std::env::set_var("MUESLY_LLAMA_HELPER", &script);
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("MUESLY_LLAMA_HELPER", &script) };
         let manager = SidecarManager::new(std::env::temp_dir()).unwrap();
-        std::env::remove_var("MUESLY_LLAMA_HELPER");
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::remove_var("MUESLY_LLAMA_HELPER") };
         manager
     }
 

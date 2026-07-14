@@ -1,4 +1,4 @@
-use crate::providers::common::{http_client, ModelCache, REQUEST_TIMEOUT};
+use crate::providers::common::{ModelCache, REQUEST_TIMEOUT, http_client};
 use serde::{Deserialize, Serialize};
 use tauri::command;
 

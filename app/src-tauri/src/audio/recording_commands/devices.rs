@@ -111,8 +111,8 @@ pub async fn get_reconnection_status() -> Result<ReconnectionStatus, String> {
 /// Used to warn users about Bluetooth playback issues
 #[tauri::command]
 #[specta::specta]
-pub async fn get_active_audio_output(
-) -> Result<crate::audio::playback_monitor::AudioOutputInfo, String> {
+pub async fn get_active_audio_output()
+-> Result<crate::audio::playback_monitor::AudioOutputInfo, String> {
     crate::audio::playback_monitor::get_active_audio_output()
         .await
         .map_err(|e| format!("Failed to get audio output info: {}", e))

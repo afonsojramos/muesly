@@ -432,9 +432,11 @@ mod tests {
             .await
             .expect("name");
 
-        assert!(MeetingsRepository::delete_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            MeetingsRepository::delete_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
 
         let remaining: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM speaker_names WHERE meeting_id = ?")
@@ -462,9 +464,11 @@ mod tests {
             2
         );
 
-        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            MeetingsRepository::soft_delete_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
 
         let active = MeetingsRepository::get_meetings(&pool, None, None)
             .await
@@ -487,9 +491,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(MeetingsRepository::restore_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            MeetingsRepository::restore_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
         assert_eq!(
             MeetingsRepository::get_meetings(&pool, None, None)
                 .await
@@ -497,10 +503,12 @@ mod tests {
                 .len(),
             1
         );
-        assert!(MeetingsRepository::get_trashed_meetings(&pool)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            MeetingsRepository::get_trashed_meetings(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -508,20 +516,26 @@ mod tests {
         let pool = test_pool().await;
         insert_meeting(&pool, "m1").await;
 
-        assert!(MeetingsRepository::soft_delete_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            MeetingsRepository::soft_delete_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
         // Already trashed → no rows affected.
-        assert!(!MeetingsRepository::soft_delete_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            !MeetingsRepository::soft_delete_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
         // Restoring an active meeting → no rows affected.
         MeetingsRepository::restore_meeting(&pool, "m1")
             .await
             .unwrap();
-        assert!(!MeetingsRepository::restore_meeting(&pool, "m1")
-            .await
-            .unwrap());
+        assert!(
+            !MeetingsRepository::restore_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -532,17 +546,23 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(MeetingsRepository::delete_meeting(&pool, "m1")
-            .await
-            .unwrap());
-        assert!(MeetingsRepository::get_trashed_meetings(&pool)
-            .await
-            .unwrap()
-            .is_empty());
-        assert!(MeetingsRepository::get_meetings(&pool, None, None)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            MeetingsRepository::delete_meeting(&pool, "m1")
+                .await
+                .unwrap()
+        );
+        assert!(
+            MeetingsRepository::get_trashed_meetings(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            MeetingsRepository::get_meetings(&pool, None, None)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]

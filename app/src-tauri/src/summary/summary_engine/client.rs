@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
@@ -434,10 +434,9 @@ pub async fn force_shutdown_sidecar() -> Result<()> {
 
 /// Check if sidecar is healthy
 pub async fn is_sidecar_healthy() -> bool {
-    if let Ok(manager) = get_sidecar_manager().await {
-        manager.is_healthy()
-    } else {
-        false
+    match get_sidecar_manager().await {
+        Ok(manager) => manager.is_healthy(),
+        _ => false,
     }
 }
 

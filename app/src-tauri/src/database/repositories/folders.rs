@@ -263,9 +263,11 @@ mod tests {
         assert!(listed[0].favorited_at.is_none());
 
         // Unknown folder reports false.
-        assert!(!FoldersRepository::set_folder_favorite(&pool, "nope", true)
-            .await
-            .unwrap());
+        assert!(
+            !FoldersRepository::set_folder_favorite(&pool, "nope", true)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -278,9 +280,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(FoldersRepository::delete_folder(&pool, &root.id)
-            .await
-            .unwrap());
+        assert!(
+            FoldersRepository::delete_folder(&pool, &root.id)
+                .await
+                .unwrap()
+        );
         let listed = FoldersRepository::list_folders(&pool).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].id, child.id);
@@ -309,9 +313,11 @@ mod tests {
             .unwrap();
         assert_eq!(m.folder_id.as_deref(), Some(folder.id.as_str()));
 
-        assert!(FoldersRepository::set_meeting_folder(&pool, "m1", None)
-            .await
-            .unwrap());
+        assert!(
+            FoldersRepository::set_meeting_folder(&pool, "m1", None)
+                .await
+                .unwrap()
+        );
         let m = MeetingsRepository::get_meeting_metadata(&pool, "m1")
             .await
             .unwrap()
@@ -330,13 +336,17 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(FoldersRepository::delete_folder(&pool, &folder.id)
-            .await
-            .unwrap());
-        assert!(FoldersRepository::list_folders(&pool)
-            .await
-            .unwrap()
-            .is_empty());
+        assert!(
+            FoldersRepository::delete_folder(&pool, &folder.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            FoldersRepository::list_folders(&pool)
+                .await
+                .unwrap()
+                .is_empty()
+        );
 
         // Meeting survives, detached from the folder.
         let m = MeetingsRepository::get_meeting_metadata(&pool, "m1")

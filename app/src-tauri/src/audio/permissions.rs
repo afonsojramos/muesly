@@ -95,7 +95,9 @@ pub fn check_screen_recording_permission() -> bool {
     match system_audio_permission_status() {
         SystemAudioPermission::Denied => {
             warn!("❌ System Audio Recording permission is DENIED - taps will record silence");
-            info!("📍 Enable it in System Settings → Privacy & Security → Screen & System Audio Recording");
+            info!(
+                "📍 Enable it in System Settings → Privacy & Security → Screen & System Audio Recording"
+            );
             false
         }
         status => {
@@ -191,7 +193,9 @@ pub fn trigger_system_audio_permission() -> Result<bool> {
         }
         SystemAudioPermission::Denied => {
             info!("❌ System Audio Recording permission denied");
-            info!("👉 Enable it in System Settings → Privacy & Security → Screen & System Audio Recording");
+            info!(
+                "👉 Enable it in System Settings → Privacy & Security → Screen & System Audio Recording"
+            );
             return Ok(false);
         }
         SystemAudioPermission::Undetermined | SystemAudioPermission::Unknown => {}

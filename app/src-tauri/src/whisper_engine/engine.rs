@@ -1,8 +1,8 @@
 // Commit name to recover the serial whisper engine processing for smaller meetings [Slower processing but dooes not fail] - "before parallel processing implementation"
 
-use super::acceleration::{whisper_context_acceleration_for, WhisperCompiledBackend};
+use super::acceleration::{WhisperCompiledBackend, whisper_context_acceleration_for};
 use crate::config::WHISPER_MODEL_CATALOG;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -161,8 +161,10 @@ impl WhisperEngine {
         // PERFORMANCE: Suppress verbose whisper.cpp and Metal logs
         // These C library logs bypass Rust logging and clutter output
         // Set environment variables to reduce C library verbosity
-        std::env::set_var("GGML_METAL_LOG_LEVEL", "1"); // 0=off, 1=error, 2=warn, 3=info
-        std::env::set_var("WHISPER_LOG_LEVEL", "1"); // Reduce whisper.cpp verbosity
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("GGML_METAL_LOG_LEVEL", "1") }; // 0=off, 1=error, 2=warn, 3=info
+        // FIXME: Audit that the environment access only happens in single-threaded code.
+        unsafe { std::env::set_var("WHISPER_LOG_LEVEL", "1") }; // Reduce whisper.cpp verbosity
 
         let models_dir = if let Some(dir) = models_dir {
             // Use provided directory (for production with app_data_dir)
@@ -267,8 +269,10 @@ impl WhisperEngine {
                             match self.validate_model_file(&model_path).await {
                                 Ok(_) => ModelStatus::Available,
                                 Err(_) => {
-                                    log::warn!("Model file {} has correct size but appears corrupted (failed validation)",
-                                             filename);
+                                    log::warn!(
+                                        "Model file {} has correct size but appears corrupted (failed validation)",
+                                        filename
+                                    );
                                     ModelStatus::Corrupted {
                                         file_size: file_size_bytes,
                                         expected_min_size: (expected_min_size_mb * 1024 * 1024)
@@ -283,15 +287,23 @@ impl WhisperEngine {
                             if let Some(existing_model) = models_guard.get(name) {
                                 match &existing_model.status {
                                     ModelStatus::Downloading { progress } => {
-                                        log::debug!("Model {} appears to be downloading ({} MB so far, {}% complete)",
-                                                  filename, file_size_mb, progress);
+                                        log::debug!(
+                                            "Model {} appears to be downloading ({} MB so far, {}% complete)",
+                                            filename,
+                                            file_size_mb,
+                                            progress
+                                        );
                                         ModelStatus::Downloading {
                                             progress: *progress,
                                         }
                                     }
                                     _ => {
-                                        log::warn!("Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
-                                                 filename, file_size_mb, size_mb);
+                                        log::warn!(
+                                            "Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
+                                            filename,
+                                            file_size_mb,
+                                            size_mb
+                                        );
                                         ModelStatus::Corrupted {
                                             file_size: file_size_bytes,
                                             expected_min_size: (expected_min_size_mb * 1024 * 1024)
@@ -300,8 +312,12 @@ impl WhisperEngine {
                                     }
                                 }
                             } else {
-                                log::warn!("Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
-                                         filename, file_size_mb, size_mb);
+                                log::warn!(
+                                    "Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
+                                    filename,
+                                    file_size_mb,
+                                    size_mb
+                                );
                                 ModelStatus::Corrupted {
                                     file_size: file_size_bytes,
                                     expected_min_size: (expected_min_size_mb * 1024 * 1024) as u64,
@@ -440,9 +456,14 @@ impl WhisperEngine {
                 // Enhanced acceleration status reporting
                 let acceleration_status = acceleration.status_label();
 
-                log::info!("Successfully loaded model: {} with {} (Performance Tier: {:?}, Beam Size: {}, Threads: {:?})",
-                          model_name, acceleration_status, hardware_profile.performance_tier,
-                          adaptive_config.beam_size, adaptive_config.max_threads);
+                log::info!(
+                    "Successfully loaded model: {} with {} (Performance Tier: {:?}, Beam Size: {}, Threads: {:?})",
+                    model_name,
+                    acceleration_status,
+                    hardware_profile.performance_tier,
+                    adaptive_config.beam_size,
+                    adaptive_config.max_threads
+                );
                 Ok(())
             }
             ModelStatus::Missing => Err(anyhow!("Model {} is not downloaded", model_name)),
@@ -1016,7 +1037,10 @@ impl WhisperEngine {
         }
 
         if should_log_short_warning {
-            log::warn!("Audio duration is short ({:.1}s < 1.0s). Consider padding the input audio with silence. Further short audio warnings will be suppressed.", duration_seconds);
+            log::warn!(
+                "Audio duration is short ({:.1}s < 1.0s). Consider padding the input audio with silence. Further short audio warnings will be suppressed.",
+                duration_seconds
+            );
         }
 
         // Performance optimization: reduce transcription start logging frequency
@@ -1281,20 +1305,36 @@ impl WhisperEngine {
             "base" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
             "small" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
             "medium" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
-            "large-v3-turbo" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-            "large-v3" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
+            "large-v3-turbo" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
+            }
+            "large-v3" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin"
+            }
 
             // Q5_1 quantized models
-            "tiny-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin",
-            "base-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin",
-            "small-q5_1" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin",
+            "tiny-q5_1" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin"
+            }
+            "base-q5_1" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
+            }
+            "small-q5_1" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
+            }
 
             // Q5_0 quantized models
-            "medium-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin",
-            "large-v3-turbo-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
-            "large-v3-q5_0" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin",
+            "medium-q5_0" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin"
+            }
+            "large-v3-turbo-q5_0" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
+            }
+            "large-v3-q5_0" => {
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin"
+            }
 
-            _ => return Err(anyhow!("Unsupported model: {}", model_name))
+            _ => return Err(anyhow!("Unsupported model: {}", model_name)),
         };
 
         log::info!("Model URL for {}: {}", model_name, model_url);

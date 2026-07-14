@@ -200,15 +200,21 @@ mod tests {
         let thread = ChatMessagesRepository::list_for_meeting(&pool, "m1")
             .await
             .unwrap();
-        assert!(thread
-            .iter()
-            .all(|row| row.bar_id.as_deref() == Some("builtin:summary")));
-        assert!(thread
-            .iter()
-            .all(|row| row.display_text.as_deref() == Some("Summarize")));
-        assert!(thread
-            .iter()
-            .all(|row| row.bar_context.as_deref() == Some("related to project X")));
+        assert!(
+            thread
+                .iter()
+                .all(|row| row.bar_id.as_deref() == Some("builtin:summary"))
+        );
+        assert!(
+            thread
+                .iter()
+                .all(|row| row.display_text.as_deref() == Some("Summarize"))
+        );
+        assert!(
+            thread
+                .iter()
+                .all(|row| row.bar_context.as_deref() == Some("related to project X"))
+        );
     }
 
     #[tokio::test]
@@ -243,10 +249,12 @@ mod tests {
             .await
             .expect("clear");
 
-        assert!(ChatMessagesRepository::list_for_meeting(&pool, "m1")
-            .await
-            .expect("list")
-            .is_empty());
+        assert!(
+            ChatMessagesRepository::list_for_meeting(&pool, "m1")
+                .await
+                .expect("list")
+                .is_empty()
+        );
         assert_eq!(
             ChatMessagesRepository::list_for_meeting(&pool, "m2")
                 .await

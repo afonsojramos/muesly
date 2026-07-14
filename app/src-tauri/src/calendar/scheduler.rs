@@ -19,7 +19,7 @@ use crate::calendar::matching::{CalendarEventCandidate, ParticipantStatus};
 use crate::calendar::{conference, dedup, matching, service};
 use crate::database::repositories::setting::SettingsRepository;
 use crate::notifications::commands::{
-    show_recording_started_notification, NotificationManagerState,
+    NotificationManagerState, show_recording_started_notification,
 };
 
 /// How often the fire-check runs.

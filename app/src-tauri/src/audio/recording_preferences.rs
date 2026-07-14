@@ -114,7 +114,7 @@ pub async fn load_recording_preferences<R: Runtime>(
                 #[cfg(target_os = "macos")]
                 {
                     let backend = crate::audio::capture::get_current_backend();
-                    p.system_audio_backend = Some(backend.to_string());
+                    p.system_audio_backend = Some(backend.id().to_string());
                 }
                 p
             }
@@ -128,9 +128,14 @@ pub async fn load_recording_preferences<R: Runtime>(
         RecordingPreferences::default()
     };
 
-    info!("Loaded recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
-          prefs.save_folder, prefs.auto_save, prefs.file_format,
-          prefs.preferred_mic_device, prefs.preferred_system_device);
+    info!(
+        "Loaded recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
+        prefs.save_folder,
+        prefs.auto_save,
+        prefs.file_format,
+        prefs.preferred_mic_device,
+        prefs.preferred_system_device
+    );
     Ok(prefs)
 }
 
@@ -139,9 +144,14 @@ pub async fn save_recording_preferences<R: Runtime>(
     app: &AppHandle<R>,
     preferences: &RecordingPreferences,
 ) -> Result<()> {
-    info!("Saving recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
-          preferences.save_folder, preferences.auto_save, preferences.file_format,
-          preferences.preferred_mic_device, preferences.preferred_system_device);
+    info!(
+        "Saving recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
+        preferences.save_folder,
+        preferences.auto_save,
+        preferences.file_format,
+        preferences.preferred_mic_device,
+        preferences.preferred_system_device
+    );
 
     // Get or create store
     let store = app
@@ -268,7 +278,7 @@ pub async fn get_available_audio_backends() -> Result<Vec<String>, String> {
     #[cfg(target_os = "macos")]
     {
         let backends = crate::audio::capture::get_available_backends();
-        Ok(backends.iter().map(|b| b.to_string()).collect())
+        Ok(backends.iter().map(|b| b.id().to_string()).collect())
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -285,7 +295,7 @@ pub async fn get_current_audio_backend() -> Result<String, String> {
     #[cfg(target_os = "macos")]
     {
         let backend = crate::audio::capture::get_current_backend();
-        Ok(backend.to_string())
+        Ok(backend.id().to_string())
     }
 
     #[cfg(not(target_os = "macos"))]

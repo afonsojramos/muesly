@@ -153,9 +153,11 @@ mod tests {
         CalendarAccountsRepository::delete(&pool, "sub-1")
             .await
             .expect("delete");
-        assert!(CalendarAccountsRepository::get(&pool, "sub-1")
-            .await
-            .expect("query")
-            .is_none());
+        assert!(
+            CalendarAccountsRepository::get(&pool, "sub-1")
+                .await
+                .expect("query")
+                .is_none()
+        );
     }
 }

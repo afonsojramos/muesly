@@ -187,10 +187,12 @@ mod tests {
             .await
             .expect("clear");
 
-        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "meeting-a")
-            .await
-            .expect("get a")
-            .is_empty());
+        assert!(
+            SpeakerNamesRepository::get_for_meeting(&pool, "meeting-a")
+                .await
+                .expect("get a")
+                .is_empty()
+        );
         assert_eq!(
             SpeakerNamesRepository::get_for_meeting(&pool, "meeting-b")
                 .await
@@ -214,9 +216,11 @@ mod tests {
             .await
             .expect("delete meeting");
 
-        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "meeting-1")
-            .await
-            .expect("get")
-            .is_empty());
+        assert!(
+            SpeakerNamesRepository::get_for_meeting(&pool, "meeting-1")
+                .await
+                .expect("get")
+                .is_empty()
+        );
     }
 }

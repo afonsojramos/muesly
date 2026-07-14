@@ -64,7 +64,10 @@ impl InputDeviceKind {
         }
 
         // Default: Unknown (conservative - treat as Bluetooth)
-        warn!("⚠️ Could not determine device type for '{}', using conservative (Bluetooth-like) settings", device_name);
+        warn!(
+            "⚠️ Could not determine device type for '{}', using conservative (Bluetooth-like) settings",
+            device_name
+        );
         InputDeviceKind::Unknown
     }
 

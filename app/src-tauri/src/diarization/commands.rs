@@ -757,9 +757,11 @@ mod tests {
         apply_diarization(&pool, "m2", &[("missing".to_string(), Some(0))], &none)
             .await
             .expect("apply");
-        assert!(SpeakerNamesRepository::get_for_meeting(&pool, "m2")
-            .await
-            .expect("get")
-            .is_empty());
+        assert!(
+            SpeakerNamesRepository::get_for_meeting(&pool, "m2")
+                .await
+                .expect("get")
+                .is_empty()
+        );
     }
 }
