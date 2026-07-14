@@ -88,7 +88,7 @@
 			/>
 		</div>
 	{/if}
-	{#if live && recordingState.isPaused}
+	{#if recordingState.isRecording}
 		<div class="flex shrink-0 border-t border-border p-2">
 			<div class="origin-bottom-left" in:scale={{ start: 0.25, duration: 220 }}>
 				<Button variant="brand" size="sm" onclick={() => void onResume?.()}>

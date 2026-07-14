@@ -85,7 +85,8 @@
 		if (isResumingRecording) return;
 		isResumingRecording = true;
 		try {
-			await recordingState.resume();
+			if (recordingState.isPaused) await recordingState.resume();
+			if (!isLiveNote) await goto('/note');
 		} finally {
 			isResumingRecording = false;
 		}
