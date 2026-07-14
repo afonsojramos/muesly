@@ -82,7 +82,7 @@
 			duration: 260,
 			easing: cubicOut,
 			css: (t) =>
-				`opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: translateX(${(1 - t) * -36}px) scale(${0.25 + t * 0.75})`,
+				`width: ${t * 32}px; margin-left: ${(t - 1) * 4}px; opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: translateX(${(1 - t) * -36}px) scale(${0.25 + t * 0.75})`,
 		};
 	}
 
@@ -234,7 +234,7 @@
 				align="start"
 				side="top"
 				sideOffset={8}
-				class="w-[min(42rem,calc(100vw-3rem))] p-0"
+				class="origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-open:slide-in-from-bottom-4 data-open:zoom-in-90 data-open:duration-200 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
 				onOpenAutoFocus={(event) => event.preventDefault()}
 			>
 				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
