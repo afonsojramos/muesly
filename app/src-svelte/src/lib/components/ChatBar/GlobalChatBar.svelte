@@ -57,7 +57,12 @@
 			runDialogOpen = true;
 			return;
 		}
-		executeBar(bar, addBarInstructions(bar.prompt, additionalInstructions), open, additionalInstructions);
+		executeBar(
+			bar,
+			addBarInstructions(bar.prompt, additionalInstructions),
+			open,
+			additionalInstructions,
+		);
 	}
 
 	function executeBar(
@@ -182,7 +187,7 @@
 	bar={pendingBar}
 	onRun={(prompt) =>
 		pendingBar &&
-			executeBar(
+		executeBar(
 			pendingBar,
 			addBarInstructions(prompt, pendingAdditionalInstructions),
 			pendingOpen ?? (() => {}),

@@ -4,7 +4,6 @@
 	import { navigate } from '$lib/navigation';
 	import { page } from '$app/state';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { getCurrentWindow } from '@tauri-apps/api/window';
 
 	import { bootStores } from '$lib/stores';
 	import { importDialog } from '$lib/stores/import-dialog.svelte';
@@ -30,7 +29,6 @@
 	import { Toaster } from '$lib/components/ui/sonner';
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
 	import MainContent from '$lib/components/MainContent.svelte';
-	import RecordingBar from '$lib/components/RecordingBar.svelte';
 	import ChatBar from '$lib/components/ChatBar/ChatBar.svelte';
 	import GlobalChatBar from '$lib/components/ChatBar/GlobalChatBar.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
@@ -53,33 +51,6 @@
 	const showOnboarding = $derived(
 		(isTauriRuntime || !import.meta.env.DEV) && onboarding.statusLoaded && !onboarding.completed,
 	);
-
-	// The in-app recording bar shows only while the main window is focused; the
-	// floating pill (Rust) covers the backgrounded case. Both read the SAME native
-	// window focus — the pill off WindowEvent::Focused, the bar off onFocusChanged —
-	// so they stay mutually exclusive (never two stop controls at once).
-	let windowFocused = $state(true);
-	onMount(() => {
-		if (!isTauriRuntime) return;
-		const win = getCurrentWindow();
-		let unlisten: (() => void) | undefined;
-		let cancelled = false;
-		void win.isFocused().then((focused) => {
-			if (!cancelled) windowFocused = focused;
-		});
-		void win
-			.onFocusChanged(({ payload }) => {
-				windowFocused = payload;
-			})
-			.then((fn) => {
-				if (cancelled) fn();
-				else unlisten = fn;
-			});
-		return () => {
-			cancelled = true;
-			unlisten?.();
-		};
-	});
 
 	// ⌘, opens Settings from anywhere (the macOS-standard Preferences shortcut).
 	onMount(() => {
@@ -606,29 +577,12 @@
 	</div>
 {/if}
 
-<!-- In-app recording control, rendered regardless of the onboarding branch so an
-     active recording always has a stop button while the window is focused (the
-     floating pill covers the unfocused case). Centered in the main content area
-     (offset past the sidebar), so it tracks the sidebar collapse. -->
-{#if recordingState.isRecording && windowFocused}
-	<div
-		class={cn('fixed bottom-6 z-40 -translate-x-1/2', 'transition-[left] duration-300')}
-		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
-	>
-		<RecordingBar />
-	</div>
-{/if}
-
 <!-- Floating chat bar. The per-meeting "Ask anything" chat on the note and
      meeting-details views (during AND after a recording); the "Ask your
-     meetings" global chat on Home. Same pill + panel surface, different store.
-     Stacks above the RecordingBar when both are visible. -->
+     meetings" global chat on Home. Same pill + panel surface, different store. -->
 {#if page.url.pathname === '/' || page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
 	<div
-		class={cn(
-			'fixed z-40 -translate-x-1/2 transition-[left,bottom] duration-300',
-			recordingState.isRecording && windowFocused ? 'bottom-24' : 'bottom-6',
-		)}
+		class={cn('fixed bottom-6 z-40 -translate-x-1/2 transition-[left] duration-300')}
 		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
 	>
 		{#if page.url.pathname === '/'}

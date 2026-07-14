@@ -11,7 +11,7 @@
 	});
 </script>
 
-<RecordingPill />
+<RecordingPill showControls={false} />
 
 <style>
 	:global(html.pill-route),

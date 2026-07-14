@@ -162,6 +162,10 @@
 		}
 	}
 
+	function openActiveRecording(): void {
+		void goto('/note');
+	}
+
 	// Roving keyboard nav within a row: the title/toggle is the only Tab stop; the
 	// inline action buttons are tabindex=-1 and reached with Arrow keys. ArrowRight/
 	// ArrowLeft step through [title, ...actions] and Escape returns to the title.
@@ -373,6 +377,28 @@
 	{/if}
 </div>
 
+{#if sidebar.isCollapsed && recordingState.isRecording}
+	<Tooltip.Provider delayDuration={300}>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				{#snippet child({ props })}
+					<Button
+						{...props}
+						variant="destructive"
+						size="icon-sm"
+						onclick={openActiveRecording}
+						class="fixed left-3 top-9 z-50"
+						aria-label="Open active recording"
+					>
+						<span class="size-2 rounded-full bg-destructive-foreground"></span>
+					</Button>
+				{/snippet}
+			</Tooltip.Trigger>
+			<Tooltip.Content>Open active recording</Tooltip.Content>
+		</Tooltip.Root>
+	</Tooltip.Provider>
+{/if}
+
 <div class="fixed left-0 top-0 z-40 h-screen">
 	<div
 		class={cn(
@@ -389,7 +415,7 @@
 			<!-- Header -->
 			<div class="shrink-0 px-3 pb-1 pt-1">
 				{#if recordingState.isRecording}
-					<Button disabled variant="destructive" size="sm" class="w-full cursor-not-allowed">
+					<Button variant="destructive" size="sm" class="w-full" onclick={openActiveRecording}>
 						<span class="relative flex size-2">
 							<span
 								class="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75"

@@ -47,8 +47,8 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
-	import SidePanel from './SidePanel.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
+	import NotesView from './NotesView.svelte';
 
 	interface MeetingDetailsData {
 		id: string;
@@ -142,9 +142,8 @@
 		debouncedSaveContext();
 	}
 
-	// Side panel open/tab/width live in a session store above this view, so they
-	// persist while navigating between meetings (this subtree remounts per id).
-	let sidePanel = $state<ReturnType<typeof SidePanel>>();
+	let notesView = $state<ReturnType<typeof NotesView>>();
+	let notesMode = $state<'enhanced' | 'notes'>('enhanced');
 
 	// Title is a click-to-edit field: a truncating label when idle (so long
 	// auto-generated titles don't clip mid-word), an input while editing.
@@ -228,7 +227,7 @@
 
 	async function handleCopyNotes(): Promise<void> {
 		try {
-			const notes = (sidePanel?.getNotesMarkdown() ?? notesMarkdown).trim();
+			const notes = (notesView?.getMarkdown() ?? notesMarkdown).trim();
 			if (!notes) {
 				toast.error('No notes to copy');
 				return;
@@ -366,7 +365,7 @@
 		getSummaryLanguage: () => summaryLanguage.preferred,
 		// Live notes from the always-mounted editor. The prop fallback only covers
 		// the first synchronous render tick before bind:this resolves.
-		getNotesMarkdown: () => sidePanel?.getNotesMarkdown() ?? notesMarkdown,
+		getNotesMarkdown: () => notesView?.getMarkdown() ?? notesMarkdown,
 		// svelte-ignore state_referenced_locally
 		onMeetingUpdated,
 		updateMeetingTitle: meetingData.updateMeetingTitle,
@@ -394,7 +393,7 @@
 		await meetingData.handleSaveSummary(data);
 	}
 
-	/** Summary `[mm:ss]` click → open transcript panel on the nearest segment. */
+	/** Summary `[mm:ss]` click → open the transcript drop-up on the nearest segment. */
 	function handleTimestampClick(seconds: number): void {
 		const pool = (segments ?? meeting.transcripts ?? []).map((s) => ({
 			id: s.id,
@@ -413,7 +412,7 @@
 			sidePanelState.open = true;
 			sidePanelState.activeTab = 'transcript';
 			toast.info('No matching transcript moment', {
-				description: 'Try regenerating the summary with timestamps, or open the transcript panel.',
+				description: 'Try regenerating the summary with timestamps, or open the transcript.',
 			});
 		}
 	}
@@ -423,7 +422,7 @@
 		// Clear any lingering "Saved" flash from the previously viewed meeting.
 		saveStatus.reset();
 
-		// ⌘T toggles the side panel; ⌘[ navigates back, matching the tooltip hints.
+		// ⌘T toggles the transcript drop-up; ⌘[ navigates back.
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 't') {
 				e.preventDefault();
@@ -711,55 +710,66 @@
 					</div>
 				{/if}
 			</div>
-			<SummaryPanel
-				bind:this={summaryPanel}
-				onCopySummary={copyOperations.handleCopySummary}
-				onOpenFolder={meetingOperations.openMeetingFolder}
-				aiSummary={meetingData.aiSummary}
-				summaryStatus={summaryGeneration.summaryStatus}
-				transcripts={meeting.transcripts}
-				modelConfig={config.modelConfig}
-				setModelConfig={(c) => (config.modelConfig = c)}
-				onSaveModelConfig={handleSaveModelConfig}
-				onGenerateSummary={summaryGeneration.handleGenerateSummary}
-				onStopGeneration={summaryGeneration.handleStopGeneration}
-				{customPrompt}
-				onSaveSummary={handleSaveSummary}
-				summaryError={summaryGeneration.summaryError}
-				onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
-				availableTemplates={templates.availableTemplates}
-				selectedTemplate={templates.selectedTemplate}
-				onTemplateSelect={handleTemplateSelect}
-				isModelConfigLoading={false}
-				onOpenModelSettings={handleRegisterModalOpen}
-				onTimestampClick={handleTimestampClick}
-			/>
+			<div class="flex justify-center px-8 py-2">
+				<div class="flex items-center rounded-lg bg-secondary p-1" role="tablist">
+					<Button
+						variant={notesMode === 'enhanced' ? 'default' : 'ghost'}
+						size="sm"
+						class="h-7"
+						role="tab"
+						aria-selected={notesMode === 'enhanced'}
+						onclick={() => (notesMode = 'enhanced')}
+					>
+						Enhanced notes
+					</Button>
+					<Button
+						variant={notesMode === 'notes' ? 'default' : 'ghost'}
+						size="sm"
+						class="h-7"
+						role="tab"
+						aria-selected={notesMode === 'notes'}
+						onclick={() => (notesMode = 'notes')}
+					>
+						Notes
+					</Button>
+				</div>
+			</div>
+
+			<div class={cn('min-h-0 flex-1', notesMode !== 'enhanced' && 'hidden')}>
+				<SummaryPanel
+					bind:this={summaryPanel}
+					onCopySummary={copyOperations.handleCopySummary}
+					onOpenFolder={meetingOperations.openMeetingFolder}
+					aiSummary={meetingData.aiSummary}
+					summaryStatus={summaryGeneration.summaryStatus}
+					transcripts={meeting.transcripts}
+					modelConfig={config.modelConfig}
+					setModelConfig={(c) => (config.modelConfig = c)}
+					onSaveModelConfig={handleSaveModelConfig}
+					onGenerateSummary={summaryGeneration.handleGenerateSummary}
+					onStopGeneration={summaryGeneration.handleStopGeneration}
+					{customPrompt}
+					onSaveSummary={handleSaveSummary}
+					summaryError={summaryGeneration.summaryError}
+					onRegenerateSummary={summaryGeneration.handleRegenerateSummary}
+					availableTemplates={templates.availableTemplates}
+					selectedTemplate={templates.selectedTemplate}
+					onTemplateSelect={handleTemplateSelect}
+					isModelConfigLoading={false}
+					onOpenModelSettings={handleRegisterModalOpen}
+					onTimestampClick={handleTimestampClick}
+				/>
+			</div>
+
+			<div
+				class={cn(
+					'min-h-0 flex-1 overflow-y-auto px-8 pb-32 pt-2',
+					notesMode !== 'notes' && 'hidden',
+				)}
+			>
+				<NotesView bind:this={notesView} {notesMarkdown} onSave={handleSaveNotes} />
+			</div>
 		</div>
-		<!-- Combined Transcript / Notes panel. Always mounted so the notes editor
-		     keeps unsaved edits across collapsing; open/tab/width come from the
-		     session store so they persist across meetings. -->
-		<SidePanel
-			bind:this={sidePanel}
-			transcripts={meeting.transcripts}
-			{customPrompt}
-			onPromptChange={handlePromptChange}
-			onCopyTranscript={copyOperations.handleCopyTranscript}
-			onOpenMeetingFolder={meetingOperations.openMeetingFolder}
-			{isRecording}
-			disableAutoScroll={true}
-			usePagination={true}
-			{segments}
-			{hasMore}
-			{isLoadingMore}
-			{totalCount}
-			{loadedCount}
-			{onLoadMore}
-			meetingId={meeting.id}
-			meetingFolderPath={meeting.folder_path}
-			{onRefetchTranscripts}
-			{notesMarkdown}
-			onSaveNotes={handleSaveNotes}
-		/>
 	</div>
 </div>
 

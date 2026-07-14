@@ -1,8 +1,6 @@
 /**
- * Side panel (Transcript / Notes) UI state, held above the per-meeting view so
- * it persists while navigating between meetings. The meeting detail subtree is
- * keyed by `meeting.id` and fully remounts per meeting; keeping open/tab/width
- * in this module singleton means the panel stays as the user left it.
+ * Transcript drop-up state, held above the per-meeting view so chat controls and
+ * timestamp links can open and focus the same transcript surface.
  *
  * Session-only: an in-memory singleton resets to defaults on app restart (no
  * localStorage). `open` defaults to true on wide windows, where the panel
@@ -16,7 +14,7 @@ export const SIDE_PANEL_MAX_WIDTH = 640;
 export const SIDE_PANEL_SUMMARY_MIN_WIDTH = 400;
 
 class SidePanelState {
-	open = $state(typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches);
+	open = $state(false);
 	activeTab = $state<SidePanelTab>('transcript');
 	width = $state(360);
 	/** Segment id to scroll/highlight when jumping from a summary timestamp. */
@@ -26,7 +24,7 @@ class SidePanelState {
 		this.open = !this.open;
 	};
 
-	/** Open the transcript tab and request focus on a segment. */
+	/** Open the transcript drop-up and request focus on a segment. */
 	jumpToSegment = (segmentId: string): void => {
 		this.open = true;
 		this.activeTab = 'transcript';

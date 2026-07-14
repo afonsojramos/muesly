@@ -73,6 +73,8 @@
 		headerActions?: Snippet;
 		/** Leading buttons in the input pill (bars, recents, …). */
 		rail?: Snippet<[{ open: () => void }]>;
+		/** Controls rendered in their own compact pill beside the input. */
+		detachedRail?: Snippet;
 		/** Extra content above an assistant bubble (the agent's tool steps). */
 		messageLeading?: Snippet<[ChatSurfaceMessage]>;
 		/** True while any wrapper-owned overlay (popover/dialog) is open. */
@@ -95,6 +97,7 @@
 		hideEmptyBubbleWhileStreaming = false,
 		headerActions,
 		rail,
+		detachedRail,
 		messageLeading,
 		overlayActive = false,
 		slashCommands = [],
@@ -297,15 +300,15 @@
 									>
 										{#if message.content}
 											{#if message.role === 'user' && message.barTitle}
-											<div class="flex flex-col gap-0.5">
-												<span class="flex items-center gap-1.5 font-medium">
-													<MueslyBar class="size-3.5 shrink-0" />
-													{message.barTitle}
-												</span>
-												{#if message.barContext}
-													<span class="font-normal opacity-80">{message.barContext}</span>
-												{/if}
-											</div>
+												<div class="flex flex-col gap-0.5">
+													<span class="flex items-center gap-1.5 font-medium">
+														<MueslyBar class="size-3.5 shrink-0" />
+														{message.barTitle}
+													</span>
+													{#if message.barContext}
+														<span class="font-normal opacity-80">{message.barContext}</span>
+													{/if}
+												</div>
 											{:else}
 												{message.content}
 											{/if}
@@ -355,96 +358,106 @@
 	<!-- items-center keeps the icon rail, input, and send button on one vertical
 	     axis in every state (a grown multiline draft included) — never the
 	     bottom-pinned look. -->
-	<div
-		class="relative flex items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
-	>
-		{#if slashMenuOpen}
+	<div class="flex items-center gap-2">
+		{#if detachedRail}
 			<div
-				id={slashListboxId}
-				class="absolute inset-x-2 bottom-full z-50 mb-2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_8px_30px_rgb(0,0,0,0.14)]"
-				role="listbox"
-				aria-label="Muesly bar commands"
+				class="flex shrink-0 self-stretch items-center gap-1 rounded-[1.75rem] border border-border bg-card p-1.5 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 			>
-				<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
-					Muesly bars
-				</div>
-				<div class="max-h-72 overflow-y-auto p-1.5">
-					{#each matchingSlashCommands as command, index (command.id)}
-						{@const Icon = command.icon}
-						<button
-							id={`${slashListboxId}-${index}`}
-							type="button"
-							role="option"
-							aria-selected={index === activeSlashIndex}
-							class={cn(
-								'flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
-								index === activeSlashIndex
-									? 'bg-accent text-accent-foreground'
-									: 'hover:bg-accent/60',
-							)}
-							onpointerenter={() => (activeSlashIndex = index)}
-							onmousedown={(event) => event.preventDefault()}
-							onclick={() => completeSlashCommand(command)}
-						>
-							<Icon class="size-4 shrink-0 text-muted-foreground" />
-							<span class="min-w-0 flex-1">
-								<span class="block truncate text-sm font-medium">{command.label}</span>
-								<span class="block truncate text-xs text-muted-foreground"
-									>{command.description}</span
-								>
-							</span>
-							<code class="shrink-0 text-xs text-muted-foreground">/{command.slug}</code>
-						</button>
-					{/each}
-				</div>
+				{@render detachedRail()}
 			</div>
 		{/if}
-		{#if hasMessages && !open}
-			<ChatRailButton tooltip="Show conversation" onclick={() => (open = true)}>
-				<MessagesSquare data-icon />
-			</ChatRailButton>
-		{/if}
 
-		{@render rail?.({ open: () => (open = true) })}
+		<div
+			class="relative flex min-w-0 flex-1 items-center gap-1.5 rounded-[1.75rem] border border-border bg-card py-1.5 pl-1.5 pr-2 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
+		>
+			{#if slashMenuOpen}
+				<div
+					id={slashListboxId}
+					class="absolute inset-x-2 bottom-full z-50 mb-2 overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_8px_30px_rgb(0,0,0,0.14)]"
+					role="listbox"
+					aria-label="Muesly bar commands"
+				>
+					<div class="border-b border-border px-3 py-2 text-xs font-medium text-muted-foreground">
+						Muesly bars
+					</div>
+					<div class="max-h-72 overflow-y-auto p-1.5">
+						{#each matchingSlashCommands as command, index (command.id)}
+							{@const Icon = command.icon}
+							<button
+								id={`${slashListboxId}-${index}`}
+								type="button"
+								role="option"
+								aria-selected={index === activeSlashIndex}
+								class={cn(
+									'flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors',
+									index === activeSlashIndex
+										? 'bg-accent text-accent-foreground'
+										: 'hover:bg-accent/60',
+								)}
+								onpointerenter={() => (activeSlashIndex = index)}
+								onmousedown={(event) => event.preventDefault()}
+								onclick={() => completeSlashCommand(command)}
+							>
+								<Icon class="size-4 shrink-0 text-muted-foreground" />
+								<span class="min-w-0 flex-1">
+									<span class="block truncate text-sm font-medium">{command.label}</span>
+									<span class="block truncate text-xs text-muted-foreground"
+										>{command.description}</span
+									>
+								</span>
+								<code class="shrink-0 text-xs text-muted-foreground">/{command.slug}</code>
+							</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+			{#if hasMessages && !open}
+				<ChatRailButton tooltip="Show conversation" onclick={() => (open = true)}>
+					<MessagesSquare data-icon />
+				</ChatRailButton>
+			{/if}
 
-		<Textarea
-			bind:value={controller.draft}
-			onkeydown={handleKeydown}
-			onfocus={() => {
-				if (hasMessages) open = true;
-			}}
-			placeholder={hasMessages && !open ? collapsedPlaceholder : placeholder}
-			aria-label={ariaLabel}
-			role="combobox"
-			aria-autocomplete="list"
-			aria-haspopup="listbox"
-			aria-expanded={slashMenuOpen}
-			aria-controls={slashMenuOpen ? slashListboxId : undefined}
-			aria-activedescendant={slashMenuOpen ? `${slashListboxId}-${activeSlashIndex}` : undefined}
-			rows={1}
-			class="max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
-		/>
+			{@render rail?.({ open: () => (open = true) })}
 
-		{#if controller.isStreaming}
-			<Button
-				variant="secondary"
-				size="icon"
-				class="shrink-0 rounded-full"
-				onclick={() => controller.stop()}
-				aria-label="Stop generating"
-			>
-				<Square data-icon />
-			</Button>
-		{:else}
-			<Button
-				size="icon"
-				class="shrink-0 rounded-full"
-				disabled={!controller.draft.trim()}
-				onclick={submit}
-				aria-label="Send"
-			>
-				<ArrowUp data-icon />
-			</Button>
-		{/if}
+			<Textarea
+				bind:value={controller.draft}
+				onkeydown={handleKeydown}
+				onfocus={() => {
+					if (hasMessages) open = true;
+				}}
+				placeholder={hasMessages && !open ? collapsedPlaceholder : placeholder}
+				aria-label={ariaLabel}
+				role="combobox"
+				aria-autocomplete="list"
+				aria-haspopup="listbox"
+				aria-expanded={slashMenuOpen}
+				aria-controls={slashMenuOpen ? slashListboxId : undefined}
+				aria-activedescendant={slashMenuOpen ? `${slashListboxId}-${activeSlashIndex}` : undefined}
+				rows={1}
+				class="max-h-40 min-h-0 flex-1 resize-none border-0 bg-transparent py-2 shadow-none focus-visible:ring-0"
+			/>
+
+			{#if controller.isStreaming}
+				<Button
+					variant="secondary"
+					size="icon"
+					class="shrink-0 rounded-full"
+					onclick={() => controller.stop()}
+					aria-label="Stop generating"
+				>
+					<Square data-icon />
+				</Button>
+			{:else}
+				<Button
+					size="icon"
+					class="shrink-0 rounded-full"
+					disabled={!controller.draft.trim()}
+					onclick={submit}
+					aria-label="Send"
+				>
+					<ArrowUp data-icon />
+				</Button>
+			{/if}
+		</div>
 	</div>
 </div>

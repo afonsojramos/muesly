@@ -16,7 +16,6 @@
 
 	import Editor from '$lib/components/Editor.svelte';
 	import PermissionWarning from '$lib/components/PermissionWarning.svelte';
-	import TranscriptPanel from '$lib/components/home/TranscriptPanel.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
 
 	// Non-reactive snapshot of the notes so the editor isn't re-seeded on every
@@ -46,10 +45,6 @@
 	// the `autoStartRecording` flag is set and navigation lands here.
 	useRecordingStart(noopSetIsRecording, (name, msg) => showModal(name, msg));
 
-	const isProcessingStop = $derived(
-		recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS || recordingState.isProcessing,
-	);
-
 	onMount(() => {
 		void Analytics.trackPageView('note');
 
@@ -67,8 +62,8 @@
 
 <div class="flex h-screen flex-col bg-background" in:fly={{ y: 20, duration: 300 }}>
 	<div class="flex flex-1 overflow-hidden">
-		<!-- Primary surface: the notes editor. The live transcript is secondary,
-		     in a toggleable side panel (⌘T), mirroring the saved-meeting view. -->
+		<!-- Primary surface: the notes editor. The live transcript is available
+		     from the chat bar's transcript drop-up (⌘T). -->
 		<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
 			<div class="flex-1 overflow-y-auto">
 				<div class="mx-auto w-2/3 max-w-[750px] px-2 pb-40 pt-9">
@@ -96,14 +91,6 @@
 				</div>
 			</div>
 		</div>
-
-		{#if liveTranscriptPanel.open}
-			<aside
-				class="flex w-2/5 min-w-[340px] max-w-[460px] flex-col overflow-hidden border-l border-border"
-			>
-				<TranscriptPanel {isProcessingStop} isStopping={recordingState.isStopping} compact />
-			</aside>
-		{/if}
 
 		<StatusOverlays
 			isProcessing={recordingState.status === RecordingStatus.PROCESSING_TRANSCRIPTS &&

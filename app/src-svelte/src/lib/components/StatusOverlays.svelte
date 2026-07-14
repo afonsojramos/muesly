@@ -22,7 +22,7 @@
 
 {#each overlays as overlay (overlay.message)}
 	<div
-		class="fixed bottom-4 left-0 right-0 z-10"
+		class="fixed bottom-24 left-0 right-0 z-50"
 		role="status"
 		aria-live="polite"
 		transition:fade={{ duration: 150 }}

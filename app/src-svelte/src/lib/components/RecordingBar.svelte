@@ -1,11 +1,18 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { emit } from '@tauri-apps/api/event';
-	import { Pause, Play, Square } from '@lucide/svelte';
+	import { LoaderCircle, Pause, Play, Square } from '@lucide/svelte';
 
 	import { recordingState } from '$lib/stores/recording-state.svelte';
-	import { levelMeterBars } from '$lib/audio-meter';
+	import AudioLinesIndicator from '$lib/components/AudioLinesIndicator.svelte';
 	import { cn } from '$lib/utils';
+
+	interface Props {
+		showAudioIndicator?: boolean;
+		showControls?: boolean;
+		showElapsed?: boolean;
+	}
+
+	let { showAudioIndicator = true, showControls = true, showElapsed = true }: Props = $props();
 
 	// In-app recording control, shown at the bottom of the main window while the
 	// app is focused (the floating pill covers the backgrounded case). Mirrors the
@@ -23,14 +30,12 @@
 	}
 	const elapsed = $derived(formatDuration(displaySeconds));
 
-	let reducedMotion = $state(false);
-	let barHeights = $state<string[]>(['8px', '14px', '8px']);
-
 	// Re-entrancy guards so a double tap can't fire two stop/pause calls; the
 	// shared store methods are idempotent regardless.
 	let isStopping = $state(false);
 	let isPausing = $state(false);
 	let isResuming = $state(false);
+	const stopRequested = $derived(isStopping || recordingState.isStopping);
 
 	async function handleStop(): Promise<void> {
 		if (isStopping) return;
@@ -65,67 +70,50 @@
 			}
 		}
 	}
-
-	onMount(() => {
-		const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-		reducedMotion = motionQuery.matches;
-		const onMotionChange = (e: MediaQueryListEvent): void => {
-			reducedMotion = e.matches;
-		};
-		motionQuery.addEventListener('change', onMotionChange);
-
-		// Live level meter driven by the backend `recording-level` event (via the
-		// store's audioLevel), so the bars react to real voice instead of at random.
-		const interval = setInterval(() => {
-			if (reducedMotion || !recordingState.isRecording || recordingState.isPaused) return;
-			barHeights = levelMeterBars(recordingState.audioLevel, 4, 18);
-		}, 80);
-
-		return () => {
-			clearInterval(interval);
-			motionQuery.removeEventListener('change', onMotionChange);
-		};
-	});
 </script>
 
 <div
 	class="flex items-center gap-2.5 rounded-full border border-border bg-card py-1.5 pl-3 pr-3.5 shadow-[0_2px_12px_rgb(0,0,0,0.1)]"
 >
-	<div class="flex h-5 items-center gap-1" aria-hidden="true">
-		{#each barHeights as height, index (index)}
-			<div
-				class={cn(
-					'w-1 rounded-full transition-all duration-200',
-					isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
-				)}
-				style={`height: ${isPaused || reducedMotion ? '7px' : height}`}
-			></div>
-		{/each}
-	</div>
+	{#if showAudioIndicator}
+		<AudioLinesIndicator
+			active={!isPaused && !stopRequested}
+			class={cn('size-4', isPaused ? 'text-muted-foreground/60' : 'text-brand')}
+		/>
+	{/if}
 
-	<button
-		onclick={handleTogglePause}
-		disabled={isPausing || isResuming || isStopping}
-		aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-		class="flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-60"
-	>
-		{#if isPaused}<Play size={15} />{:else}<Pause size={15} />{/if}
-	</button>
+	{#if showControls && !stopRequested}<button
+			onclick={handleTogglePause}
+			disabled={isPausing || isResuming || isStopping}
+			aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+			class="flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-secondary disabled:opacity-60"
+		>
+			{#if isPaused}<Play size={15} />{:else}<Pause size={15} />{/if}
+		</button>
 
-	<button
-		onclick={handleStop}
-		disabled={isStopping || isPausing || isResuming}
-		aria-label="Stop recording"
-		class="flex size-8 items-center justify-center rounded-full bg-destructive text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-	>
-		<Square size={15} />
-	</button>
+		<button
+			onclick={handleStop}
+			disabled={isStopping || isPausing || isResuming}
+			aria-label="Stop recording"
+			class="flex size-8 items-center justify-center rounded-full bg-destructive text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+		>
+			<Square size={15} />
+		</button>{:else if stopRequested}
+		<LoaderCircle
+			class="size-4 animate-spin text-muted-foreground motion-reduce:animate-none"
+			aria-hidden="true"
+		/>
+	{/if}
 
-	<span class="min-w-[3ch] text-xs tabular-nums text-muted-foreground" aria-live="polite">
-		{elapsed}
-	</span>
+	{#if showElapsed && !stopRequested}<span
+			class="min-w-[3ch] text-xs tabular-nums text-muted-foreground"
+			aria-live="polite"
+		>
+			{elapsed}
+		</span>{/if}
 
 	{#if isPaused}
 		<span class="text-xs font-medium text-muted-foreground">Paused</span>
-	{/if}
+	{:else if stopRequested}<span class="text-xs font-medium text-muted-foreground">Saving…</span
+		>{/if}
 </div>

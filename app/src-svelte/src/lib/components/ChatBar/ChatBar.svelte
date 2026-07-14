@@ -1,15 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import {
-		AudioLines,
-		Clock3,
-		History,
-		Pin,
-		Settings2,
-		Trash2,
-	} from '@lucide/svelte';
+	import { Clock3, History, Pin, Settings2, Trash2 } from '@lucide/svelte';
+	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import Square from '@lucide/svelte/icons/square';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { emit } from '@tauri-apps/api/event';
 
 	import type { RecentChatThread } from '$lib/bindings';
 	import { Button } from '$lib/components/ui/button';
@@ -20,11 +16,15 @@
 	import { bars } from '$lib/stores/bars.svelte';
 	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
+	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
 	import { addBarInstructions } from '$lib/bars/execution';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
+	import AudioLinesIndicator from '$lib/components/AudioLinesIndicator.svelte';
+	import TranscriptDropup from './TranscriptDropup.svelte';
+	import { cn } from '$lib/utils';
 
 	import ChatSurface from './ChatSurface.svelte';
 	import ChatRailButton from './ChatRailButton.svelte';
@@ -41,6 +41,8 @@
 	let pendingOpen: (() => void) | null = null;
 	let pendingAdditionalInstructions = '';
 	let recentThreads = $state<RecentChatThread[]>([]);
+	let isStoppingRecording = $state(false);
+	const stopRequested = $derived(isStoppingRecording || recordingState.isStopping);
 	// The in-meeting chat starts collapsed (a "Continue chat" pill) rather than
 	// expanded, so opening a meeting isn't dominated by the chat panel.
 	let chatOpen = $state(false);
@@ -60,11 +62,22 @@
 	});
 	const isLiveNote = $derived(page.url.pathname === '/note');
 	const transcriptPanelOpen = $derived(isLiveNote ? liveTranscriptPanel.open : sidePanelState.open);
-	const transcriptPanelLabel = $derived(isLiveNote ? 'transcript' : 'transcript & notes');
+	const transcriptPanelLabel = 'transcript';
 
-	function toggleTranscriptPanel(): void {
-		if (isLiveNote) liveTranscriptPanel.toggle();
-		else sidePanelState.toggle();
+	function setTranscriptOpen(open: boolean): void {
+		if (isLiveNote) liveTranscriptPanel.open = open;
+		else sidePanelState.open = open;
+	}
+
+	async function stopRecording(): Promise<void> {
+		if (isStoppingRecording) return;
+		isStoppingRecording = true;
+		try {
+			const stopped = await recordingState.stop();
+			if (stopped) await emit('recording-stop-complete', true);
+		} finally {
+			isStoppingRecording = false;
+		}
 	}
 
 	// Load the meeting's persisted thread on mount and whenever the meeting
@@ -91,7 +104,12 @@
 			runDialogOpen = true;
 			return;
 		}
-		executeBar(bar, addBarInstructions(bar.prompt, additionalInstructions), open, additionalInstructions);
+		executeBar(
+			bar,
+			addBarInstructions(bar.prompt, additionalInstructions),
+			open,
+			additionalInstructions,
+		);
 	}
 
 	function executeBar(
@@ -113,7 +131,12 @@
 
 	async function onRecentOpenChange(isOpen: boolean): Promise<void> {
 		recentOpen = isOpen;
-		if (isOpen) recentThreads = await chat.recentThreads();
+		if (isOpen) {
+			const meetingId = chat.meetingId;
+			recentThreads = (await chat.recentThreads()).filter(
+				(thread) => thread.meeting_id === meetingId,
+			);
+		}
 	}
 
 	function openRecent(thread: RecentChatThread): void {
@@ -149,20 +172,56 @@
 		</Button>
 	{/snippet}
 
-	{#snippet rail({ open })}
-		<ChatRailButton
-			tooltip={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
-			ariaLabel={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
-			shortcut="⌘T"
-			pressed={transcriptPanelOpen}
-			onclick={toggleTranscriptPanel}
-		>
-			<AudioLines
-				data-icon
-				class="transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand"
-			/>
-		</ChatRailButton>
+	{#snippet detachedRail()}
+		<Popover.Root open={transcriptPanelOpen} onOpenChange={setTranscriptOpen}>
+			<Popover.Trigger>
+				{#snippet child({ props })}
+					<ChatRailButton
+						triggerProps={props}
+						tooltip={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+						ariaLabel={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+						shortcut="⌘T"
+						pressed={transcriptPanelOpen}
+						overlayOpen={transcriptPanelOpen}
+					>
+						<AudioLinesIndicator
+							active={recordingState.isRecording}
+							class={cn(
+								'transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand',
+								recordingState.isRecording && 'text-brand',
+							)}
+						/>
+					</ChatRailButton>
+				{/snippet}
+			</Popover.Trigger>
+			<Popover.Content
+				align="start"
+				side="top"
+				sideOffset={8}
+				class="w-[min(42rem,calc(100vw-3rem))] p-0"
+			>
+				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
+			</Popover.Content>
+		</Popover.Root>
 
+		{#if recordingState.isRecording && !stopRequested}
+			<ChatRailButton
+				tooltip="Stop recording"
+				ariaLabel="Stop recording"
+				disabled={isStoppingRecording}
+				onclick={() => void stopRecording()}
+			>
+				<Square data-icon fill="currentColor" class="text-destructive" />
+			</ChatRailButton>
+		{:else if stopRequested}
+			<span class="sr-only" role="status" aria-live="polite">Saving meeting</span>
+			<ChatRailButton tooltip="Saving meeting" ariaLabel="Saving meeting" disabled>
+				<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
+			</ChatRailButton>
+		{/if}
+	{/snippet}
+
+	{#snippet rail({ open })}
 		<Popover.Root bind:open={recentOpen} onOpenChange={(o) => void onRecentOpenChange(o)}>
 			<Popover.Trigger>
 				{#snippet child({ props })}
@@ -279,37 +338,3 @@
 			pendingAdditionalInstructions,
 		)}
 />
-
-<style>
-	:global(.transcript-audio-lines path) {
-		transform-box: fill-box;
-		transform-origin: center;
-	}
-
-	:global(.group:hover .transcript-audio-lines path) {
-		animation: transcript-audio-bar 500ms ease-in-out infinite alternate;
-	}
-
-	:global(.group:hover .transcript-audio-lines path:nth-child(2n)) {
-		animation-delay: -250ms;
-	}
-
-	:global(.group:hover .transcript-audio-lines path:nth-child(3n)) {
-		animation-delay: -125ms;
-	}
-
-	@keyframes transcript-audio-bar {
-		from {
-			transform: scaleY(0.55);
-		}
-		to {
-			transform: scaleY(1);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		:global(.group:hover .transcript-audio-lines path) {
-			animation: none;
-		}
-	}
-</style>

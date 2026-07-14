@@ -3,11 +3,19 @@
 	import { emit } from '@tauri-apps/api/event';
 	import { cubicOut } from 'svelte/easing';
 	import type { TransitionConfig } from 'svelte/transition';
-	import { Pause, Play, Square } from '@lucide/svelte';
+	import { LoaderCircle, Pause, Play, Square } from '@lucide/svelte';
 
 	import { recordingState } from '$lib/stores/recording-state.svelte';
-	import { levelMeterBars } from '$lib/audio-meter';
 	import { cn } from '$lib/utils';
+	import AudioLinesIndicator from '$lib/components/AudioLinesIndicator.svelte';
+
+	interface Props {
+		showAudioIndicator?: boolean;
+		showControls?: boolean;
+		showElapsed?: boolean;
+	}
+
+	let { showAudioIndicator = true, showControls = true, showElapsed = true }: Props = $props();
 
 	const isPaused = $derived(recordingState.isPaused);
 
@@ -43,16 +51,12 @@
 		};
 	}
 
-	// Decorative level bars: three vertical bars in a row (a level-meter look) whose
-	// heights animate from the same Math.random() loop the in-app pill used. Under
-	// reduced motion they stay at a steady mid height.
-	let barHeights = $state<string[]>(['10px', '18px', '10px']);
-
 	// Re-entrancy guards so a double tap (or a global-shortcut + click race) can't
 	// fire two stop/pause calls; the shared store methods are also idempotent.
 	let isStopping = $state(false);
 	let isPausing = $state(false);
 	let isResuming = $state(false);
+	const stopRequested = $derived(isStopping || recordingState.isStopping);
 
 	async function handleStop(): Promise<void> {
 		if (isStopping) return;
@@ -121,25 +125,8 @@
 		};
 		document.addEventListener('visibilitychange', onVisibility);
 
-		// Live level meter driven by the backend `recording-level` event (via the
-		// store's audioLevel). The pill webview is pre-warmed and never unmounts (it
-		// is hidden, not destroyed, between recordings) and has backgroundThrottling
-		// disabled, so gate the loop on an actually-visible active recording instead
-		// of letting it churn reactive state forever.
-		const interval = setInterval(() => {
-			if (
-				reducedMotion ||
-				!recordingState.isRecording ||
-				recordingState.isPaused ||
-				document.visibilityState !== 'visible'
-			)
-				return;
-			barHeights = levelMeterBars(recordingState.audioLevel, 4, 18);
-		}, 80);
-
 		return () => {
 			cancelled = true;
-			clearInterval(interval);
 			motionQuery.removeEventListener('change', onMotionChange);
 			document.removeEventListener('visibilitychange', onVisibility);
 			cleanupListeners?.();
@@ -159,59 +146,56 @@
 				class="absolute inset-0 cursor-grab touch-none rounded-3xl select-none active:cursor-grabbing"
 			></div>
 
-			<span
-				class="pointer-events-none relative select-none text-[11px] tabular-nums text-muted-foreground"
-				aria-live="polite"
-			>
-				{elapsed}
-			</span>
+			{#if showElapsed}<span
+					class="pointer-events-none relative select-none text-[11px] tabular-nums text-muted-foreground"
+					aria-live="polite"
+				>
+					{stopRequested ? 'Saving…' : elapsed}
+				</span>{/if}
 
-			<button
-				onclick={handleTogglePause}
-				disabled={isPausing || isResuming || isStopping}
-				aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
-				class={cn(
-					'relative flex size-9 items-center justify-center rounded-full border-2 transition-colors',
-					isPausing || isResuming || isStopping
-						? 'border-border bg-secondary text-muted-foreground'
-						: 'border-border bg-card text-muted-foreground hover:bg-secondary',
-				)}
-			>
-				{#if isPaused}<Play size={16} />{:else}<Pause size={16} />{/if}
-			</button>
+			{#if showControls && !stopRequested}<button
+					onclick={handleTogglePause}
+					disabled={isPausing || isResuming || isStopping}
+					aria-label={isPaused ? 'Resume recording' : 'Pause recording'}
+					class={cn(
+						'relative flex size-9 items-center justify-center rounded-full border-2 transition-colors',
+						isPausing || isResuming || isStopping
+							? 'border-border bg-secondary text-muted-foreground'
+							: 'border-border bg-card text-muted-foreground hover:bg-secondary',
+					)}
+				>
+					{#if isPaused}<Play size={16} />{:else}<Pause size={16} />{/if}
+				</button>
 
-			<button
-				onclick={handleStop}
-				disabled={isStopping || isPausing || isResuming}
-				aria-label="Stop recording"
-				class={cn(
-					'relative flex size-9 items-center justify-center rounded-full text-white transition-colors',
-					isStopping || isPausing || isResuming
-						? 'bg-muted-foreground/50'
-						: 'bg-destructive hover:opacity-90',
-				)}
-			>
-				<Square size={16} />
-			</button>
+				<button
+					onclick={handleStop}
+					disabled={isStopping || isPausing || isResuming}
+					aria-label="Stop recording"
+					class={cn(
+						'relative flex size-9 items-center justify-center rounded-full text-white transition-colors',
+						isStopping || isPausing || isResuming
+							? 'bg-muted-foreground/50'
+							: 'bg-destructive hover:opacity-90',
+					)}
+				>
+					<Square size={16} />
+				</button>{:else if stopRequested}
+				<LoaderCircle
+					class={cn('relative size-5 text-muted-foreground', !reducedMotion && 'animate-spin')}
+					aria-hidden="true"
+				/>
+			{/if}
 
-			<div
-				class="pointer-events-none relative flex h-5 items-center justify-center gap-1"
-				aria-hidden="true"
-			>
-				{#each barHeights as height, index (index)}
-					<div
-						class={cn(
-							'w-1 rounded-full transition-[height,opacity,background-color] duration-200',
-							isPaused ? 'bg-muted-foreground/60' : 'bg-brand',
-						)}
-						style={`height: ${isPaused || reducedMotion ? '8px' : height}; opacity: ${isPaused ? 0.6 : 1};`}
-					></div>
-				{/each}
-			</div>
+			{#if showAudioIndicator}
+				<AudioLinesIndicator
+					active={!isPaused && !reducedMotion && !stopRequested}
+					class={cn('relative size-4', isPaused ? 'text-muted-foreground/60' : 'text-brand')}
+				/>
+			{/if}
 
 			{#if reducedMotion}
 				<span class="pointer-events-none relative select-none text-[10px] text-muted-foreground">
-					{isPaused ? 'Paused' : 'Recording'}
+					{stopRequested ? 'Saving' : isPaused ? 'Paused' : 'Recording'}
 				</span>
 			{/if}
 		</div>
