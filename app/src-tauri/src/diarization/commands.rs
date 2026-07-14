@@ -107,6 +107,12 @@ fn try_acquire_diarize(meeting_id: &str) -> Option<DiarizeGuard> {
 /// number of segments that received a speaker label -- these are `system`
 /// (remote) segments only; the mic side is always the local user and is never
 /// cluster-labeled.
+///
+/// Emits `diarization-progress` per stage and `diarization-error` on failure
+/// (in addition to the existing `diarization-complete`), so the background
+/// tasks list can track runs from any trigger (menu action or auto-run on
+/// stop). A rejected duplicate run emits nothing: the events belong to the run
+/// already in flight.
 #[tauri::command]
 #[specta::specta]
 pub async fn diarize_meeting<R: Runtime>(
@@ -117,6 +123,28 @@ pub async fn diarize_meeting<R: Runtime>(
     // Serialize per meeting: held until this function returns.
     let _guard = try_acquire_diarize(&meeting_id)
         .ok_or_else(|| "diarization is already in progress for this meeting".to_string())?;
+
+    let result = diarize_meeting_inner(&app, &state, &meeting_id).await;
+    if let Err(error) = &result {
+        let _ = app.emit(
+            "diarization-error",
+            serde_json::json!({ "meeting_id": &meeting_id, "error": error }),
+        );
+    }
+    result
+}
+
+async fn diarize_meeting_inner<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &tauri::State<'_, AppState>,
+    meeting_id: &str,
+) -> Result<u32, String> {
+    let emit_stage = |stage: &str, message: &str| {
+        let _ = app.emit(
+            "diarization-progress",
+            serde_json::json!({ "meeting_id": meeting_id, "stage": stage, "message": message }),
+        );
+    };
 
     let app_data_dir = app
         .path()
@@ -131,7 +159,7 @@ pub async fn diarize_meeting<R: Runtime>(
     // Resolve the recording folder from the database by meeting_id; never trust a
     // renderer-supplied path, so this command cannot be pointed at arbitrary files.
     let pool = state.db_manager.pool();
-    let meeting = MeetingsRepository::get_meeting_metadata(pool, &meeting_id)
+    let meeting = MeetingsRepository::get_meeting_metadata(pool, meeting_id)
         .await
         .map_err(|e| format!("load meeting: {e}"))?
         .ok_or_else(|| format!("meeting {meeting_id} not found"))?;
@@ -140,6 +168,7 @@ pub async fn diarize_meeting<R: Runtime>(
         .ok_or_else(|| "meeting has no recording folder".to_string())?;
 
     let audio_path = find_audio_file(&PathBuf::from(&folder_path))?;
+    emit_stage("decode", "Decoding audio…");
     // Decode + downmix + resample of a full meeting is heavy sync CPU/IO; keep it
     // off the async runtime's worker threads (only the sidecar call below was).
     let samples_16k = tokio::task::spawn_blocking(move || -> Result<Vec<f32>, String> {
@@ -155,6 +184,7 @@ pub async fn diarize_meeting<R: Runtime>(
     .await
     .map_err(|e| format!("audio decode task join error: {e}"))??;
 
+    emit_stage("cluster", "Detecting speaker turns…");
     // The sidecar call is blocking (spawns a process and waits); keep it off the
     // async runtime's worker threads.
     let turns = tokio::task::spawn_blocking(move || {
@@ -164,15 +194,16 @@ pub async fn diarize_meeting<R: Runtime>(
     .map_err(|e| format!("diarization task join error: {e}"))?
     .map_err(|e| format!("diarization failed: {e}"))?;
 
-    let segments = TranscriptsRepository::segments_for_diarization(pool, &meeting_id)
+    emit_stage("label", "Labeling transcript segments…");
+    let segments = TranscriptsRepository::segments_for_diarization(pool, meeting_id)
         .await
         .map_err(|e| format!("load transcript segments: {e}"))?;
 
     // Only the `system` (remote) side is clustered; the mic side is always the
     // local user and is cleared so it can never be shown as a remote "Speaker N".
     let assignments = assign_speaker_ids(&segments, &turns);
-    let remote_names = remote_attendee_names(pool, &meeting_id).await?;
-    let labeled = apply_diarization(pool, &meeting_id, &assignments, &remote_names).await?;
+    let remote_names = remote_attendee_names(pool, meeting_id).await?;
+    let labeled = apply_diarization(pool, meeting_id, &assignments, &remote_names).await?;
 
     // Let any open transcript view refresh instead of waiting for a reopen.
     let _ = app.emit(

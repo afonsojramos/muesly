@@ -10,7 +10,7 @@
  */
 import { listen } from '@tauri-apps/api/event';
 
-export type BackgroundTaskKind = 'retranscription' | 'summary';
+export type BackgroundTaskKind = 'retranscription' | 'summary' | 'diarization';
 export type BackgroundTaskStatus = 'running' | 'done' | 'error';
 
 export interface BackgroundTask {
@@ -147,6 +147,34 @@ class BackgroundTasksStore {
 			const meetingId = e.payload?.meeting_id;
 			if (!meetingId) return;
 			this.finish('retranscription', meetingId, 'error', e.payload?.error ?? 'Failed');
+		});
+
+		// Diarization runs from two surfaces (the meeting menu and the silent
+		// auto-run after a recording stops); the sidecar reports stages but no
+		// percentage, so the task shows as indeterminate with a stage message.
+		void listen<{ meeting_id?: string; message?: string; stage?: string }>(
+			'diarization-progress',
+			(e) => {
+				const meetingId = e.payload?.meeting_id;
+				if (!meetingId) return;
+				this.progress(
+					'diarization',
+					meetingId,
+					'Identifying speakers',
+					null,
+					e.payload.message ?? e.payload.stage ?? '',
+				);
+			},
+		);
+		void listen<{ meeting_id?: string }>('diarization-complete', (e) => {
+			const meetingId = e.payload?.meeting_id;
+			if (!meetingId) return;
+			this.finish('diarization', meetingId, 'done', 'Speakers identified');
+		});
+		void listen<{ meeting_id?: string; error?: string }>('diarization-error', (e) => {
+			const meetingId = e.payload?.meeting_id;
+			if (!meetingId) return;
+			this.finish('diarization', meetingId, 'error', e.payload?.error ?? 'Failed');
 		});
 	}
 }
