@@ -15,7 +15,6 @@
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import SquareIcon from '@lucide/svelte/icons/square';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
-	import UsersIcon from '@lucide/svelte/icons/users';
 
 	import type { Summary, Transcript, TranscriptSegmentData } from '$lib/types';
 	import type { ModelConfig } from '$lib/services/config';
@@ -46,6 +45,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import ParticipantsTooltip from '$lib/components/ParticipantsTooltip.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
 	import NotesView from './NotesView.svelte';
 
@@ -694,42 +694,7 @@
 						</span>
 					{/if}
 					{#if attendeeChips.length > 0}
-						<Tooltip.Provider>
-							<Tooltip.Root>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="sm"
-											class="h-10 px-1.5 text-muted-foreground hover:bg-transparent hover:text-foreground"
-											aria-label={`${attendeeChips.length} ${attendeeChips.length === 1 ? 'participant' : 'participants'}`}
-										>
-											<UsersIcon data-icon="inline-start" />
-											<span class="tabular-nums">{attendeeChips.length}</span>
-											{attendeeChips.length === 1 ? 'participant' : 'participants'}
-										</Button>
-									{/snippet}
-								</Tooltip.Trigger>
-								<Tooltip.Content
-									side="bottom"
-									sideOffset={8}
-									arrowClasses="hidden"
-									class="block w-64 max-w-[calc(100vw-2rem)] p-1.5"
-								>
-									<p class="px-2 pb-1.5 pt-1 font-medium text-primary-foreground/70">
-										Participants
-									</p>
-									<ul
-										class="flex max-h-[min(16rem,calc(100vh-8rem))] flex-col gap-1 overflow-y-auto rounded-sm px-2 pb-1"
-									>
-										{#each attendeeChips as name (name)}
-											<li class="break-words py-0.5 text-sm leading-5">{name}</li>
-										{/each}
-									</ul>
-								</Tooltip.Content>
-							</Tooltip.Root>
-						</Tooltip.Provider>
+						<ParticipantsTooltip participants={attendeeChips} />
 					{/if}
 					<div class="ml-auto flex items-center rounded-lg bg-secondary p-1" role="tablist">
 						<Button

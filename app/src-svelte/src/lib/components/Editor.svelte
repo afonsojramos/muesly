@@ -6,6 +6,7 @@
 	import { Decoration, DecorationSet } from '@tiptap/pm/view';
 	import { onDestroy, onMount } from 'svelte';
 
+	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
 
 	// Fixed-size caret. A native contenteditable caret is always drawn at the line's
@@ -59,6 +60,8 @@
 		onChange?: (markdown: string) => void;
 		/** Optional: click a `[mm:ss]` timestamp to jump to the transcript. */
 		onTimestampClick?: (seconds: number) => void;
+		/** Names offered when the user types `@` in the editor. */
+		mentionSuggestions?: string[];
 	}
 
 	let {
@@ -68,6 +71,7 @@
 		tone = 'user',
 		onChange,
 		onTimestampClick,
+		mentionSuggestions = [],
 	}: Props = $props();
 
 	// The TipTap Editor is a mutable, non-reactive object — keep it in a plain
@@ -84,6 +88,86 @@
 	// Suppress onChange while we programmatically replace content (setContent
 	// dispatches its transaction synchronously, so this flag brackets it).
 	let isProgrammatic = false;
+	let mentionRange = $state<{ from: number; to: number } | null>(null);
+	let mentionQuery = $state('');
+	let mentionIndex = $state(0);
+	let mentionLeft = $state(0);
+	let mentionTop = $state(0);
+	const filteredMentions = $derived(
+		mentionSuggestions
+			.filter((name) => name.toLowerCase().includes(mentionQuery.toLowerCase()))
+			.slice(0, 8),
+	);
+
+	function closeMentionMenu(): void {
+		mentionRange = null;
+		mentionQuery = '';
+		mentionIndex = 0;
+	}
+
+	function updateMentionMenu(ed: Editor): void {
+		if (!editable || mentionSuggestions.length === 0 || !ed.state.selection.empty) {
+			closeMentionMenu();
+			return;
+		}
+
+		const fromPosition = ed.state.selection.$from;
+		const textBefore = fromPosition.parent.textBetween(0, fromPosition.parentOffset, '\0', '\0');
+		const match = textBefore.match(/(?:^|\s)@([^\s@]*)$/);
+		if (!match) {
+			closeMentionMenu();
+			return;
+		}
+
+		const query = match[1] ?? '';
+		const to = fromPosition.pos;
+		mentionRange = { from: to - query.length - 1, to };
+		mentionQuery = query;
+		mentionIndex = 0;
+
+		const caret = ed.view.coordsAtPos(to);
+		const bounds = element?.getBoundingClientRect();
+		if (bounds) {
+			mentionLeft = Math.max(0, Math.min(caret.left - bounds.left, bounds.width - 256));
+			mentionTop = caret.bottom - bounds.top + 6;
+		}
+	}
+
+	function selectMention(name: string): void {
+		if (!editor || !mentionRange) return;
+		editor
+			.chain()
+			.focus()
+			.deleteRange(mentionRange)
+			.insertContent({
+				type: 'text',
+				text: `@${name}`,
+				marks: [{ type: 'bold' }],
+			})
+			.insertContent(' ')
+			.run();
+		closeMentionMenu();
+	}
+
+	function handleMentionKeydown(event: KeyboardEvent): boolean {
+		if (!mentionRange) return false;
+		if (event.key === 'Escape') {
+			closeMentionMenu();
+			return true;
+		}
+		if (filteredMentions.length === 0) return false;
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			const direction = event.key === 'ArrowDown' ? 1 : -1;
+			mentionIndex = (mentionIndex + direction + filteredMentions.length) % filteredMentions.length;
+			return true;
+		}
+		if (event.key === 'Enter' || event.key === 'Tab') {
+			const selectedMention = filteredMentions[mentionIndex];
+			if (selectedMention) selectMention(selectedMention);
+			return true;
+		}
+		return false;
+	}
 
 	function loadContent(markdown: string): void {
 		if (!editor) return;
@@ -131,9 +215,13 @@
 			contentType: 'markdown',
 			onUpdate: ({ editor: ed }) => {
 				if (!isProgrammatic) onChange?.(ed.getMarkdown());
+				updateMentionMenu(ed);
 			},
+			onSelectionUpdate: ({ editor: ed }) => updateMentionMenu(ed),
+			onBlur: () => closeMentionMenu(),
 			editorProps: {
 				handleClick: (view, _pos, event) => handleProseClick(view, event),
+				handleKeyDown: (_view, event) => handleMentionKeydown(event),
 			},
 		});
 		lastValueProp = value;
@@ -172,28 +260,57 @@
 	export function focus(): void {
 		editor?.commands.focus();
 	}
-
-	export function insertMention(name: string): void {
-		if (!editor || !name.trim()) return;
-		editor.chain().focus().insertContent(`@${name.trim()} `).run();
-	}
 </script>
 
-<div
-	bind:this={element}
-	class={cn('tiptap-prose select-text', tone === 'ai' && 'tiptap-prose-ai', className)}
-	onclick={(e) => {
-		if (!onTimestampClick) return;
-		const t = e.target;
-		if (!(t instanceof HTMLElement)) return;
-		const link = t.closest('[data-transcript-ts]');
-		if (!(link instanceof HTMLElement)) return;
-		e.preventDefault();
-		const sec = Number(link.dataset.transcriptTs);
-		if (Number.isFinite(sec)) onTimestampClick(sec);
-	}}
-	role="presentation"
-></div>
+<div class="relative">
+	<div
+		bind:this={element}
+		class={cn('tiptap-prose select-text', tone === 'ai' && 'tiptap-prose-ai', className)}
+		onclick={(e) => {
+			if (!onTimestampClick) return;
+			const t = e.target;
+			if (!(t instanceof HTMLElement)) return;
+			const link = t.closest('[data-transcript-ts]');
+			if (!(link instanceof HTMLElement)) return;
+			e.preventDefault();
+			const sec = Number(link.dataset.transcriptTs);
+			if (Number.isFinite(sec)) onTimestampClick(sec);
+		}}
+		role="presentation"
+	></div>
+
+	{#if mentionRange}
+		<div
+			class="absolute z-50 w-64 rounded-lg bg-popover p-1 text-popover-foreground shadow-md"
+			style:left={`${mentionLeft}px`}
+			style:top={`${mentionTop}px`}
+			role="listbox"
+			aria-label="Tag a participant"
+		>
+			<p class="px-2 py-1.5 text-xs font-medium text-muted-foreground">Participants</p>
+			{#if filteredMentions.length > 0}
+				<div class="max-h-64 overflow-y-auto">
+					{#each filteredMentions as name, index (name)}
+						<Button
+							variant="ghost"
+							class={cn('h-10 w-full justify-start px-2', index === mentionIndex && 'bg-accent')}
+							role="option"
+							aria-selected={index === mentionIndex}
+							onmousedown={(event) => {
+								event.preventDefault();
+								selectMention(name);
+							}}
+						>
+							{name}
+						</Button>
+					{/each}
+				</div>
+			{:else}
+				<p class="px-2 py-2 text-sm text-muted-foreground">No participants found.</p>
+			{/if}
+		</div>
+	{/if}
+</div>
 
 <style>
 	.tiptap-prose :global(.ProseMirror) {
