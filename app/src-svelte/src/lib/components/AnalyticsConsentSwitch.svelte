@@ -80,22 +80,12 @@
 	}
 </script>
 
-<div class="flex flex-col gap-4">
-	<div>
-		<h3 class="mb-2 text-base font-semibold">Usage Analytics</h3>
-		<p class="mb-4 text-sm text-muted-foreground">
-			Help us improve muesly by sharing anonymous usage data. No personal content is collected —
-			everything stays on your device.
-		</p>
-	</div>
-
-	<div
-		class="flex items-center justify-between rounded-lg border border-border bg-secondary/40 p-3"
-	>
+<div class="flex flex-col gap-3">
+	<div class="flex min-h-10 items-center justify-between gap-4">
 		<div>
-			<h4 class="font-semibold">Enable Analytics</h4>
+			<h4 id="usage-analytics-label" class="font-medium">Share anonymous usage</h4>
 			<p class="text-sm text-muted-foreground">
-				{isProcessing ? 'Updating…' : 'Anonymous usage patterns only'}
+				{isProcessing ? 'Updating…' : 'Feature usage and performance only—never meeting content'}
 			</p>
 		</div>
 		<div class="ml-4 flex items-center gap-2">
@@ -105,14 +95,15 @@
 			<Switch
 				checked={analyticsConsent.optedIn}
 				disabled={isProcessing}
+				aria-labelledby="usage-analytics-label"
 				onCheckedChange={handleToggle}
 			/>
 		</div>
 	</div>
 
 	{#if analyticsConsent.optedIn && userId}
-		<div class="rounded-lg border border-border bg-secondary/40 p-4">
-			<div class="font-medium">Your User ID</div>
+		<div class="rounded-lg bg-muted/40 p-3">
+			<div class="font-medium">Your support ID</div>
 			<p class="mb-2 text-xs text-muted-foreground">
 				Share this ID when reporting issues to help us investigate your issue logs
 			</p>
@@ -135,15 +126,15 @@
 		</div>
 	{/if}
 
-	<div class="flex items-start gap-2 rounded border border-brand/20 bg-brand/5 p-2">
-		<Info class="mt-0.5 size-4 shrink-0 text-brand" />
+	<div class="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
+		<Info class="mt-0.5 size-4 shrink-0 text-foreground" />
 		<div class="text-xs text-muted-foreground">
 			<p class="mb-1">
 				Your meetings, transcripts, and recordings remain completely private and local.
 			</p>
-			<button class="text-brand underline hover:no-underline" onclick={handlePrivacyPolicyClick}>
-				View Privacy Policy
-			</button>
+			<Button variant="link" size="xs" class="h-auto p-0" onclick={handlePrivacyPolicyClick}>
+				View privacy policy
+			</Button>
 		</div>
 	</div>
 </div>
