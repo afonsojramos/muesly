@@ -242,7 +242,7 @@
 		</Popover.Root>
 
 		{#if transcriptPanelOpen}
-			<div class="origin-center will-change-[transform,opacity,filter]" in:dropletGrow>
+			<div class="origin-center will-change-[transform,opacity,filter]" transition:dropletGrow>
 				<ChatRailButton
 					tooltip="Resume recording"
 					ariaLabel="Resume recording"
