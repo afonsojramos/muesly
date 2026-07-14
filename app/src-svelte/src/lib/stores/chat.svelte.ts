@@ -13,7 +13,12 @@ import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bind
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
-import { reduceChatStreamEvent, stopChatStream, type StreamOutcome } from '$lib/chat/stream';
+import {
+	ChatClearCoordinator,
+	reduceChatStreamEvent,
+	stopChatStream,
+	type StreamOutcome,
+} from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -39,7 +44,9 @@ class ChatStore {
 	draft = $state('');
 	isStreaming = $state(false);
 	streamOutcome = $state<StreamOutcome>('idle');
+	isClearing = $state(false);
 	#genId: string | null = null;
+	#clear = new ChatClearCoordinator<ChatMessage>();
 
 	/** The meeting the chat is about: the live recording, else the opened saved meeting. */
 	get meetingId(): string | null {
@@ -164,18 +171,15 @@ class ChatStore {
 
 	// Monotonic token so a slow history load can't clobber a newer meeting's
 	// thread (same guard pattern as use-speaker-context).
-	#loadGen = 0;
-
 	/** Replace the conversation with the meeting's persisted thread. Completed
 	 * turns are persisted backend-side, so collapse/navigation never loses them;
 	 * an in-flight stream is cancelled since it belongs to the previous view. */
 	async loadFor(meetingId: string | null): Promise<void> {
-		this.#loadGen += 1;
-		const gen = this.#loadGen;
+		const gen = this.#clear.invalidateLoads();
 		this.clear();
 		if (!meetingId) return;
 		const res = await commands.chatHistory(meetingId);
-		if (gen !== this.#loadGen || res.status !== 'ok') return;
+		if (gen !== this.#clear.loadGeneration || res.status !== 'ok') return;
 		const rows = res.data.filter((m) => m.role === 'user' || m.role === 'assistant');
 		this.messages = rows.map((m, index) => {
 			const prompt = m.role === 'user' ? m.content : rows[index - 1]?.content;
@@ -191,16 +195,21 @@ class ChatStore {
 		});
 	}
 
-	/** Delete the conversation, in memory and persisted. */
+	/** Delete the persisted conversation, retaining the visible thread on failure. */
 	async clearThread(): Promise<void> {
 		const meetingId = this.meetingId;
-		this.#loadGen += 1; // invalidate any in-flight load
-		this.clear();
-		if (!meetingId) return;
-		const res = await commands.chatClear(meetingId);
-		if (res.status === 'error') {
-			toast.error('Failed to clear chat', { description: res.error });
-		}
+		if (!meetingId || this.isClearing) return;
+		this.isClearing = true;
+		const result = await this.#clear.run(
+			this.messages,
+			() => this.stop(),
+			() => commands.chatClear(meetingId),
+		);
+		this.isClearing = false;
+		if (result.status === 'ignored') return;
+		this.messages = result.messages;
+		if (result.status === 'error')
+			toast.error('Failed to clear chat', { description: result.error });
 	}
 
 	/** Recent chat threads across meetings, for the "Recent chats" list. */

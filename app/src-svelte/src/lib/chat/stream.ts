@@ -45,6 +45,37 @@ export function stopChatStream<T extends StreamLifecycleState>(state: T): T {
 	};
 }
 
+export type ChatClearResult = { status: 'ok' } | { status: 'error'; error: string };
+
+export class ChatClearCoordinator<T> {
+	isClearing = false;
+	loadGeneration = 0;
+
+	invalidateLoads(): number {
+		return ++this.loadGeneration;
+	}
+
+	async run(
+		messages: T[],
+		cancel: () => void,
+		clearBackend: () => Promise<ChatClearResult>,
+	): Promise<{ status: 'ignored' | 'ok' | 'error'; messages: T[]; error?: string }> {
+		if (this.isClearing) return { status: 'ignored', messages };
+
+		this.isClearing = true;
+		this.invalidateLoads();
+		const snapshot = [...messages];
+		cancel();
+
+		const result = await clearBackend();
+		this.isClearing = false;
+		if (result.status === 'error') {
+			return { status: 'error', messages: snapshot, error: result.error };
+		}
+		return { status: 'ok', messages: [] };
+	}
+}
+
 export function reduceChatStreamEvent(
 	state: ChatStreamState,
 	generationId: string,

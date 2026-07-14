@@ -2,12 +2,89 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	getStreamAnnouncement,
+	ChatClearCoordinator,
 	reduceChatStreamEvent,
 	reduceGlobalChatStreamEvent,
 	stopChatStream,
 	type ChatStreamState,
 	type GlobalChatStreamState,
 } from './stream';
+
+describe('ChatClearCoordinator', () => {
+	it('cancels first and empties the thread once after backend success', async () => {
+		const coordinator = new ChatClearCoordinator<string>();
+		const order: string[] = [];
+		const result = await coordinator.run(
+			['question', 'answer'],
+			() => order.push('cancel'),
+			async () => {
+				order.push('backend');
+				return { status: 'ok' };
+			},
+		);
+
+		expect(order).toEqual(['cancel', 'backend']);
+		expect(result).toEqual({ status: 'ok', messages: [] });
+		expect(coordinator.isClearing).toBe(false);
+	});
+
+	it('restores the exact snapshot when backend clearing fails', async () => {
+		const coordinator = new ChatClearCoordinator<{ id: string }>();
+		const messages = [{ id: 'user' }, { id: 'assistant' }];
+		const result = await coordinator.run(
+			messages,
+			() => {},
+			async () => ({
+				status: 'error',
+				error: 'database busy',
+			}),
+		);
+
+		expect(result.status).toBe('error');
+		expect(result.messages).toEqual(messages);
+		expect(result.messages[0]).toBe(messages[0]);
+	});
+
+	it('ignores a double submit while clearing', async () => {
+		const coordinator = new ChatClearCoordinator<string>();
+		let finish!: (result: { status: 'ok' }) => void;
+		let backendCalls = 0;
+		const first = coordinator.run(
+			['thread'],
+			() => {},
+			() => {
+				backendCalls += 1;
+				return new Promise((resolve) => (finish = resolve));
+			},
+		);
+		const second = await coordinator.run(
+			['thread'],
+			() => {},
+			async () => {
+				backendCalls += 1;
+				return { status: 'ok' };
+			},
+		);
+
+		expect(second.status).toBe('ignored');
+		expect(backendCalls).toBe(1);
+		finish({ status: 'ok' });
+		await first;
+	});
+
+	it('invalidates a stale load as soon as clearing starts', async () => {
+		const coordinator = new ChatClearCoordinator<string>();
+		const loadGeneration = coordinator.invalidateLoads();
+		const clearing = coordinator.run(
+			['thread'],
+			() => {},
+			async () => ({ status: 'ok' }),
+		);
+
+		expect(loadGeneration).not.toBe(coordinator.loadGeneration);
+		await clearing;
+	});
+});
 
 const streaming = (content = ''): ChatStreamState => ({
 	content,

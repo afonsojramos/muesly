@@ -230,8 +230,8 @@
 	}
 
 	async function confirmClear(): Promise<void> {
-		clearConfirmOpen = false;
 		await chat.clearThread();
+		if (!chat.isClearing) clearConfirmOpen = false;
 	}
 </script>
 
@@ -413,15 +413,26 @@
 	{/snippet}
 </ChatSurface>
 
-<Dialog.Root bind:open={clearConfirmOpen}>
+<Dialog.Root
+	open={clearConfirmOpen}
+	onOpenChange={(open) => {
+		if (!chat.isClearing) clearConfirmOpen = open;
+	}}
+>
 	<Dialog.Content class="sm:max-w-[400px]">
 		<Dialog.Title>Clear this chat?</Dialog.Title>
 		<Dialog.Description>
 			The conversation for this meeting will be permanently deleted.
 		</Dialog.Description>
 		<Dialog.Footer>
-			<Button variant="outline" onclick={() => (clearConfirmOpen = false)}>Cancel</Button>
-			<Button variant="destructive" onclick={() => void confirmClear()}>Clear chat</Button>
+			<Button
+				variant="outline"
+				disabled={chat.isClearing}
+				onclick={() => (clearConfirmOpen = false)}>Cancel</Button
+			>
+			<Button variant="destructive" disabled={chat.isClearing} onclick={() => void confirmClear()}>
+				{chat.isClearing ? 'Clearing…' : 'Clear chat'}
+			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
