@@ -1,117 +1,212 @@
 <script lang="ts">
 	import { getVersion } from '@tauri-apps/api/app';
-	import { CheckCircle2, Cpu, Globe, Loader2, ShieldCheck, Sparkles, Wallet } from '@lucide/svelte';
+	import { invoke } from '@tauri-apps/api/core';
+	import {
+		AudioLines,
+		CheckCircle2,
+		ExternalLink,
+		GitFork,
+		Globe,
+		HardDrive,
+		Loader2,
+		LockKeyhole,
+		MessageSquareWarning,
+		ShieldCheck,
+		Sparkles,
+	} from '@lucide/svelte';
 	import { onMount } from 'svelte';
 
-	import * as Alert from '$lib/components/ui/alert';
-	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
+	import * as Card from '$lib/components/ui/card';
+	import { Separator } from '$lib/components/ui/separator';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { toast } from '$lib/toast';
 
+	const links = {
+		website: 'https://muesly.ai',
+		github: 'https://github.com/afonsojramos/muesly',
+		issues: 'https://github.com/afonsojramos/muesly/issues',
+		privacy: 'https://github.com/afonsojramos/muesly/blob/main/PRIVACY_POLICY.md',
+	} as const;
+
 	let currentVersion = $state('0.1.1');
+	let updateMessage = $state<string | null>(null);
 	const updates = useUpdateCheck({ checkOnMount: false });
 
 	onMount(() => {
 		getVersion()
-			.then((v) => (currentVersion = v))
-			.catch(console.error);
+			.then((version) => (currentVersion = version))
+			.catch((error) => console.error('[About] Failed to read app version:', error));
 	});
 
 	async function handleCheckForUpdates(): Promise<void> {
+		updateMessage = null;
 		await updates.checkForUpdates(true);
-		if (!updates.updateInfo?.available) {
-			toast.success('You are running the latest version');
+		if (!updates.updateInfo?.available) updateMessage = 'You’re up to date';
+	}
+
+	async function openExternal(url: string): Promise<void> {
+		try {
+			await invoke('open_external_url', { url });
+		} catch (error) {
+			console.error('[About] Failed to open external link:', error);
+			toast.error('Could not open the link');
 		}
 	}
 
-	const features: { title: string; body: string; icon: typeof ShieldCheck }[] = [
+	const principles: {
+		title: string;
+		body: string;
+		icon: typeof ShieldCheck;
+	}[] = [
 		{
-			title: 'Privacy-first',
-			body: 'Your data & AI processing can stay within your premises. No cloud, no leaks.',
-			icon: ShieldCheck,
+			title: 'Your conversations stay yours',
+			body: 'Recordings, transcripts, and app data are stored on this device, not in a muesly account.',
+			icon: LockKeyhole,
 		},
 		{
-			title: 'Use Any Model',
-			body: 'Prefer a local open-source model? Great. Want an external API? Also fine. No lock-in.',
-			icon: Cpu,
+			title: 'Speech-to-text runs locally',
+			body: 'Whisper and Parakeet transcribe microphone and system audio without sending it to a backend.',
+			icon: AudioLines,
 		},
 		{
-			title: 'Cost-Smart',
-			body: 'Avoid pay-per-minute bills by running models locally (or pay only for what you choose).',
-			icon: Wallet,
+			title: 'AI stays under your control',
+			body: 'Use the built-in local model, Ollama, or an optional cloud provider that you configure yourself.',
+			icon: Sparkles,
 		},
 		{
-			title: 'Works everywhere',
-			body: 'Google Meet, Zoom, Teams — online or offline.',
-			icon: Globe,
+			title: 'Source available',
+			body: 'Inspect how muesly handles your data, follow development, or contribute on GitHub.',
+			icon: GitFork,
 		},
 	];
 </script>
 
 <div class="flex flex-col gap-6">
-	<!-- Identity -->
-	<Card.Root>
-		<Card.Content class="flex flex-col items-center text-center">
-			<img src="/muesly.svg" alt="muesly" width={64} height={64} class="rounded-2xl" />
-			<div class="mt-3 flex items-center gap-2">
-				<h2 class="font-display text-2xl font-semibold tracking-tight">muesly</h2>
-				<Badge variant="secondary" class="tabular-nums">v{currentVersion}</Badge>
+	<Card.Root class="relative bg-gradient-to-br from-card via-card to-brand/5">
+		<Card.Content class="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
+			<div class="flex min-w-0 items-start gap-4">
+				<img
+					src="/muesly.svg"
+					alt=""
+					width={72}
+					height={72}
+					class="size-16 shrink-0 rounded-2xl ring-1 ring-black/10 dark:ring-white/10 sm:size-[4.5rem]"
+				/>
+				<div class="min-w-0 pt-0.5">
+					<div class="flex flex-wrap items-center gap-2">
+						<h2 class="font-display text-3xl font-semibold tracking-tight text-balance">muesly</h2>
+						<Badge variant="secondary" class="tabular-nums">v{currentVersion}</Badge>
+					</div>
+					<p class="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground text-pretty">
+						Private speech-to-text for everything you say. Capture, transcribe, organize, and ask
+						questions across your conversations on your own device.
+					</p>
+				</div>
 			</div>
-			<p class="mt-2 max-w-sm text-sm text-muted-foreground">
-				Private speech-to-text for everything you say — capture, transcribe, and summarize on your
-				machine.
-			</p>
-			<div class="mt-4 flex flex-col items-center gap-2">
-				<Button
-					onclick={handleCheckForUpdates}
-					disabled={updates.isChecking}
-					variant="outline"
-					size="sm"
-				>
-					{#if updates.isChecking}
-						<Loader2 data-icon="inline-start" class="animate-spin" /> Checking...
-					{:else}
-						<CheckCircle2 data-icon="inline-start" /> Check for Updates
-					{/if}
-				</Button>
-				{#if updates.updateInfo?.available}
-					<span class="text-xs text-brand">Update available: v{updates.updateInfo.version}</span>
+
+			<Button
+				onclick={handleCheckForUpdates}
+				disabled={updates.isChecking}
+				variant="outline"
+				class="sm:shrink-0"
+			>
+				{#if updates.isChecking}
+					<Loader2 data-icon="inline-start" class="animate-spin" />
+					Checking…
+				{:else}
+					<CheckCircle2 data-icon="inline-start" />
+					Check for updates
 				{/if}
-			</div>
+			</Button>
 		</Card.Content>
+
+		{#if updates.updateInfo?.available || updateMessage}
+			<Card.Footer class="flex items-center justify-between gap-3 bg-secondary/50 py-3 text-xs">
+				{#if updates.updateInfo?.available}
+					<span class="font-medium text-brand">
+						Version {updates.updateInfo.version} is available
+					</span>
+				{:else}
+					<span class="flex items-center gap-1.5 text-muted-foreground">
+						<CheckCircle2 class="size-3.5 text-brand" />
+						{updateMessage}
+					</span>
+				{/if}
+			</Card.Footer>
+		{/if}
 	</Card.Root>
 
-	<!-- What makes muesly different -->
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>What makes muesly different</Card.Title>
+			<Card.Title>Private by design</Card.Title>
+			<Card.Description>
+				The app is built around local ownership, with cloud services remaining optional.
+			</Card.Description>
 		</Card.Header>
-		<Card.Content>
-			<div class="grid gap-3 sm:grid-cols-2">
-				{#each features as feature (feature.title)}
-					{@const Icon = feature.icon}
+		<Card.Content class="grid gap-x-8 gap-y-6 sm:grid-cols-2">
+			{#each principles as principle (principle.title)}
+				{@const Icon = principle.icon}
+				<div class="flex items-start gap-3">
 					<div
-						class="rounded-lg border border-border bg-secondary/40 p-4 transition-colors hover:bg-secondary/60"
+						class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand/10 text-brand"
 					>
-						<div class="flex size-9 items-center justify-center rounded-md bg-brand/10 text-brand">
-							<Icon class="size-5" />
-						</div>
-						<h4 class="mt-3 text-sm font-semibold">{feature.title}</h4>
-						<p class="mt-1 text-xs leading-relaxed text-muted-foreground">{feature.body}</p>
+						<Icon class="size-4.5" />
 					</div>
-				{/each}
-			</div>
+					<div class="min-w-0">
+						<h3 class="text-sm font-medium">{principle.title}</h3>
+						<p class="mt-1 text-xs leading-relaxed text-muted-foreground text-pretty">
+							{principle.body}
+						</p>
+					</div>
+				</div>
+			{/each}
 		</Card.Content>
 	</Card.Root>
 
-	<!-- Coming soon -->
-	<Alert.Root class="border-brand/30 text-brand">
-		<Sparkles />
-		<Alert.Description class="text-foreground">
-			<span class="font-semibold">Coming soon:</span> A library of on-device AI agents — automating follow-ups,
-			action tracking, and more.
-		</Alert.Description>
-	</Alert.Root>
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Project and support</Card.Title>
+			<Card.Description
+				>Learn more, review the source, or tell us when something is wrong.</Card.Description
+			>
+		</Card.Header>
+		<Separator />
+		<Card.Content class="grid gap-2 sm:grid-cols-2">
+			<Button
+				variant="ghost"
+				class="h-10 justify-start"
+				onclick={() => openExternal(links.website)}
+			>
+				<Globe data-icon="inline-start" />
+				Website
+				<ExternalLink data-icon="inline-end" class="ml-auto text-muted-foreground" />
+			</Button>
+			<Button variant="ghost" class="h-10 justify-start" onclick={() => openExternal(links.github)}>
+				<GitFork data-icon="inline-start" />
+				Source on GitHub
+				<ExternalLink data-icon="inline-end" class="ml-auto text-muted-foreground" />
+			</Button>
+			<Button
+				variant="ghost"
+				class="h-10 justify-start"
+				onclick={() => openExternal(links.privacy)}
+			>
+				<ShieldCheck data-icon="inline-start" />
+				Privacy policy
+				<ExternalLink data-icon="inline-end" class="ml-auto text-muted-foreground" />
+			</Button>
+			<Button variant="ghost" class="h-10 justify-start" onclick={() => openExternal(links.issues)}>
+				<MessageSquareWarning data-icon="inline-start" />
+				Report an issue
+				<ExternalLink data-icon="inline-end" class="ml-auto text-muted-foreground" />
+			</Button>
+		</Card.Content>
+	</Card.Root>
+
+	<div class="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+		<HardDrive class="size-3.5" />
+		<span>Built to keep your conversations on your machine.</span>
+	</div>
 </div>
