@@ -652,23 +652,23 @@
 						<h1 class="min-w-0 flex-1">
 							<Tooltip.Provider>
 								<Tooltip.Root disabled={!titleIsTruncated}>
-								<Tooltip.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											class="h-auto max-w-full cursor-text select-text justify-start truncate rounded-sm p-0 font-display text-3xl font-medium text-foreground hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-											onclick={() => void startEditTitle()}
-										>
-											<span use:observeTitleOverflow class="min-w-0 flex-1 truncate">
-												{#if meetingData.meetingTitle?.trim()}
-													{meetingData.meetingTitle}
-												{:else}
-													<span class="text-muted-foreground/50">Untitled meeting</span>
-												{/if}
-											</span>
-										</Button>
-									{/snippet}
+									<Tooltip.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												class="h-auto max-w-full cursor-text select-text justify-start truncate rounded-sm p-0 font-display text-3xl font-medium text-foreground hover:bg-transparent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+												onclick={() => void startEditTitle()}
+											>
+												<span use:observeTitleOverflow class="min-w-0 flex-1 truncate">
+													{#if meetingData.meetingTitle?.trim()}
+														{meetingData.meetingTitle}
+													{:else}
+														<span class="text-muted-foreground/50">Untitled meeting</span>
+													{/if}
+												</span>
+											</Button>
+										{/snippet}
 									</Tooltip.Trigger>
 									<Tooltip.Content side="bottom" align="start" sideOffset={8}>
 										{meetingData.meetingTitle}
@@ -756,12 +756,7 @@
 				</div>
 			</div>
 
-			<div
-				class={cn(
-					'min-h-0 flex flex-1 overflow-hidden',
-					notesMode !== 'enhanced' && 'hidden',
-				)}
-			>
+			<div class={cn('min-h-0 flex flex-1 overflow-hidden', notesMode !== 'enhanced' && 'hidden')}>
 				<SummaryPanel
 					bind:this={summaryPanel}
 					onCopySummary={copyOperations.handleCopySummary}
