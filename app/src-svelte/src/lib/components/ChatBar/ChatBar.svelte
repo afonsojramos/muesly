@@ -86,8 +86,15 @@
 		if (isResumingRecording) return;
 		isResumingRecording = true;
 		try {
-			if (recordingState.isPaused) await recordingState.resume();
-			if (!isLiveNote) await goto('/note');
+			if (recordingState.isRecording) {
+				if (recordingState.isPaused) await recordingState.resume();
+				if (!isLiveNote) await goto('/note');
+			} else if (isLiveNote) {
+				window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+			} else {
+				sessionStorage.setItem('autoStartRecording', 'true');
+				await goto('/note');
+			}
 		} finally {
 			isResumingRecording = false;
 		}
