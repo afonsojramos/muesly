@@ -99,6 +99,18 @@
 		else sidePanelState.open = open;
 	}
 
+	function statePillReveal(_node: Element): TransitionConfig {
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			return { duration: 100, css: (t) => `width: ${t * 32}px; opacity: ${t}` };
+		}
+		return {
+			duration: 260,
+			easing: cubicOut,
+			css: (t) =>
+				`width: ${t * 32}px; margin-left: ${(t - 1) * 4}px; opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: translateX(${(1 - t) * -28}px) scale(${0.88 + t * 0.12})`,
+		};
+	}
+
 	function iconMorph(_node: Element): TransitionConfig {
 		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
 			return { duration: 80, css: (t) => `opacity: ${t}` };
@@ -280,29 +292,34 @@
 			{#if recordingControl === 'saving'}
 				<span class="sr-only" role="status" aria-live="polite">Saving meeting</span>
 			{/if}
-			<ChatRailButton
-				tooltip={recordingControlLabel}
-				ariaLabel={recordingControlLabel}
-				disabled={recordingControl === 'saving' || isResumingRecording || isStoppingRecording}
-				onclick={activateRecordingControl}
-				class="hover:bg-transparent dark:hover:bg-transparent"
+			<div
+				class="origin-center overflow-hidden will-change-[transform,opacity,filter]"
+				transition:statePillReveal
 			>
-				{#key recordingControlIcon}
-					<span class="flex size-4 origin-center items-center justify-center" in:iconMorph>
-						{#if recordingControlIcon === 'loading' || recordingControlIcon === 'saving'}
-							<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
-						{:else if recordingControlIcon === 'stop'}
-							<Square data-icon fill="currentColor" class="text-destructive" />
-						{:else}
-							<Play
-								data-icon
-								fill="currentColor"
-								class="transition-colors duration-200 ease-out group-hover:text-brand"
-							/>
-						{/if}
-					</span>
-				{/key}
-			</ChatRailButton>
+				<ChatRailButton
+					tooltip={recordingControlLabel}
+					ariaLabel={recordingControlLabel}
+					disabled={recordingControl === 'saving' || isResumingRecording || isStoppingRecording}
+					onclick={activateRecordingControl}
+					class="hover:bg-transparent dark:hover:bg-transparent"
+				>
+					{#key recordingControlIcon}
+						<span class="flex size-4 origin-center items-center justify-center" in:iconMorph>
+							{#if recordingControlIcon === 'loading' || recordingControlIcon === 'saving'}
+								<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
+							{:else if recordingControlIcon === 'stop'}
+								<Square data-icon fill="currentColor" class="text-destructive" />
+							{:else}
+								<Play
+									data-icon
+									fill="currentColor"
+									class="transition-colors duration-200 ease-out group-hover:text-brand"
+								/>
+							{/if}
+						</span>
+					{/key}
+				</ChatRailButton>
+			</div>
 		{/if}
 	{/snippet}
 
