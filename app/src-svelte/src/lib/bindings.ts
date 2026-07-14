@@ -1370,6 +1370,8 @@ export type PreviewEvent = {
 	is_recurring: boolean,
 	/**  Parsed conference/meeting URL (Zoom/Meet/Teams/…), when present. */
 	conference_url: string | null,
+	/**  Non-self, non-declined attendee display names. */
+	participant_names: string[],
 };
 
 /**

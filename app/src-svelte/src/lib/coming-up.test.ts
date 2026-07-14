@@ -13,6 +13,7 @@ function ev(start: string, title = 'Event', end: string | null = null): PreviewE
 		occurrence_minute: 0,
 		is_recurring: false,
 		conference_url: null,
+		participant_names: [],
 	};
 }
 

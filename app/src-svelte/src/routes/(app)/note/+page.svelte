@@ -8,20 +8,44 @@
 	import { notes } from '$lib/stores/notes.svelte';
 	import { recordingState, RecordingStatus } from '$lib/stores/recording-state.svelte';
 	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
+	import { transcripts } from '$lib/stores/transcript.svelte';
 
 	import { usePermissionCheck } from '$lib/hooks/use-permission-check.svelte';
-	import { useRecordingStart } from '$lib/hooks/use-recording-start.svelte';
+	import {
+		CALENDAR_DRAFT_PARTICIPANTS_KEY,
+		CALENDAR_DRAFT_TITLE_KEY,
+		useRecordingStart,
+	} from '$lib/hooks/use-recording-start.svelte';
 	import { usePlatform } from '$lib/hooks/use-platform.svelte';
 	import type { ModalType } from '$lib/hooks/use-modal-state.svelte';
 
 	import Editor from '$lib/components/Editor.svelte';
 	import PermissionWarning from '$lib/components/PermissionWarning.svelte';
 	import StatusOverlays from '$lib/components/StatusOverlays.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import UsersIcon from '@lucide/svelte/icons/users';
 
 	// Non-reactive snapshot of the notes so the editor isn't re-seeded on every
 	// keystroke. Reads the store on (re)mount so notes survive navigating away and
 	// back mid-recording.
 	const initialNotes = notes.markdown;
+	let editor = $state<Editor>();
+	const calendarTitle =
+		typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(CALENDAR_DRAFT_TITLE_KEY) : null;
+	const participantNames: string[] = (() => {
+		if (typeof sessionStorage === 'undefined') return [];
+		try {
+			const value: unknown = JSON.parse(
+				sessionStorage.getItem(CALENDAR_DRAFT_PARTICIPANTS_KEY) ?? '[]',
+			);
+			return Array.isArray(value)
+				? value.filter((name): name is string => typeof name === 'string')
+				: [];
+		} catch {
+			return [];
+		}
+	})();
+	const meetingTitle = $derived(calendarTitle ?? transcripts.meetingTitle);
 
 	const permissions = usePermissionCheck();
 	const platform = usePlatform();
@@ -78,6 +102,32 @@
 						</div>
 					{/if}
 
+					{#if calendarTitle}
+						<header class="mb-7">
+							<p class="mb-1 text-xs font-medium text-muted-foreground">Meeting notes</p>
+							<h1 class="text-balance font-display text-2xl font-semibold tracking-tight">
+								{meetingTitle}
+							</h1>
+							{#if participantNames.length > 0}
+								<div class="mt-3 flex flex-wrap items-center gap-1.5" aria-label="Tag participants">
+									<span class="mr-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+										<UsersIcon class="size-3.5" /> Tag
+									</span>
+									{#each participantNames as name (name)}
+										<Button
+											variant="secondary"
+											size="sm"
+											class="h-8 rounded-full px-3 text-xs"
+											onclick={() => editor?.insertMention(name)}
+										>
+											@{name}
+										</Button>
+									{/each}
+								</div>
+							{/if}
+						</header>
+					{/if}
+
 					<div class="relative">
 						{#if !notes.markdown.trim()}
 							<p
@@ -86,7 +136,7 @@
 								Take notes…
 							</p>
 						{/if}
-						<Editor value={initialNotes} onChange={(md) => notes.set(md)} />
+						<Editor bind:this={editor} value={initialNotes} onChange={(md) => notes.set(md)} />
 					</div>
 				</div>
 			</div>

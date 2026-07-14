@@ -13,6 +13,7 @@
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { transcripts } from '$lib/stores/transcript.svelte';
 	import {
+		CALENDAR_DRAFT_PARTICIPANTS_KEY,
 		CALENDAR_DRAFT_TITLE_KEY,
 		FOLDER_PIN_KEY,
 		startRecordingWithTitle,
@@ -177,6 +178,10 @@
 		transcripts.setMeetingTitle(ev.title);
 		if (typeof sessionStorage !== 'undefined') {
 			sessionStorage.setItem(CALENDAR_DRAFT_TITLE_KEY, ev.title);
+			sessionStorage.setItem(
+				CALENDAR_DRAFT_PARTICIPANTS_KEY,
+				JSON.stringify(ev.participant_names ?? []),
+			);
 			if (ev.ical_uid) {
 				sessionStorage.setItem(
 					FOLDER_PIN_KEY,

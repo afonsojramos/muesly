@@ -172,6 +172,11 @@
 	export function focus(): void {
 		editor?.commands.focus();
 	}
+
+	export function insertMention(name: string): void {
+		if (!editor || !name.trim()) return;
+		editor.chain().focus().insertContent(`@${name.trim()} `).run();
+	}
 </script>
 
 <div

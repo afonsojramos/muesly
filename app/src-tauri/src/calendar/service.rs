@@ -275,8 +275,8 @@ pub async fn meeting_context_block(
     context::render_meeting_context(&event, egress, send_names, send_notes)
 }
 
-/// A lightweight event for the settings "upcoming events" preview, so the user
-/// can confirm a source is being read. Attendee names/notes are not included.
+/// A lightweight event for the settings "upcoming events" preview. Participant
+/// names stay local and let the note editor offer quick @-tagging.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, specta::Type)]
 pub struct PreviewEvent {
     pub title: String,
@@ -294,6 +294,9 @@ pub struct PreviewEvent {
     pub is_recurring: bool,
     /// Parsed conference/meeting URL (Zoom/Meet/Teams/…), when present.
     pub conference_url: Option<String>,
+    /// Non-self, non-declined attendee display names. Emails never reach this layer.
+    #[serde(default)]
+    pub participant_names: Vec<String>,
 }
 
 /// Fetch upcoming events (roughly the next day) from all enabled sources,
@@ -335,20 +338,33 @@ pub async fn preview_upcoming(pool: &SqlitePool, now: DateTime<Utc>) -> Vec<Prev
     deduped.sort_by_key(|c| c.start);
     deduped
         .into_iter()
-        .map(|c| PreviewEvent {
-            occurrence_minute: dedup::minute_bucket(c.start),
-            title: c.title.unwrap_or_else(|| "(no title)".to_string()),
-            start: c.start.to_rfc3339(),
-            end: Some(c.end.to_rfc3339()),
-            source: match c.source {
-                SourceKind::EventKit => "eventkit",
-                SourceKind::Google => "google",
+        .map(|c| {
+            let mut participant_names: Vec<String> = c
+                .attendees
+                .iter()
+                .filter(|a| !a.is_self && a.status != matching::ParticipantStatus::Declined)
+                .filter_map(|a| a.name.as_deref().map(str::trim).filter(|n| !n.is_empty()))
+                .map(str::to_owned)
+                .collect();
+            participant_names.sort_by_key(|name| name.to_lowercase());
+            participant_names.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+
+            PreviewEvent {
+                occurrence_minute: dedup::minute_bucket(c.start),
+                title: c.title.unwrap_or_else(|| "(no title)".to_string()),
+                start: c.start.to_rfc3339(),
+                end: Some(c.end.to_rfc3339()),
+                source: match c.source {
+                    SourceKind::EventKit => "eventkit",
+                    SourceKind::Google => "google",
+                }
+                .to_string(),
+                calendar_name: c.calendar_name,
+                ical_uid: c.ical_uid,
+                is_recurring: c.is_recurring,
+                conference_url: c.conference_url,
+                participant_names,
             }
-            .to_string(),
-            calendar_name: c.calendar_name,
-            ical_uid: c.ical_uid,
-            is_recurring: c.is_recurring,
-            conference_url: c.conference_url,
         })
         .collect()
 }
