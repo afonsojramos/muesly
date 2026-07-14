@@ -8,7 +8,7 @@
 - **Storage**: SQLite via sqlx, owned by the Rust side
 - **Summarization**: local Qwen 3.5 / Gemma GGUF via the `llama-helper` sidecar, or cloud providers. Summaries use a two-pass pipeline: an English base summary, then optional translation to a user-selected output language.
 
-Detailed docs: [docs/architecture.md](docs/architecture.md), [docs/building.md](docs/building.md), [docs/gpu-acceleration.md](docs/gpu-acceleration.md).
+Detailed docs: [docs/architecture.md](docs/architecture.md), [docs/building.md](docs/building.md), [docs/gpu-acceleration.md](docs/gpu-acceleration.md), [docs/transcription-flows.md](docs/transcription-flows.md) (mermaid diagrams of every transcription/diarization/summary flow — update the matching diagram whenever one of those pipelines changes).
 
 The marketing website (muesly.ai) is a separate static Astro project in `site/`, with its own lockfile and deploy. See [site/README.md](site/README.md). Run it with `nub --cwd site install && nub --cwd site run dev`; build/check/test with `nub --cwd site run build` / `check` / `test`.
 
