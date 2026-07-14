@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
 	findSegmentNearTime,
+	formatTranscriptCitation,
 	linkTimestampsInMarkdown,
 	parseTimestampToken,
 } from './transcript-link';
+
+describe('formatTranscriptCitation', () => {
+	it('keeps long recordings in the clickable total-minute format', () => {
+		expect(formatTranscriptCitation(5)).toBe('[00:05]');
+		expect(formatTranscriptCitation(60 * 60 + 5)).toBe('[60:05]');
+	});
+});
 
 describe('parseTimestampToken', () => {
 	it('parses bracketed and bare mm:ss', () => {

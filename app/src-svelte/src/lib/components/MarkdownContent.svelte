@@ -7,14 +7,23 @@
 		value: string;
 		/** Optional interception point for future message-specific link actions. */
 		onLinkClick?: (url: string) => boolean | void;
+		/** Turns recording-relative `[mm:ss]` tokens into transcript jumps. */
+		onTimestampClick?: (seconds: number) => void;
 	}
 
-	let { value, onLinkClick }: Props = $props();
-	const html = $derived(renderMarkdown(value));
+	let { value, onLinkClick, onTimestampClick }: Props = $props();
+	const html = $derived(renderMarkdown(value, Boolean(onTimestampClick)));
 
 	async function activateLink(event: MouseEvent | KeyboardEvent): Promise<void> {
 		const target = event.target;
 		if (!(target instanceof Element)) return;
+		const timestamp = target.closest<HTMLElement>('[data-transcript-seconds]');
+		if (timestamp) {
+			event.preventDefault();
+			const seconds = Number(timestamp.dataset.transcriptSeconds);
+			if (onTimestampClick && Number.isFinite(seconds)) onTimestampClick(seconds);
+			return;
+		}
 		const anchor = target.closest<HTMLAnchorElement>('a[data-external-url]');
 		if (!anchor) return;
 		event.preventDefault();
@@ -101,5 +110,21 @@
 		color: var(--color-primary);
 		text-decoration: underline;
 		text-underline-offset: 2px;
+	}
+	.markdown-content :global(.transcript-timestamp) {
+		cursor: pointer;
+		border: 0;
+		background: transparent;
+		padding: 0;
+		color: var(--color-primary);
+		font: inherit;
+		font-variant-numeric: tabular-nums;
+		text-decoration: underline;
+		text-underline-offset: 2px;
+	}
+	.markdown-content :global(.transcript-timestamp:focus-visible) {
+		border-radius: 0.125rem;
+		outline: 2px solid var(--color-ring);
+		outline-offset: 2px;
 	}
 </style>

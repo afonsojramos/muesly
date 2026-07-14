@@ -51,6 +51,20 @@ describe('renderMarkdown', () => {
 		);
 		expect(html).not.toContain(' href=');
 	});
+
+	it('renders valid transcript timestamps only when navigation is enabled', () => {
+		const linked = renderMarkdown('See [00:05] and [12:34], not [1:99].', true);
+		expect(linked).toContain('data-transcript-seconds="5"');
+		expect(linked).toContain('data-transcript-seconds="754"');
+		expect(linked).not.toContain('data-transcript-seconds="159"');
+		expect(renderMarkdown('See [00:05].')).not.toContain('data-transcript-seconds');
+	});
+
+	it('keeps external links separate from transcript timestamps', () => {
+		const html = renderMarkdown('[source](https://example.com) at [00:05]', true);
+		expect(html).toContain('data-external-url="https://example.com/"');
+		expect(html).toContain('data-transcript-seconds="5"');
+	});
 });
 
 describe('externalHttpUrl', () => {

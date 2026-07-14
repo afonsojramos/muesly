@@ -21,6 +21,8 @@
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { transcripts } from '$lib/stores/transcript.svelte';
+	import { findSegmentNearTime } from '$lib/transcript-link';
+	import { toast } from '$lib/toast';
 	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
 	import { addBarInstructions } from '$lib/bars/execution';
@@ -97,6 +99,23 @@
 	function setTranscriptOpen(open: boolean): void {
 		if (isLiveNote) liveTranscriptPanel.open = open;
 		else sidePanelState.open = open;
+	}
+
+	function handleTimestampClick(seconds: number): void {
+		const hit = findSegmentNearTime(transcripts.transcripts, seconds);
+		if (!hit) {
+			setTranscriptOpen(true);
+			toast.info('No matching transcript moment', {
+				description: 'Open the transcript to find the referenced moment.',
+			});
+			return;
+		}
+		if (isLiveNote) {
+			liveTranscriptPanel.open = true;
+			sidePanelState.focusSegmentId = hit.id;
+		} else {
+			sidePanelState.jumpToSegment(hit.id);
+		}
 	}
 
 	function statePillReveal(_node: Element): TransitionConfig {
@@ -242,6 +261,7 @@
 	placeholder="Ask anything about this meeting…"
 	collapsedPlaceholder="Continue chat"
 	ariaLabel="Ask anything about this meeting"
+	onTimestampClick={handleTimestampClick}
 	{slashCommands}
 	overlayActive={barsOpen || recentOpen || clearConfirmOpen || runDialogOpen}
 >

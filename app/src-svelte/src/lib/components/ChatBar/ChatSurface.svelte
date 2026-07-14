@@ -83,6 +83,8 @@
 		messageLeading?: Snippet<[ChatSurfaceMessage]>;
 		/** True while any wrapper-owned overlay (popover/dialog) is open. */
 		overlayActive?: boolean;
+		/** Meeting-only transcript navigation. Omit for global chat. */
+		onTimestampClick?: (seconds: number) => void;
 		/** Commands offered when the draft starts with `/`. */
 		slashCommands?: ChatSlashCommand[];
 		/** Whether the message panel is expanded. Bindable so wrappers can control
@@ -104,6 +106,7 @@
 		detachedRail,
 		messageLeading,
 		overlayActive = false,
+		onTimestampClick,
 		slashCommands = [],
 		open = $bindable(true),
 	}: Props = $props();
@@ -316,7 +319,7 @@
 													{/if}
 												</div>
 											{:else}
-												<MarkdownContent value={message.content} />
+												<MarkdownContent value={message.content} {onTimestampClick} />
 											{/if}
 										{:else if controller.isStreaming}
 											<span class="text-muted-foreground">{thinkingLabel}</span>

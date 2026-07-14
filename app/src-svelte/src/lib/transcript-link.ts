@@ -8,6 +8,14 @@ export interface TimedSegment {
 	audio_start_time?: number | null;
 }
 
+/** Format recording-relative seconds for chat's clickable `[mm:ss]` citations. */
+export function formatTranscriptCitation(seconds: number): string {
+	const total = Math.max(0, Math.floor(seconds));
+	const minutes = Math.floor(total / 60);
+	const remainder = total % 60;
+	return `[${minutes.toString().padStart(2, '0')}:${remainder.toString().padStart(2, '0')}]`;
+}
+
 /** Parse `[m:ss]`, `[mm:ss]`, or bare `m:ss` at the start of a token into seconds. */
 export function parseTimestampToken(token: string): number | null {
 	const m = token.trim().match(/^\[?(\d{1,2}):(\d{2})\]?$/);

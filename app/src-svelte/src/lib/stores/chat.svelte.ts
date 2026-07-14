@@ -19,6 +19,7 @@ import {
 	stopChatStream,
 	type StreamOutcome,
 } from '$lib/chat/stream';
+import { formatTranscriptCitation } from '$lib/transcript-link';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -115,7 +116,12 @@ class ChatStore {
 		// is not in SQLite yet — send the on-screen transcript instead.
 		const isLive =
 			recordingState.isRecording || recordingState.status === RecordingStatus.RECORDING;
-		const liveTranscript = isLive ? formatTranscriptForLlm(transcripts.transcripts) : null;
+		const liveTranscript = isLive
+			? formatTranscriptForLlm(transcripts.transcripts, {
+					includeTimestamps: true,
+					formatTime: (start) => formatTranscriptCitation(start ?? 0),
+				})
+			: null;
 
 		// Backend `chat_ask(model, modelName)`: `model` is the provider kind
 		// (e.g. "ollama"/"builtin-ai"), `modelName` the concrete model id.
