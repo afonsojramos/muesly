@@ -30,7 +30,7 @@ for (const route of routes) {
 	if (/href="(?:undefined|null)"/.test(html)) failures.push(`invalid link value: ${route}`);
 }
 
-for (const asset of ['_headers', 'og-2026.png', 'favicon.svg', 'sitemap-index.xml']) {
+for (const asset of ['_headers', 'og.png', 'favicon.svg', 'sitemap-index.xml']) {
 	if (!existsSync(resolve(dist, asset))) failures.push(`missing production asset: ${asset}`);
 }
 
