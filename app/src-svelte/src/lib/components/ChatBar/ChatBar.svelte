@@ -70,22 +70,30 @@
 	const showDraftStart = $derived(
 		isLiveNote && transcripts.transcripts.length === 0 && !recordingState.isRecording,
 	);
+	type RecordingControl = 'start' | 'resume' | 'stop' | 'saving';
+	const recordingControl = $derived.by((): RecordingControl | null => {
+		if (stopRequested) return 'saving';
+		if (recordingState.isRecording) return recordingState.isPaused ? 'resume' : 'stop';
+		if (showDraftStart) return 'start';
+		if (transcriptPanelOpen) return 'resume';
+		return null;
+	});
+	const recordingControlIcon = $derived(
+		isResumingRecording && (recordingControl === 'start' || recordingControl === 'resume')
+			? 'loading'
+			: recordingControl,
+	);
+	const recordingControlLabel = $derived.by(() => {
+		if (recordingControlIcon === 'loading') return 'Starting recording';
+		if (recordingControl === 'start') return 'Start recording';
+		if (recordingControl === 'resume') return 'Resume recording';
+		if (recordingControl === 'stop') return 'Stop recording';
+		return 'Saving meeting';
+	});
 
 	function setTranscriptOpen(open: boolean): void {
 		if (isLiveNote) liveTranscriptPanel.open = open;
 		else sidePanelState.open = open;
-	}
-
-	function railMorph(_node: Element): TransitionConfig {
-		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-			return { duration: 100, css: (t) => `opacity: ${t}` };
-		}
-		return {
-			duration: 280,
-			easing: cubicOut,
-			css: (t) =>
-				`opacity: ${t}; filter: blur(${(1 - t) * 2}px); transform: scale(${0.88 + t * 0.12})`,
-		};
 	}
 
 	function iconMorph(_node: Element): TransitionConfig {
@@ -132,6 +140,13 @@
 			}
 		} finally {
 			isResumingRecording = false;
+		}
+	}
+
+	function activateRecordingControl(): void {
+		if (recordingControl === 'stop') void stopRecording();
+		else if (recordingControl === 'start' || recordingControl === 'resume') {
+			void resumeRecording();
 		}
 	}
 
@@ -258,65 +273,33 @@
 			</Popover.Content>
 		</Popover.Root>
 
-		{#if stopRequested}
-			<span class="sr-only" role="status" aria-live="polite">Saving meeting</span>
-			<div class="origin-center" transition:railMorph>
-				<ChatRailButton tooltip="Saving meeting" ariaLabel="Saving meeting" disabled>
-					<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
-				</ChatRailButton>
-			</div>
-		{:else if recordingState.isRecording && recordingState.isPaused}
-			<div class="origin-center" transition:railMorph>
-				<ChatRailButton
-					tooltip="Resume recording"
-					ariaLabel="Resume recording"
-					disabled={isResumingRecording}
-					onclick={() => void resumeRecording()}
-				>
-					<Play data-icon fill="currentColor" />
-				</ChatRailButton>
-			</div>
-		{:else if recordingState.isRecording}
-			<div class="origin-center" transition:railMorph>
-				<ChatRailButton
-					tooltip="Stop recording"
-					ariaLabel="Stop recording"
-					disabled={isStoppingRecording}
-					onclick={() => void stopRecording()}
-				>
-					<Square data-icon fill="currentColor" class="text-destructive" />
-				</ChatRailButton>
-			</div>
-		{:else if showDraftStart || transcriptPanelOpen}
-			<div class="origin-center" transition:railMorph>
-				<ChatRailButton
-					tooltip={showDraftStart ? 'Start recording' : 'Resume recording'}
-					ariaLabel={showDraftStart ? 'Start recording' : 'Resume recording'}
-					disabled={isResumingRecording}
-					onclick={() => void resumeRecording()}
-					class="hover:bg-transparent dark:hover:bg-transparent"
-				>
-					{#if isResumingRecording}
-						<span
-							class="flex size-4 origin-center items-center justify-center"
-							transition:iconMorph
-						>
+		{#if recordingControl}
+			{#if recordingControl === 'saving'}
+				<span class="sr-only" role="status" aria-live="polite">Saving meeting</span>
+			{/if}
+			<ChatRailButton
+				tooltip={recordingControlLabel}
+				ariaLabel={recordingControlLabel}
+				disabled={recordingControl === 'saving' || isResumingRecording || isStoppingRecording}
+				onclick={activateRecordingControl}
+				class="hover:bg-transparent dark:hover:bg-transparent"
+			>
+				{#key recordingControlIcon}
+					<span class="flex size-4 origin-center items-center justify-center" in:iconMorph>
+						{#if recordingControlIcon === 'loading' || recordingControlIcon === 'saving'}
 							<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
-						</span>
-					{:else}
-						<span
-							class="flex size-4 origin-center items-center justify-center"
-							transition:iconMorph
-						>
+						{:else if recordingControlIcon === 'stop'}
+							<Square data-icon fill="currentColor" class="text-destructive" />
+						{:else}
 							<Play
 								data-icon
 								fill="currentColor"
 								class="transition-colors duration-200 ease-out group-hover:text-brand"
 							/>
-						</span>
-					{/if}
-				</ChatRailButton>
-			</div>
+						{/if}
+					</span>
+				{/key}
+			</ChatRailButton>
 		{/if}
 	{/snippet}
 
