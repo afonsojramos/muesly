@@ -65,7 +65,7 @@
 							{group.isToday ? 'Today' : group.weekday}
 						</div>
 					</div>
-					<div class="flex min-w-0 flex-1 flex-col gap-3">
+					<div class="flex min-w-0 flex-1 flex-col gap-1">
 						{#each group.items as ev, j (`${ev.start}-${ev.title}-${j}`)}
 							<EventRow {ev} {nowMs} />
 						{/each}
