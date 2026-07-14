@@ -1,5 +1,6 @@
 ---
 import { Icon } from 'astro-icon/components';
+import { GITHUB_URL } from '$lib/config';
 import WorkspaceMock from '../product/WorkspaceMock.astro';
 import Button from '../ui/Button.astro';
 import Section from '../ui/Section.astro';
@@ -40,6 +41,17 @@ import Section from '../ui/Section.astro';
 				<li class="flex items-center gap-1.5">
 					<Icon name="lucide:check" class="size-4 text-accent" aria-hidden="true" />
 					On-device processing
+				</li>
+				<li>
+					<a
+						class="flex items-center gap-1.5 underline decoration-border underline-offset-4 transition-colors hover:text-foreground"
+						href={GITHUB_URL}
+						target="_blank"
+						rel="noopener noreferrer"
+					>
+						<Icon name="lucide:github" class="size-4 text-accent" aria-hidden="true" />
+						Source available on GitHub
+					</a>
 				</li>
 			</ul>
 		</div>

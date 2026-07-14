@@ -1,9 +1,11 @@
 ---
+import { Icon } from 'astro-icon/components';
+import { GITHUB_ISSUES_URL, GITHUB_RELEASES_URL, GITHUB_URL } from '$lib/config';
 import MueslyMark from './MueslyMark.astro';
 ---
 
 <footer class="bg-foreground text-primary-foreground">
-	<div class="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:grid-cols-2 sm:px-6 md:grid-cols-[1.5fr_1fr_1fr]">
+	<div class="mx-auto grid max-w-7xl gap-10 px-5 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1.5fr_1fr_1fr_1fr]">
 		<div>
 			<a href="/" class="flex items-center gap-2" aria-label="muesly home">
 				<MueslyMark class="h-7 w-7" />
@@ -31,6 +33,20 @@ import MueslyMark from './MueslyMark.astro';
 			<ul class="space-y-2 text-white/50">
 				<li><a class="transition-colors hover:text-white" href="/privacy">Privacy policy</a></li>
 				<li><a class="transition-colors hover:text-white" href="/terms">Terms & license</a></li>
+			</ul>
+		</nav>
+
+		<nav aria-label="Community" class="text-sm">
+			<h2 class="mb-3 font-medium text-white">Community</h2>
+			<ul class="space-y-2 text-white/50">
+				<li>
+					<a class="inline-flex items-center gap-1.5 transition-colors hover:text-white" href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+						<Icon name="lucide:github" class="size-4" aria-hidden="true" />
+						GitHub
+					</a>
+				</li>
+				<li><a class="transition-colors hover:text-white" href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">Issues</a></li>
+				<li><a class="transition-colors hover:text-white" href={GITHUB_RELEASES_URL} target="_blank" rel="noopener noreferrer">Releases</a></li>
 			</ul>
 		</nav>
 	</div>

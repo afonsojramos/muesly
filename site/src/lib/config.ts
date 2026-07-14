@@ -1,6 +1,9 @@
 // Centralized external URLs and constants used across the site.
 export const SITE_URL = 'https://muesly.ai';
 export const DOWNLOADS_URL = 'https://downloads.muesly.ai';
+export const GITHUB_URL = 'https://github.com/afonsojramos/muesly';
+export const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues`;
+export const GITHUB_RELEASES_URL = `${GITHUB_URL}/releases`;
 export const DOWNLOADS = {
 	macos: `${DOWNLOADS_URL}/latest/muesly-macos-arm64.dmg`,
 	windows: `${DOWNLOADS_URL}/latest/muesly-windows-x64-setup.exe`,
