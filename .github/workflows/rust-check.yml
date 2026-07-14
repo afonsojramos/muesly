@@ -5,6 +5,7 @@ on:
     paths:
       - "app/src-tauri/**"
       - "llama-helper/**"
+      - "diarization-helper/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/rust-check.yml"
