@@ -13,6 +13,7 @@ import { commands, type ChatStreamEvent, type RecentChatThread } from '$lib/bind
 import { formatTranscriptForLlm } from '$lib/format-transcript-for-llm';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
+import { reduceChatStreamEvent } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 import { recordingState, RecordingStatus } from './recording-state.svelte';
@@ -84,21 +85,17 @@ class ChatStore {
 
 		const channel = new Channel<ChatStreamEvent>();
 		channel.onmessage = (event) => {
-			if (this.#genId !== genId) return; // a newer ask superseded this one
-			switch (event.event) {
-				case 'token':
-					assistant.content += event.data.text;
-					break;
-				case 'done':
-					// Authoritative + idempotent: reconciles any dropped token once
-					// real streaming lands (Phase 1 sends the whole answer as one token).
-					assistant.content = event.data.full;
-					this.#finish(genId);
-					break;
-				case 'error':
-					this.#fail(genId, assistant, event.data.message);
-					break;
-			}
+			const state = {
+				content: assistant.content,
+				isStreaming: this.isStreaming,
+				activeGenerationId: this.#genId,
+			};
+			const reduction = reduceChatStreamEvent(state, genId, event);
+			if (reduction.state === state) return;
+			assistant.content = reduction.state.content;
+			this.isStreaming = reduction.state.isStreaming;
+			this.#genId = reduction.state.activeGenerationId;
+			if (reduction.error) toast.error('Chat failed', { description: reduction.error });
 		};
 
 		// During a live recording the meeting id is ephemeral (IndexedDB only);

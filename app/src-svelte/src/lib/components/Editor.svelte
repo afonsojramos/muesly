@@ -8,6 +8,12 @@
 
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
+	import {
+		filterMentionSuggestions,
+		handleMentionKey,
+		matchMention,
+		type MentionRange,
+	} from '$lib/editor/mentions';
 
 	// Fixed-size caret. A native contenteditable caret is always drawn at the line's
 	// full line-height, so it looks oversized next to the glyphs and, depending on
@@ -91,16 +97,12 @@
 	// Suppress onChange while we programmatically replace content (setContent
 	// dispatches its transaction synchronously, so this flag brackets it).
 	let isProgrammatic = false;
-	let mentionRange = $state<{ from: number; to: number } | null>(null);
+	let mentionRange = $state<MentionRange | null>(null);
 	let mentionQuery = $state('');
 	let mentionIndex = $state(0);
 	let mentionLeft = $state(0);
 	let mentionTop = $state(0);
-	const filteredMentions = $derived(
-		mentionSuggestions
-			.filter((name) => name.toLowerCase().includes(mentionQuery.toLowerCase()))
-			.slice(0, 8),
-	);
+	const filteredMentions = $derived(filterMentionSuggestions(mentionSuggestions, mentionQuery));
 
 	function closeMentionMenu(): void {
 		mentionRange = null;
@@ -116,16 +118,15 @@
 
 		const fromPosition = ed.state.selection.$from;
 		const textBefore = fromPosition.parent.textBetween(0, fromPosition.parentOffset, '\0', '\0');
-		const match = textBefore.match(/(?:^|\s)@([^\s@]*)$/);
+		const match = matchMention(textBefore, fromPosition.pos);
 		if (!match) {
 			closeMentionMenu();
 			return;
 		}
 
-		const query = match[1] ?? '';
 		const to = fromPosition.pos;
-		mentionRange = { from: to - query.length - 1, to };
-		mentionQuery = query;
+		mentionRange = match.range;
+		mentionQuery = match.query;
 		mentionIndex = 0;
 
 		const caret = ed.view.coordsAtPos(to);
@@ -154,22 +155,14 @@
 
 	function handleMentionKeydown(event: KeyboardEvent): boolean {
 		if (!mentionRange) return false;
-		if (event.key === 'Escape') {
-			closeMentionMenu();
-			return true;
-		}
-		if (filteredMentions.length === 0) return false;
-		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-			const direction = event.key === 'ArrowDown' ? 1 : -1;
-			mentionIndex = (mentionIndex + direction + filteredMentions.length) % filteredMentions.length;
-			return true;
-		}
-		if (event.key === 'Enter' || event.key === 'Tab') {
-			const selectedMention = filteredMentions[mentionIndex];
+		const result = handleMentionKey(event.key, mentionIndex, filteredMentions.length);
+		if (result.action === 'close') closeMentionMenu();
+		if (result.action === 'move') mentionIndex = result.index;
+		if (result.action === 'select') {
+			const selectedMention = filteredMentions[result.index];
 			if (selectedMention) selectMention(selectedMention);
-			return true;
 		}
-		return false;
+		return result.action !== 'unhandled';
 	}
 
 	function loadContent(markdown: string): void {

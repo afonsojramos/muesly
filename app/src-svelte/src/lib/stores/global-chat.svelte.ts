@@ -12,6 +12,7 @@ import { Channel } from '@tauri-apps/api/core';
 import { commands, type GlobalChatEvent } from '$lib/bindings';
 import { toast } from '$lib/toast';
 import type { BarExecution } from '$lib/bars/execution';
+import { reduceGlobalChatStreamEvent } from '$lib/chat/stream';
 
 import { config } from './config.svelte';
 
@@ -69,32 +70,19 @@ class GlobalChatStore {
 
 		const channel = new Channel<GlobalChatEvent>();
 		channel.onmessage = (event) => {
-			if (this.#genId !== genId) return; // superseded
-			switch (event.event) {
-				case 'action':
-					assistant.actions.push({ id: event.data.id, label: event.data.label, done: false });
-					break;
-				case 'action_done': {
-					const action = assistant.actions.find((a) => a.id === event.data.id);
-					if (action) {
-						action.done = true;
-						action.detail = event.data.detail;
-					}
-					break;
-				}
-				case 'token':
-					assistant.content += event.data.text;
-					break;
-				case 'done':
-					assistant.content = event.data.full;
-					this.#finish(genId);
-					break;
-				case 'error':
-					if (!assistant.content) assistant.content = `⚠️ ${event.data.message}`;
-					toast.error('Chat failed', { description: event.data.message });
-					this.#finish(genId);
-					break;
-			}
+			const state = {
+				content: assistant.content,
+				actions: assistant.actions,
+				isStreaming: this.isStreaming,
+				activeGenerationId: this.#genId,
+			};
+			const reduction = reduceGlobalChatStreamEvent(state, genId, event);
+			if (reduction.state === state) return;
+			assistant.content = reduction.state.content;
+			assistant.actions = reduction.state.actions;
+			this.isStreaming = reduction.state.isStreaming;
+			this.#genId = reduction.state.activeGenerationId;
+			if (reduction.error) toast.error('Chat failed', { description: reduction.error });
 		};
 
 		const { provider, model } = config.modelConfig;
