@@ -131,8 +131,8 @@
 	{:else}
 		<!-- Show the summary whenever one exists — gating on transcripts hid a valid
 		     summary when its rows failed to load or were deleted. -->
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div class="w-full px-8 py-4">
+		<div class="min-h-0 flex-1 scroll-pb-32 overflow-y-auto">
+			<div class="w-full px-8 pb-32 pt-4">
 				<SummaryView
 					bind:this={summaryView}
 					summaryData={aiSummary}
