@@ -20,6 +20,7 @@
 	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
 	import { sidePanelState } from '$lib/stores/side-panel.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
+	import { transcripts } from '$lib/stores/transcript.svelte';
 	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
 	import { addBarInstructions } from '$lib/bars/execution';
@@ -68,6 +69,9 @@
 	const isLiveNote = $derived(page.url.pathname === '/note');
 	const transcriptPanelOpen = $derived(isLiveNote ? liveTranscriptPanel.open : sidePanelState.open);
 	const transcriptPanelLabel = 'transcript';
+	const showDraftStart = $derived(
+		isLiveNote && transcripts.transcripts.length === 0 && !recordingState.isRecording,
+	);
 
 	function setTranscriptOpen(open: boolean): void {
 		if (isLiveNote) liveTranscriptPanel.open = open;
@@ -83,6 +87,18 @@
 			easing: cubicOut,
 			css: (t) =>
 				`width: ${t * 32}px; margin-left: ${(t - 1) * 4}px; opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: translateX(${(1 - t) * -36}px) scale(${0.25 + t * 0.75})`,
+		};
+	}
+
+	function railMorph(_node: Element): TransitionConfig {
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			return { duration: 100, css: (t) => `opacity: ${t}` };
+		}
+		return {
+			duration: 220,
+			easing: cubicOut,
+			css: (t) =>
+				`opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: scale(${0.25 + t * 0.75})`,
 		};
 	}
 
@@ -105,7 +121,13 @@
 				if (recordingState.isPaused) await recordingState.resume();
 				if (!isLiveNote) await goto('/note');
 			} else if (isLiveNote) {
-				window.dispatchEvent(new CustomEvent('start-recording-from-sidebar'));
+				await new Promise<void>((resolve) => {
+					window.dispatchEvent(
+						new CustomEvent('start-recording-from-sidebar', {
+							detail: { onComplete: () => resolve() },
+						}),
+					);
+				});
 			} else {
 				sessionStorage.setItem('autoStartRecording', 'true');
 				await goto('/note');
@@ -208,40 +230,64 @@
 	{/snippet}
 
 	{#snippet detachedRail()}
-		<Popover.Root open={transcriptPanelOpen} onOpenChange={setTranscriptOpen}>
-			<Popover.Trigger>
-				{#snippet child({ props })}
-					<ChatRailButton
-						triggerProps={props}
-						tooltip={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
-						ariaLabel={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
-						shortcut="⌘T"
-						pressed={transcriptPanelOpen}
-						overlayOpen={transcriptPanelOpen}
-						class="aria-expanded:bg-transparent dark:aria-expanded:bg-transparent"
-					>
-						<AudioLinesIndicator
-							active={recordingState.isRecording}
-							class={cn(
-								'transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand',
-								recordingState.isRecording && 'text-brand',
-							)}
+		{#if showDraftStart}
+			<div class="origin-center" transition:railMorph>
+				<ChatRailButton
+					tooltip="Start recording"
+					ariaLabel="Start recording"
+					disabled={isResumingRecording}
+					onclick={() => void resumeRecording()}
+					class="hover:bg-transparent dark:hover:bg-transparent"
+				>
+					{#if isResumingRecording}
+						<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
+					{:else}
+						<Play
+							data-icon
+							fill="currentColor"
+							class="transition-colors duration-200 ease-out group-hover:text-brand"
 						/>
-					</ChatRailButton>
-				{/snippet}
-			</Popover.Trigger>
-			<Popover.Content
-				align="start"
-				side="top"
-				sideOffset={16}
-				class="transcript-dropup origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
-				onOpenAutoFocus={(event) => event.preventDefault()}
-			>
-				<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
-			</Popover.Content>
-		</Popover.Root>
+					{/if}
+				</ChatRailButton>
+			</div>
+		{:else}
+			<div class="origin-center" transition:railMorph>
+				<Popover.Root open={transcriptPanelOpen} onOpenChange={setTranscriptOpen}>
+					<Popover.Trigger>
+						{#snippet child({ props })}
+							<ChatRailButton
+								triggerProps={props}
+								tooltip={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+								ariaLabel={`${transcriptPanelOpen ? 'Hide' : 'Show'} ${transcriptPanelLabel}`}
+								shortcut="⌘T"
+								pressed={transcriptPanelOpen}
+								overlayOpen={transcriptPanelOpen}
+								class="hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent dark:aria-expanded:bg-transparent"
+							>
+								<AudioLinesIndicator
+									active={recordingState.isRecording}
+									class={cn(
+										'transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand',
+										recordingState.isRecording && 'text-brand',
+									)}
+								/>
+							</ChatRailButton>
+						{/snippet}
+					</Popover.Trigger>
+					<Popover.Content
+						align="start"
+						side="top"
+						sideOffset={16}
+						class="transcript-dropup origin-bottom-left w-[min(42rem,calc(100vw-3rem))] p-0 data-closed:slide-out-to-bottom-2 data-closed:duration-150"
+						onOpenAutoFocus={(event) => event.preventDefault()}
+					>
+						<TranscriptDropup meetingId={chat.meetingId} live={isLiveNote} />
+					</Popover.Content>
+				</Popover.Root>
+			</div>
+		{/if}
 
-		{#if transcriptPanelOpen}
+		{#if transcriptPanelOpen && !showDraftStart}
 			<div class="origin-center will-change-[transform,opacity,filter]" transition:dropletGrow>
 				<ChatRailButton
 					tooltip="Resume recording"

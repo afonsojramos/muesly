@@ -78,6 +78,8 @@ export interface FolderPin {
 export const FOLDER_PIN_KEY = 'pending_folder_rule';
 /** A calendar note draft whose title and notes should survive a later recording start. */
 export const CALENDAR_DRAFT_TITLE_KEY = 'pending_calendar_draft_title';
+/** Participant names for an upcoming calendar draft, used only by the note UI. */
+export const CALENDAR_DRAFT_PARTICIPANTS_KEY = 'pending_calendar_draft_participants';
 
 function consumeCalendarDraftTitle(): string | null {
 	if (!isBrowser) return null;
@@ -123,6 +125,7 @@ export async function startRecordingWithTitle(
 		sidebar.setIsMeetingActive(true);
 		if (typeof sessionStorage !== 'undefined') {
 			sessionStorage.removeItem(CALENDAR_DRAFT_TITLE_KEY);
+			sessionStorage.removeItem(CALENDAR_DRAFT_PARTICIPANTS_KEY);
 			if (pin) sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(pin));
 			else sessionStorage.removeItem(FOLDER_PIN_KEY);
 		}
@@ -212,21 +215,22 @@ export function useRecordingStart(
 		}
 	};
 
-	const autoStart = async (location: string): Promise<void> => {
-		if (recordingState.isRecording || isAutoStarting) return;
+	const autoStart = async (location: string): Promise<boolean> => {
+		if (recordingState.isRecording || isAutoStarting) return false;
 		isAutoStarting = true;
 
 		try {
 			const transcriptionReady = await checkTranscriptionReady();
 			if (!transcriptionReady) {
 				await notifyModelNotReady(location);
-				return;
+				return false;
 			}
 
 			const draftTitle = consumeCalendarDraftTitle();
 			if (!draftTitle && isBrowser) sessionStorage.removeItem(FOLDER_PIN_KEY);
 			await startBackendRecording(draftTitle ?? generateMeetingTitle(), !!draftTitle);
 			void Analytics.trackButtonClick('start_recording', location);
+			return true;
 		} catch (error) {
 			console.error(`Failed to ${location} recording:`, error);
 			recordingState.setStatus(
@@ -234,6 +238,7 @@ export function useRecordingStart(
 				error instanceof Error ? error.message : 'Failed to start recording',
 			);
 			void Analytics.trackButtonClick('start_recording_error', location);
+			return false;
 		} finally {
 			isAutoStarting = false;
 		}
@@ -247,8 +252,9 @@ export function useRecordingStart(
 		}
 
 		// Direct start when already on the home route.
-		const handleDirectStart = (): void => {
-			void autoStart('sidebar_direct');
+		const handleDirectStart = (event: Event): void => {
+			const detail = (event as CustomEvent<{ onComplete?: (started: boolean) => void }>).detail;
+			void autoStart('sidebar_direct').then((started) => detail?.onComplete?.(started));
 		};
 		if (isBrowser) {
 			window.addEventListener('start-recording-from-sidebar', handleDirectStart);
