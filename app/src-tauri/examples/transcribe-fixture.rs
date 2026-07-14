@@ -6,12 +6,17 @@
 //! stdout output (logs go to stderr) so a caller can capture it directly.
 //!
 //! Usage: cargo run -p muesly --example transcribe-fixture --
-//!        [--language en] [--vad] [--segments]
+//!        [--language en] [--vad] [--segments] [--dump-segments <dir>]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
 //!
 //! `--segments` (implies `--vad`) prints one line per VAD segment instead of a
 //! single joined transcript:
 //! `<index>\t<start-seconds>\t<confidence>\t<kept|DROPPED(reason)>\t<text>`.
+//!
+//! `--dump-segments <dir>` (implies `--vad`) skips transcription and instead
+//! writes each VAD segment as 16 kHz mono `seg-NNN.wav` into `dir`, so an
+//! external engine can be evaluated on the exact same segmentation. Prints one
+//! manifest line per segment: `<index>\t<start-seconds>\t<file>`.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -35,6 +40,7 @@ async fn main() {
     let mut language = None;
     let mut use_vad = false;
     let mut per_segment = false;
+    let mut dump_dir: Option<PathBuf> = None;
     let mut prompt = None;
     let mut positional = Vec::new();
     let mut index = 0;
@@ -51,6 +57,13 @@ async fn main() {
             "--segments" => {
                 use_vad = true;
                 per_segment = true;
+            }
+            "--dump-segments" => {
+                use_vad = true;
+                index += 1;
+                dump_dir = Some(PathBuf::from(raw_args.get(index).cloned().unwrap_or_else(
+                    || fail("--dump-segments requires a directory".to_string()),
+                )));
             }
             "--prompt" => {
                 index += 1;
@@ -89,6 +102,31 @@ async fn main() {
     );
 
     let samples = decoded.to_whisper_format();
+
+    // Dump-only mode: write the VAD segmentation and exit without touching the
+    // ASR engine, so external engines can be evaluated on identical segments.
+    if let Some(dir) = dump_dir {
+        let segments =
+            get_speech_chunks(&samples, 2000).unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
+        eprintln!("VAD detected {} speech segments", segments.len());
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| fail(format!("create dump dir: {e}")));
+        for (index, segment) in segments.into_iter().enumerate() {
+            if segment.samples.len() < 1600 {
+                continue;
+            }
+            let path = dir.join(format!("seg-{:03}.wav", index + 1));
+            write_wav_16k_mono(&path, &segment.samples)
+                .unwrap_or_else(|e| fail(format!("write {}: {e}", path.display())));
+            println!(
+                "{}\t{:.1}\t{}",
+                index + 1,
+                segment.start_timestamp_ms / 1000.0,
+                path.display()
+            );
+        }
+        return;
+    }
+
     let engine = WhisperEngine::new_with_models_dir(models_dir)
         .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
     let models = engine
@@ -175,6 +213,31 @@ async fn main() {
             .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
     };
     println!("{}", text.trim());
+}
+
+/// Minimal 16-bit PCM mono 16 kHz WAV writer (44-byte RIFF header), so the
+/// example carries no audio-encoding dependency.
+fn write_wav_16k_mono(path: &std::path::Path, samples: &[f32]) -> std::io::Result<()> {
+    const SAMPLE_RATE: u32 = 16_000;
+    let data_len = (samples.len() * 2) as u32;
+    let mut bytes = Vec::with_capacity(44 + samples.len() * 2);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes()); // PCM chunk size
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM format
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+    bytes.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
+    bytes.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // byte rate
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // block align
+    bytes.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        let clamped = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        bytes.extend_from_slice(&clamped.to_le_bytes());
+    }
+    std::fs::write(path, bytes)
 }
 
 fn progress_callback() -> Box<dyn Fn(u8) + Send> {
