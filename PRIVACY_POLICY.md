@@ -51,7 +51,7 @@ If you enable calendar context, the matched meeting's title, time, and location 
 
 Calendar context works with your Mac's local calendars by default. You may also optionally connect one or more Google accounts (Settings → Calendar → Add Google account). This is off until you connect an account.
 
-- **Scope (read-only, minimal):** muesly requests only `calendar.events.readonly` (plus `openid`/`email` to identify the account). It cannot create, edit, or delete anything, and it never touches your email, Drive, or contacts.
+- **Scopes (read-only, minimal):** muesly requests `calendar.calendarlist.readonly` to list the calendars you subscribe to so you can choose which calendars to use, and `calendar.events.readonly` to read events from those selected calendars for upcoming-meeting display, recording matching, optional automatic recording, and meeting context. It also requests `openid`/`email` to identify the connected account. These permissions cannot create, edit, or delete anything, and muesly never accesses your Gmail, Drive, or contacts.
 - **Where it goes:** events are fetched directly between your device and Google. muesly has no server; nothing is routed through or stored by muesly's maintainers.
 - **What is stored, and where:** events are stored only on your device. The connected account's email is stored locally as a label. The OAuth refresh token is stored in your operating system keychain, never in the app database. Attendee email addresses are never stored.
 - **No human review, no training, no sale:** calendar data is used only to provide the in-app meeting-context feature.
