@@ -653,85 +653,81 @@
 						</Button>
 					{/if}
 				</div>
-				{#if !isNaN(createdDate.getTime()) || attendeeChips.length > 0}
-					<div
-						class="mt-1 flex min-h-10 flex-wrap items-center gap-x-1 text-sm text-muted-foreground"
-					>
-						{#if !isNaN(createdDate.getTime())}
-							<span>
-								{createdDate.toLocaleDateString(undefined, {
-									weekday: 'long',
-									month: 'long',
-									day: 'numeric',
-								})} · {createdDate.toLocaleTimeString(undefined, {
-									hour: 'numeric',
-									minute: '2-digit',
-								})}
-							</span>
-						{/if}
-						{#if attendeeChips.length > 0}
-							<Tooltip.Provider>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												variant="ghost"
-												size="sm"
-												class="h-10 px-1.5 text-muted-foreground hover:bg-transparent hover:text-foreground"
-												aria-label={`${attendeeChips.length} ${attendeeChips.length === 1 ? 'participant' : 'participants'}`}
-											>
-												<UsersIcon data-icon="inline-start" />
-												<span class="tabular-nums">{attendeeChips.length}</span>
-												{attendeeChips.length === 1 ? 'participant' : 'participants'}
-											</Button>
-										{/snippet}
-									</Tooltip.Trigger>
-									<Tooltip.Content
-										side="bottom"
-										sideOffset={8}
-										arrowClasses="hidden"
-										class="block w-64 max-w-[calc(100vw-2rem)] p-1.5"
-									>
-										<p class="px-2 pb-1.5 pt-1 font-medium text-primary-foreground/70">
-											Participants
-										</p>
-										<ul
-											class="flex max-h-[min(16rem,calc(100vh-8rem))] flex-col gap-1 overflow-y-auto rounded-sm px-2 pb-1"
+				<div
+					class="mt-1 flex min-h-10 flex-wrap items-center gap-x-1 text-sm text-muted-foreground"
+				>
+					{#if !isNaN(createdDate.getTime())}
+						<span>
+							{createdDate.toLocaleDateString(undefined, {
+								weekday: 'long',
+								month: 'long',
+								day: 'numeric',
+							})} · {createdDate.toLocaleTimeString(undefined, {
+								hour: 'numeric',
+								minute: '2-digit',
+							})}
+						</span>
+					{/if}
+					{#if attendeeChips.length > 0}
+						<Tooltip.Provider>
+							<Tooltip.Root>
+								<Tooltip.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="sm"
+											class="h-10 px-1.5 text-muted-foreground hover:bg-transparent hover:text-foreground"
+											aria-label={`${attendeeChips.length} ${attendeeChips.length === 1 ? 'participant' : 'participants'}`}
 										>
-											{#each attendeeChips as name (name)}
-												<li class="break-words py-0.5 text-sm leading-5">{name}</li>
-											{/each}
-										</ul>
-									</Tooltip.Content>
-								</Tooltip.Root>
-							</Tooltip.Provider>
-						{/if}
+											<UsersIcon data-icon="inline-start" />
+											<span class="tabular-nums">{attendeeChips.length}</span>
+											{attendeeChips.length === 1 ? 'participant' : 'participants'}
+										</Button>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content
+									side="bottom"
+									sideOffset={8}
+									arrowClasses="hidden"
+									class="block w-64 max-w-[calc(100vw-2rem)] p-1.5"
+								>
+									<p class="px-2 pb-1.5 pt-1 font-medium text-primary-foreground/70">
+										Participants
+									</p>
+									<ul
+										class="flex max-h-[min(16rem,calc(100vh-8rem))] flex-col gap-1 overflow-y-auto rounded-sm px-2 pb-1"
+									>
+										{#each attendeeChips as name (name)}
+											<li class="break-words py-0.5 text-sm leading-5">{name}</li>
+										{/each}
+									</ul>
+								</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+					{/if}
+					<div class="ml-auto flex items-center rounded-lg bg-secondary p-1" role="tablist">
+						<Button
+							variant={notesMode === 'enhanced' ? 'default' : 'ghost'}
+							size="sm"
+							class="h-7"
+							role="tab"
+							aria-selected={notesMode === 'enhanced'}
+							onclick={() => (notesMode = 'enhanced')}
+						>
+							Enhanced notes
+						</Button>
+						<Button
+							variant={notesMode === 'notes' ? 'default' : 'ghost'}
+							size="sm"
+							class="h-7"
+							role="tab"
+							aria-selected={notesMode === 'notes'}
+							onclick={() => (notesMode = 'notes')}
+						>
+							Notes
+						</Button>
 					</div>
-				{/if}
-			</div>
-			<div class="flex justify-center px-8 py-2">
-				<div class="flex items-center rounded-lg bg-secondary p-1" role="tablist">
-					<Button
-						variant={notesMode === 'enhanced' ? 'default' : 'ghost'}
-						size="sm"
-						class="h-7"
-						role="tab"
-						aria-selected={notesMode === 'enhanced'}
-						onclick={() => (notesMode = 'enhanced')}
-					>
-						Enhanced notes
-					</Button>
-					<Button
-						variant={notesMode === 'notes' ? 'default' : 'ghost'}
-						size="sm"
-						class="h-7"
-						role="tab"
-						aria-selected={notesMode === 'notes'}
-						onclick={() => (notesMode = 'notes')}
-					>
-						Notes
-					</Button>
 				</div>
 			</div>
 
