@@ -8,9 +8,15 @@
 	import { formatEventTime } from '$lib/coming-up';
 	import { cn } from '$lib/utils';
 	import { toast } from '$lib/toast';
+	import { notes } from '$lib/stores/notes.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
-	import { startRecordingWithTitle } from '$lib/hooks/use-recording-start.svelte';
+	import { transcripts } from '$lib/stores/transcript.svelte';
+	import {
+		CALENDAR_DRAFT_TITLE_KEY,
+		FOLDER_PIN_KEY,
+		startRecordingWithTitle,
+	} from '$lib/hooks/use-recording-start.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
@@ -152,20 +158,46 @@
 		if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' '))
 			return;
 		event.preventDefault();
-		void onStart();
+		openEventNotes();
 	}
 
 	function onRowClick(event: MouseEvent): void {
 		if ((event.target as HTMLElement).closest('button, [role="option"], input')) return;
-		void onStart();
+		openEventNotes();
+	}
+
+	function openEventNotes(): void {
+		if (recordingState.isRecording) {
+			void goto('/note');
+			return;
+		}
+
+		notes.clear();
+		transcripts.clearTranscripts();
+		transcripts.setMeetingTitle(ev.title);
+		if (typeof sessionStorage !== 'undefined') {
+			sessionStorage.setItem(CALENDAR_DRAFT_TITLE_KEY, ev.title);
+			if (ev.ical_uid) {
+				sessionStorage.setItem(
+					FOLDER_PIN_KEY,
+					JSON.stringify({
+						icalUid: ev.ical_uid,
+						occurrenceMinute: ev.occurrence_minute,
+					}),
+				);
+			} else {
+				sessionStorage.removeItem(FOLDER_PIN_KEY);
+			}
+		}
+		void goto('/note');
 	}
 </script>
 
 <div
 	role="button"
 	tabindex="0"
-	aria-label={`Start recording for ${ev.title}`}
-	class="group -mx-2 flex cursor-pointer items-start gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
+	aria-label={`Open notes for ${ev.title}`}
+	class="group -mx-2 flex min-h-10 cursor-pointer items-start gap-3 rounded-lg px-2 py-1 transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
 	onclick={onRowClick}
 	onkeydown={onRowKeydown}
 >

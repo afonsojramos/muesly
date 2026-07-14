@@ -76,6 +76,15 @@ export interface FolderPin {
 }
 /** sessionStorage key the stop hook reads to apply a pinned folder rule. */
 export const FOLDER_PIN_KEY = 'pending_folder_rule';
+/** A calendar note draft whose title and notes should survive a later recording start. */
+export const CALENDAR_DRAFT_TITLE_KEY = 'pending_calendar_draft_title';
+
+function consumeCalendarDraftTitle(): string | null {
+	if (!isBrowser) return null;
+	const title = sessionStorage.getItem(CALENDAR_DRAFT_TITLE_KEY);
+	if (title) sessionStorage.removeItem(CALENDAR_DRAFT_TITLE_KEY);
+	return title;
+}
 
 /**
  * Start a recording with an explicit title (e.g. a calendar event name), from
@@ -112,8 +121,10 @@ export async function startRecordingWithTitle(
 		// Drop any unsaved notes from a prior meeting so they don't bleed into this one.
 		notes.clear();
 		sidebar.setIsMeetingActive(true);
-		if (pin && typeof sessionStorage !== 'undefined') {
-			sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(pin));
+		if (typeof sessionStorage !== 'undefined') {
+			sessionStorage.removeItem(CALENDAR_DRAFT_TITLE_KEY);
+			if (pin) sessionStorage.setItem(FOLDER_PIN_KEY, JSON.stringify(pin));
+			else sessionStorage.removeItem(FOLDER_PIN_KEY);
 		}
 		await showRecordingNotification();
 		void Analytics.trackButtonClick('start_recording', location);
@@ -157,7 +168,7 @@ export function useRecordingStart(
 		recordingState.setStatus(RecordingStatus.IDLE);
 	};
 
-	const startBackendRecording = async (title: string): Promise<void> => {
+	const startBackendRecording = async (title: string, preserveNotes = false): Promise<void> => {
 		recordingState.setStatus(RecordingStatus.STARTING, 'Initializing recording...');
 		await recordingService.startRecordingWithDevices(
 			config.selectedDevices.micDevice || null,
@@ -170,8 +181,8 @@ export function useRecordingStart(
 		recordingState.markStarted();
 		setIsRecording(true);
 		transcripts.clearTranscripts();
-		// Clear unsaved notes from a prior meeting so they don't carry over.
-		notes.clear();
+		// Calendar drafts may contain notes written before recording starts.
+		if (!preserveNotes) notes.clear();
 		sidebar.setIsMeetingActive(true);
 		await showRecordingNotification();
 	};
@@ -184,8 +195,9 @@ export function useRecordingStart(
 				return;
 			}
 
-			const title = generateMeetingTitle();
-			await startBackendRecording(title);
+			const draftTitle = consumeCalendarDraftTitle();
+			if (!draftTitle && isBrowser) sessionStorage.removeItem(FOLDER_PIN_KEY);
+			await startBackendRecording(draftTitle ?? generateMeetingTitle(), !!draftTitle);
 			void Analytics.trackButtonClick('start_recording', 'home_page');
 		} catch (error) {
 			console.error('Failed to start recording:', error);
@@ -211,8 +223,9 @@ export function useRecordingStart(
 				return;
 			}
 
-			const title = generateMeetingTitle();
-			await startBackendRecording(title);
+			const draftTitle = consumeCalendarDraftTitle();
+			if (!draftTitle && isBrowser) sessionStorage.removeItem(FOLDER_PIN_KEY);
+			await startBackendRecording(draftTitle ?? generateMeetingTitle(), !!draftTitle);
 			void Analytics.trackButtonClick('start_recording', location);
 		} catch (error) {
 			console.error(`Failed to ${location} recording:`, error);
