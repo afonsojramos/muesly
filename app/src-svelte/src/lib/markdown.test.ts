@@ -39,7 +39,17 @@ describe('renderMarkdown', () => {
 		expect(html.match(/<a /g)).toHaveLength(2);
 		expect(html).toContain('data-external-url="https://example.com/a"');
 		expect(html).toContain('data-external-url="http://example.com/"');
+		expect(html).not.toMatch(/<a[^>]+href=/);
 		expect(html).not.toContain('javascript:');
+	});
+
+	it('escapes URL attributes without creating a navigation target', () => {
+		const html = renderMarkdown('[safe](https://example.com/?first=1&second=%22quoted%22)');
+
+		expect(html).toContain(
+			'data-external-url="https://example.com/?first=1&amp;second=%22quoted%22"',
+		);
+		expect(html).not.toContain(' href=');
 	});
 });
 

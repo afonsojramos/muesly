@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { commands } from '$lib/bindings';
 	import { renderMarkdown } from '$lib/markdown';
-	import { toast } from 'svelte-sonner';
+	import { toast } from '$lib/toast';
 
 	interface Props {
 		value: string;
@@ -12,7 +12,7 @@
 	let { value, onLinkClick }: Props = $props();
 	const html = $derived(renderMarkdown(value));
 
-	async function onClick(event: MouseEvent): Promise<void> {
+	async function activateLink(event: MouseEvent | KeyboardEvent): Promise<void> {
 		const target = event.target;
 		if (!(target instanceof Element)) return;
 		const anchor = target.closest<HTMLAnchorElement>('a[data-external-url]');
@@ -25,13 +25,19 @@
 			toast.error('Could not open link', { description: result.error });
 		}
 	}
+
+	function onKeydown(event: KeyboardEvent): void {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		void activateLink(event);
+	}
 </script>
 
 <!-- The helper emits only parser-generated markup, escapes raw HTML, and removes
      non-HTTP links before this reaches the DOM. -->
-<!-- svelte-ignore a11y_click_events_have_key_events generated anchors retain native keyboard activation -->
 <!-- svelte-ignore a11y_no_static_element_interactions click delegation avoids a handler per streamed link -->
-<div class="markdown-content" onclick={(event) => void onClick(event)}>{@html html}</div>
+<div class="markdown-content" onclick={(event) => void activateLink(event)} onkeydown={onKeydown}>
+	{@html html}
+</div>
 
 <style>
 	.markdown-content {

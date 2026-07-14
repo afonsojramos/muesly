@@ -28,7 +28,7 @@ renderer.link = ({ href, tokens }) => {
 	const label = renderer.parser.parseInline(tokens);
 	const safeUrl = externalHttpUrl(href);
 	if (!safeUrl) return label;
-	return `<a href="${escapeHtml(safeUrl)}" data-external-url="${escapeHtml(safeUrl)}">${label}</a>`;
+	return `<a role="link" tabindex="0" data-external-url="${escapeHtml(safeUrl)}">${label}</a>`;
 };
 
 export function renderMarkdown(markdown: string): string {
