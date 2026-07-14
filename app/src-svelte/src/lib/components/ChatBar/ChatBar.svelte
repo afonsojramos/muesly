@@ -28,8 +28,6 @@
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 	import AudioLinesIndicator from '$lib/components/AudioLinesIndicator.svelte';
 	import TranscriptDropup from './TranscriptDropup.svelte';
-	import { cn } from '$lib/utils';
-
 	import ChatSurface from './ChatSurface.svelte';
 	import ChatRailButton from './ChatRailButton.svelte';
 
@@ -95,7 +93,19 @@
 			return { duration: 100, css: (t) => `opacity: ${t}` };
 		}
 		return {
-			duration: 220,
+			duration: 280,
+			easing: cubicOut,
+			css: (t) =>
+				`opacity: ${t}; filter: blur(${(1 - t) * 2}px); transform: scale(${0.88 + t * 0.12})`,
+		};
+	}
+
+	function iconMorph(_node: Element): TransitionConfig {
+		if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+			return { duration: 80, css: (t) => `opacity: ${t}` };
+		}
+		return {
+			duration: 180,
 			easing: cubicOut,
 			css: (t) =>
 				`opacity: ${t}; filter: blur(${(1 - t) * 4}px); transform: scale(${0.25 + t * 0.75})`,
@@ -240,13 +250,23 @@
 					class="hover:bg-transparent dark:hover:bg-transparent"
 				>
 					{#if isResumingRecording}
-						<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
+						<span
+							class="flex size-4 origin-center items-center justify-center"
+							transition:iconMorph
+						>
+							<LoaderCircle data-icon class="animate-spin motion-reduce:animate-none" />
+						</span>
 					{:else}
-						<Play
-							data-icon
-							fill="currentColor"
-							class="transition-colors duration-200 ease-out group-hover:text-brand"
-						/>
+						<span
+							class="flex size-4 origin-center items-center justify-center"
+							transition:iconMorph
+						>
+							<Play
+								data-icon
+								fill="currentColor"
+								class="transition-colors duration-200 ease-out group-hover:text-brand"
+							/>
+						</span>
 					{/if}
 				</ChatRailButton>
 			</div>
@@ -266,10 +286,7 @@
 							>
 								<AudioLinesIndicator
 									active={recordingState.isRecording}
-									class={cn(
-										'transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand',
-										recordingState.isRecording && 'text-brand',
-									)}
+									class="transcript-audio-lines transition-colors duration-200 ease-out group-hover:text-brand"
 								/>
 							</ChatRailButton>
 						{/snippet}
