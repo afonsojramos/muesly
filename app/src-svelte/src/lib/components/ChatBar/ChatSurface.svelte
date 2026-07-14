@@ -44,6 +44,7 @@
 		ChevronDown,
 		Copy,
 		MessagesSquare,
+		NotebookPen,
 		RotateCcw,
 		Square,
 	} from '@lucide/svelte';
@@ -56,6 +57,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import MarkdownContent from '$lib/components/MarkdownContent.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
+	import { ResponseInsertionGuard } from '$lib/notes/insertion';
 	import ChatRailButton from './ChatRailButton.svelte';
 
 	interface Props {
@@ -85,6 +87,8 @@
 		overlayActive?: boolean;
 		/** Meeting-only transcript navigation. Omit for global chat. */
 		onTimestampClick?: (seconds: number) => void;
+		/** Meeting-only action for adding an assistant response to notes. */
+		onInsertIntoNotes?: (message: ChatSurfaceMessage) => void | Promise<void>;
 		/** Commands offered when the draft starts with `/`. */
 		slashCommands?: ChatSlashCommand[];
 		/** Whether the message panel is expanded. Bindable so wrappers can control
@@ -107,6 +111,7 @@
 		messageLeading,
 		overlayActive = false,
 		onTimestampClick,
+		onInsertIntoNotes,
 		slashCommands = [],
 		open = $bindable(true),
 	}: Props = $props();
@@ -114,6 +119,8 @@
 	let rootEl = $state<HTMLElement | null>(null);
 	let viewportRef = $state<HTMLElement | null>(null);
 	let copiedMessageId = $state<string | null>(null);
+	let insertionVersion = $state(0);
+	const insertionGuard = new ResponseInsertionGuard();
 	let activeSlashIndex = $state(0);
 	let slashDismissed = $state(false);
 	const componentId = $props.id();
@@ -253,6 +260,20 @@
 			if (copiedMessageId === message.id) copiedMessageId = null;
 		}, 1500);
 	}
+
+	async function insertIntoNotes(message: ChatSurfaceMessage): Promise<void> {
+		if (!onInsertIntoNotes) return;
+		insertionVersion += 1;
+		try {
+			await insertionGuard.run(message.id, () => Promise.resolve(onInsertIntoNotes(message)));
+		} finally {
+			insertionVersion += 1;
+		}
+	}
+
+	function insertionDisabled(messageId: string, _version: number): boolean {
+		return insertionGuard.isDisabled(messageId);
+	}
 </script>
 
 <svelte:document onpointerdown={onDocumentPointerDown} />
@@ -342,6 +363,21 @@
 														data-icon
 													/>{/if}
 											</Button>
+											{#if onInsertIntoNotes}
+												{@const insertDisabled = insertionDisabled(message.id, insertionVersion)}
+												<Button
+													variant="ghost"
+													size="icon"
+													class="size-10 text-muted-foreground"
+													disabled={insertDisabled}
+													onclick={() => void insertIntoNotes(message)}
+													aria-label={insertionGuard.isPending(message.id)
+														? 'Inserting response into notes'
+														: 'Insert response into notes'}
+												>
+													<NotebookPen data-icon />
+												</Button>
+											{/if}
 											{#if message.barPrompt && controller.rerun}
 												<Button
 													variant="ghost"

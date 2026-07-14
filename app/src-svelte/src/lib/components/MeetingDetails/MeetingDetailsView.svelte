@@ -785,7 +785,12 @@
 					notesMode !== 'notes' && 'hidden',
 				)}
 			>
-				<NotesView bind:this={notesView} {notesMarkdown} onSave={handleSaveNotes} />
+				<NotesView
+					bind:this={notesView}
+					meetingId={meeting.id}
+					{notesMarkdown}
+					onSave={handleSaveNotes}
+				/>
 			</div>
 		</div>
 	</div>

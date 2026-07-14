@@ -9,6 +9,11 @@
 	import { recordingState, RecordingStatus } from '$lib/stores/recording-state.svelte';
 	import { liveTranscriptPanel } from '$lib/stores/live-transcript-panel.svelte';
 	import { transcripts } from '$lib/stores/transcript.svelte';
+	import {
+		appendMarkdown,
+		NOTES_INSERTION_EVENT,
+		type NotesInsertionRequest,
+	} from '$lib/notes/insertion';
 
 	import { usePermissionCheck } from '$lib/hooks/use-permission-check.svelte';
 	import {
@@ -28,6 +33,7 @@
 	// keystroke. Reads the store on (re)mount so notes survive navigating away and
 	// back mid-recording.
 	const initialNotes = notes.markdown;
+	let notesEditor = $state<ReturnType<typeof Editor>>();
 	const calendarTitle =
 		typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(CALENDAR_DRAFT_TITLE_KEY) : null;
 	const participantNames: string[] = (() => {
@@ -78,7 +84,25 @@
 			}
 		};
 		window.addEventListener('keydown', handleKeydown);
-		return () => window.removeEventListener('keydown', handleKeydown);
+		const handleNotesInsertion = (event: Event): void => {
+			const detail = (event as CustomEvent<NotesInsertionRequest>).detail;
+			if (detail.handled) return;
+			detail.handled = true;
+			try {
+				const next = appendMarkdown(notes.markdown, detail.markdown);
+				notes.set(next);
+				notesEditor?.setMarkdown(next);
+				notesEditor?.focus();
+				detail.complete();
+			} catch (error) {
+				detail.complete(error);
+			}
+		};
+		window.addEventListener(NOTES_INSERTION_EVENT, handleNotesInsertion);
+		return () => {
+			window.removeEventListener('keydown', handleKeydown);
+			window.removeEventListener(NOTES_INSERTION_EVENT, handleNotesInsertion);
+		};
 	});
 </script>
 
@@ -123,6 +147,7 @@
 							</p>
 						{/if}
 						<Editor
+							bind:this={notesEditor}
 							value={initialNotes}
 							mentionSuggestions={participantNames}
 							onChange={(md) => notes.set(md)}

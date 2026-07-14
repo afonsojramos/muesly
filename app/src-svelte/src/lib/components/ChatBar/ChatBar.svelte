@@ -22,6 +22,7 @@
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import { transcripts } from '$lib/stores/transcript.svelte';
 	import { findSegmentNearTime } from '$lib/transcript-link';
+	import { requestNotesInsertion } from '$lib/notes/insertion';
 	import { toast } from '$lib/toast';
 	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
@@ -30,7 +31,7 @@
 	import RunBarDialog from '$lib/components/bars/RunBarDialog.svelte';
 	import AudioLinesIndicator from '$lib/components/AudioLinesIndicator.svelte';
 	import TranscriptDropup from './TranscriptDropup.svelte';
-	import ChatSurface from './ChatSurface.svelte';
+	import ChatSurface, { type ChatSurfaceMessage } from './ChatSurface.svelte';
 	import ChatRailButton from './ChatRailButton.svelte';
 
 	onMount(() => {
@@ -115,6 +116,15 @@
 			sidePanelState.focusSegmentId = hit.id;
 		} else {
 			sidePanelState.jumpToSegment(hit.id);
+		}
+	}
+
+	async function insertResponseIntoNotes(message: ChatSurfaceMessage): Promise<void> {
+		try {
+			await requestNotesInsertion(chat.meetingId, message.content);
+		} catch (error) {
+			toast.error('Failed to insert response into notes', { description: String(error) });
+			throw error;
 		}
 	}
 
@@ -262,6 +272,7 @@
 	collapsedPlaceholder="Continue chat"
 	ariaLabel="Ask anything about this meeting"
 	onTimestampClick={handleTimestampClick}
+	onInsertIntoNotes={insertResponseIntoNotes}
 	{slashCommands}
 	overlayActive={barsOpen || recentOpen || clearConfirmOpen || runDialogOpen}
 >
