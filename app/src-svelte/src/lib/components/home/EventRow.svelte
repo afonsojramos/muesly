@@ -147,9 +147,28 @@
 			toast.error('Could not open meeting link', { description: res.error });
 		}
 	}
+
+	function onRowKeydown(event: KeyboardEvent): void {
+		if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' '))
+			return;
+		event.preventDefault();
+		void onStart();
+	}
+
+	function onRowClick(event: MouseEvent): void {
+		if ((event.target as HTMLElement).closest('button, [role="option"], input')) return;
+		void onStart();
+	}
 </script>
 
-<div class="group flex items-start gap-3">
+<div
+	role="button"
+	tabindex="0"
+	aria-label={`Start recording for ${ev.title}`}
+	class="group -mx-2 flex cursor-pointer items-start gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-muted/60 focus-visible:bg-muted/60"
+	onclick={onRowClick}
+	onkeydown={onRowKeydown}
+>
 	<div class="mt-0.5 h-8 w-0.5 flex-shrink-0 rounded-full bg-success/60"></div>
 	<div class="min-w-0 flex-1">
 		<div class="truncate text-sm font-medium">{ev.title}</div>
