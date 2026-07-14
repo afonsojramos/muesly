@@ -22,9 +22,7 @@
 	}
 
 	let { transcriptModelConfig, setTranscriptModelConfig, onModelSelect }: Props = $props();
-	const hasLearnedCorrections = $derived(
-		config.customVocabulary.some((entry) => (entry.learned_aliases?.length ?? 0) > 0),
-	);
+	let newVocabularyTerm = $state('');
 
 	// Post-meeting quality pass: batch re-transcription of the saved audio.
 	let qualityPassEnabled = $state(false);
@@ -51,6 +49,25 @@
 		});
 		onModelSelect?.();
 	}
+
+	function addVocabularyTerm(): void {
+		const term = newVocabularyTerm.trim();
+		if (!term) return;
+		if (
+			config.customVocabulary.some(
+				(entry) => entry.to.toLocaleLowerCase() === term.toLocaleLowerCase(),
+			)
+		) {
+			toast.info('That term is already in your dictionary');
+			return;
+		}
+		config.setCustomVocabulary([
+			...config.customVocabulary,
+			{ from: '', to: term, learned_aliases: [] },
+		]);
+		config.flushCustomVocabulary();
+		newVocabularyTerm = '';
+	}
 </script>
 
 <div class="flex flex-col gap-4">
@@ -72,176 +89,193 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title class="text-balance">Custom dictionary</Card.Title>
-			<Card.Description>
-				Add the spelling you want. Muesly uses it as context and privately learns recurring
-				mishearings from your recordings.
-			</Card.Description>
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<Card.Title class="text-balance">Custom dictionary</Card.Title>
+					<Card.Description>
+						Teach Muesly the names, products, and technical terms you use. Everything stays on your
+						device.
+					</Card.Description>
+				</div>
+				{#if config.customVocabulary.length > 0}
+					<Badge variant="secondary" class="shrink-0 tabular-nums">
+						{config.customVocabulary.length}
+						{config.customVocabulary.length === 1 ? 'term' : 'terms'}
+					</Badge>
+				{/if}
+			</div>
 		</Card.Header>
 		<Card.Content>
-			<div class="flex flex-col gap-3">
+			<div class="flex flex-col gap-4">
+				<div class="flex flex-col gap-2 sm:flex-row">
+					<Field.Field class="flex-1">
+						<Field.FieldLabel for="new-vocabulary-term">Add a preferred spelling</Field.FieldLabel>
+						<Input
+							id="new-vocabulary-term"
+							bind:value={newVocabularyTerm}
+							placeholder="e.g. Kubernetes, Amélie, Muesly"
+							onkeydown={(event) => {
+								if (event.key === 'Enter') {
+									event.preventDefault();
+									addVocabularyTerm();
+								}
+							}}
+						/>
+					</Field.Field>
+					<Button
+						class="h-10 self-end transition-transform active:scale-[0.96]"
+						disabled={!newVocabularyTerm.trim()}
+						onclick={addVocabularyTerm}
+					>
+						<Plus data-icon="inline-start" /> Add term
+					</Button>
+				</div>
+
 				{#if config.customVocabulary.length === 0}
-					<p class="text-pretty rounded-lg bg-muted/40 px-3 py-2.5 text-sm text-muted-foreground">
-						No preferred terms yet. Add the words that matter in your meetings.
-					</p>
+					<div class="rounded-lg bg-muted/35 px-4 py-6 text-center">
+						<p class="font-medium">Your dictionary is empty</p>
+						<p class="mt-1 text-pretty text-sm text-muted-foreground">
+							Add a term above to improve future transcriptions immediately.
+						</p>
+					</div>
 				{/if}
 				{#each config.customVocabulary as entry, i}
-					<div class="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-3">
-						<Field.Field>
-							<Field.FieldLabel for={`vocabulary-term-${i}`}>Preferred term</Field.FieldLabel>
-							<Input
-								id={`vocabulary-term-${i}`}
-								value={entry.to}
-								placeholder="Kubernetes"
-								oninput={(e) => {
-									const preferred = e.currentTarget.value;
-									const updated = config.customVocabulary.map((v, idx) =>
-										idx === i
-											? {
-													...v,
-													to: preferred,
-													learned_aliases: preferred === v.to ? v.learned_aliases : [],
-												}
-											: v,
-									);
+					<div class="rounded-lg bg-muted/35 p-3">
+						<div class="grid grid-cols-[minmax(0,1fr)_2.5rem] items-end gap-2">
+							<Field.Field>
+								<Field.FieldLabel for={`vocabulary-term-${i}`}>Preferred spelling</Field.FieldLabel>
+								<Input
+									id={`vocabulary-term-${i}`}
+									value={entry.to}
+									oninput={(e) => {
+										const preferred = e.currentTarget.value;
+										const updated = config.customVocabulary.map((v, idx) =>
+											idx === i
+												? {
+														...v,
+														to: preferred,
+														learned_aliases: preferred === v.to ? v.learned_aliases : [],
+													}
+												: v,
+										);
+										config.setCustomVocabulary(updated);
+									}}
+									onblur={config.flushCustomVocabulary}
+								/>
+							</Field.Field>
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
+								aria-label={`Remove ${entry.to.trim() || 'empty preferred term'}`}
+								onclick={() => {
+									const updated = config.customVocabulary.filter((_, idx) => idx !== i);
 									config.setCustomVocabulary(updated);
 								}}
-								onblur={config.flushCustomVocabulary}
-							/>
-						</Field.Field>
-						<Button
-							variant="ghost"
-							size="icon"
-							class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
-							aria-label={`Remove ${entry.to.trim() || 'empty preferred term'}`}
-							onclick={() => {
-								const updated = config.customVocabulary.filter((_, idx) => idx !== i);
-								config.setCustomVocabulary(updated);
-							}}
-						>
-							<X data-icon />
-						</Button>
-					</div>
-				{/each}
-				<Button
-					variant="outline"
-					size="sm"
-					class="h-10 self-start transition-transform active:scale-[0.96]"
-					onclick={() => {
-						config.setCustomVocabulary([
-							...config.customVocabulary,
-							{ from: '', to: '', learned_aliases: [] },
-						]);
-					}}
-				>
-					<Plus data-icon="inline-start" />
-					Add term
-				</Button>
+							>
+								<X data-icon />
+							</Button>
+						</div>
 
-				{#if config.customVocabulary.length > 0}
-					<Accordion.Root type="single" class="pt-1">
-						<Accordion.Item value="advanced-corrections">
-							<Accordion.Trigger>Advanced corrections</Accordion.Trigger>
-							<Accordion.Content>
-								<div class="flex flex-col gap-4 pt-3">
-									<p class="text-pretty text-sm text-muted-foreground">
-										Manual corrections apply to future transcription without a learning period and
-										pause automatic learning for that term. Otherwise, Muesly retains one likely
-										recurring mishearing after observing it in two separate recordings.
-									</p>
-									{#each config.customVocabulary as entry, i}
-										{#if entry.to.trim()}
-											<div class="flex flex-col gap-3 rounded-lg bg-muted/40 p-3">
-												<p class="font-medium">{entry.to}</p>
-												<Field.Field>
-													<Field.FieldLabel for={`vocabulary-aliases-${i}`}>
-														Manual corrections <span class="font-normal text-muted-foreground"
-															>(optional)</span
-														>
-													</Field.FieldLabel>
-													<Input
-														id={`vocabulary-aliases-${i}`}
-														value={entry.from}
-														placeholder="cubernetes, cooper netties"
-														oninput={(e) => {
-															const updated = config.customVocabulary.map((v, idx) =>
-																idx === i ? { ...v, from: e.currentTarget.value } : v,
-															);
-															config.setCustomVocabulary(updated);
-														}}
-														onblur={config.flushCustomVocabulary}
-													/>
-													<Field.FieldDescription>
-														Separate multiple phrases with commas.
-													</Field.FieldDescription>
-												</Field.Field>
+						<Accordion.Root type="single" class="mt-2">
+							<Accordion.Item value={`corrections-${i}`}>
+								<Accordion.Trigger class="py-2 text-sm">
+									Corrections and learning
+									{#if (entry.learned_aliases?.length ?? 0) > 0}
+										<Badge variant="secondary" class="ml-2 tabular-nums">
+											{entry.learned_aliases?.length}
+										</Badge>
+									{/if}
+								</Accordion.Trigger>
+								<Accordion.Content>
+									<div class="flex flex-col gap-3 pt-2">
+										<p class="text-pretty text-sm text-muted-foreground">
+											Add phrases Muesly should always replace with this spelling. Otherwise, it
+											learns recurring mishearings locally after seeing them twice.
+										</p>
+										<Field.Field>
+											<Field.FieldLabel for={`vocabulary-aliases-${i}`}>
+												Always replace
+											</Field.FieldLabel>
+											<Input
+												id={`vocabulary-aliases-${i}`}
+												value={entry.from}
+												placeholder="cubernetes, cooper netties"
+												oninput={(e) => {
+													const updated = config.customVocabulary.map((v, idx) =>
+														idx === i ? { ...v, from: e.currentTarget.value } : v,
+													);
+													config.setCustomVocabulary(updated);
+												}}
+												onblur={config.flushCustomVocabulary}
+											/>
+											<Field.FieldDescription>
+												Separate multiple phrases with commas. Leave empty to learn automatically.
+											</Field.FieldDescription>
+										</Field.Field>
 
-												{#if (entry.learned_aliases?.length ?? 0) > 0}
-													<div class="flex flex-col gap-2">
-														<p class="text-xs font-medium text-muted-foreground">Learned locally</p>
-														{#each entry.learned_aliases ?? [] as learned}
-															<div
-																class="flex min-h-10 items-center justify-between gap-3 rounded-md bg-background px-3 py-1.5"
+										{#if (entry.learned_aliases?.length ?? 0) > 0}
+											<div class="flex flex-col gap-2">
+												<p class="text-xs font-medium text-muted-foreground">Learned locally</p>
+												{#each entry.learned_aliases ?? [] as learned}
+													<div
+														class="flex min-h-10 items-center justify-between gap-3 rounded-md bg-background px-3 py-1.5"
+													>
+														<span class="min-w-0 truncate text-sm">{learned.from}</span>
+														<div class="flex shrink-0 items-center gap-2">
+															<Badge variant={learned.observations >= 2 ? 'default' : 'secondary'}>
+																<span class="tabular-nums">
+																	{learned.observations >= 2
+																		? 'Active'
+																		: `${learned.observations}/2 learning`}
+																</span>
+															</Badge>
+															<Button
+																variant="ghost"
+																size="icon"
+																class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
+																aria-label={`Remove learned correction ${learned.from}`}
+																onclick={() => {
+																	void config.removeLearnedVocabularyAlias(entry.to, learned.from);
+																}}
 															>
-																<span class="min-w-0 truncate text-sm">{learned.from}</span>
-																<div class="flex shrink-0 items-center gap-2">
-																	<Badge
-																		variant={learned.observations >= 2 ? 'default' : 'secondary'}
-																	>
-																		<span class="tabular-nums">
-																			{learned.observations >= 2
-																				? 'Active'
-																				: `${learned.observations}/2 learning`}
-																		</span>
-																	</Badge>
-																	<Button
-																		variant="ghost"
-																		size="icon"
-																		class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
-																		aria-label={`Remove learned correction ${learned.from}`}
-																		onclick={() => {
-																			void config.removeLearnedVocabularyAlias(
-																				entry.to,
-																				learned.from,
-																			);
-																		}}
-																	>
-																		<X data-icon />
-																	</Button>
-																</div>
-															</div>
-														{/each}
+																<X data-icon />
+															</Button>
+														</div>
 													</div>
-												{/if}
+												{/each}
 											</div>
 										{/if}
-									{/each}
-									{#if !hasLearnedCorrections}
-										<p class="text-pretty text-xs text-muted-foreground">
-											No learned corrections yet. They will appear here after Muesly finds a likely
-											recurring mishearing.
-										</p>
-									{/if}
-								</div>
-							</Accordion.Content>
-						</Accordion.Item>
-					</Accordion.Root>
-				{/if}
+										{#if !entry.from.trim() && (entry.learned_aliases?.length ?? 0) === 0}
+											<p class="text-pretty text-xs text-muted-foreground">
+												No corrections yet. Learned variants will appear here automatically.
+											</p>
+										{/if}
+									</div>
+								</Accordion.Content>
+							</Accordion.Item>
+						</Accordion.Root>
+					</div>
+				{/each}
 			</div>
 		</Card.Content>
 	</Card.Root>
 
 	<Card.Root>
-		<Card.Header class="flex-row items-center justify-between gap-4 space-y-0">
+		<Card.Header class="flex-col gap-4 space-y-0 sm:flex-row sm:items-center sm:justify-between">
 			<div>
-				<Card.Title>Post-meeting quality pass</Card.Title>
+				<Card.Title id="quality-pass-label">Post-meeting quality pass</Card.Title>
 				<Card.Description>
 					After each meeting, re-transcribe the full recording with merged context for higher
 					accuracy while preserving microphone/system attribution from the live timeline. Local
 					models only; adds processing time after the recording stops. Off by default.
 				</Card.Description>
 			</div>
-			<Switch checked={qualityPassEnabled} onCheckedChange={toggleQualityPass} />
+			<Switch
+				checked={qualityPassEnabled}
+				aria-labelledby="quality-pass-label"
+				onCheckedChange={toggleQualityPass}
+			/>
 		</Card.Header>
 	</Card.Root>
 </div>
