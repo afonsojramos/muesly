@@ -18,7 +18,9 @@
 	import { toast } from '$lib/toast';
 	import { backgroundTasks } from '$lib/stores/background-tasks.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
+	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress';
 	import * as Select from '$lib/components/ui/select';
 
@@ -27,7 +29,18 @@
 		onOpenChange: (open: boolean) => void;
 		meetingId: string;
 		meetingFolderPath: string | null;
+		/** Called when the transcript changed outside the run flow (undo/restore). */
 		onComplete?: () => void;
+		/**
+		 * Called once a run has actually started, with the user's follow-up
+		 * choices. The owner observes completion via the global
+		 * `retranscription-complete` event (the dialog can be backgrounded
+		 * mid-run, so its own lifecycle cannot carry the completion).
+		 */
+		onStarted?: (options: { regenerateSummary: boolean }) => void;
+		/** Whether the meeting already has a summary: sets the checkbox default
+		 *  and whether it reads "Regenerate" or "Generate". */
+		hasExistingSummary?: boolean;
 	}
 
 	let {
@@ -36,6 +49,8 @@
 		meetingId,
 		meetingFolderPath,
 		onComplete,
+		onStarted,
+		hasExistingSummary = false,
 	}: Props = $props();
 
 	interface RetranscriptionProgress {
@@ -71,6 +86,7 @@
 	let progress = $state<RetranscriptionProgress | null>(null);
 	let error = $state<string | null>(null);
 	let selectedLang = $state(config.selectedLanguage || 'auto');
+	let regenerateSummary = $state(false);
 
 	const models = useTranscriptionModels(() => config.transcriptModelConfig);
 
@@ -93,6 +109,7 @@
 			progress = null;
 			error = null;
 			selectedLang = config.selectedLanguage || 'auto';
+			regenerateSummary = hasExistingSummary;
 			void models.fetchModels();
 		}
 		wasOpen = open;
@@ -137,7 +154,8 @@
 								action: { label: 'Undo', onClick: () => void undoRetranscription() },
 							},
 						);
-						onComplete?.();
+						// Refetch/summary chaining runs in the owner via the global
+						// completion event; the dialog only closes itself.
 						onOpenChange(false);
 					}
 				},
@@ -200,6 +218,7 @@
 				language: languageToSend,
 				model: selectedModelDetails?.name || null,
 			});
+			onStarted?.({ regenerateSummary });
 		} catch (err) {
 			isProcessing = false;
 			const errorMsg =
@@ -324,6 +343,15 @@
 						<p class="text-xs text-muted-foreground">Choose a transcription model</p>
 					</div>
 				{/if}
+
+				<div class="flex items-center gap-2">
+					<Checkbox id="retranscribe-regen-summary" bind:checked={regenerateSummary} />
+					<Label for="retranscribe-regen-summary" class="text-sm font-normal">
+						{hasExistingSummary
+							? 'Regenerate the AI summary when done'
+							: 'Generate an AI summary when done'}
+					</Label>
+				</div>
 			{/if}
 
 			{#if isProcessing && progress}

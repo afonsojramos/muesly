@@ -73,6 +73,8 @@
 		onAutoGenerateComplete?: () => void;
 		onMeetingUpdated?: () => Promise<void>;
 		onRefetchTranscripts?: () => Promise<void>;
+		/** A manual retranscription started; the page owns the completion chain. */
+		onRetranscribeStarted?: (options: { regenerateSummary: boolean }) => void;
 		segments?: TranscriptSegmentData[];
 		hasMore?: boolean;
 		isLoadingMore?: boolean;
@@ -90,6 +92,7 @@
 		onAutoGenerateComplete,
 		onMeetingUpdated,
 		onRefetchTranscripts,
+		onRetranscribeStarted,
 		segments,
 		hasMore,
 		isLoadingMore,
@@ -270,6 +273,13 @@
 	// page's paginated transcripts and an open transcript drop-up.
 	let retranscribeOpen = $state(false);
 	const diarization = useDiarization(() => meeting.id);
+
+	// A retranscription makes the existing summary describe a transcript that no
+	// longer exists, so the dialog offers to regenerate it. The chain itself
+	// lives in the PAGE (`onRetranscribeStarted` + the page's
+	// retranscription-complete listener): completing a retranscription refetches
+	// the paginated transcripts, which nulls the metadata and REMOUNTS this
+	// keyed view, so nothing in here survives to observe the completion.
 
 	// Opening the actions menu, and the focus restore when it closes, both make
 	// the tooltip open (or stick). bits-ui components own their state unless
@@ -481,14 +491,18 @@
 		};
 	});
 
-	// Auto-generate the summary once when requested for a freshly recorded meeting.
+	// Auto-generate the summary once when requested: for a freshly recorded
+	// meeting, or re-requested by the page after a retranscription that asked
+	// for a summary refresh. `customPrompt` seeds from the persisted summary
+	// context, so both paths generate with the user's saved context (empty for
+	// a fresh recording).
 	let autoGenStartedFor: string | null = null;
 	$effect(() => {
 		const id = meeting.id;
 		if (shouldAutoGenerate && meeting.transcripts.length > 0 && autoGenStartedFor !== id) {
 			autoGenStartedFor = id;
 			void (async () => {
-				await summaryGeneration.handleGenerateSummary('');
+				await summaryGeneration.handleGenerateSummary(customPrompt);
 				onAutoGenerateComplete?.();
 			})();
 		}
@@ -821,6 +835,8 @@
 	meetingId={meeting.id}
 	meetingFolderPath={meeting.folder_path ?? null}
 	onComplete={() => void onRefetchTranscripts?.()}
+	onStarted={(options) => onRetranscribeStarted?.(options)}
+	hasExistingSummary={!!meetingData.aiSummary}
 />
 
 <!-- Re-diarization clears assigned speaker names, so it confirms first. -->

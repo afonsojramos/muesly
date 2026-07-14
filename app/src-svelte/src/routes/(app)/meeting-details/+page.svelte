@@ -10,6 +10,7 @@
 	import { config } from '$lib/stores/config.svelte';
 	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { storageService } from '$lib/services/storage';
+	import { toast } from '$lib/toast';
 	import { usePaginatedTranscripts } from '$lib/hooks/use-paginated-transcripts.svelte';
 	import MeetingDetailsView from '$lib/components/MeetingDetails/MeetingDetailsView.svelte';
 
@@ -143,6 +144,53 @@
 		return () => {
 			disposed = true;
 			unlisten?.();
+		};
+	});
+
+	// A finished retranscription (manual "Retranscribe audio" or the post-stop
+	// quality pass) rewrote the transcript: refetch, which remounts the keyed
+	// details view. When the manual dialog asked for a summary refresh, request
+	// it through the same auto-generate mechanism a fresh recording uses — the
+	// REMOUNTED view picks the flag up, so the chain survives the remount. The
+	// chain intent lives at this level because the view itself does not survive
+	// the refetch; leaving the page entirely still drops it, which the cleanup
+	// makes visible.
+	let regenerateSummaryAfterRetranscribe = false;
+	$effect(() => {
+		const id = meetingId;
+		if (!id || isDevPreview) return;
+		let unlistenComplete: (() => void) | undefined;
+		let unlistenError: (() => void) | undefined;
+		let disposed = false;
+		void listen<{ meeting_id: string }>('retranscription-complete', (e) => {
+			if (e.payload?.meeting_id !== id) return;
+			const regenerate = regenerateSummaryAfterRetranscribe;
+			regenerateSummaryAfterRetranscribe = false;
+			void (async () => {
+				await paginated.refetch();
+				if (regenerate) shouldAutoGenerate = true;
+			})();
+		}).then((fn) => {
+			if (disposed) fn();
+			else unlistenComplete = fn;
+		});
+		void listen<{ meeting_id: string }>('retranscription-error', (e) => {
+			if (e.payload?.meeting_id === id) regenerateSummaryAfterRetranscribe = false;
+		}).then((fn) => {
+			if (disposed) fn();
+			else unlistenError = fn;
+		});
+		return () => {
+			disposed = true;
+			unlistenComplete?.();
+			unlistenError?.();
+			if (regenerateSummaryAfterRetranscribe) {
+				regenerateSummaryAfterRetranscribe = false;
+				toast.info('Summary regeneration cancelled', {
+					description:
+						'Leaving the meeting stops the automatic follow-up. Use "Enhance notes" once the retranscription finishes.',
+				});
+			}
 		};
 	});
 
@@ -344,6 +392,8 @@
 			onAutoGenerateComplete={() => (shouldAutoGenerate = false)}
 			onMeetingUpdated={handleMeetingUpdated}
 			onRefetchTranscripts={paginated.refetch}
+			onRetranscribeStarted={({ regenerateSummary }) =>
+				(regenerateSummaryAfterRetranscribe = regenerateSummary)}
 			segments={isDevPreview ? devSegments : paginated.segments}
 			hasMore={paginated.hasMore}
 			isLoadingMore={paginated.isLoadingMore}
