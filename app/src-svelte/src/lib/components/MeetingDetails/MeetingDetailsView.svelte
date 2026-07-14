@@ -486,8 +486,8 @@
 </script>
 
 <div in:fly={{ y: 20, duration: 300 }} class="flex h-screen flex-col bg-background">
-	<div class="flex flex-1 overflow-hidden">
-		<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 			<!-- Slim top bar: back on the left, note actions on the right, matching the
 			     folder and settings views. -->
 			<div class="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur-sm">
@@ -670,7 +670,9 @@
 										</Button>
 									{/snippet}
 									</Tooltip.Trigger>
-									<Tooltip.Content>{meetingData.meetingTitle}</Tooltip.Content>
+									<Tooltip.Content side="bottom" align="start" sideOffset={8}>
+										{meetingData.meetingTitle}
+									</Tooltip.Content>
 								</Tooltip.Root>
 							</Tooltip.Provider>
 						</h1>
@@ -754,7 +756,12 @@
 				</div>
 			</div>
 
-			<div class={cn('min-h-0 flex-1', notesMode !== 'enhanced' && 'hidden')}>
+			<div
+				class={cn(
+					'min-h-0 flex flex-1 overflow-hidden',
+					notesMode !== 'enhanced' && 'hidden',
+				)}
+			>
 				<SummaryPanel
 					bind:this={summaryPanel}
 					onCopySummary={copyOperations.handleCopySummary}
