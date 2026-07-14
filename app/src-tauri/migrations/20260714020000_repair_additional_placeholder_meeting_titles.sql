@@ -4,11 +4,11 @@ SET title = CASE
         THEN 'Meeting ' || substr(created_at, 1, 10)
     ELSE 'New Meeting'
 END
-WHERE lower(trim(title)) IN (
-    '<add title here>',
-    '[ai-generated title]',
-    '[ai generated title]',
-    '{{meeting title}}',
+WHERE replace(lower(trim(title, ' <>[]{}.,:;!?')), '-', ' ') IN (
+    'add title',
     'add title here',
+    'ai generated title',
+    'meeting title',
+    'title',
     'untitled'
 );
