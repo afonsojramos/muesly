@@ -848,18 +848,21 @@ async fn get_configured_whisper_model<R: Runtime>(app: &AppHandle<R>) -> Result<
                 provider, model
             );
 
-            // Check if provider is Whisper-based
+            // A whisper run was requested with no explicit model. When the
+            // configured provider is a different engine (e.g. Parakeet live
+            // captions with a whisper quality pass behind them), fall back to
+            // the recommended whisper model instead of refusing the run.
             if provider == "localWhisper" || provider == "whisper" {
                 Ok(model)
             } else {
-                error!(
-                    "Retranscription requires Whisper provider, but configured provider is: {}",
-                    provider
+                let fallback = crate::config::recommended_whisper_model(
+                    crate::audio::HardwareProfile::detect(),
                 );
-                Err(anyhow!(
-                    "Retranscription requires Whisper. Current provider '{}' does not support retranscription with language selection.",
-                    provider
-                ))
+                info!(
+                    "Configured provider '{}' is not whisper; using recommended whisper model '{}'",
+                    provider, fallback
+                );
+                Ok(fallback.to_string())
             }
         }
         None => {
@@ -889,27 +892,27 @@ async fn get_or_init_parakeet<R: Runtime>(
 async fn get_configured_parakeet_model<R: Runtime>(app: &AppHandle<R>) -> Result<String> {
     debug!("Getting configured Parakeet model from database...");
 
-    let app_state = app
-        .try_state::<AppState>()
-        .ok_or_else(|| {
-            error!("App state not available");
-            anyhow!("App state not available")
-        })?;
+    let app_state = app.try_state::<AppState>().ok_or_else(|| {
+        error!("App state not available");
+        anyhow!("App state not available")
+    })?;
 
     // Query the transcript settings from the database
-    let result: Option<(String, String)> = sqlx::query_as(
-        "SELECT provider, model FROM transcript_settings WHERE id = '1'"
-    )
-    .fetch_optional(app_state.db_manager.pool())
-    .await
-    .map_err(|e| {
-        error!("Failed to query transcript config: {}", e);
-        anyhow!("Failed to query transcript config: {}", e)
-    })?;
+    let result: Option<(String, String)> =
+        sqlx::query_as("SELECT provider, model FROM transcript_settings WHERE id = '1'")
+            .fetch_optional(app_state.db_manager.pool())
+            .await
+            .map_err(|e| {
+                error!("Failed to query transcript config: {}", e);
+                anyhow!("Failed to query transcript config: {}", e)
+            })?;
 
     match result {
         Some((provider, model)) => {
-            info!("Found transcript config: provider={}, model={}", provider, model);
+            info!(
+                "Found transcript config: provider={}, model={}",
+                provider, model
+            );
 
             if provider == "parakeet" {
                 Ok(model)
@@ -918,7 +921,7 @@ async fn get_configured_parakeet_model<R: Runtime>(app: &AppHandle<R>) -> Result
                 warn!("Configured provider is not Parakeet, using default model");
                 Ok(DEFAULT_PARAKEET_MODEL.to_string())
             }
-        },
+        }
         None => {
             // Default to configured Parakeet model if no config exists
             warn!("No transcript config found, using default Parakeet model");

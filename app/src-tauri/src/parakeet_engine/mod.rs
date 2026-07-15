@@ -17,10 +17,13 @@
 //! - `model`: ONNX model wrapper and inference logic
 //! - `commands`: Tauri command interface for frontend integration
 
+pub mod commands;
 pub mod engine;
 pub mod model;
-pub mod commands;
 
-pub use engine::{ParakeetEngine, ParakeetEngineError, QuantizationType, ParakeetModelInfo, ModelStatus, DownloadProgress};
-pub use model::{ParakeetModel, ParakeetError, TimestampedResult};
 pub use commands::*;
+pub use engine::{
+    DownloadProgress, ModelStatus, ParakeetEngine, ParakeetEngineError, ParakeetModelInfo,
+    QuantizationType,
+};
+pub use model::{ParakeetError, ParakeetModel, TimestampedResult};

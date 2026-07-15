@@ -230,12 +230,12 @@ pub fn start_transcription_task<R: Runtime>(
 
                 if initial_model_loaded {
                     info!(
-                        "✅ Worker {} pre-validation: Whisper model '{}' is loaded and ready",
+                        "✅ Worker {} pre-validation: transcription model '{}' is loaded and ready",
                         worker_id, current_model
                     );
                 } else {
                     warn!(
-                        "⚠️ Worker {} pre-validation: Whisper model not loaded - chunks may be skipped",
+                        "⚠️ Worker {} pre-validation: transcription model not loaded - chunks may be skipped",
                         worker_id
                     );
                 }
@@ -265,12 +265,12 @@ pub fn start_transcription_task<R: Runtime>(
                             // Check if model is still loaded before processing
                             if !engine_clone.is_model_loaded().await {
                                 warn!(
-                                    "⚠️ Worker {}: Whisper model unloaded; recovering before chunk {}",
+                                    "⚠️ Worker {}: transcription model unloaded; recovering before chunk {}",
                                     worker_id, chunk.chunk_id
                                 );
                                 if let Err(error) = engine_clone.load_model(&current_model).await {
                                     error!(
-                                        "Worker {} could not recover Whisper model '{}': {}",
+                                        "Worker {} could not recover transcription model '{}': {}",
                                         worker_id, current_model, error
                                     );
                                     let _ = app_clone.emit("transcription-error", serde_json::json!({
@@ -294,14 +294,16 @@ pub fn start_transcription_task<R: Runtime>(
 
                             // Whether the auto-detect language is still deciding
                             // going INTO this chunk: such chunks are candidates
-                            // for the post-lock repair pass below.
-                            let deciding_before = matches!(
-                                crate::get_language_preference_internal().as_deref(),
-                                None | Some("auto")
-                            )
+                            // for the post-lock repair pass below. Whisper-only:
+                            // Parakeet has no language lock to repair against.
+                            let deciding_before = engine_clone.as_whisper().is_some()
+                                && matches!(
+                                    crate::get_language_preference_internal().as_deref(),
+                                    None | Some("auto")
+                                )
                                 && crate::whisper_engine::lang_lock::current_stable().is_none();
 
-                            let first_attempt = transcribe_chunk_with_whisper(
+                            let first_attempt = transcribe_chunk(
                                 &engine_clone,
                                 chunk.clone(),
                                 chunk_source,
@@ -313,13 +315,13 @@ pub fn start_transcription_task<R: Runtime>(
                                 Err(TranscriptionError::EngineFailed(_))
                             ) {
                                 warn!(
-                                    "Worker {}: Whisper failed on chunk {}; reloading and retrying once",
+                                    "Worker {}: transcription failed on chunk {}; reloading and retrying once",
                                     worker_id, chunk.chunk_id
                                 );
                                 engine_clone.unload_model().await;
                                 match engine_clone.load_model(&current_model).await {
                                     Ok(()) => {
-                                        transcribe_chunk_with_whisper(
+                                        transcribe_chunk(
                                             &engine_clone,
                                             chunk,
                                             chunk_source,
@@ -562,11 +564,12 @@ pub fn start_transcription_task<R: Runtime>(
                             // re-emits are order-safe because the sink and the
                             // frontend both upsert by sequence_id.
                             if deciding_before && !pending_lang_repairs.is_empty() {
-                                if let Some(stable_id) =
-                                    crate::whisper_engine::lang_lock::current_stable()
-                                {
+                                if let (Some(stable_id), Some(whisper)) = (
+                                    crate::whisper_engine::lang_lock::current_stable(),
+                                    engine_clone.as_whisper(),
+                                ) {
                                     let pending = std::mem::take(&mut pending_lang_repairs);
-                                    let repair_engine = engine_clone.clone();
+                                    let repair_engine = whisper.clone();
                                     let repair_app = app_clone.clone();
                                     tokio::spawn(async move {
                                         repair_deciding_segments(
@@ -695,11 +698,13 @@ pub fn start_transcription_task<R: Runtime>(
             let mut candidates = vocabulary_learning_candidates.lock().await;
             std::mem::take(&mut *candidates)
         };
-        if !learning_candidates.is_empty() {
-            match transcription_engine
-                .prepare_vocabulary_learning_decoder()
-                .await
-            {
+        // Vocabulary learning is whisper-only (candidates are only produced by
+        // the whisper chunk path, so this is empty for Parakeet sessions).
+        if let (false, Some(whisper_engine)) = (
+            learning_candidates.is_empty(),
+            transcription_engine.as_whisper(),
+        ) {
+            match whisper_engine.prepare_vocabulary_learning_decoder().await {
                 Ok(decoder) => {
                     for candidate in learning_candidates {
                         match decoder
@@ -812,7 +817,7 @@ pub fn start_transcription_task<R: Runtime>(
 /// `sequence_id`, so a re-emitted update replaces the original segment in the
 /// live UI and in the saved transcript.
 async fn repair_deciding_segments<R: Runtime>(
-    engine: &TranscriptionEngine,
+    engine: &Arc<crate::whisper_engine::WhisperEngine>,
     app: &AppHandle<R>,
     stable_id: i32,
     pending: Vec<PendingLangRepair>,
@@ -858,8 +863,8 @@ async fn repair_deciding_segments<R: Runtime>(
     }
 }
 
-/// Transcribe an audio chunk with local Whisper.
-async fn transcribe_chunk_with_whisper<R: Runtime>(
+/// Transcribe an audio chunk with the configured local engine.
+async fn transcribe_chunk<R: Runtime>(
     engine: &TranscriptionEngine,
     chunk: AudioChunk,
     chunk_source: &str,
@@ -907,8 +912,38 @@ async fn transcribe_chunk_with_whisper<R: Runtime>(
     );
 
     let language = crate::get_language_preference_internal();
+
+    // Parakeet: a single fast pass, no prompts, no confidence, no language
+    // machinery. The worker's downstream gates treat the absent confidence as
+    // low, so the hallucination phrase filter still applies. Dispatched before
+    // the Arc wrap so the owned samples move straight into the engine; the
+    // empty `samples_16k` is correct because its only consumer (the deciding-
+    // language repair) is whisper-only and never runs for Parakeet.
+    let whisper = match engine {
+        TranscriptionEngine::Whisper(whisper) => whisper,
+        TranscriptionEngine::Parakeet(parakeet) => {
+            let duration_seconds = speech_samples.len() as f64 / 16000.0;
+            return match parakeet.transcribe_audio(speech_samples).await {
+                Ok(text) => Ok(ChunkTranscription {
+                    text: text.trim().to_string(),
+                    confidence: None,
+                    is_partial: duration_seconds < 15.0,
+                    learning_candidate: None,
+                    samples_16k: Arc::new(Vec::new()),
+                }),
+                Err(error) => {
+                    error!(
+                        "Parakeet transcription failed for chunk {}: {}",
+                        chunk.chunk_id, error
+                    );
+                    Err(TranscriptionError::EngineFailed(error.to_string()))
+                }
+            };
+        }
+    };
+
     let speech_samples = Arc::new(speech_samples);
-    match engine
+    match whisper
         .transcribe_audio_with_learning_context(
             Arc::clone(&speech_samples),
             language.clone(),

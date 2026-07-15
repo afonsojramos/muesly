@@ -53,7 +53,10 @@ pub(crate) async fn ensure_parakeet_model(target_model: &str) -> Result<Arc<Para
 
     let current_model = engine.get_current_model().await;
     if current_model.as_deref() != Some(target_model) {
-        info!("Loading Parakeet model '{}' (current: {:?})", target_model, current_model);
+        info!(
+            "Loading Parakeet model '{}' (current: {:?})",
+            target_model, current_model
+        );
         if let Err(e) = engine.discover_models().await {
             warn!("Parakeet model discovery error (continuing): {}", e);
         }

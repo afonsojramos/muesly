@@ -174,9 +174,15 @@ async fn main() {
                 }
                 eprintln!("transcribing VAD segment {}", index + 1);
                 let start = segment.start_timestamp_ms / 1000.0;
-                let text = engine.transcribe_audio(segment.samples).await.unwrap_or_else(|e| {
-                    fail(format!("transcription failed on segment {}: {e}", index + 1))
-                });
+                let text = engine
+                    .transcribe_audio(segment.samples)
+                    .await
+                    .unwrap_or_else(|e| {
+                        fail(format!(
+                            "transcription failed on segment {}: {e}",
+                            index + 1
+                        ))
+                    });
                 // Parakeet exposes no confidence; mirror the app's live gates,
                 // which pass its results through the filter unconfidenced.
                 let drop_reason =
@@ -186,7 +192,13 @@ async fn main() {
                         Some(reason) => format!("DROPPED({reason:?})"),
                         None => "kept".to_string(),
                     };
-                    println!("{}\t{:.1}s\t-\t{}\t{}", index + 1, start, status, text.trim());
+                    println!(
+                        "{}\t{:.1}s\t-\t{}\t{}",
+                        index + 1,
+                        start,
+                        status,
+                        text.trim()
+                    );
                 }
                 if let Some(reason) = drop_reason {
                     eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
@@ -251,7 +263,10 @@ async fn main() {
                     .transcribe_audio_with_confidence(segment.samples, language.clone())
                     .await
                     .unwrap_or_else(|e| {
-                        fail(format!("transcription failed on segment {}: {e}", index + 1))
+                        fail(format!(
+                            "transcription failed on segment {}: {e}",
+                            index + 1
+                        ))
                     });
                 let drop_reason =
                     app_lib::audio::transcription::segment_filter::should_drop_segment(
