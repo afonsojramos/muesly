@@ -22,7 +22,10 @@ flowchart TD
     SPLIT -->|"recording path: ducking, mixing"| FILE["audio.mp4 in meeting folder"]
     SPLIT -->|"transcription path"| VAD["VAD: speech-only segments<br/>min 250ms, max 15s"]
     VAD --> QUEUE["Chunk queue"] --> WORKER["Serial transcription worker<br/>(NUM_WORKERS = 1)"]
-    WORKER --> ENGINE["Whisper engine decode<br/>(see 'Inside one decode')"]
+    WORKER --> PICK{"configured provider"}
+    PICK -->|"localWhisper (default)"| ENGINE["Whisper engine decode<br/>(see 'Inside one decode')"]
+    PICK -->|"parakeet (Fastest profile)"| PARA["Parakeet v3 single pass:<br/>no prompts, no confidence,<br/>no language machinery"]
+    PARA --> GATES
     ENGINE --> GATES{"Gates: confidence floor 0.3,<br/>hallucination filter,<br/>mic/system crosstalk"}
     GATES -->|"dropped"| X1["discarded"]
     GATES -->|"admitted"| EMIT["transcript-update event<br/>(upserted by sequence_id)"]
@@ -38,6 +41,10 @@ optional **quality pass** (a retranscription of the saved file;
 `post_meeting_quality_pass` setting) chained into **auto-diarization** (only
 if calendar attendees exist and models are downloaded), plus an independent
 title pass. The summary auto-generates when the meeting first opens.
+
+The quality pass ALWAYS runs Whisper, regardless of the live provider: with
+Parakeet selected for live captions ("Fastest" profile in settings), it is
+exactly the pass that upgrades the transcript to whisper quality afterwards.
 
 ## Retranscribe (manual) and import
 
@@ -80,6 +87,11 @@ post-recording quality pass.
 
 Source: `whisper_engine/engine.rs`, `lang_lock.rs`, `decode_policy.rs`,
 `audio/transcription/segment_filter.rs`.
+
+Everything below is whisper-only. A Parakeet decode is one TDT transducer
+pass (`parakeet_engine/engine.rs`): no prompts, no language lock, no echo
+breaker, no confidence — only the worker-level gates (hallucination filter,
+crosstalk) apply to its output.
 
 ```mermaid
 flowchart TD
