@@ -217,6 +217,7 @@
 				meetingFolderPath,
 				language: languageToSend,
 				model: selectedModelDetails?.name || null,
+				provider: selectedModelDetails?.provider === 'parakeet' ? 'parakeet' : null,
 			});
 			onStarted?.({ regenerateSummary });
 		} catch (err) {

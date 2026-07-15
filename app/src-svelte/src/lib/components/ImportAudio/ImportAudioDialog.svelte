@@ -151,6 +151,7 @@
 			title || fileInfo.filename,
 			selectedLang === 'auto' ? null : selectedLang,
 			selectedModel?.name || null,
+			selectedModel?.provider ?? null,
 		);
 	}
 

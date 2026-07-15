@@ -5,10 +5,19 @@
 		'large-v3-q5_0': 'Large V3 Compressed',
 		'large-v3-turbo': 'Large V3 Turbo',
 		'large-v3': 'Large V3',
+		'parakeet-tdt-0.6b-v3-int8': 'Parakeet V3',
 	};
 
 	export function whisperDisplayName(modelName: string): string {
 		return DISPLAY_NAMES[modelName] ?? `Whisper ${modelName}`;
+	}
+
+	export type TranscriptionProvider = 'localWhisper' | 'parakeet';
+
+	/** Providers are inferred from the model name: the two engines' catalogs
+	 *  use disjoint, stable naming. */
+	export function providerForModel(modelName: string): TranscriptionProvider {
+		return modelName.startsWith('parakeet') ? 'parakeet' : 'localWhisper';
 	}
 </script>
 
@@ -18,7 +27,7 @@
 	import { fly } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-	import { AudioWaveform, Box, Gauge, WandSparkles } from '@lucide/svelte';
+	import { AudioWaveform, Box, Gauge, WandSparkles, Zap } from '@lucide/svelte';
 
 	import {
 		formatFileSize,
@@ -39,10 +48,13 @@
 
 	interface Props {
 		selectedModel?: string;
-		onModelSelect?: (modelName: string) => void;
+		onModelSelect?: (modelName: string, provider?: TranscriptionProvider) => void;
 		class?: string;
 		autoSave?: boolean;
 	}
+
+	/** The fast multilingual alternative surfaced as the "Fastest" profile. */
+	const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
 
 	let { selectedModel, onModelSelect, class: className = '', autoSave = false }: Props = $props();
 
@@ -82,6 +94,13 @@
 			tagline: 'Best for difficult audio and important meetings',
 			recommended: false,
 		},
+		{
+			modelName: PARAKEET_MODEL,
+			title: 'Fastest',
+			icon: Zap,
+			tagline: 'Near-instant multilingual transcription (Parakeet)',
+			recommended: false,
+		},
 	]);
 	const profileCards = $derived(
 		profileDefinitions.flatMap((profile) => {
@@ -112,12 +131,37 @@
 	async function saveModelSelection(modelName: string): Promise<void> {
 		try {
 			await invoke('api_save_transcript_config', {
-				provider: 'localWhisper',
+				provider: providerForModel(modelName),
 				model: modelName,
 				apiKey: null,
 			});
 		} catch (err) {
 			console.error('Failed to save model selection:', err);
+		}
+	}
+
+	/** All downloaded models across both engines, Parakeet mapped into the
+	 *  shared ModelInfo card shape. */
+	async function fetchAllModels(): Promise<ModelInfo[]> {
+		const whisper = await WhisperAPI.getAvailableModels();
+		try {
+			const parakeet = await invoke<
+				Array<{ name: string; path: string; size_mb: number; status: ModelStatus }>
+			>('parakeet_get_available_models');
+			return whisper.concat(
+				parakeet.map((m) => ({
+					name: m.name,
+					path: m.path,
+					size_mb: m.size_mb,
+					accuracy: 'Good' as const,
+					speed: 'Very Fast' as const,
+					status: m.status,
+					description: 'Parakeet v3: near-instant multilingual transcription on CPU',
+				})),
+			);
+		} catch (err) {
+			console.error('Failed to fetch Parakeet models:', err);
+			return whisper;
 		}
 	}
 
@@ -131,7 +175,11 @@
 				description: 'This may take a few minutes',
 				duration: 5000,
 			});
-			await WhisperAPI.downloadModel(modelName);
+			if (providerForModel(modelName) === 'parakeet') {
+				await invoke('parakeet_download_model', { modelName });
+			} else {
+				await WhisperAPI.downloadModel(modelName);
+			}
 		} catch (err) {
 			console.error('Download failed:', err);
 			downloadingModels.delete(modelName);
@@ -141,7 +189,11 @@
 
 	async function cancelDownload(modelName: string): Promise<void> {
 		try {
-			await WhisperAPI.cancelDownload(modelName);
+			if (providerForModel(modelName) === 'parakeet') {
+				await invoke('parakeet_cancel_download', { modelName });
+			} else {
+				await WhisperAPI.cancelDownload(modelName);
+			}
 			downloadingModels.delete(modelName);
 			setModelStatus(modelName, 'Missing');
 			progressThrottle.delete(modelName);
@@ -155,7 +207,7 @@
 	}
 
 	async function selectModel(modelName: string): Promise<void> {
-		onModelSelect?.(modelName);
+		onModelSelect?.(modelName, providerForModel(modelName));
 		if (autoSave) await saveModelSelection(modelName);
 		toast.success(`Switched to ${modelDisplayName(modelName)}`, { duration: 3000 });
 	}
@@ -163,8 +215,12 @@
 	async function deleteModel(modelName: string): Promise<void> {
 		const displayName = modelDisplayName(modelName);
 		try {
-			await WhisperAPI.deleteCorruptedModel(modelName);
-			models = await WhisperAPI.getAvailableModels();
+			if (providerForModel(modelName) === 'parakeet') {
+				await invoke('parakeet_delete_corrupted_model', { modelName });
+			} else {
+				await WhisperAPI.deleteCorruptedModel(modelName);
+			}
+			models = await fetchAllModels();
 			toast.success(`${displayName} deleted`, {
 				description: 'Model removed to free up space',
 				duration: 3000,
@@ -186,7 +242,10 @@
 					() => recommendedModel,
 				);
 				await WhisperAPI.init();
-				models = await WhisperAPI.getAvailableModels();
+				await invoke('parakeet_init').catch((err) => {
+					console.error('Failed to initialize Parakeet:', err);
+				});
+				models = await fetchAllModels();
 			} catch (err) {
 				console.error('Failed to initialize Whisper:', err);
 				error = err instanceof Error ? err.message : 'Failed to load models';
@@ -203,48 +262,46 @@
 		const push = (fn: UnlistenFn) => (cancelled ? fn() : unsubscribers.push(fn));
 
 		(async () => {
-			push(
-				await listen<{ modelName: string; progress: number }>(
-					'model-download-progress',
-					(event) => {
-						const { modelName, progress } = event.payload;
-						const now = Date.now();
-						const last = progressThrottle.get(modelName);
-						const shouldUpdate =
-							!last || now - last.timestamp > 300 || Math.abs(progress - last.progress) >= 5;
-						if (shouldUpdate) {
-							progressThrottle.set(modelName, { progress, timestamp: now });
-							setModelStatus(modelName, { Downloading: progress });
-						}
-					},
-				),
-			);
-			push(
-				await listen<{ modelName: string }>('model-download-complete', (event) => {
-					const { modelName } = event.payload;
-					setModelStatus(modelName, 'Available');
-					downloadingModels.delete(modelName);
-					progressThrottle.delete(modelName);
-					toast.success(`${modelDisplayName(modelName)} ready`, {
-						description: 'Model downloaded and ready to use',
-						duration: 4000,
-					});
-					onModelSelect?.(modelName);
-					if (autoSave) void saveModelSelection(modelName);
-				}),
-			);
-			push(
-				await listen<{ modelName: string; error: string }>('model-download-error', (event) => {
-					const { modelName, error: errMsg } = event.payload;
-					setModelStatus(modelName, { Error: errMsg });
-					downloadingModels.delete(modelName);
-					progressThrottle.delete(modelName);
-					toast.error(`Failed to download ${modelDisplayName(modelName)}`, {
-						description: errMsg,
-						duration: 6000,
-					});
-				}),
-			);
+			const onProgress = (event: { payload: { modelName: string; progress: number } }) => {
+				const { modelName, progress } = event.payload;
+				const now = Date.now();
+				const last = progressThrottle.get(modelName);
+				const shouldUpdate =
+					!last || now - last.timestamp > 300 || Math.abs(progress - last.progress) >= 5;
+				if (shouldUpdate) {
+					progressThrottle.set(modelName, { progress, timestamp: now });
+					setModelStatus(modelName, { Downloading: progress });
+				}
+			};
+			const onComplete = (event: { payload: { modelName: string } }) => {
+				const { modelName } = event.payload;
+				setModelStatus(modelName, 'Available');
+				downloadingModels.delete(modelName);
+				progressThrottle.delete(modelName);
+				toast.success(`${modelDisplayName(modelName)} ready`, {
+					description: 'Model downloaded and ready to use',
+					duration: 4000,
+				});
+				onModelSelect?.(modelName, providerForModel(modelName));
+				if (autoSave) void saveModelSelection(modelName);
+			};
+			const onError = (event: { payload: { modelName: string; error: string } }) => {
+				const { modelName, error: errMsg } = event.payload;
+				setModelStatus(modelName, { Error: errMsg });
+				downloadingModels.delete(modelName);
+				progressThrottle.delete(modelName);
+				toast.error(`Failed to download ${modelDisplayName(modelName)}`, {
+					description: errMsg,
+					duration: 6000,
+				});
+			};
+			// Both engines emit the same payload shapes on their own event names.
+			push(await listen('model-download-progress', onProgress));
+			push(await listen('parakeet-model-download-progress', onProgress));
+			push(await listen('model-download-complete', onComplete));
+			push(await listen('parakeet-model-download-complete', onComplete));
+			push(await listen('model-download-error', onError));
+			push(await listen('parakeet-model-download-error', onError));
 		})();
 
 		return () => {

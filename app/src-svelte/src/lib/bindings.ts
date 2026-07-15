@@ -23,12 +23,18 @@ export const commands = {
 	 *  number of segments that received a speaker label -- these are `system`
 	 *  (remote) segments only; the mic side is always the local user and is never
 	 *  cluster-labeled.
+	 * 
+	 *  Emits `diarization-progress` per stage and `diarization-error` on failure
+	 *  (in addition to the existing `diarization-complete`), so the background
+	 *  tasks list can track runs from any trigger (menu action or auto-run on
+	 *  stop). A rejected duplicate run emits nothing: the events belong to the run
+	 *  already in flight.
 	 */
 	diarizeMeeting: (meetingId: string) => typedError<number, string>(__TAURI_INVOKE("diarize_meeting", { meetingId })),
 	/**
 	 *  Download the diarization models on demand, emitting
 	 *  `diarization-model-download-progress`/`-complete`/`-error` events (mirroring
-	 *  the transcription model-download flow).
+	 *  the Parakeet model-download flow).
 	 */
 	downloadDiarizationModels: () => typedError<null, string>(__TAURI_INVOKE("download_diarization_models")),
 	/**
@@ -82,6 +88,21 @@ export const commands = {
 	whisperDownloadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_download_model", { modelName })),
 	whisperCancelDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_cancel_download", { modelName })),
 	whisperDeleteCorruptedModel: (modelName: string) => typedError<string, string>(__TAURI_INVOKE("whisper_delete_corrupted_model", { modelName })),
+	parakeetInit: () => typedError<null, string>(__TAURI_INVOKE("parakeet_init")),
+	parakeetGetAvailableModels: () => typedError<ParakeetModelInfo[], string>(__TAURI_INVOKE("parakeet_get_available_models")),
+	parakeetLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_load_model", { modelName })),
+	parakeetGetCurrentModel: () => typedError<string | null, string>(__TAURI_INVOKE("parakeet_get_current_model")),
+	parakeetIsModelLoaded: () => typedError<boolean, string>(__TAURI_INVOKE("parakeet_is_model_loaded")),
+	parakeetHasAvailableModels: () => typedError<boolean, string>(__TAURI_INVOKE("parakeet_has_available_models")),
+	parakeetValidateModelReady: () => typedError<string, string>(__TAURI_INVOKE("parakeet_validate_model_ready")),
+	parakeetTranscribeAudio: (audioData: (number | null)[]) => typedError<string, string>(__TAURI_INVOKE("parakeet_transcribe_audio", { audioData })),
+	parakeetGetModelsDirectory: () => typedError<string, string>(__TAURI_INVOKE("parakeet_get_models_directory")),
+	parakeetDownloadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_download_model", { modelName })),
+	parakeetRetryDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_retry_download", { modelName })),
+	parakeetCancelDownload: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("parakeet_cancel_download", { modelName })),
+	parakeetDeleteCorruptedModel: (modelName: string) => typedError<string, string>(__TAURI_INVOKE("parakeet_delete_corrupted_model", { modelName })),
+	/**  Open the Parakeet models folder in the system file explorer */
+	openParakeetModelsFolder: () => typedError<null, string>(__TAURI_INVOKE("open_parakeet_models_folder")),
 	getAudioDevices: () => typedError<AudioDevice[], string>(__TAURI_INVOKE("get_audio_devices")),
 	triggerMicrophonePermission: () => typedError<boolean, string>(__TAURI_INVOKE("trigger_microphone_permission")),
 	startRecordingWithDevices: (micDeviceName: string | null, systemDeviceName: string | null) => typedError<null, string>(__TAURI_INVOKE("start_recording_with_devices", { micDeviceName, systemDeviceName })),
@@ -581,7 +602,7 @@ export const commands = {
 	completeOnboarding: (model: string) => typedError<null, string>(__TAURI_INVOKE("complete_onboarding", { model })),
 	/**  Opens macOS System Settings to a specific privacy preference pane */
 	openSystemSettings: (preferencePane: string) => typedError<null, string>(__TAURI_INVOKE("open_system_settings", { preferencePane })),
-	startRetranscriptionCommand: (meetingId: string, meetingFolderPath: string, language: string | null, model: string | null) => typedError<RetranscriptionStarted, string>(__TAURI_INVOKE("start_retranscription_command", { meetingId, meetingFolderPath, language, model })),
+	startRetranscriptionCommand: (meetingId: string, meetingFolderPath: string, language: string | null, model: string | null, provider: string | null) => typedError<RetranscriptionStarted, string>(__TAURI_INVOKE("start_retranscription_command", { meetingId, meetingFolderPath, language, model, provider })),
 	cancelRetranscriptionCommand: () => typedError<null, string>(__TAURI_INVOKE("cancel_retranscription_command")),
 	isRetranscriptionInProgressCommand: () => __TAURI_INVOKE<boolean>("is_retranscription_in_progress_command"),
 	/**  Select an audio file and validate it */
@@ -595,7 +616,7 @@ export const commands = {
 	/**  Validate an audio file from a given path (for drag-drop) */
 	validateAudioFileCommand: (path: string) => typedError<AudioFileInfo, string>(__TAURI_INVOKE("validate_audio_file_command", { path })),
 	/**  Start importing an audio file (Beta gated using configContext.betaFeatures) */
-	startImportAudioCommand: (sourcePath: string, title: string, language: string | null, model: string | null) => typedError<ImportStarted, string>(__TAURI_INVOKE("start_import_audio_command", { sourcePath, title, language, model })),
+	startImportAudioCommand: (sourcePath: string, title: string, language: string | null, model: string | null, provider: string | null) => typedError<ImportStarted, string>(__TAURI_INVOKE("start_import_audio_command", { sourcePath, title, language, model, provider })),
 	/**  Cancel ongoing import */
 	cancelImportCommand: () => typedError<null, string>(__TAURI_INVOKE("cancel_import_command")),
 	/**  Check if import is in progress */
@@ -854,7 +875,7 @@ export type ChatMessageRow = {
 
 /**
  *  Streams an answer to a question about a meeting.
- *
+ * 
  *  `live_transcript`, when non-empty, is used as the transcript context instead
  *  of loading from SQLite. The frontend passes this during an in-progress
  *  recording (ephemeral meeting ids are not in SQLite yet).
@@ -1324,6 +1345,17 @@ export type PaginatedTranscriptsResponse_Serialize = {
 	has_more: boolean,
 };
 
+/**  Information about a Parakeet model */
+export type ParakeetModelInfo = {
+	name: string,
+	path: string,
+	size_mb: number,
+	quantization: QuantizationType,
+	speed: string,
+	status: any,
+	description: string,
+};
+
 export type PersonGroup = {
 	name: string,
 	/**  Best-effort org label from the attendee's email domain, when available. */
@@ -1349,8 +1381,8 @@ export type PersonMeetingRef = {
 };
 
 /**
- *  A lightweight event for the settings "upcoming events" preview, so the user
- *  can confirm a source is being read. Attendee names/notes are not included.
+ *  A lightweight event for the settings "upcoming events" preview. Participant
+ *  names stay local and let the note editor offer quick @-tagging.
  */
 export type PreviewEvent = {
 	title: string,
@@ -1370,8 +1402,8 @@ export type PreviewEvent = {
 	is_recurring: boolean,
 	/**  Parsed conference/meeting URL (Zoom/Meet/Teams/…), when present. */
 	conference_url: string | null,
-	/**  Non-self, non-declined attendee display names. */
-	participant_names: string[],
+	/**  Non-self, non-declined attendee display names. Emails never reach this layer. */
+	participant_names?: string[],
 };
 
 /**
@@ -1398,6 +1430,9 @@ export type ProcessTranscriptResponse = {
 	message: string,
 	process_id: string,
 };
+
+/**  Quantization type for Parakeet models */
+export type QuantizationType = "FP32" | "Int8";
 
 /**  A meeting that has a chat thread, for the "Recent chats" list. */
 export type RecentChatThread = {
@@ -1526,7 +1561,7 @@ export type TranscriptSegment = {
 	audio_end_time: number | null,
 	duration: number | null,
 	display_time: string,
-	/**  Measured ASR confidence. */
+	/**  Measured ASR confidence; absent for engines such as Parakeet. */
 	confidence: number | null,
 	sequence_id: number,
 	/**  Audio source: "mic" (the user) or "system" (other participants) */
@@ -1602,3 +1637,4 @@ async function typedError<T, E>(result: Promise<T>): Promise<{ status: "ok"; dat
         return { status: "error", error: e as any };
     }
 }
+

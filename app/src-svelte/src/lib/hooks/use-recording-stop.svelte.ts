@@ -35,9 +35,16 @@ const QUALITY_PASS_TIMEOUT_MS = 30 * 60 * 1000;
  * Re-transcribe the saved recording with the batch pipeline (merged VAD
  * windows, no realtime pressure) and wait for it to finish, so speaker
  * identification runs against the final segments. Local engines only.
+ *
+ * The quality pass always runs WHISPER: when the live engine is Parakeet (the
+ * fast-captions option), this is exactly the pass that upgrades the transcript
+ * to whisper quality, so passing the configured Parakeet model through would
+ * defeat its purpose. A null model resolves to the hardware-recommended
+ * whisper model backend-side.
  */
 async function runQualityPass(meetingId: string, folderPath: string): Promise<void> {
-	const model = config.transcriptModelConfig?.model ?? null;
+	const liveIsParakeet = config.transcriptModelConfig?.provider === 'parakeet';
+	const model = liveIsParakeet ? null : (config.transcriptModelConfig?.model ?? null);
 	const langRes = await commands.getTranscriptionLanguage();
 	const language = langRes.status === 'ok' && langRes.data !== 'auto' ? langRes.data : null;
 
@@ -69,6 +76,7 @@ async function runQualityPass(meetingId: string, folderPath: string): Promise<vo
 		folderPath,
 		language,
 		model,
+		null, // provider: the quality pass is always whisper
 	);
 	if (started.status === 'error') {
 		console.error('Quality pass failed to start:', started.error);

@@ -1,7 +1,8 @@
 /**
  * useTranscriptionModels
  *
- * Fetches downloaded Whisper models and tracks which one the user selected.
+ * Fetches downloaded local transcription models (Whisper, plus Parakeet as the
+ * fast multilingual alternative) and tracks which one the user selected.
  * Defaults to the configured-and-available model on first load, but never
  * overrides a manual selection.
  */
@@ -15,7 +16,7 @@ export interface RawModelInfo {
 }
 
 export interface ModelOption {
-	provider: 'whisper';
+	provider: 'whisper' | 'parakeet';
 	name: string;
 	displayName: string;
 	size_mb: number;
@@ -72,6 +73,22 @@ export function useTranscriptionModels(
 			console.error('Failed to fetch Whisper models:', err);
 		}
 
+		try {
+			const parakeet = await invoke<RawModelInfo[]>('parakeet_get_available_models');
+			for (const m of parakeet) {
+				if (m.status === 'Available') {
+					all.push({
+						provider: 'parakeet',
+						name: m.name,
+						displayName: `⚡ Parakeet: ${m.name}`,
+						size_mb: m.size_mb,
+					});
+				}
+			}
+		} catch (err) {
+			console.error('Failed to fetch Parakeet models:', err);
+		}
+
 		availableModels = all;
 
 		const config = getConfig();
@@ -80,9 +97,9 @@ export function useTranscriptionModels(
 
 		const configuredMatch = all.find(
 			(m) =>
-				configuredProvider === 'localWhisper' &&
-				m.provider === 'whisper' &&
-				m.name === configuredModel,
+				m.name === configuredModel &&
+				((configuredProvider === 'localWhisper' && m.provider === 'whisper') ||
+					(configuredProvider === 'parakeet' && m.provider === 'parakeet')),
 		);
 
 		if (!userSelected) {
