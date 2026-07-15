@@ -4,7 +4,8 @@ use super::common::{create_transcript_segments, split_segment_at_silence, write_
 use super::constants::AUDIO_EXTENSIONS;
 use crate::audio::decoder::decode_audio_file;
 use crate::audio::vad::get_speech_chunks_with_progress;
-use crate::config::DEFAULT_WHISPER_MODEL;
+use crate::config::{DEFAULT_PARAKEET_MODEL, DEFAULT_WHISPER_MODEL};
+use crate::parakeet_engine::ParakeetEngine;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
 use anyhow::{Result, anyhow};
@@ -153,6 +154,7 @@ pub async fn start_retranscription<R: Runtime>(
     meeting_folder_path: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
     // Acquire guard - ensures flag is cleared even on panic/early return
     let _guard = RetranscriptionGuard::acquire().map_err(|e| anyhow!(e))?;
@@ -160,17 +162,19 @@ pub async fn start_retranscription<R: Runtime>(
     // Reset cancellation flag
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
 
+    let use_parakeet = provider.as_deref() == Some("parakeet");
     let result = run_retranscription(
         app.clone(),
         meeting_id.clone(),
         meeting_folder_path,
         language,
         model,
+        provider,
     )
     .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch().await;
+    super::common::unload_engine_after_batch(use_parakeet).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: RETRANSCRIPTION_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -247,6 +251,7 @@ async fn run_retranscription<R: Runtime>(
     meeting_folder_path: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<RetranscriptionResult> {
     let folder_path = PathBuf::from(&meeting_folder_path);
     let audio_path = find_audio_file(&folder_path)?;
@@ -257,9 +262,12 @@ async fn run_retranscription<R: Runtime>(
     let prompt_terms = retranscription_prompt_terms(&pool, &meeting_id).await?;
     let _prompt_guard = crate::vocabulary::scoped_meeting_prompt_terms(prompt_terms);
 
+    // Determine which provider to use (default to whisper)
+    let use_parakeet = provider.as_deref() == Some("parakeet");
+
     info!(
-        "Starting retranscription for meeting {} with language {:?}, model {:?}",
-        meeting_id, language, model
+        "Starting retranscription for meeting {} with language {:?}, model {:?}, provider {:?}",
+        meeting_id, language, model, provider
     );
 
     // Start each retranscription with a fresh auto-detected language lock so a
@@ -406,7 +414,17 @@ async fn run_retranscription<R: Runtime>(
         "Loading transcription engine...",
     );
 
-    let whisper_engine = Some(get_or_init_whisper(&app, model.as_deref()).await?);
+    // Initialize the appropriate engine once (not per-segment)
+    let whisper_engine = if !use_parakeet {
+        Some(get_or_init_whisper(&app, model.as_deref()).await?)
+    } else {
+        None
+    };
+    let parakeet_engine = if use_parakeet {
+        Some(get_or_init_parakeet(&app, model.as_deref()).await?)
+    } else {
+        None
+    };
     if let Some(engine) = &whisper_engine {
         engine.reset_segment_context().await;
     }
@@ -480,13 +498,26 @@ async fn run_retranscription<R: Runtime>(
         }
 
         // Transcribe this segment
-        let deciding_before =
-            auto_language && crate::whisper_engine::lang_lock::current_stable().is_none();
-        let engine = whisper_engine.as_ref().unwrap();
-        let (text, conf, _) = engine
-            .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
-            .await
-            .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+        // The auto-language lock (and its post-lock repair) is whisper-only;
+        // Parakeet v3 has no language forcing, so its path never votes.
+        let deciding_before = !use_parakeet
+            && auto_language
+            && crate::whisper_engine::lang_lock::current_stable().is_none();
+        let (text, conf) = if use_parakeet {
+            let engine = parakeet_engine.as_ref().unwrap();
+            let text = engine
+                .transcribe_audio(segment.samples.clone())
+                .await
+                .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
+            (text, 0.9f32)
+        } else {
+            let engine = whisper_engine.as_ref().unwrap();
+            let (text, conf, _) = engine
+                .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
+                .await
+                .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+            (text, conf)
+        };
 
         // Skip empty transcripts
         let trimmed = text.trim();
@@ -842,6 +873,60 @@ async fn get_configured_whisper_model<R: Runtime>(app: &AppHandle<R>) -> Result<
     }
 }
 
+/// Get or initialize the Parakeet engine, auto-loading the model if needed
+async fn get_or_init_parakeet<R: Runtime>(
+    app: &AppHandle<R>,
+    requested_model: Option<&str>,
+) -> Result<Arc<ParakeetEngine>> {
+    let target_model = match requested_model {
+        Some(model) => model.to_string(),
+        None => get_configured_parakeet_model(app).await?,
+    };
+    super::common::ensure_parakeet_model(&target_model).await
+}
+
+/// Get the configured Parakeet model name from the database
+async fn get_configured_parakeet_model<R: Runtime>(app: &AppHandle<R>) -> Result<String> {
+    debug!("Getting configured Parakeet model from database...");
+
+    let app_state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| {
+            error!("App state not available");
+            anyhow!("App state not available")
+        })?;
+
+    // Query the transcript settings from the database
+    let result: Option<(String, String)> = sqlx::query_as(
+        "SELECT provider, model FROM transcript_settings WHERE id = '1'"
+    )
+    .fetch_optional(app_state.db_manager.pool())
+    .await
+    .map_err(|e| {
+        error!("Failed to query transcript config: {}", e);
+        anyhow!("Failed to query transcript config: {}", e)
+    })?;
+
+    match result {
+        Some((provider, model)) => {
+            info!("Found transcript config: provider={}, model={}", provider, model);
+
+            if provider == "parakeet" {
+                Ok(model)
+            } else {
+                // Default to configured Parakeet model
+                warn!("Configured provider is not Parakeet, using default model");
+                Ok(DEFAULT_PARAKEET_MODEL.to_string())
+            }
+        },
+        None => {
+            // Default to configured Parakeet model if no config exists
+            warn!("No transcript config found, using default Parakeet model");
+            Ok(DEFAULT_PARAKEET_MODEL.to_string())
+        }
+    }
+}
+
 /// Write or update metadata.json for retranscription (preserves existing fields, adds retranscribed_at)
 fn write_retranscription_metadata(
     folder: &Path,
@@ -907,6 +992,7 @@ pub async fn start_retranscription_command<R: Runtime>(
     meeting_folder_path: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<RetranscriptionStarted, String> {
     // Check if retranscription is already in progress (guard will be acquired in start_retranscription)
     if RETRANSCRIPTION_IN_PROGRESS.load(Ordering::SeqCst) {
@@ -918,9 +1004,15 @@ pub async fn start_retranscription_command<R: Runtime>(
 
     // Spawn the retranscription in a background task
     tauri::async_runtime::spawn(async move {
-        let result =
-            start_retranscription(app, meeting_id_clone, meeting_folder_path, language, model)
-                .await;
+        let result = start_retranscription(
+            app,
+            meeting_id_clone,
+            meeting_folder_path,
+            language,
+            model,
+            provider,
+        )
+        .await;
 
         // Errors are already emitted as events in start_retranscription
         // so we just log here for debugging

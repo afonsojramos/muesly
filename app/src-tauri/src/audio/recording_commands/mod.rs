@@ -1009,31 +1009,83 @@ pub async fn stop_recording<R: Runtime>(
 
     info!("🧠 All transcript chunks processed. Now safely unloading transcription model...");
 
+    // Determine which provider was used and unload the appropriate model (with timeout)
+    let config = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(30), // 30 seconds max for DB operation
+        crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None),
+    )
+    .await
+    {
+        Ok(Ok(Some(config))) => Some(config.provider),
+        Ok(Ok(None)) => None,
+        Ok(Err(e)) => {
+            warn!("⚠️ Failed to get transcript config: {:?}", e);
+            None
+        }
+        Err(_) => {
+            warn!("⏱️ Transcript config timeout (30s), continuing shutdown");
+            None
+        }
+    };
+
     if dictation_enabled() {
         info!("🔥 Dictation enabled: keeping the transcription model warm (skipping unload)");
     } else {
-        info!("🎤 Unloading Whisper model...");
-        let engine_clone = {
-            let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
-                .lock()
-                .unwrap();
-            engine_guard.as_ref().cloned()
-        };
+        match config.as_deref() {
+            Some("parakeet") => {
+                info!("🦜 Unloading Parakeet model...");
+                let engine_clone = {
+                    let engine_guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
+                        .lock()
+                        .unwrap();
+                    engine_guard.as_ref().cloned()
+                };
 
-        if let Some(engine) = engine_clone {
-            let current_model = engine
-                .get_current_model()
-                .await
-                .unwrap_or_else(|| "unknown".to_string());
-            info!("Current Whisper model before unload: '{}'", current_model);
+                if let Some(engine) = engine_clone {
+                    let current_model = engine
+                        .get_current_model()
+                        .await
+                        .unwrap_or_else(|| "unknown".to_string());
+                    info!("Current Parakeet model before unload: '{}'", current_model);
 
-            if engine.unload_model().await {
-                info!("✅ Whisper model '{}' unloaded successfully", current_model);
-            } else {
-                warn!("⚠️ Failed to unload Whisper model '{}'", current_model);
+                    if engine.unload_model().await {
+                        info!(
+                            "✅ Parakeet model '{}' unloaded successfully",
+                            current_model
+                        );
+                    } else {
+                        warn!("⚠️ Failed to unload Parakeet model '{}'", current_model);
+                    }
+                } else {
+                    warn!("⚠️ No Parakeet engine found to unload model");
+                }
             }
-        } else {
-            warn!("⚠️ No Whisper engine found to unload model");
+            _ => {
+                // Default to Whisper
+                info!("🎤 Unloading Whisper model...");
+                let engine_clone = {
+                    let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
+                        .lock()
+                        .unwrap();
+                    engine_guard.as_ref().cloned()
+                };
+
+                if let Some(engine) = engine_clone {
+                    let current_model = engine
+                        .get_current_model()
+                        .await
+                        .unwrap_or_else(|| "unknown".to_string());
+                    info!("Current Whisper model before unload: '{}'", current_model);
+
+                    if engine.unload_model().await {
+                        info!("✅ Whisper model '{}' unloaded successfully", current_model);
+                    } else {
+                        warn!("⚠️ Failed to unload Whisper model '{}'", current_model);
+                    }
+                } else {
+                    warn!("⚠️ No Whisper engine found to unload model");
+                }
+            }
         }
     }
 

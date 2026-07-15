@@ -3,6 +3,8 @@
 use crate::api::TranscriptSegment;
 use crate::audio::decoder::{decode_audio_file, decode_audio_file_with_progress};
 use crate::audio::vad::get_speech_chunks_with_progress;
+use crate::config::{DEFAULT_WHISPER_MODEL, DEFAULT_PARAKEET_MODEL};
+use crate::parakeet_engine::ParakeetEngine;
 use crate::state::AppState;
 use crate::whisper_engine::WhisperEngine;
 use anyhow::{Result, anyhow};
@@ -251,6 +253,7 @@ pub async fn start_import<R: Runtime>(
     title: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<ImportResult> {
     // Acquire guard - ensures flag is cleared even on panic/early return
     let _guard = ImportGuard::acquire().map_err(|e| anyhow!(e))?;
@@ -258,10 +261,19 @@ pub async fn start_import<R: Runtime>(
     // Reset cancellation flag
     IMPORT_CANCELLED.store(false, Ordering::SeqCst);
 
-    let result = run_import(app.clone(), source_path, title, language, model).await;
+    let use_parakeet = provider.as_deref() == Some("parakeet");
+    let result = run_import(
+        app.clone(),
+        source_path,
+        title,
+        language,
+        model,
+        provider,
+    )
+    .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
-    super::common::unload_engine_after_batch().await;
+    super::common::unload_engine_after_batch(use_parakeet).await;
 
     // Guard will automatically clear flag on drop
     // No need for manual: IMPORT_IN_PROGRESS.store(false, Ordering::SeqCst);
@@ -324,6 +336,7 @@ async fn run_import<R: Runtime>(
     title: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<ImportResult> {
     let source = PathBuf::from(&source_path);
 
@@ -333,14 +346,17 @@ async fn run_import<R: Runtime>(
     }
 
     info!(
-        "Starting import for '{}' from {} with language {:?}, model {:?}",
-        title, source_path, language, model
+        "Starting import for '{}' from {} with language {:?}, model {:?}, provider {:?}",
+        title, source_path, language, model, provider
     );
 
     // Start each import with a fresh auto-detected language lock so a lock from a
     // previous session (recording/import) never leaks into an `auto` import.
     crate::whisper_engine::reset_session_detected_language();
     let _prompt_guard = crate::vocabulary::scoped_meeting_prompt_terms(vec![title.clone()]);
+
+    // Determine which provider to use (default to whisper)
+    let use_parakeet = provider.as_deref() == Some("parakeet");
 
     emit_progress(&app, "copying", 5, "Creating meeting folder...");
 
@@ -535,8 +551,14 @@ async fn run_import<R: Runtime>(
 
     emit_progress(&app, "transcribing", 30, "Loading transcription engine...");
 
-    let whisper_engine = if total_segments > 0 {
+    // Initialize the appropriate engine
+    let whisper_engine = if !use_parakeet && total_segments > 0 {
         Some(get_or_init_whisper(&app, model.as_deref()).await?)
+    } else {
+        None
+    };
+    let parakeet_engine = if use_parakeet && total_segments > 0 {
+        Some(get_or_init_parakeet(&app, model.as_deref()).await?)
     } else {
         None
     };
@@ -611,13 +633,26 @@ async fn run_import<R: Runtime>(
         }
 
         // Transcribe
-        let deciding_before =
-            auto_language && crate::whisper_engine::lang_lock::current_stable().is_none();
-        let engine = whisper_engine.as_ref().unwrap();
-        let (text, conf, _) = engine
-            .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
-            .await
-            .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+        // The auto-language lock (and its post-lock repair) is whisper-only;
+        // Parakeet v3 has no language forcing, so its path never votes.
+        let deciding_before = !use_parakeet
+            && auto_language
+            && crate::whisper_engine::lang_lock::current_stable().is_none();
+        let (text, conf) = if use_parakeet {
+            let engine = parakeet_engine.as_ref().unwrap();
+            let text = engine
+                .transcribe_audio(segment.samples.clone())
+                .await
+                .map_err(|e| anyhow!("Parakeet transcription failed on segment {}: {}", i, e))?;
+            (text, 0.9f32)
+        } else {
+            let engine = whisper_engine.as_ref().unwrap();
+            let (text, conf, _) = engine
+                .transcribe_audio_with_confidence(segment.samples.clone(), language.clone())
+                .await
+                .map_err(|e| anyhow!("Whisper transcription failed on segment {}: {}", i, e))?;
+            (text, conf)
+        };
 
         let trimmed = text.trim();
         if !trimmed.is_empty() {
@@ -833,13 +868,25 @@ async fn get_or_init_whisper<R: Runtime>(
 ) -> Result<Arc<WhisperEngine>> {
     let target_model = match requested_model {
         Some(model) => model.to_string(),
-        None => get_configured_model(app).await?,
+        None => get_configured_model(app, "whisper").await?,
     };
     super::common::ensure_whisper_model(&target_model).await
 }
 
+/// Get or initialize the Parakeet engine
+async fn get_or_init_parakeet<R: Runtime>(
+    app: &AppHandle<R>,
+    requested_model: Option<&str>,
+) -> Result<Arc<ParakeetEngine>> {
+    let target_model = match requested_model {
+        Some(model) => model.to_string(),
+        None => get_configured_model(app, "parakeet").await?,
+    };
+    super::common::ensure_parakeet_model(&target_model).await
+}
+
 /// Get the configured model from database
-async fn get_configured_model<R: Runtime>(app: &AppHandle<R>) -> Result<String> {
+async fn get_configured_model<R: Runtime>(app: &AppHandle<R>, provider_type: &str) -> Result<String> {
     let app_state = app
         .try_state::<AppState>()
         .ok_or_else(|| anyhow!("App state not available"))?;
@@ -852,21 +899,29 @@ async fn get_configured_model<R: Runtime>(app: &AppHandle<R>) -> Result<String> 
 
     match result {
         Some((provider, model)) => {
-            if provider == "localWhisper" || provider == "whisper" {
+            if (provider_type == "whisper" && (provider == "localWhisper" || provider == "whisper"))
+                || (provider_type == "parakeet" && provider == "parakeet")
+            {
                 Ok(model)
             } else {
-                Ok(
+                // Return default model for the requested type. The whisper
+                // default stays hardware-aware (recommended_whisper_model).
+                Ok(if provider_type == "parakeet" {
+                    DEFAULT_PARAKEET_MODEL.to_string()
+                } else {
                     crate::config::recommended_whisper_model(
                         crate::audio::HardwareProfile::detect(),
                     )
-                    .to_string(),
-                )
+                    .to_string()
+                })
             }
         }
-        None => Ok(crate::config::recommended_whisper_model(
-            crate::audio::HardwareProfile::detect(),
-        )
-        .to_string()),
+        None => Ok(if provider_type == "parakeet" {
+            DEFAULT_PARAKEET_MODEL.to_string()
+        } else {
+            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
+                .to_string()
+        }),
     }
 }
 
@@ -968,6 +1023,7 @@ pub async fn start_import_audio_command<R: Runtime>(
     title: String,
     language: Option<String>,
     model: Option<String>,
+    provider: Option<String>,
 ) -> Result<ImportStarted, String> {
     // Check if import is already in progress (guard will be acquired in start_import)
     if IMPORT_IN_PROGRESS.load(Ordering::SeqCst) {
@@ -976,7 +1032,7 @@ pub async fn start_import_audio_command<R: Runtime>(
 
     // Spawn import in background
     tauri::async_runtime::spawn(async move {
-        let result = start_import(app, source_path, title, language, model).await;
+        let result = start_import(app, source_path, title, language, model, provider).await;
 
         if let Err(e) = result {
             error!("Import failed: {}", e);

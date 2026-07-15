@@ -14,7 +14,7 @@ use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-// Shared with the frontend; defined once in
+// Shared with the Parakeet engine and the frontend; defined once in
 // `crate::transcription_models` and re-exported here for the existing
 // `whisper_engine::ModelStatus` path.
 pub use crate::transcription_models::ModelStatus;

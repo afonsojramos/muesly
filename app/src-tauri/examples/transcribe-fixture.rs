@@ -6,7 +6,8 @@
 //! stdout output (logs go to stderr) so a caller can capture it directly.
 //!
 //! Usage: cargo run -p muesly --example transcribe-fixture --
-//!        [--language en] [--vad] [--segments] [--dump-segments <dir>]
+//!        [--provider whisper|parakeet] [--language en] [--vad]
+//!        [--segments] [--dump-segments <dir>]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
 //!
 //! `--segments` (implies `--vad`) prints one line per VAD segment instead of a
@@ -23,6 +24,7 @@ use std::path::PathBuf;
 
 use app_lib::audio::decoder::decode_audio_file;
 use app_lib::audio::vad::get_speech_chunks;
+use app_lib::parakeet_engine::engine::ParakeetEngine;
 use app_lib::transcription_models::ModelStatus;
 use app_lib::vocabulary::set_meeting_prompt_terms;
 use app_lib::whisper_engine::engine::WhisperEngine;
@@ -37,6 +39,7 @@ async fn main() {
     // Surface engine logs (e.g. lang-lock decisions) on stderr under RUST_LOG.
     let _ = env_logger::try_init();
     let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    let mut provider = "whisper".to_string();
     let mut language = None;
     let mut use_vad = false;
     let mut per_segment = false;
@@ -46,6 +49,13 @@ async fn main() {
     let mut index = 0;
     while index < raw_args.len() {
         match raw_args[index].as_str() {
+            "--provider" => {
+                index += 1;
+                provider = raw_args
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| fail("--provider requires whisper or parakeet".to_string()));
+            }
             "--language" => {
                 index += 1;
                 language =
@@ -76,16 +86,24 @@ async fn main() {
         }
         index += 1;
     }
+    if provider != "whisper" && provider != "parakeet" {
+        fail(format!(
+            "unknown provider '{provider}'; expected whisper or parakeet"
+        ));
+    }
     let Some(audio_path) = positional.first().map(PathBuf::from) else {
         fail(
-            "usage: transcribe-fixture [--language en] [--vad] [--prompt terms] <audio> [model] [models_dir]"
+            "usage: transcribe-fixture [--provider whisper|parakeet] [--language en] [--vad] [--prompt terms] <audio> [model] [models_dir]"
                 .to_string(),
         );
     };
-    let model_name = positional
-        .get(1)
-        .cloned()
-        .unwrap_or_else(|| "tiny".to_string());
+    let model_name = positional.get(1).cloned().unwrap_or_else(|| {
+        if provider == "parakeet" {
+            "parakeet-tdt-0.6b-v3-int8".to_string()
+        } else {
+            "tiny".to_string()
+        }
+    });
     let models_dir = positional.get(2).map(PathBuf::from);
 
     if !audio_path.exists() {
@@ -102,8 +120,7 @@ async fn main() {
     );
 
     let samples = decoded.to_whisper_format();
-
-    // Dump-only mode: write the VAD segmentation and exit without touching the
+    // Dump-only mode: write the VAD segmentation and exit without touching any
     // ASR engine, so external engines can be evaluated on identical segments.
     if let Some(dir) = dump_dir {
         let segments =
@@ -127,90 +144,150 @@ async fn main() {
         return;
     }
 
-    let engine = WhisperEngine::new_with_models_dir(models_dir)
-        .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
-    let models = engine
-        .discover_models()
-        .await
-        .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
-    let needs_download = models
-        .iter()
-        .find(|model| model.name == model_name)
-        .map(|model| !matches!(model.status, ModelStatus::Available))
-        .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-    if needs_download {
-        download_whisper_model(&engine, &model_name).await;
-    }
-    engine
-        .load_model(&model_name)
-        .await
-        .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
-    if let Some(prompt) = prompt {
-        set_meeting_prompt_terms(
-            prompt
-                .split(',')
-                .map(str::trim)
-                .filter(|term| !term.is_empty())
-                .map(str::to_string)
-                .collect(),
-        );
-    }
-    // A stale lock from a previous run can never exist in a fresh process, but
-    // mirror the app's session boundaries anyway (recording start does this).
-    app_lib::whisper_engine::reset_session_detected_language();
-    let text = if use_vad {
-        let segments =
-            get_speech_chunks(&samples, 2000).unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
-        eprintln!("VAD detected {} speech segments", segments.len());
-        let mut transcripts = Vec::with_capacity(segments.len());
-        for (index, segment) in segments.into_iter().enumerate() {
-            if segment.samples.len() < 1600 {
-                continue;
-            }
-            eprintln!("transcribing VAD segment {}", index + 1);
-            let start = segment.start_timestamp_ms / 1000.0;
-            let (text, confidence, _) = engine
-                .transcribe_audio_with_confidence(segment.samples, language.clone())
-                .await
-                .unwrap_or_else(|e| {
-                    fail(format!(
-                        "transcription failed on segment {}: {e}",
-                        index + 1
-                    ))
-                });
-            let drop_reason = app_lib::audio::transcription::segment_filter::should_drop_segment(
-                &text,
-                Some(confidence),
-            );
-            if per_segment {
-                let status = match &drop_reason {
-                    Some(reason) => format!("DROPPED({reason:?})"),
-                    None => "kept".to_string(),
-                };
-                println!(
-                    "{}\t{:.1}s\t{:.2}\t{}\t{}",
-                    index + 1,
-                    start,
-                    confidence,
-                    status,
-                    text.trim()
-                );
-            }
-            if let Some(reason) = drop_reason {
-                eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
-            } else if !text.trim().is_empty() {
-                transcripts.push(text.trim().to_string());
-            }
-        }
-        if per_segment {
-            return;
-        }
-        transcripts.join(" ")
-    } else {
-        engine
-            .transcribe_audio(samples, language)
+    let text = if provider == "parakeet" {
+        let engine = ParakeetEngine::new_with_models_dir(models_dir)
+            .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
+        let models = engine
+            .discover_models()
             .await
-            .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+            .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
+        let needs_download = models
+            .iter()
+            .find(|model| model.name == model_name)
+            .map(|model| !matches!(model.status, ModelStatus::Available))
+            .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
+        if needs_download {
+            download_parakeet_model(&engine, &model_name).await;
+        }
+        engine
+            .load_model(&model_name)
+            .await
+            .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
+        if use_vad {
+            let segments = get_speech_chunks(&samples, 2000)
+                .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
+            eprintln!("VAD detected {} speech segments", segments.len());
+            let mut transcripts = Vec::with_capacity(segments.len());
+            for (index, segment) in segments.into_iter().enumerate() {
+                if segment.samples.len() < 1600 {
+                    continue;
+                }
+                eprintln!("transcribing VAD segment {}", index + 1);
+                let start = segment.start_timestamp_ms / 1000.0;
+                let text = engine.transcribe_audio(segment.samples).await.unwrap_or_else(|e| {
+                    fail(format!("transcription failed on segment {}: {e}", index + 1))
+                });
+                // Parakeet exposes no confidence; mirror the app's live gates,
+                // which pass its results through the filter unconfidenced.
+                let drop_reason =
+                    app_lib::audio::transcription::segment_filter::should_drop_segment(&text, None);
+                if per_segment {
+                    let status = match &drop_reason {
+                        Some(reason) => format!("DROPPED({reason:?})"),
+                        None => "kept".to_string(),
+                    };
+                    println!("{}\t{:.1}s\t-\t{}\t{}", index + 1, start, status, text.trim());
+                }
+                if let Some(reason) = drop_reason {
+                    eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
+                } else if !text.trim().is_empty() {
+                    transcripts.push(text.trim().to_string());
+                }
+            }
+            if per_segment {
+                return;
+            }
+            transcripts.join(" ")
+        } else {
+            engine
+                .transcribe_audio(samples)
+                .await
+                .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+        }
+    } else {
+        let engine = WhisperEngine::new_with_models_dir(models_dir)
+            .unwrap_or_else(|e| fail(format!("engine init failed: {e}")));
+        let models = engine
+            .discover_models()
+            .await
+            .unwrap_or_else(|e| fail(format!("model discovery failed: {e}")));
+        let needs_download = models
+            .iter()
+            .find(|model| model.name == model_name)
+            .map(|model| !matches!(model.status, ModelStatus::Available))
+            .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
+        if needs_download {
+            download_whisper_model(&engine, &model_name).await;
+        }
+        engine
+            .load_model(&model_name)
+            .await
+            .unwrap_or_else(|e| fail(format!("model load failed: {e}")));
+        if let Some(prompt) = prompt {
+            set_meeting_prompt_terms(
+                prompt
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|term| !term.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            );
+        }
+        // A stale lock from a previous run can never exist in a fresh process,
+        // but mirror the app's session boundaries anyway.
+        app_lib::whisper_engine::reset_session_detected_language();
+        if use_vad {
+            let segments = get_speech_chunks(&samples, 2000)
+                .unwrap_or_else(|e| fail(format!("VAD failed: {e}")));
+            eprintln!("VAD detected {} speech segments", segments.len());
+            let mut transcripts = Vec::with_capacity(segments.len());
+            for (index, segment) in segments.into_iter().enumerate() {
+                if segment.samples.len() < 1600 {
+                    continue;
+                }
+                eprintln!("transcribing VAD segment {}", index + 1);
+                let start = segment.start_timestamp_ms / 1000.0;
+                let (text, confidence, _) = engine
+                    .transcribe_audio_with_confidence(segment.samples, language.clone())
+                    .await
+                    .unwrap_or_else(|e| {
+                        fail(format!("transcription failed on segment {}: {e}", index + 1))
+                    });
+                let drop_reason =
+                    app_lib::audio::transcription::segment_filter::should_drop_segment(
+                        &text,
+                        Some(confidence),
+                    );
+                if per_segment {
+                    let status = match &drop_reason {
+                        Some(reason) => format!("DROPPED({reason:?})"),
+                        None => "kept".to_string(),
+                    };
+                    println!(
+                        "{}\t{:.1}s\t{:.2}\t{}\t{}",
+                        index + 1,
+                        start,
+                        confidence,
+                        status,
+                        text.trim()
+                    );
+                }
+                if let Some(reason) = drop_reason {
+                    eprintln!("dropped VAD segment {} ({reason:?})", index + 1);
+                } else if !text.trim().is_empty() {
+                    transcripts.push(text.trim().to_string());
+                }
+            }
+            if per_segment {
+                return;
+            }
+            transcripts.join(" ")
+        } else {
+            engine
+                .transcribe_audio(samples, language)
+                .await
+                .unwrap_or_else(|e| fail(format!("transcription failed: {e}")))
+        }
     };
     println!("{}", text.trim());
 }
@@ -248,6 +325,20 @@ fn progress_callback() -> Box<dyn Fn(u8) + Send> {
 }
 
 async fn download_whisper_model(engine: &WhisperEngine, model_name: &str) {
+    eprintln!("downloading model '{model_name}' (first run)...");
+    if let Err(error) = engine
+        .download_model(model_name, Some(progress_callback()))
+        .await
+    {
+        fail(format!("model download failed: {error}"));
+    }
+    eprintln!();
+    if let Err(error) = engine.discover_models().await {
+        fail(format!("model rediscovery failed: {error}"));
+    }
+}
+
+async fn download_parakeet_model(engine: &ParakeetEngine, model_name: &str) {
     eprintln!("downloading model '{model_name}' (first run)...");
     if let Err(error) = engine
         .download_model(model_name, Some(progress_callback()))

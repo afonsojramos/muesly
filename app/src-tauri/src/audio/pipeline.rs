@@ -1070,7 +1070,7 @@ impl AudioPipeline {
         for segment in segments {
             let duration_ms = segment.end_timestamp_ms - segment.start_timestamp_ms;
 
-            // Minimum 50ms at 16kHz.
+            // Minimum 50ms at 16kHz - matches Parakeet capability
             if segment.samples.len() >= 800 {
                 info!(
                     "📤 Sending VAD segment ({:?}): {:.1}ms, {} samples",

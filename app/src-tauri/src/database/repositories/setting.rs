@@ -567,7 +567,8 @@ impl SettingsRepository {
         store: &dyn SecretStore,
     ) -> std::result::Result<(), String> {
         let api_key_column = match provider {
-            "localWhisper" => return Ok(()),
+            "localWhisper" => "whisperApiKey",
+            "parakeet" => return Ok(()), // Parakeet doesn't need an API key, return early
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
             "groq" => "groqApiKey",
@@ -582,12 +583,12 @@ impl SettingsRepository {
         let query = format!(
             r#"
             INSERT INTO transcript_settings (id, provider, model, "{}")
-            VALUES ('1', 'localWhisper', '{}', NULL)
+            VALUES ('1', 'parakeet', '{}', NULL)
             ON CONFLICT(id) DO UPDATE SET
                 "{}" = NULL
             "#,
             api_key_column,
-            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()),
+            crate::config::DEFAULT_PARAKEET_MODEL,
             api_key_column
         );
         sqlx::query(AssertSqlSafe(query))
@@ -607,7 +608,8 @@ impl SettingsRepository {
         store: &dyn SecretStore,
     ) -> std::result::Result<Option<String>, String> {
         let api_key_column = match provider {
-            "localWhisper" => return Ok(None),
+            "localWhisper" => "whisperApiKey",
+            "parakeet" => return Ok(None), // Parakeet doesn't need an API key
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
             "groq" => "groqApiKey",

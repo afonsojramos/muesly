@@ -6,4 +6,4 @@ node = "24"
 # every project, CI included (via jdx/mise-action). It reads and writes the
 # pnpm-lock.yaml files directly, so pnpm itself is no longer provisioned. Pinned via
 # its npm distribution so it travels with the repo, no separate brew/curl install.
-"npm:@nubjs/nub" = "0.4.11"
+"npm:@nubjs/nub" = "0.4.13"
