@@ -64,6 +64,7 @@ MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
 The command balances collection toward the least-covered language/noise cells, generates
 opaque `session-*`, `consent-*`, and sample IDs, and creates a private gitignored bundle under
 `intake/` plus a consent record in the explicitly selected external encrypted records directory.
+Concurrent preparation calls serialize before reserving a cell.
 It refuses to put consent records inside the Git repository. It does not create audio, assert
 consent, or count the session toward coverage. Use `--language <code> --noise-condition <slug>`
 to select a specific still-underfilled cell. The equivalent

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -97,6 +99,59 @@ test('balances repeated preparation across pending session bundles', () => {
 	]);
 	assert.equal(`${cells[0].language}/${cells[0].noiseCondition}`, 'en/office');
 	assert.equal(cells.at(-1).prepared, 1);
+});
+
+test('serializes preparation before reserving the next collection cell', async () => {
+	const current = fixture();
+	const intakeRoot = path.join(current.directory, 'intake');
+	const lockPath = path.join(intakeRoot, '.prepare.lock');
+	const pendingSessionDirectory = path.join(intakeRoot, 'session-concurrent');
+	fs.mkdirSync(intakeRoot, { mode: 0o700 });
+	const child = spawn(
+		process.execPath,
+		[
+			'-e',
+			`
+const fs = require('node:fs');
+const path = require('node:path');
+const [lockPath, pendingSessionDirectory] = process.argv.slice(1);
+fs.mkdirSync(lockPath, { mode: 0o700 });
+fs.writeFileSync(
+  path.join(lockPath, 'owner.json'),
+  JSON.stringify({ schema_version: 1, pid: process.pid, token: '00000000-0000-4000-8000-000000000010' }),
+  { mode: 0o600 },
+);
+fs.mkdirSync(pendingSessionDirectory, { mode: 0o700 });
+fs.writeFileSync(
+  path.join(pendingSessionDirectory, 'collection-session.json'),
+  JSON.stringify({
+    schemaVersion: 1,
+    sessionId: 'session-concurrent',
+    language: 'en',
+    noiseCondition: 'clean',
+  }),
+  { mode: 0o600 },
+);
+process.stdout.write('locked\\n');
+setTimeout(() => fs.rmSync(lockPath, { recursive: true, force: true }), 150);
+`,
+			lockPath,
+			pendingSessionDirectory,
+		],
+		{ stdio: ['ignore', 'pipe', 'pipe'] },
+	);
+	await once(child.stdout, 'data');
+
+	const session = prepareCollectionSession(
+		prepareOptions(current, {
+			idFactory: () => '00000000-0000-4000-8000-000000000011',
+			lockTimeoutMs: 2_000,
+		}),
+	);
+	assert.equal(`${session.language}/${session.noiseCondition}`, 'en/office');
+	const [exitCode] = await once(child, 'exit');
+	assert.equal(exitCode, 0);
+	assert(!fs.existsSync(lockPath));
 });
 
 test('creates a private, consent-neutral collection bundle for the next cell', () => {
@@ -231,7 +286,7 @@ test('refuses collection roots that are symbolic links', () => {
 	fs.symlinkSync(outside, path.join(directory, 'intake'));
 	assert.throws(
 		() => prepareCollectionSession(prepareOptions(current)),
-		/intake directory must be a regular directory/,
+		/intake directory cannot be a symbolic link/,
 	);
 });
 

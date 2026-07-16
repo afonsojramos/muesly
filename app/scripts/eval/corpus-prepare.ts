@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateCoverageTargets } from './coverage.ts';
 import { canonicalFilePath, canonicalManifestPath, loadCorpus } from './corpus.ts';
 import { TARGET_LANGUAGES, TARGET_NOISE_CONDITIONS } from './corpus-intake.ts';
+import { processIdentity, processOwnsState } from './process-identity.ts';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryIntakeRoot = path.join(repositoryRoot, 'app/scripts/eval');
@@ -68,7 +69,7 @@ function pendingCollectionSessions(intakeRoot) {
 	return sessions;
 }
 
-export function planCollectionCells(corpus, targets, pendingSessions = []) {
+function validatePreparationTargets(targets) {
 	const targetErrors = validateCoverageTargets(targets);
 	for (const language of targets.languages ?? []) {
 		if (!TARGET_LANGUAGES.has(language)) {
@@ -85,6 +86,10 @@ export function planCollectionCells(corpus, targets, pendingSessions = []) {
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
+}
+
+export function planCollectionCells(corpus, targets, pendingSessions = []) {
+	validatePreparationTargets(targets);
 	const sessionsByCell = collectionSessions(corpus.samples);
 	const pendingByCell = new Map();
 	for (const session of pendingSessions) {
@@ -128,6 +133,108 @@ function assertPrivateDirectory(directory, label) {
 	if (entry && !entry.isDirectory()) throw new Error(`${label} must be a directory: ${directory}`);
 	fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
 	fs.chmodSync(directory, 0o700);
+}
+
+function readPreparationLockOwner(lockPath) {
+	const lockEntry = fs.lstatSync(lockPath);
+	if (!lockEntry.isDirectory() || lockEntry.isSymbolicLink()) {
+		throw new Error(`collection preparation lock must be a regular directory: ${lockPath}`);
+	}
+	const ownerPath = path.join(lockPath, 'owner.json');
+	const ownerEntry = fs.lstatSync(ownerPath);
+	if (!ownerEntry.isFile() || ownerEntry.isSymbolicLink()) {
+		throw new Error(`collection preparation lock owner must be a regular file: ${ownerPath}`);
+	}
+	const owner = JSON.parse(fs.readFileSync(ownerPath, 'utf8'));
+	if (
+		!Number.isInteger(owner.pid) ||
+		owner.pid < 1 ||
+		typeof owner.token !== 'string' ||
+		!/^[0-9a-f-]{36}$/.test(owner.token)
+	) {
+		throw new Error(`collection preparation lock owner is invalid: ${ownerPath}`);
+	}
+	return owner;
+}
+
+function waitForPreparationLock(milliseconds) {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
+
+function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
+	const lockPath = path.join(intakeRoot, '.prepare.lock');
+	const token = randomUUID();
+	const pendingPath = `${lockPath}.pending-${token}`;
+	const identity = processIdentity(process.pid);
+	fs.mkdirSync(pendingPath, { mode: 0o700 });
+	try {
+		writePrivateFile(
+			path.join(pendingPath, 'owner.json'),
+			`${JSON.stringify({
+				schema_version: 1,
+				pid: process.pid,
+				...(identity ? { process_identity: identity } : {}),
+				token,
+				created_at: new Date().toISOString(),
+			})}\n`,
+		);
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			try {
+				fs.renameSync(pendingPath, lockPath);
+				return { lockPath, token };
+			} catch (error) {
+				if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
+			}
+
+			let owner;
+			try {
+				owner = readPreparationLockOwner(lockPath);
+			} catch (error) {
+				if (!fs.existsSync(lockPath)) continue;
+				throw new Error(
+					`another collection preparation is active or left an unreadable lock: ${lockPath}; ${error.message}`,
+				);
+			}
+			if (processOwnsState(owner)) {
+				if (Date.now() >= deadline) {
+					throw new Error(`timed out waiting for another collection preparation: ${lockPath}`);
+				}
+				waitForPreparationLock(Math.min(25, Math.max(1, deadline - Date.now())));
+				continue;
+			}
+			const stalePath = `${lockPath}.stale-${owner.token}`;
+			try {
+				fs.renameSync(lockPath, stalePath);
+				fs.rmSync(stalePath, { recursive: true, force: true });
+			} catch (error) {
+				if (['ENOENT', 'EEXIST', 'ENOTEMPTY', 'ENOTDIR'].includes(error.code)) continue;
+				throw error;
+			}
+		}
+	} catch (error) {
+		fs.rmSync(pendingPath, { recursive: true, force: true });
+		throw error;
+	}
+}
+
+function releasePreparationLock(lockPath, token) {
+	try {
+		const owner = readPreparationLockOwner(lockPath);
+		if (owner.pid !== process.pid || owner.token !== token) return;
+	} catch {
+		return;
+	}
+	fs.rmSync(lockPath, { recursive: true, force: true });
+}
+
+function withPreparationLock(intakeRoot, timeoutMs, callback) {
+	const { lockPath, token } = acquirePreparationLock(intakeRoot, timeoutMs);
+	try {
+		return callback();
+	} finally {
+		releasePreparationLock(lockPath, token);
+	}
 }
 
 function isWithinOrEqual(directory, candidate) {
@@ -235,6 +342,7 @@ export function prepareCollectionSession(options) {
 	if (corpus.distribution !== 'local') {
 		throw new Error('collection preparation requires a local corpus manifest');
 	}
+	validatePreparationTargets(targets);
 	const root = path.dirname(manifestPath);
 	const intakeRoot = path.join(root, 'intake');
 	const consentRoot = canonicalFilePath(options.consentRecordsDir, { allowMissing: true });
@@ -258,65 +366,69 @@ export function prepareCollectionSession(options) {
 	if (isWithinOrEqual(protectedRepositoryRoot, consentRoot)) {
 		throw new Error('consent records directory must be outside the Git repository');
 	}
-	const cells = planCollectionCells(corpus, targets, pendingCollectionSessions(intakeRoot));
 	assertPrivateDirectory(intakeRoot, 'intake directory');
 	assertPrivateDirectory(consentRoot, 'consent records directory');
-	if (cells.length === 0) {
-		throw new Error('all required session observations are collected or already prepared');
-	}
-	const cell = chooseCell(cells, options);
-	const id = (options.idFactory ?? randomUUID)();
-	if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('session ID generator returned an invalid UUID');
-	const sessionId = `session-${id}`;
-	const consentRecordId = `consent-${id}`;
-	const sampleId = `${cell.language}-${cell.noiseCondition}-${id}`;
-	const sessionDirectory = path.join(intakeRoot, sessionId);
-	const consentRecordPath = path.join(consentRoot, `${consentRecordId}.md`);
-	if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })) {
-		throw new Error(`collection session already exists: ${sessionDirectory}`);
-	}
-	if (fs.lstatSync(consentRecordPath, { throwIfNoEntry: false })) {
-		throw new Error(`consent record already exists: ${consentRecordPath}`);
-	}
-	fs.mkdirSync(sessionDirectory, { mode: 0o700 });
-	const referencePath = path.join(sessionDirectory, 'reference.txt');
-	const audioPath = path.join(sessionDirectory, 'recording.wav');
-	const metadataPath = path.join(sessionDirectory, 'collection-session.json');
-	const readmePath = path.join(sessionDirectory, 'README.md');
-	const session = {
-		schemaVersion: 1,
-		sessionId,
-		consentRecordId,
-		sampleId,
-		language: cell.language,
-		noiseCondition: cell.noiseCondition,
-		manifestPath,
-		audioPath,
-		referencePath,
-		consentRecordPath,
-		collectedSessionsInCell: cell.collected,
-		preparedSessionsInCell: cell.prepared,
-		requiredSessionsInCell: cell.required,
-		remainingUnpreparedObservations:
-			cells.reduce((total, candidate) => total + candidate.missing, 0) - 1,
-	};
-	let createdConsentRecord = false;
-	try {
-		const templatePath =
-			options.templatePath ??
-			fileURLToPath(new URL('./consent-record.example.md', import.meta.url));
-		const template = fs.readFileSync(templatePath, 'utf8');
-		writePrivateFile(consentRecordPath, renderConsentRecord(template, session));
-		createdConsentRecord = true;
-		writePrivateFile(referencePath, '');
-		writePrivateFile(metadataPath, `${JSON.stringify(session, null, 2)}\n`);
-		writePrivateFile(readmePath, renderSessionReadme(session));
-		return session;
-	} catch (error) {
-		fs.rmSync(sessionDirectory, { recursive: true, force: true });
-		if (createdConsentRecord) fs.rmSync(consentRecordPath, { force: true });
-		throw error;
-	}
+	return withPreparationLock(intakeRoot, options.lockTimeoutMs, () => {
+		const cells = planCollectionCells(corpus, targets, pendingCollectionSessions(intakeRoot));
+		if (cells.length === 0) {
+			throw new Error('all required session observations are collected or already prepared');
+		}
+		const cell = chooseCell(cells, options);
+		const id = (options.idFactory ?? randomUUID)();
+		if (!/^[0-9a-f-]{36}$/.test(id)) {
+			throw new Error('session ID generator returned an invalid UUID');
+		}
+		const sessionId = `session-${id}`;
+		const consentRecordId = `consent-${id}`;
+		const sampleId = `${cell.language}-${cell.noiseCondition}-${id}`;
+		const sessionDirectory = path.join(intakeRoot, sessionId);
+		const consentRecordPath = path.join(consentRoot, `${consentRecordId}.md`);
+		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })) {
+			throw new Error(`collection session already exists: ${sessionDirectory}`);
+		}
+		if (fs.lstatSync(consentRecordPath, { throwIfNoEntry: false })) {
+			throw new Error(`consent record already exists: ${consentRecordPath}`);
+		}
+		fs.mkdirSync(sessionDirectory, { mode: 0o700 });
+		const referencePath = path.join(sessionDirectory, 'reference.txt');
+		const audioPath = path.join(sessionDirectory, 'recording.wav');
+		const metadataPath = path.join(sessionDirectory, 'collection-session.json');
+		const readmePath = path.join(sessionDirectory, 'README.md');
+		const session = {
+			schemaVersion: 1,
+			sessionId,
+			consentRecordId,
+			sampleId,
+			language: cell.language,
+			noiseCondition: cell.noiseCondition,
+			manifestPath,
+			audioPath,
+			referencePath,
+			consentRecordPath,
+			collectedSessionsInCell: cell.collected,
+			preparedSessionsInCell: cell.prepared,
+			requiredSessionsInCell: cell.required,
+			remainingUnpreparedObservations:
+				cells.reduce((total, candidate) => total + candidate.missing, 0) - 1,
+		};
+		let createdConsentRecord = false;
+		try {
+			const templatePath =
+				options.templatePath ??
+				fileURLToPath(new URL('./consent-record.example.md', import.meta.url));
+			const template = fs.readFileSync(templatePath, 'utf8');
+			writePrivateFile(consentRecordPath, renderConsentRecord(template, session));
+			createdConsentRecord = true;
+			writePrivateFile(referencePath, '');
+			writePrivateFile(metadataPath, `${JSON.stringify(session, null, 2)}\n`);
+			writePrivateFile(readmePath, renderSessionReadme(session));
+			return session;
+		} catch (error) {
+			fs.rmSync(sessionDirectory, { recursive: true, force: true });
+			if (createdConsentRecord) fs.rmSync(consentRecordPath, { force: true });
+			throw error;
+		}
+	});
 }
 
 function requiredValue(args, index, option) {
