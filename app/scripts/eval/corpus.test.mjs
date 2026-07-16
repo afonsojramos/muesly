@@ -59,6 +59,21 @@ test('accepts an explicitly consented meeting sample', () => {
 	);
 });
 
+test('allows an empty local corpus but not an empty repository corpus', () => {
+	const local = {
+		schema_version: 2,
+		corpus_id: 'consented-meetings-v1',
+		description: 'Local-only participant-consented multilingual meeting corpus.',
+		distribution: 'local',
+		samples: [],
+	};
+	assert.deepEqual(validateCorpusDocument(local, { checkFiles: false }), []);
+	assert.deepEqual(
+		validateCorpusDocument({ ...local, distribution: 'repository' }, { checkFiles: false }),
+		['samples must be non-empty for a repository corpus'],
+	);
+});
+
 test('rejects meeting samples without a WER reference', () => {
 	const { directory, document } = fixture();
 	fs.writeFileSync(path.join(directory, 'reference.txt'), '   \n');

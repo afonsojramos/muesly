@@ -40,7 +40,9 @@ by counsel.
 
 ## Local intake
 
-1. Copy `corpus-local.example.json` to the gitignored `corpus-local.json`.
+1. Copy `corpus-local.example.json` to the gitignored `corpus-local.json`. The empty local
+   manifest is valid, so it can be initialized before intake and remain valid if every session
+   is later withdrawn.
 2. Store audio and references under the gitignored `local-corpus/session-.../` directory.
    Use one opaque session ID for every clip from the same meeting; coverage counts distinct
    sessions, not files.

@@ -200,9 +200,12 @@ export function validateCorpusDocument(document, options = {}) {
 	if (!['repository', 'local'].includes(document.distribution)) {
 		errors.push('distribution must be repository or local');
 	}
-	if (!Array.isArray(document.samples) || document.samples.length === 0) {
-		errors.push('samples must be a non-empty array');
+	if (!Array.isArray(document.samples)) {
+		errors.push('samples must be an array');
 		return errors;
+	}
+	if (document.samples.length === 0 && document.distribution !== 'local') {
+		errors.push('samples must be non-empty for a repository corpus');
 	}
 
 	const ids = new Set();

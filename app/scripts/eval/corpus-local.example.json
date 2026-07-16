@@ -3,26 +3,5 @@
 	"corpus_id": "consented-meetings-v1",
 	"description": "Local-only participant-consented multilingual meeting corpus.",
 	"distribution": "local",
-	"samples": [
-		{
-			"id": "es-office-001",
-			"session_id": "session-replace-with-opaque-id",
-			"audio_path": "local-corpus/session-replace-with-opaque-id/clip.wav",
-			"audio_sha256": "replace-with-lowercase-sha256",
-			"reference_path": "local-corpus/session-replace-with-opaque-id/reference.txt",
-			"reference_sha256": "replace-with-lowercase-sha256",
-			"language": "es",
-			"scenario": "meeting",
-			"noise_condition": "office",
-			"speakers": 0,
-			"duration_seconds": 0,
-			"provenance": {
-				"basis": "participant-consent",
-				"consent_record_id": "consent-replace-with-opaque-id",
-				"consent_date": "replace-with-yyyy-mm-dd",
-				"consented_uses": ["asr-benchmarking"],
-				"redistribution": "local-only"
-			}
-		}
-	]
+	"samples": []
 }
