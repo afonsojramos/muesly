@@ -98,7 +98,7 @@
 			modelName: PARAKEET_MODEL,
 			title: 'Fastest',
 			icon: Zap,
-			tagline: 'Near-instant multilingual transcription (Parakeet)',
+			tagline: 'Near-instant captions, less accurate than Whisper',
 			recommended: false,
 		},
 	]);
@@ -156,7 +156,8 @@
 					accuracy: 'Good' as const,
 					speed: 'Very Fast' as const,
 					status: m.status,
-					description: 'Parakeet v3: near-instant multilingual transcription on CPU',
+					description:
+						'Parakeet v3: near-instant on CPU, less accurate than Whisper. Best paired with the post-meeting quality pass.',
 				})),
 			);
 		} catch (err) {

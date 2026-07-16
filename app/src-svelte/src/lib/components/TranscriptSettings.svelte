@@ -3,6 +3,7 @@
 	import { Plus, X } from '@lucide/svelte';
 
 	import type { TranscriptModelProps } from '$lib/services/config';
+	import * as Alert from '$lib/components/ui/alert';
 	import * as Card from '$lib/components/ui/card';
 	import * as Accordion from '$lib/components/ui/accordion';
 	import * as Field from '$lib/components/ui/field';
@@ -84,6 +85,32 @@
 				onModelSelect={handleWhisperSelect}
 				autoSave={true}
 			/>
+			{#if transcriptModelConfig.provider === 'parakeet'}
+				<Alert.Root class="mt-4">
+					<Alert.Title>Fastest profile trade-offs</Alert.Title>
+					<Alert.Description>
+						<p>
+							Parakeet transcribes near-instantly but less accurately than Whisper, and it ignores
+							the transcription language setting and your custom dictionary.
+						</p>
+						{#if qualityPassEnabled}
+							<p>
+								The post-meeting quality pass is on, so finished meetings are re-transcribed with
+								Whisper automatically.
+							</p>
+						{:else}
+							<div class="flex flex-wrap items-center gap-2">
+								<span>
+									Enable the post-meeting quality pass so finished meetings keep Whisper accuracy.
+								</span>
+								<Button size="xs" variant="outline" onclick={() => void toggleQualityPass(true)}>
+									Enable quality pass
+								</Button>
+							</div>
+						{/if}
+					</Alert.Description>
+				</Alert.Root>
+			{/if}
 		</Card.Content>
 	</Card.Root>
 

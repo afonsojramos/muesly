@@ -249,6 +249,8 @@
 		onOpenChange(newOpen);
 	}
 
+	const selectedIsParakeet = $derived(selectedModelDetails?.provider === 'parakeet');
+
 	const languageItems = LANGUAGES.map((lang) => ({ value: lang.code, label: lang.name }));
 	const selectedLangLabel = $derived(
 		languageItems.find((l) => l.value === selectedLang)?.label ?? 'Select language',
@@ -300,6 +302,7 @@
 					<Select.Root
 						type="single"
 						value={selectedLang}
+						disabled={selectedIsParakeet}
 						onValueChange={(v) => {
 							if (v) selectedLang = v;
 						}}
@@ -314,7 +317,9 @@
 						</Select.Content>
 					</Select.Root>
 					<p class="text-xs text-muted-foreground">
-						Select a specific language to improve accuracy, or use auto-detect
+						{selectedIsParakeet
+							? 'Parakeet always auto-detects the language; this setting applies to Whisper models only'
+							: 'Select a specific language to improve accuracy, or use auto-detect'}
 					</p>
 				</div>
 
@@ -341,7 +346,11 @@
 								</Select.Group>
 							</Select.Content>
 						</Select.Root>
-						<p class="text-xs text-muted-foreground">Choose a transcription model</p>
+						<p class="text-xs text-muted-foreground">
+							{selectedIsParakeet
+								? 'Parakeet is the fastest option but less accurate than Whisper, and it skips your custom dictionary'
+								: 'Choose a transcription model'}
+						</p>
 					</div>
 				{/if}
 

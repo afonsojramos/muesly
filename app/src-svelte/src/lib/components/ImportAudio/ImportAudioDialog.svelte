@@ -281,6 +281,7 @@
 									<Select.Root
 										type="single"
 										value={selectedLang}
+										disabled={selectedModel?.provider === 'parakeet'}
 										onValueChange={(v) => {
 											if (v) selectedLang = v;
 										}}
@@ -296,6 +297,11 @@
 											</Select.Group>
 										</Select.Content>
 									</Select.Root>
+									{#if selectedModel?.provider === 'parakeet'}
+										<p class="text-xs text-muted-foreground">
+											Parakeet always auto-detects the language and is less accurate than Whisper
+										</p>
+									{/if}
 								</div>
 
 								{#if models.availableModels.length > 0}
