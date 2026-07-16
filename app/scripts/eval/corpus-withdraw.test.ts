@@ -201,7 +201,6 @@ test('resumes orphan cleanup when withdrawal stops before its marker is written'
 			manifest_path: manifestPath,
 			operation: 'withdrawal',
 			session_id: 'session-first',
-			orphan_cleanup: true,
 			created_at: '2026-07-16T00:00:00Z',
 		}),
 	);

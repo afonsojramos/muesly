@@ -73,7 +73,8 @@ function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, session
 		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
 		const matches =
 			(owner.operation === 'intake' ||
-				(owner.operation === 'withdrawal' && owner.orphan_cleanup === true)) &&
+				(owner.operation === 'withdrawal' &&
+					(owner.orphan_cleanup === true || !fs.existsSync(manifestPath)))) &&
 			owner.session_id === sessionId &&
 			typeof owner.manifest_path === 'string' &&
 			path.resolve(owner.manifest_path) === manifestPath;
@@ -186,7 +187,7 @@ export function withdrawConsentedSession(options) {
 		sessionId: options.sessionId,
 		orphanCleanup:
 			interruptedOperation?.orphan_cleanup === true ||
-			(!manifestExists && interruptedOperation?.operation === 'intake'),
+			(!manifestExists && interruptedOperation !== null),
 	});
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
