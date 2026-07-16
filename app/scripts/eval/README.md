@@ -31,7 +31,8 @@ app/scripts/eval/
   fixtures/            # golden transcripts + repository-safe audio
   wer.ts               # word error rate vs golden (importable `wer()` + CLI)
   summary-rubric.ts    # checklist scoring of a summary markdown file
-  real-run.ts          # real-engine run: cargo example -> WER gate
+  real-run.ts          # thin real-engine CLI
+  real-run-session.ts  # prepared artifact session + per-sample WER gate
   report.ts            # aggregate run reports by corpus and hardware dimensions
 ```
 
@@ -60,6 +61,9 @@ every sample in a validated corpus manifest and gates the results. The default
 manifest is `corpus-manifest.json`; use `--manifest <path>` for a local
 participant-consented corpus. Every checked-in WAV must have a manifest entry.
 The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTED_CORPUS.md).
+One invocation builds, probes, prepares, and snapshots the selected executable/runtime/model
+artifacts once, then runs each selected sample in a fresh process against those immutable private
+snapshots.
 
 Prepare the next underfilled language/noise cell before recruiting or recording:
 
@@ -175,7 +179,7 @@ Reports contain micro-averaged WER (total word errors divided by total reference
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 5, name the
+as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 6, name the
 same corpus revision, and use identical pass thresholds and OS/architecture. Within each
 provider/model, all reports must fingerprint identical model bytes; different provider/model
 variants retain their own artifact fingerprints. The aggregator rejects comparisons that would

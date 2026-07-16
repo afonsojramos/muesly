@@ -8,7 +8,7 @@
 //! Usage: cargo run -p muesly --example transcribe-fixture --
 //!        [--provider whisper|parakeet] [--language en] [--vad]
 //!        [--segments] [--dump-segments <dir>]
-//!        [--metrics-json <path>]
+//!        [--metrics-json <path> --expected-audio-sha256 <lowercase-sha256>]
 //!        [--hardware-json]
 //!        [--prepare-model-json --model <name> [--models-dir <path>]]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
@@ -23,7 +23,8 @@
 //! manifest line per segment: `<index>\t<start-seconds>\t<file>`.
 
 use std::ffi::CStr;
-use std::io::Write as _;
+use std::fs::File;
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -31,13 +32,14 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use app_lib::audio::decoder::decode_audio_file;
+use app_lib::audio::decoder::{decode_audio_file, decode_audio_file_handle};
 use app_lib::audio::vad::get_speech_chunks;
 use app_lib::parakeet_engine::engine::ParakeetEngine;
 use app_lib::transcription_models::ModelStatus;
 use app_lib::vocabulary::set_meeting_prompt_terms;
 use app_lib::whisper_engine::engine::WhisperEngine;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 use whisper_rs::whisper_rs_sys::ggml_log_level;
 
@@ -48,6 +50,7 @@ const GPU_BACKEND_NO_DEVICE: &[u8] = b"whisper_backend_init_gpu: no GPU found";
 const COREML_ATTEMPT_PREFIX: &[u8] = b"whisper_init_state: loading Core ML model from '";
 const COREML_FAILURE_PREFIX: &[u8] = b"whisper_init_state: failed to load Core ML model from '";
 const COREML_SUCCESS: &[u8] = b"whisper_init_state: Core ML model loaded";
+const AUDIO_ATTESTATION_BUFFER_BYTES: usize = 64 * 1024;
 
 static EVALUATOR_WHISPER_RUNTIME_ATTESTATION: OnceLock<
     Mutex<Option<EvaluatorWhisperRuntimeAttestation>>,
@@ -64,6 +67,7 @@ struct EvalMetrics {
     hardware_profile: String,
     accelerator: String,
     benchmark_executable_sha256: String,
+    audio_sha256: String,
     audio_duration_seconds: f64,
     decode_seconds: f64,
     vad_seconds: f64,
@@ -628,6 +632,93 @@ fn benchmark_executable_sha256() -> Result<String, String> {
         .map_err(|_| "could not hash the current benchmark executable".to_string())
 }
 
+fn validate_audio_sha256(value: String) -> Result<String, String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("--expected-audio-sha256 must be a lowercase SHA-256 digest".to_string());
+    }
+    Ok(value)
+}
+
+fn sha256_file_handle(file: &mut File) -> Result<String, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("seek staged audio for hashing failed: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; AUDIO_ATTESTATION_BUFFER_BYTES];
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("read staged audio for hashing failed: {error}"))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("rewind staged audio after hashing failed: {error}"))?;
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn stage_attested_wav(audio_path: &Path, expected_sha256: &str) -> Result<(File, String), String> {
+    let mut source = File::open(audio_path)
+        .map_err(|error| format!("open audio file '{}' failed: {error}", audio_path.display()))?;
+    let metadata = source.metadata().map_err(|error| {
+        format!(
+            "inspect audio file '{}' failed: {error}",
+            audio_path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!(
+            "audio source must be a regular file: {}",
+            audio_path.display()
+        ));
+    }
+
+    let mut staged = tempfile::tempfile()
+        .map_err(|error| format!("create private audio staging file: {error}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; AUDIO_ATTESTATION_BUFFER_BYTES];
+    loop {
+        let bytes_read = source
+            .read(&mut buffer)
+            .map_err(|error| format!("read audio source failed: {error}"))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+        staged
+            .write_all(&buffer[..bytes_read])
+            .map_err(|error| format!("stage private audio failed: {error}"))?;
+    }
+    staged
+        .flush()
+        .map_err(|error| format!("flush private audio staging file failed: {error}"))?;
+    let actual_sha256 = hex::encode(hasher.finalize());
+    if actual_sha256 != expected_sha256 {
+        return Err("audio SHA-256 does not match --expected-audio-sha256".to_string());
+    }
+
+    staged
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("rewind private audio staging file failed: {error}"))?;
+    let mut header = [0u8; 12];
+    staged
+        .read_exact(&mut header)
+        .map_err(|_| "attested audio must be a RIFF/WAVE file".to_string())?;
+    if &header[..4] != b"RIFF" || &header[8..] != b"WAVE" {
+        return Err("attested audio must be a RIFF/WAVE file".to_string());
+    }
+    staged
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("rewind attested WAV failed: {error}"))?;
+
+    Ok((staged, actual_sha256))
+}
+
 fn fail(msg: String) -> ! {
     eprintln!("transcribe-fixture: {msg}");
     std::process::exit(1);
@@ -761,6 +852,7 @@ async fn main() {
     let mut per_segment = false;
     let mut dump_dir: Option<PathBuf> = None;
     let mut metrics_path: Option<PathBuf> = None;
+    let mut expected_audio_sha256 = None;
     let mut hardware_json = false;
     let mut prepare_model_json = false;
     let mut prepared_model_name = None;
@@ -806,6 +898,20 @@ async fn main() {
                     Some(PathBuf::from(raw_args.get(index).cloned().unwrap_or_else(
                         || fail("--metrics-json requires a file path".to_string()),
                     )));
+            }
+            "--expected-audio-sha256" => {
+                if expected_audio_sha256.is_some() {
+                    fail("--expected-audio-sha256 may only be provided once".to_string());
+                }
+                index += 1;
+                expected_audio_sha256 = Some(
+                    validate_audio_sha256(required_option_value(
+                        &raw_args,
+                        index,
+                        "--expected-audio-sha256",
+                    ))
+                    .unwrap_or_else(|error| fail(error)),
+                );
             }
             "--hardware-json" => {
                 if hardware_json {
@@ -861,6 +967,7 @@ async fn main() {
             || per_segment
             || dump_dir.is_some()
             || metrics_path.is_some()
+            || expected_audio_sha256.is_some()
             || prepare_model_json
             || prepared_model_name.is_some()
             || prepared_models_dir.is_some()
@@ -894,6 +1001,7 @@ async fn main() {
             || per_segment
             || dump_dir.is_some()
             || metrics_path.is_some()
+            || expected_audio_sha256.is_some()
             || hardware_json
             || prompt.is_some()
             || !positional.is_empty()
@@ -922,7 +1030,7 @@ async fn main() {
     }
     let Some(audio_path) = positional.first().map(PathBuf::from) else {
         fail(
-            "usage: transcribe-fixture [--provider whisper|parakeet] [--language en] [--vad] [--hardware-json] [--prepare-model-json --model name [--models-dir path]] [--prompt terms] <audio> [model] [models_dir]"
+            "usage: transcribe-fixture [--provider whisper|parakeet] [--language en] [--vad] [--metrics-json path --expected-audio-sha256 digest] [--hardware-json] [--prepare-model-json --model name [--models-dir path]] [--prompt terms] <audio> [model] [models_dir]"
                 .to_string(),
         );
     };
@@ -935,11 +1043,14 @@ async fn main() {
     });
     let models_dir = positional.get(2).map(PathBuf::from);
 
-    if !audio_path.exists() {
-        fail(format!("audio file not found: {}", audio_path.display()));
-    }
     if metrics_path.is_some() && (per_segment || dump_dir.is_some()) {
         fail("--metrics-json cannot be combined with --segments or --dump-segments".to_string());
+    }
+    if metrics_path.is_some() && expected_audio_sha256.is_none() {
+        fail("--metrics-json requires --expected-audio-sha256".to_string());
+    }
+    if metrics_path.is_none() && expected_audio_sha256.is_some() {
+        fail("--expected-audio-sha256 requires --metrics-json".to_string());
     }
     if provider == "whisper"
         && let Some(language) = language.as_deref()
@@ -970,13 +1081,44 @@ async fn main() {
     });
     let coreml_runtime_proof_required =
         whisper_runtime_proof_backend == Some(BenchmarkBackend::CoreMlMetal);
+    let (mut staged_audio, audio_sha256) = match expected_audio_sha256.as_deref() {
+        Some(expected_sha256) => {
+            let (staged, actual_sha256) = stage_attested_wav(&audio_path, expected_sha256)
+                .unwrap_or_else(|error| fail(error));
+            (Some(staged), Some(actual_sha256))
+        }
+        None => (None, None),
+    };
     let measured_start = Instant::now();
     let decode_start = Instant::now();
-    let decoded = match decode_audio_file(&audio_path) {
+    let decoded = match staged_audio.as_ref() {
+        Some(staged) => {
+            let decode_handle = staged
+                .try_clone()
+                .unwrap_or_else(|error| fail(format!("clone attested WAV handle failed: {error}")));
+            decode_audio_file_handle(decode_handle, "wav")
+        }
+        None => decode_audio_file(&audio_path),
+    };
+    let decoded = match decoded {
         Ok(d) => d,
         Err(e) => fail(format!("audio decode failed: {e}")),
     };
     let decode_seconds = decode_start.elapsed().as_secs_f64();
+    let audio_reattest_duration = if let (Some(staged), Some(expected_sha256)) =
+        (staged_audio.as_mut(), audio_sha256.as_ref())
+    {
+        let reattest_start = Instant::now();
+        let audio_sha256_after = sha256_file_handle(staged).unwrap_or_else(|error| fail(error));
+        let duration = reattest_start.elapsed();
+        if audio_sha256_after != *expected_sha256 {
+            fail("attested audio changed while it was being decoded".to_string());
+        }
+        duration
+    } else {
+        Duration::ZERO
+    };
+    drop(staged_audio);
     eprintln!(
         "decoded {:.1}s of audio ({} Hz, {} ch)",
         decoded.duration_seconds, decoded.sample_rate, decoded.channels
@@ -1226,7 +1368,7 @@ async fn main() {
         let (hardware, benchmark_executable_sha256) =
             benchmark_provenance.expect("metrics run captures benchmark provenance");
         let metrics = EvalMetrics {
-            schema_version: 5,
+            schema_version: 6,
             provider: provider.clone(),
             model: model_name.clone(),
             backend: hardware.backend.as_str().to_string(),
@@ -1235,6 +1377,7 @@ async fn main() {
             hardware_profile: hardware.hardware_profile,
             accelerator: hardware.accelerator,
             benchmark_executable_sha256,
+            audio_sha256: audio_sha256.expect("metrics run stages attested audio"),
             audio_duration_seconds: decoded.duration_seconds,
             decode_seconds,
             vad_seconds,
@@ -1242,7 +1385,10 @@ async fn main() {
             model_load_seconds,
             inference_seconds,
             inference_rtf: inference_seconds / decoded.duration_seconds.max(f64::EPSILON),
-            measured_total_seconds: measured_start.elapsed().as_secs_f64(),
+            measured_total_seconds: measured_start
+                .elapsed()
+                .saturating_sub(audio_reattest_duration)
+                .as_secs_f64(),
             baseline_rss_mb: megabytes(memory.baseline_bytes),
             peak_rss_mb: megabytes(memory.peak_bytes),
             peak_rss_delta_mb: megabytes(memory.peak_bytes.saturating_sub(memory.baseline_bytes)),
@@ -1558,6 +1704,64 @@ mod tests {
                     .contains("lowercase SHA-256")
             );
         }
+    }
+
+    #[test]
+    fn validates_the_expected_audio_digest() {
+        assert_eq!(
+            validate_audio_sha256("a".repeat(64)).unwrap(),
+            "a".repeat(64)
+        );
+        for invalid in [
+            "a".repeat(63),
+            "A".repeat(64),
+            "g".repeat(64),
+            format!("{} ", "a".repeat(64)),
+        ] {
+            assert!(
+                validate_audio_sha256(invalid)
+                    .unwrap_err()
+                    .contains("lowercase SHA-256")
+            );
+        }
+    }
+
+    #[test]
+    fn stages_hashes_and_decodes_the_exact_private_wav_handle() {
+        let directory = tempfile::tempdir().unwrap();
+        let audio_path = directory.path().join("fixture.wav");
+        write_wav_16k_mono(&audio_path, &[0.0; 1600]).unwrap();
+        let expected_sha256 = app_lib::model_integrity::sha256_file(&audio_path).unwrap();
+
+        let (mut staged, actual_sha256) =
+            stage_attested_wav(&audio_path, &expected_sha256).unwrap();
+        assert_eq!(actual_sha256, expected_sha256);
+        std::fs::write(&audio_path, b"replacement after staging").unwrap();
+
+        let decoded = decode_audio_file_handle(staged.try_clone().unwrap(), "wav").unwrap();
+        assert_eq!(decoded.sample_rate, 16_000);
+        assert_eq!(decoded.channels, 1);
+        assert_eq!(sha256_file_handle(&mut staged).unwrap(), expected_sha256);
+    }
+
+    #[test]
+    fn rejects_mismatched_or_non_wav_attested_audio() {
+        let directory = tempfile::tempdir().unwrap();
+        let audio_path = directory.path().join("fixture.wav");
+        write_wav_16k_mono(&audio_path, &[0.0; 16]).unwrap();
+        assert!(
+            stage_attested_wav(&audio_path, &"0".repeat(64))
+                .unwrap_err()
+                .contains("does not match")
+        );
+
+        std::fs::write(&audio_path, b"not a wav").unwrap();
+        let digest = app_lib::model_integrity::sha256_file(&audio_path).unwrap();
+        assert!(
+            stage_attested_wav(&audio_path, &digest)
+                .unwrap_err()
+                .contains("RIFF/WAVE")
+        );
     }
 
     #[test]

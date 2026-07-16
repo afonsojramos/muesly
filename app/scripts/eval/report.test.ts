@@ -70,7 +70,7 @@ function result(overrides = {}) {
 		wer_percent: 10,
 		hallucinated_words: null,
 		metrics: {
-			schema_version: 5,
+			schema_version: 6,
 			provider: 'whisper',
 			model: 'large-v3-turbo-q5_0',
 			backend: 'metal',
@@ -79,6 +79,7 @@ function result(overrides = {}) {
 			hardware_profile: hardwareProfile('Apple M4 Pro', 14, 25_769_803_776),
 			accelerator: 'Apple M4 Pro integrated GPU',
 			benchmark_executable_sha256: BENCHMARK_EXECUTABLE_SHA256,
+			audio_sha256: sha256('audio'),
 			audio_duration_seconds: 20,
 			decode_seconds: 0.1,
 			vad_seconds: 0.2,
@@ -168,6 +169,7 @@ function corpusSample(overrides = {}) {
 		scenario: 'meeting',
 		speakers: 3,
 		duration_seconds: 20,
+		audio_sha256: sha256('audio'),
 		provenance: {
 			basis: 'participant-consent',
 			...provenanceOverrides,
@@ -346,6 +348,12 @@ test('validates reports against canonical loaded corpus identity and sample meta
 	assert.match(
 		validateRunReportsAgainstCorpus([wrongDuration], corpus).join('\n'),
 		/audio_duration_seconds must match corpus sample/,
+	);
+
+	const wrongAudio = report([result({ metrics: { audio_sha256: 'f'.repeat(64) } })]);
+	assert.match(
+		validateRunReportsAgainstCorpus([wrongAudio], corpus).join('\n'),
+		/audio_sha256 must match corpus sample/,
 	);
 });
 

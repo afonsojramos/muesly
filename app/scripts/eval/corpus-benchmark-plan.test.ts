@@ -173,7 +173,7 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		hallucinated_words: null,
 		passed: true,
 		metrics: {
-			schema_version: 5,
+			schema_version: 6,
 			provider: task.provider,
 			model: task.model,
 			backend: task.target_backend,
@@ -187,6 +187,7 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 				? `${task.accelerator ?? 'Apple M4 Pro integrated GPU'} [ggml=Metal]`
 				: 'none',
 			benchmark_executable_sha256: executable,
+			audio_sha256: task.audio_sha256,
 			audio_duration_seconds: 20,
 			decode_seconds: 0.1,
 			vad_seconds: 0.2,
@@ -406,6 +407,7 @@ test('binds every compared sample attribute into the immutable task identity', (
 
 	for (const [field, value] of [
 		['sample_revision_sha256', 'f'.repeat(64)],
+		['audio_sha256', 'e'.repeat(64)],
 		['session_id', 'session-other'],
 		['language', 'en-GB'],
 		['target_language', 'fr'],
@@ -863,7 +865,7 @@ test('requires checkpoint evaluator provenance to match the planned task exactly
 	);
 });
 
-test('requires schema 9, metrics schema 5, and one exact executable identity', () => {
+test('requires schema 9, metrics schema 6, and exact executable and audio identities', () => {
 	const task = plannedTask();
 	const staleSchema = checkpoint(task, { report: { schema_version: 8 } });
 	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 9/);
@@ -872,7 +874,7 @@ test('requires schema 9, metrics schema 5, and one exact executable identity', (
 	staleMetrics.results[0].metrics.schema_version = 4;
 	assert.match(
 		validateTaskCheckpoint(staleMetrics, task).join('\n'),
-		/metrics\.schema_version must be 5/,
+		/metrics\.schema_version must be 6/,
 	);
 
 	const mismatchedExecutable = checkpoint(task);
@@ -884,6 +886,13 @@ test('requires schema 9, metrics schema 5, and one exact executable identity', (
 	assert.throws(
 		() => reportIdentityFromCheckpoint(mismatchedExecutable),
 		/benchmark executable digest must match/,
+	);
+
+	const mismatchedAudio = checkpoint(task);
+	mismatchedAudio.results[0].metrics.audio_sha256 = 'd'.repeat(64);
+	assert.match(
+		validateTaskCheckpoint(mismatchedAudio, task).join('\n'),
+		/metrics\.audio_sha256/,
 	);
 });
 

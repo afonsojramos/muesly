@@ -194,7 +194,8 @@ compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC
 `RUSTC_WORKSPACE_WRAPPER`) must be unset or empty, and highest-precedence Cargo CLI configuration
 forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
 provider/backend executable is built once, probed, and invoked directly for every selected sample;
-metrics schema 5 must repeat its backend, platform, hardware, accelerator, and executable identity
+metrics schema 6 must repeat its backend, platform, hardware, accelerator, executable identity,
+and the exact corpus audio SHA-256
 exactly. When scoring, source/toolchain inputs, or tokenization semantics change, rerun every
 variant: coverage and aggregation reject legacy or incompatible reports.
 

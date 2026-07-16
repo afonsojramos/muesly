@@ -77,6 +77,7 @@ const METRICS_FIELDS = new Set([
 	'hardware_profile',
 	'accelerator',
 	'benchmark_executable_sha256',
+	'audio_sha256',
 	'audio_duration_seconds',
 	'decode_seconds',
 	'vad_seconds',
@@ -356,6 +357,7 @@ function taskIdentity(task) {
 			task.sample_revision_sha256,
 			'task.sample_revision_sha256',
 		),
+		audio_sha256: requireSha256(task.audio_sha256, 'task.audio_sha256'),
 		audio_duration_seconds: positiveFiniteNumber(
 			task.audio_duration_seconds,
 			'task.audio_duration_seconds',
@@ -514,6 +516,10 @@ export function planCorpusBenchmarkTasks({
 			id: sampleId,
 			session_id: sessionId,
 			sample_revision_sha256: corpusFingerprint(sample),
+			audio_sha256: requireSha256(
+				sample.audio_sha256,
+				`sample '${sampleId}'.audio_sha256`,
+			),
 			audio_duration_seconds: audioDurationSeconds,
 			language: sample.language,
 			target_language: language,
@@ -599,6 +605,7 @@ export function planCorpusBenchmarkTasks({
 						accelerator,
 						sample_id: sample.id,
 						sample_revision_sha256: sample.sample_revision_sha256,
+						audio_sha256: sample.audio_sha256,
 						audio_duration_seconds: sample.audio_duration_seconds,
 						session_id: sample.session_id,
 						language: sample.language,
@@ -917,6 +924,12 @@ export function validateTaskCheckpoint(report, task, { expectedModelArtifactSha2
 		errors.push('checkpoint.results[0].passed cannot be true above the WER threshold');
 	}
 	if (!isObject(result.metrics)) return errors;
+	compareField(
+		errors,
+		result.metrics.audio_sha256,
+		expected.audio_sha256,
+		'checkpoint.results[0].metrics.audio_sha256',
+	);
 	if (
 		finiteNonNegative(result.metrics.audio_duration_seconds) &&
 		!approximatelyEqual(

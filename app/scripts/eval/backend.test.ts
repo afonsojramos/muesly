@@ -201,6 +201,8 @@ test('runs inference only from private executable and model snapshots', (t) => {
 	const heldModel = path.join(temporaryRoot, 'held-model.bin');
 	const regularRunSource = `
 const metricsPath = process.argv[process.argv.indexOf('--metrics-json') + 1];
+const expectedAudioSha256 =
+	process.argv[process.argv.indexOf('--expected-audio-sha256') + 1];
 const modelsDirectory = process.argv.at(-1);
 if (process.argv[1] === ${JSON.stringify(originalExecutable)}) process.exit(31);
 if (modelsDirectory === ${JSON.stringify(originalModelsDirectory)}) process.exit(32);
@@ -220,7 +222,7 @@ try {
 	fs.writeFileSync(
 		metricsPath,
 		JSON.stringify({
-			schema_version: 5,
+			schema_version: 6,
 			provider: 'whisper',
 			model: 'tiny',
 			backend: 'cpu',
@@ -230,6 +232,7 @@ try {
 				'cpu=test;logical_cpus=1;memory_bytes=1;runtime_env_sha256=${'d'.repeat(64)}',
 			accelerator: 'none',
 			benchmark_executable_sha256: benchmarkExecutableSha256,
+			audio_sha256: expectedAudioSha256,
 			audio_duration_seconds: 20,
 			decode_seconds: 0,
 			vad_seconds: 0,

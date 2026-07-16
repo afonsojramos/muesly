@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -85,7 +86,7 @@ function sample(language, noise, session) {
 	return {
 		id: `${language}-${noise}-${session}`,
 		session_id: `session-${session}`,
-		audio_sha256: `${session.padEnd(64, '0').slice(0, 64)}`,
+		audio_sha256: createHash('sha256').update(session).digest('hex'),
 		language,
 		noise_condition: noise,
 		scenario: 'meeting',
@@ -165,7 +166,7 @@ function runReport(corpus, backend, options = {}) {
 			wer_percent: 10,
 			hallucinated_words: null,
 			metrics: {
-				schema_version: 5,
+				schema_version: 6,
 				provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
 				model: 'test-model',
 				backend,
@@ -176,6 +177,7 @@ function runReport(corpus, backend, options = {}) {
 					options.hardwareProfile ?? hardwareProfile('Apple M4 Pro', 14, 25_769_803_776),
 				accelerator:
 					options.accelerator ?? (backend === 'onnx-cpu' ? 'none' : 'Apple M4 Pro integrated GPU'),
+				audio_sha256: corpusSample.audio_sha256,
 				audio_duration_seconds: 10,
 				decode_seconds: 0.75,
 				vad_seconds: 0.25,

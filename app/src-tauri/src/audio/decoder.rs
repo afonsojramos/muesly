@@ -438,13 +438,32 @@ pub fn decode_audio_file_with_progress(
             e
         )
     })?;
+    let extension_hint = decode_path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or_default();
+    decode_audio_file_handle_with_progress(file, extension_hint, progress_callback)
+}
 
+/// Decode audio from an already-open regular file.
+///
+/// This bypasses path lookup and FFmpeg conversion, allowing callers that
+/// already hold an attested file handle to decode those exact bytes.
+pub fn decode_audio_file_handle(file: std::fs::File, extension_hint: &str) -> Result<DecodedAudio> {
+    decode_audio_file_handle_with_progress(file, extension_hint, None)
+}
+
+fn decode_audio_file_handle_with_progress(
+    file: std::fs::File,
+    extension_hint: &str,
+    progress_callback: Option<ProgressCallback>,
+) -> Result<DecodedAudio> {
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     // Set up format hint based on file extension
     let mut hint = Hint::new();
-    if let Some(ext) = decode_path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+    if !extension_hint.is_empty() {
+        hint.with_extension(extension_hint);
     }
 
     // Probe the file format

@@ -56,6 +56,7 @@ const METRICS_FIELDS = new Set([
 	'hardware_profile',
 	'accelerator',
 	'benchmark_executable_sha256',
+	'audio_sha256',
 	'audio_duration_seconds',
 	'decode_seconds',
 	'vad_seconds',
@@ -199,7 +200,7 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 	);
 	if (!isObject(metrics)) return [`${label} must be an object`];
 	rejectUnknownAndMissingFields(metrics, METRICS_FIELDS, label, errors);
-	if (metrics.schema_version !== 5) errors.push(`${label}.schema_version must be 5`);
+	if (metrics.schema_version !== 6) errors.push(`${label}.schema_version must be 6`);
 	for (const field of [
 		'provider',
 		'model',
@@ -221,6 +222,7 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 		`${label}.benchmark_executable_sha256`,
 		errors,
 	);
+	requireSha256(metrics.audio_sha256, `${label}.audio_sha256`, errors);
 	for (const field of NUMERIC_METRICS_FIELDS) {
 		if (!finiteNumber(metrics[field]) || metrics[field] < 0) {
 			errors.push(`${label}.${field} must be a non-negative finite number`);
@@ -638,6 +640,15 @@ export function validateRunReportsAgainstCorpus(reports, corpus, label = 'report
 							`'${result.sample_id}'.${sampleField} (${JSON.stringify(sampleValue)})`,
 					);
 				}
+			}
+			if (
+				SHA256_PATTERN.test(sample.audio_sha256 ?? '') &&
+				result.metrics?.audio_sha256 !== sample.audio_sha256
+			) {
+				errors.push(
+					`${resultPrefix}.metrics.audio_sha256 must match corpus sample ` +
+						`'${result.sample_id}'.audio_sha256`,
+				);
 			}
 			if (
 				finiteNumber(sample.duration_seconds) &&

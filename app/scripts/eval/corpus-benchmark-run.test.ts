@@ -109,7 +109,7 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
     hallucinated_words: null,
     passed: true,
     metrics: {
-      schema_version: 5,
+      schema_version: 6,
       provider: task.provider,
       model: task.model,
       backend: task.target_backend,
@@ -118,6 +118,7 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
       hardware_profile: identity.hardware_profile,
       accelerator: identity.accelerator,
       benchmark_executable_sha256: identity.benchmark_executable_sha256,
+      audio_sha256: task.audio_sha256,
       audio_duration_seconds: task.audio_duration_seconds,
       decode_seconds: 0.1,
       vad_seconds: 0.2,
