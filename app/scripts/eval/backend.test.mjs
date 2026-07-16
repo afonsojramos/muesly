@@ -55,7 +55,9 @@ test('removes temporary metrics after a failed transcription process', () => {
 	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
 	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-cleanup-test-'));
 	const isolatedEnvironment = Object.fromEntries(
-		Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'),
+		Object.entries(process.env).filter(
+			([key]) => !['path', 'temp', 'tmp', 'tmpdir'].includes(key.toLowerCase()),
+		),
 	);
 	const run = spawnSync(
 		process.execPath,
@@ -65,6 +67,8 @@ test('removes temporary metrics after a failed transcription process', () => {
 			env: {
 				...isolatedEnvironment,
 				PATH: temporaryRoot,
+				TEMP: temporaryRoot,
+				TMP: temporaryRoot,
 				TMPDIR: temporaryRoot,
 			},
 		},
