@@ -179,7 +179,7 @@ test('serializes preparation before reserving the next collection cell', async (
 			`
 const fs = require('node:fs');
 const path = require('node:path');
-const [lockPath, pendingSessionDirectory] = process.argv.slice(1);
+const [lockPath, pendingSessionDirectory, manifestPath] = process.argv.slice(1);
 fs.mkdirSync(lockPath, { mode: 0o700 });
 fs.writeFileSync(
   path.join(lockPath, 'owner.json'),
@@ -194,6 +194,7 @@ fs.writeFileSync(
     sessionId: 'session-concurrent',
     language: 'en',
     noiseCondition: 'clean',
+    manifestPath,
   }),
   { mode: 0o600 },
 );
@@ -202,6 +203,7 @@ setTimeout(() => fs.rmSync(lockPath, { recursive: true, force: true }), 150);
 `,
 			lockPath,
 			pendingSessionDirectory,
+			current.manifestPath,
 		],
 		{ stdio: ['ignore', 'pipe', 'pipe'] },
 	);
@@ -410,6 +412,25 @@ test('prepares the next cell after accounting for an existing private bundle', (
 		}),
 	);
 	assert.equal(`${second.language}/${second.noiseCondition}`, 'en/office');
+});
+
+test('ignores private bundles prepared for another manifest', () => {
+	const current = fixture();
+	prepareCollectionSession(
+		prepareOptions(current, {
+			idFactory: () => '00000000-0000-4000-8000-000000000013',
+		}),
+	);
+	const replacementManifestPath = path.join(current.directory, 'replacement-corpus.json');
+	const replacement = prepareCollectionSession(
+		prepareOptions(current, {
+			manifestPath: replacementManifestPath,
+			repositoryRoot: path.join(current.directory, 'protected-repository'),
+			idFactory: () => '00000000-0000-4000-8000-000000000014',
+		}),
+	);
+
+	assert.equal(`${replacement.language}/${replacement.noiseCondition}`, 'en/clean');
 });
 
 test('rejects incomplete selectors and already-complete cells', () => {

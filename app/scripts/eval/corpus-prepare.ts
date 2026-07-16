@@ -38,7 +38,7 @@ function collectionSessions(samples) {
 	return sessionsByCell;
 }
 
-function pendingCollectionSessions(intakeRoot) {
+function pendingCollectionSessions(intakeRoot, manifestPath) {
 	const sessions = [];
 	const rootEntry = fs.lstatSync(intakeRoot, { throwIfNoEntry: false });
 	if (!rootEntry) return sessions;
@@ -65,9 +65,15 @@ function pendingCollectionSessions(intakeRoot) {
 			metadata.schemaVersion !== 1 ||
 			typeof metadata.sessionId !== 'string' ||
 			typeof metadata.language !== 'string' ||
-			typeof metadata.noiseCondition !== 'string'
+			typeof metadata.noiseCondition !== 'string' ||
+			typeof metadata.manifestPath !== 'string'
 		) {
 			throw new Error(`collection session metadata is invalid: ${metadataPath}`);
+		}
+		if (
+			canonicalManifestPath(metadata.manifestPath, { allowMissing: true }) !== manifestPath
+		) {
+			continue;
 		}
 		sessions.push(metadata);
 	}
@@ -456,7 +462,11 @@ export function prepareCollectionSession(options) {
 			if (corpus.distribution !== 'local') {
 				throw new Error('collection preparation requires a local corpus manifest');
 			}
-			const cells = planCollectionCells(corpus, targets, pendingCollectionSessions(intakeRoot));
+			const cells = planCollectionCells(
+				corpus,
+				targets,
+				pendingCollectionSessions(intakeRoot, manifestPath),
+			);
 			if (cells.length === 0) {
 				throw new Error('all required session observations are collected or already prepared');
 			}
