@@ -24,8 +24,6 @@ const BENCHMARK_RUNTIME_ENVIRONMENT_NAMES = new Set([
 	'CUDA_HOME',
 	'CUDA_PATH',
 	'CUDA_VISIBLE_DEVICES',
-	'DYLD_FALLBACK_LIBRARY_PATH',
-	'DYLD_LIBRARY_PATH',
 	'HOME',
 	'HTTP_PROXY',
 	'HTTPS_PROXY',
@@ -438,6 +436,33 @@ export function benchmarkRuntimeDependenciesSha256(executablePath) {
 		.digest('hex');
 }
 
+function runtimeLibraryBinding(platform, executablePath) {
+	const directory = path.dirname(path.resolve(executablePath));
+	if (platform === 'linux') {
+		return {
+			environment: {
+				LD_LIBRARY_PATH: directory,
+			},
+			provenance: 'LD_LIBRARY_PATH=benchmark-executable-directory-only',
+		};
+	}
+	if (platform === 'darwin') {
+		return {
+			environment: {
+				DYLD_LIBRARY_PATH: directory,
+				DYLD_FALLBACK_LIBRARY_PATH: directory,
+			},
+			provenance:
+				'DYLD_LIBRARY_PATH=benchmark-executable-directory-only;' +
+				'DYLD_FALLBACK_LIBRARY_PATH=benchmark-executable-directory-only',
+		};
+	}
+	return {
+		environment: {},
+		provenance: 'platform-default',
+	};
+}
+
 export function bindBenchmarkRuntimeDependencies(
 	environment,
 	runtimeDependenciesSha256,
@@ -454,18 +479,16 @@ export function bindBenchmarkRuntimeDependencies(
 		executablePath,
 		'benchmark runtime executable path',
 	);
-	const runtimeLibraryDirectory =
-		platform === 'linux' ? path.dirname(path.resolve(normalizedExecutablePath)) : null;
+	const binding = runtimeLibraryBinding(platform, normalizedExecutablePath);
 	const currentDependenciesSha256 = environment.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256;
 	if (currentDependenciesSha256 !== undefined) {
 		if (currentDependenciesSha256 !== runtimeDependenciesSha256) {
 			throw new Error('benchmark runtime environment is bound to different dependencies');
 		}
-		if (
-			runtimeLibraryDirectory !== null &&
-			environment.LD_LIBRARY_PATH !== runtimeLibraryDirectory
-		) {
-			throw new Error('benchmark runtime environment is bound to a different library directory');
+		for (const [name, value] of Object.entries(binding.environment)) {
+			if (environment[name] !== value) {
+				throw new Error('benchmark runtime environment is bound to a different library directory');
+			}
 		}
 		return { ...environment };
 	}
@@ -482,17 +505,12 @@ export function bindBenchmarkRuntimeDependencies(
 					schema_version: 1,
 					runtime_environment_sha256: runtimeEnvironmentSha256,
 					runtime_dependencies_sha256: runtimeDependenciesSha256,
-					runtime_library_binding:
-						runtimeLibraryDirectory === null
-							? 'platform-default'
-							: 'LD_LIBRARY_PATH=benchmark-executable-directory-only',
+					runtime_library_binding: binding.provenance,
 				}),
 			)
 			.digest('hex'),
+		...binding.environment,
 	};
-	if (runtimeLibraryDirectory !== null) {
-		boundEnvironment.LD_LIBRARY_PATH = runtimeLibraryDirectory;
-	}
 	return boundEnvironment;
 }
 

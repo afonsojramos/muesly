@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -505,6 +506,8 @@ test('validates the strict public hardware probe schema', () => {
 test('sanitizes and fingerprints the exact runtime environment', () => {
 	const environment = benchmarkRuntimeEnvironment(
 		{
+			DYLD_FALLBACK_LIBRARY_PATH: '/hostile/fallback-runtime-libraries',
+			DYLD_LIBRARY_PATH: '/hostile/runtime-libraries',
 			HOME: '/private/home',
 			LD_LIBRARY_PATH: '/hostile/runtime-libraries',
 			MEMORY_GB: '1',
@@ -523,6 +526,8 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 	assert.equal(environment.HOME, '/private/home');
 	assert.equal(environment.Path, 'C:\\Windows\\System32');
 	assert.equal(environment.OMP_NUM_THREADS, '4');
+	assert.equal(environment.DYLD_FALLBACK_LIBRARY_PATH, undefined);
+	assert.equal(environment.DYLD_LIBRARY_PATH, undefined);
 	assert.equal(environment.LD_LIBRARY_PATH, undefined);
 	assert.equal(environment.MEMORY_GB, undefined);
 	assert.equal(environment.RUST_LOG, undefined);
@@ -571,6 +576,8 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 		{ platform: 'darwin' },
 	);
 	assert.equal(bound.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256, runtimeDependenciesSha256);
+	assert.equal(bound.DYLD_FALLBACK_LIBRARY_PATH, '/private/snapshot');
+	assert.equal(bound.DYLD_LIBRARY_PATH, '/private/snapshot');
 	assert.notEqual(bound.MUESLY_EVAL_RUNTIME_ENV_SHA256, environment.MUESLY_EVAL_RUNTIME_ENV_SHA256);
 	assert.deepEqual(
 		bindBenchmarkRuntimeDependencies(bound, runtimeDependenciesSha256, executablePath, {
@@ -585,6 +592,40 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 			}),
 		/bound to different dependencies/,
 	);
+	for (const name of ['DYLD_FALLBACK_LIBRARY_PATH', 'DYLD_LIBRARY_PATH']) {
+		assert.throws(
+			() =>
+				bindBenchmarkRuntimeDependencies(
+					{ ...bound, [name]: '/hostile/runtime-libraries' },
+					runtimeDependenciesSha256,
+					executablePath,
+					{ platform: 'darwin' },
+				),
+			/bound to a different library directory/,
+		);
+	}
+	assert.throws(
+		() =>
+			bindBenchmarkRuntimeDependencies(
+				bound,
+				runtimeDependenciesSha256,
+				'/different/private-snapshot/transcribe-fixture',
+				{ platform: 'darwin' },
+			),
+		/bound to a different library directory/,
+	);
+	const differentDarwinBound = bindBenchmarkRuntimeDependencies(
+		environment,
+		runtimeDependenciesSha256,
+		'/different/private-snapshot/transcribe-fixture',
+		{ platform: 'darwin' },
+	);
+	assert.equal(
+		differentDarwinBound.MUESLY_EVAL_RUNTIME_ENV_SHA256,
+		bound.MUESLY_EVAL_RUNTIME_ENV_SHA256,
+	);
+	assert.equal(differentDarwinBound.DYLD_LIBRARY_PATH, '/different/private-snapshot');
+	assert.equal(differentDarwinBound.DYLD_FALLBACK_LIBRARY_PATH, '/different/private-snapshot');
 	const hostileEnvironment = {
 		...environment,
 		LD_LIBRARY_PATH: '/hostile/runtime-libraries',
@@ -616,6 +657,90 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 			),
 		/bound to a different library directory/,
 	);
+});
+
+test('forces macOS @rpath libraries to the attested executable snapshot', (t) => {
+	if (process.platform !== 'darwin') {
+		return t.skip('Mach-O @rpath loader behavior is macOS-specific');
+	}
+	const clang = spawnSync('xcrun', ['--find', 'clang'], { encoding: 'utf8' });
+	if (clang.error || clang.status !== 0 || clang.stdout.trim().length === 0) {
+		return t.skip('Xcode clang is required for the macOS loader regression');
+	}
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-dyld-binding-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const originalDirectory = path.join(directory, 'original');
+	const hostileDirectory = path.join(directory, 'hostile');
+	fs.mkdirSync(originalDirectory);
+	fs.mkdirSync(hostileDirectory);
+	const sourcePath = path.join(directory, 'library.c');
+	const probeSourcePath = path.join(directory, 'probe.c');
+	const originalLibraryPath = path.join(originalDirectory, 'libchoice.dylib');
+	const hostileLibraryPath = path.join(hostileDirectory, 'libchoice.dylib');
+	const executablePath = path.join(originalDirectory, 'probe');
+	fs.writeFileSync(sourcePath, 'const char *choice(void) { return CHOICE; }\n');
+	fs.writeFileSync(
+		probeSourcePath,
+		'#include <stdio.h>\nconst char *choice(void);\n' +
+			'int main(void) { puts(choice()); return 0; }\n',
+	);
+	const compile = (args) => {
+		const result = spawnSync('xcrun', ['clang', ...args], { encoding: 'utf8' });
+		assert.equal(result.status, 0, result.stderr);
+	};
+	compile([
+		'-dynamiclib',
+		sourcePath,
+		'-DCHOICE="attested"',
+		'-Wl,-install_name,@rpath/libchoice.dylib',
+		'-o',
+		originalLibraryPath,
+	]);
+	compile([
+		'-dynamiclib',
+		sourcePath,
+		'-DCHOICE="hostile"',
+		'-Wl,-install_name,@rpath/libchoice.dylib',
+		'-o',
+		hostileLibraryPath,
+	]);
+	compile([
+		probeSourcePath,
+		'-L',
+		originalDirectory,
+		'-lchoice',
+		'-Wl,-rpath,@executable_path',
+		'-o',
+		executablePath,
+	]);
+	const snapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(directory, 'snapshot'),
+		benchmarkExecutableSha256(executablePath),
+	);
+	const hostileEnvironment = attestedRuntimeEnvironment({
+		DYLD_FALLBACK_LIBRARY_PATH: hostileDirectory,
+		DYLD_LIBRARY_PATH: hostileDirectory,
+	});
+	const unbound = spawnSync(snapshot.executablePath, [], {
+		encoding: 'utf8',
+		env: hostileEnvironment,
+	});
+	assert.equal(unbound.status, 0, unbound.stderr);
+	assert.equal(unbound.stdout.trim(), 'hostile');
+
+	const boundEnvironment = bindBenchmarkRuntimeDependencies(
+		hostileEnvironment,
+		snapshot.runtimeDependenciesSha256,
+		snapshot.executablePath,
+		{ platform: 'darwin' },
+	);
+	const bound = spawnSync(snapshot.executablePath, [], {
+		encoding: 'utf8',
+		env: boundEnvironment,
+	});
+	assert.equal(bound.status, 0, bound.stderr);
+	assert.equal(bound.stdout.trim(), 'attested');
 });
 
 test('probes the exact built executable and rejects invalid process output', (t) => {
