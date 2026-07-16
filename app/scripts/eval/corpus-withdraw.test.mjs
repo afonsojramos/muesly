@@ -74,7 +74,11 @@ test('withdraws every sample in one session and invalidates derived results', ()
 		sessionId: 'session-withdraw',
 		confirmWithdrawal: true,
 	});
-	assert.deepEqual(result, { sessionId: 'session-withdraw', removedSamples: 2 });
+	assert.deepEqual(result, {
+		sessionId: 'session-withdraw',
+		removedSamples: 2,
+		resumed: false,
+	});
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	assert.deepEqual(validateCorpusDocument(document, { manifestPath }), []);
 	assert.deepEqual(document.samples.map((sample) => sample.id), ['es-clean-003']);
@@ -158,6 +162,44 @@ test('refuses to delete a directory shared by a remaining manifest sample', () =
 		/remaining sample es-clean-003 shares its directory/,
 	);
 	assert(fs.existsSync(sharedReference));
+});
+
+test('resumes cleanup after a manifest-committed withdrawal interruption', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	const markerPath = path.join(
+		directory,
+		'local-corpus',
+		'.withdrawal-session-withdraw.json',
+	);
+	fs.writeFileSync(
+		markerPath,
+		JSON.stringify({
+			schema_version: 1,
+			session_id: 'session-withdraw',
+			removed_samples: 2,
+			started_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'stale.json'), '{}');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+	assert.deepEqual(result, {
+		sessionId: 'session-withdraw',
+		removedSamples: 2,
+		resumed: true,
+	});
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(!fs.existsSync(resultsDirectory));
+	assert(!fs.existsSync(markerPath));
 });
 
 test('CLI performs the documented confirmed withdrawal', () => {

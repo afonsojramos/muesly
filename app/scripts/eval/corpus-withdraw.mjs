@@ -40,6 +40,31 @@ function validateWithdrawalOptions(options) {
 	}
 }
 
+function readWithdrawalMarker(markerPath, sessionId) {
+	if (!fs.existsSync(markerPath)) return null;
+	let marker;
+	try {
+		marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+	} catch (error) {
+		throw new Error(`failed to read pending withdrawal ${markerPath}: ${error.message}`);
+	}
+	if (
+		marker.schema_version !== 1 ||
+		marker.session_id !== sessionId ||
+		!Number.isInteger(marker.removed_samples) ||
+		marker.removed_samples < 1
+	) {
+		throw new Error(`pending withdrawal record is invalid: ${markerPath}`);
+	}
+	return marker;
+}
+
+function finishWithdrawal(localCorpusRoot, manifestPath, sessionId, markerPath) {
+	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
+	fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
+	fs.rmSync(markerPath, { force: true });
+}
+
 export function withdrawConsentedSession(options) {
 	validateWithdrawalOptions(options);
 	const manifestPath = path.resolve(options.manifestPath);
@@ -55,10 +80,19 @@ export function withdrawConsentedSession(options) {
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
+	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
 	try {
+		if (fs.lstatSync(markerPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+			throw new Error(`pending withdrawal record cannot be a symbolic link: ${markerPath}`);
+		}
 		const document = readLocalManifest(manifestPath);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
-		if (withdrawn.length === 0) throw new Error(`session is not present in the corpus: ${options.sessionId}`);
+		if (withdrawn.length === 0) {
+			const marker = readWithdrawalMarker(markerPath, options.sessionId);
+			if (!marker) throw new Error(`session is not present in the corpus: ${options.sessionId}`);
+			finishWithdrawal(localCorpusRoot, manifestPath, options.sessionId, markerPath);
+			return { sessionId: options.sessionId, removedSamples: marker.removed_samples, resumed: true };
+		}
 
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
@@ -92,11 +126,20 @@ export function withdrawConsentedSession(options) {
 			throw new Error(`withdrawal would leave an invalid corpus:\n- ${errors.join('\n- ')}`);
 		}
 
+		fs.writeFileSync(
+			markerPath,
+			`${JSON.stringify({
+				schema_version: 1,
+				session_id: options.sessionId,
+				removed_samples: withdrawn.length,
+				started_at: new Date().toISOString(),
+			})}\n`,
+			{ mode: 0o600 },
+		);
 		fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });
 		fs.renameSync(stagedManifest, manifestPath);
-		fs.rmSync(sessionDirectory, { recursive: true, force: true });
-		fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
-		return { sessionId: options.sessionId, removedSamples: withdrawn.length };
+		finishWithdrawal(localCorpusRoot, manifestPath, options.sessionId, markerPath);
+		return { sessionId: options.sessionId, removedSamples: withdrawn.length, resumed: false };
 	} finally {
 		fs.rmSync(stagedManifest, { force: true });
 		releaseLocalCorpusLock(lockPath, lockToken);
@@ -134,7 +177,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 			path.join(here, 'corpus-local.json'),
 		);
 		const result = withdrawConsentedSession(options);
-		console.log(`withdrew ${result.sessionId}: removed ${result.removedSamples} sample(s)`);
+		console.log(
+			`${result.resumed ? 'completed' : 'withdrew'} ${result.sessionId}: ` +
+				`removed ${result.removedSamples} sample(s)`,
+		);
 		console.log('Delete or retain the external consent record according to the approved policy.');
 	} catch (error) {
 		console.error(error.message);
