@@ -261,7 +261,17 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
 
 The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
-reviewable aggregate JSON and Markdown.
+reviewable aggregate JSON and Markdown. Aggregate schema 7 keeps each provider/model/reported-
+backend variant separate and emits comparison tables only when every supplied variant measured the
+identical set of sample IDs. Unequal or interrupted cohorts remain available as clearly labelled
+per-variant diagnostics, but the report does not score their intersection because missing
+measurements may be failures. Report comparison covers only supplied variants; the coverage command
+above remains the target-completeness authority.
+
+RSS columns are sampled evaluator-process host memory, not model-only allocation or accelerator
+VRAM. Sampling runs every 10 ms from immediately before model load through the end of inference.
+The aggregate shows both the absolute sampled peak and its increase from the pre-model-load
+baseline; it may miss a shorter peak between samples.
 
 Do not publish model rankings from this corpus without reviewing session independence,
 participant mix, failure examples, confidence intervals, and the limitations above.

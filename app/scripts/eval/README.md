@@ -181,20 +181,31 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
 ```
 
 Reports contain micro-averaged WER (total word errors divided by total reference words),
-duration-weighted source-audio and model-input inference RTF, peak RSS, and silence hallucinations.
-They group those metrics by language, noise condition, hardware backend, provider/model, and the
-combined language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 7, name the
-same corpus revision, and use identical pass thresholds and OS/architecture. Within each
-provider/model, all reports must fingerprint identical model bytes; different provider/model
-variants retain their own artifact fingerprints. The aggregator rejects comparisons that would
-lose that artifact, machine-profile, accelerator, evaluator-revision, or executable context.
+duration-weighted source-audio and model-input inference RTF, sampled evaluator-process host RSS,
+and silence hallucinations. Aggregate schema 7 treats provider, model, and reported backend as one
+indivisible variant. Diagnostic summaries retain every observed sample but are isolated by exact
+variant, with overall, language, noise-condition, and language/noise dimensions. The report emits
+cross-variant tables only when at least two supplied variants contain the identical set of sample
+IDs. Equal counts are not enough, and unequal cohorts are not reduced to a post-hoc intersection:
+missing measurements may be failures, so that would introduce survivorship bias. Instead, partial
+runs retain clearly labelled per-variant diagnostics plus observed/common/missing counts.
+
+Comparison rows preserve the full provider/model/backend identity in the variant,
+language/variant, noise-condition/variant, and language/noise/variant dimensions. The comparison
+scope covers only supplied variants and does not certify the target matrix; use
+`eval:coverage --require-complete` for that gate. Inputs must use run-report schema 9 with metrics
+schema 7, name the same corpus revision, and use identical pass thresholds and OS/architecture.
+Within each provider/model, all reports must fingerprint identical model bytes; different
+provider/model variants retain their own artifact fingerprints. The aggregator also requires
+matching sample identity, scorer, machine profile, accelerator, evaluator revision, and executable
+context before comparison.
 Schema 9 records the versioned WER scorer
 (`muesly-wer-unicode-v1`);
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 6 records both RTF definitions, the common evaluator inputs, the full evaluator
+Aggregate schema 7 records both RTF definitions, measurement and distinct-sample counts, the
+comparison status, the common evaluator inputs, the full evaluator
 revision, and exact benchmark-executable digest for every backend. Coverage schema 8 similarly
 records the corpus
 fingerprint, verified model-artifact map, evaluator-revision digest by backend, and executable
@@ -215,8 +226,10 @@ of 16 kHz samples passed to the ASR engine after VAD and the minimum-segment gat
 VAD sends no audio to the model. The VAD flush may pad its final processing block, so ASR-input
 duration can exceed source duration by at most one 30 ms block.
 Memory is the evaluator process's host RSS sampled every 10 ms from immediately before model load
-through the end of inference, reported as baseline, peak, and peak-minus-baseline MiB. It is not
-accelerator VRAM. Model preparation happens before the measured sample processes, so
+through the end of inference, reported as baseline, sampled peak, and peak-minus-baseline MiB. The
+aggregate labels both the absolute sampled host RSS and its increase from the pre-model-load
+baseline; neither is model-only memory, and sampling may miss shorter peaks. It excludes accelerator
+VRAM. Model preparation happens before the measured sample processes, so
 `model_download_seconds` ordinarily records zero while `model_load_seconds` still measures each
 fresh process's engine/model initialization.
 

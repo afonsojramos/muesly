@@ -89,18 +89,6 @@ const NUMERIC_METRICS_FIELDS = [
 	'peak_rss_delta_mb',
 ];
 
-const DIMENSIONS = [
-	['overall', () => 'all'],
-	['language', (record) => record.language],
-	['noise_condition', (record) => record.noise_condition],
-	['backend', (record) => record.metrics.backend],
-	['provider_model', (record) => `${record.provider}/${record.model}`],
-	[
-		'language_noise_backend',
-		(record) => `${record.language} / ${record.noise_condition} / ${record.metrics.backend}`,
-	],
-];
-
 function finiteNumber(value) {
 	return typeof value === 'number' && Number.isFinite(value);
 }
@@ -741,7 +729,9 @@ function summarize(records) {
 	const modelRtfs = records
 		.map((record) => record.metrics.model_inference_rtf)
 		.filter((value) => value !== null);
+	const baselines = records.map((record) => record.metrics.baseline_rss_mb);
 	const peaks = records.map((record) => record.metrics.peak_rss_mb);
+	const peakDeltas = records.map((record) => record.metrics.peak_rss_delta_mb);
 	const audioDurationSeconds = records.reduce(
 		(sum, record) => sum + record.metrics.audio_duration_seconds,
 		0,
@@ -784,9 +774,150 @@ function summarize(records) {
 		mean_model_inference_rtf: modelRtfs.length === 0 ? null : mean(modelRtfs),
 		median_model_inference_rtf: modelRtfs.length === 0 ? null : median(modelRtfs),
 		max_model_inference_rtf: modelRtfs.length === 0 ? null : Math.max(...modelRtfs),
+		mean_baseline_rss_mb: mean(baselines),
+		max_baseline_rss_mb: Math.max(...baselines),
 		mean_peak_rss_mb: mean(peaks),
 		max_peak_rss_mb: Math.max(...peaks),
+		mean_peak_rss_delta_mb: mean(peakDeltas),
+		max_peak_rss_delta_mb: Math.max(...peakDeltas),
 	};
+}
+
+function compareText(left, right) {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function variantIdentity(provider, model, backend) {
+	return { provider, model, backend };
+}
+
+function variantKey(identity) {
+	return JSON.stringify([identity.provider, identity.model, identity.backend]);
+}
+
+function compareVariants(left, right) {
+	return (
+		compareText(left.provider, right.provider) ||
+		compareText(left.model, right.model) ||
+		compareText(left.backend, right.backend)
+	);
+}
+
+function groupedSummaries(records, dimensions) {
+	const groups = new Map();
+	for (const record of records) {
+		const values = Object.fromEntries(
+			dimensions.map(([field, valueFor]) => [field, valueFor(record)]),
+		);
+		const key = JSON.stringify(dimensions.map(([field]) => values[field]));
+		const existing = groups.get(key);
+		if (existing) {
+			existing.records.push(record);
+		} else {
+			groups.set(key, { values, records: [record] });
+		}
+	}
+	return [...groups.values()]
+		.sort((left, right) => {
+			for (const [field] of dimensions) {
+				const comparison = compareText(left.values[field], right.values[field]);
+				if (comparison !== 0) return comparison;
+			}
+			return 0;
+		})
+		.map(({ values, records: groupRecords }) => ({
+			...values,
+			summary: summarize(groupRecords),
+		}));
+}
+
+function summarizeVariant(identity, records) {
+	return {
+		...identity,
+		observed_sample_count: records.length,
+		groups: {
+			overall: summarize(records),
+			language: groupedSummaries(records, [['language', (record) => record.language]]),
+			noise_condition: groupedSummaries(records, [
+				['noise_condition', (record) => record.noise_condition],
+			]),
+			language_noise: groupedSummaries(records, [
+				['language', (record) => record.language],
+				['noise_condition', (record) => record.noise_condition],
+			]),
+		},
+	};
+}
+
+function comparisonGroups(diagnostics) {
+	const withVariant = (diagnostic, value) => ({
+		provider: diagnostic.provider,
+		model: diagnostic.model,
+		backend: diagnostic.backend,
+		...value,
+	});
+	const sortRows = (rows, dimensions = []) =>
+		rows.sort((left, right) => {
+			for (const field of dimensions) {
+				const comparison = compareText(left[field], right[field]);
+				if (comparison !== 0) return comparison;
+			}
+			return compareVariants(left, right);
+		});
+	return {
+		variant: diagnostics.map((diagnostic) =>
+			withVariant(diagnostic, { summary: diagnostic.groups.overall }),
+		),
+		language_variant: sortRows(
+			diagnostics.flatMap((diagnostic) =>
+				diagnostic.groups.language.map((row) => withVariant(diagnostic, row)),
+			),
+			['language'],
+		),
+		noise_condition_variant: sortRows(
+			diagnostics.flatMap((diagnostic) =>
+				diagnostic.groups.noise_condition.map((row) => withVariant(diagnostic, row)),
+			),
+			['noise_condition'],
+		),
+		language_noise_variant: sortRows(
+			diagnostics.flatMap((diagnostic) =>
+				diagnostic.groups.language_noise.map((row) => withVariant(diagnostic, row)),
+			),
+			['language', 'noise_condition'],
+		),
+	};
+}
+
+function sampleIdentity(record) {
+	return {
+		audio_sha256: record.metrics.audio_sha256,
+		audio_duration_seconds: record.metrics.audio_duration_seconds,
+		language: record.language,
+		noise_condition: record.noise_condition,
+		scenario: record.scenario,
+		speakers: record.speakers,
+		provenance_basis: record.provenance_basis,
+		reference_words: record.reference_words,
+	};
+}
+
+function sampleIdentityMismatch(left, right) {
+	for (const field of [
+		'audio_sha256',
+		'language',
+		'noise_condition',
+		'scenario',
+		'speakers',
+		'provenance_basis',
+		'reference_words',
+	]) {
+		if (left[field] !== right[field]) return field;
+	}
+	if (left.audio_duration_seconds !== right.audio_duration_seconds) {
+		return 'audio_duration_seconds';
+	}
+	return null;
 }
 
 function copyEvaluatorRevision(revision) {
@@ -826,6 +957,7 @@ export function aggregateRunReports(reports) {
 	const evaluatorRevisions = new Map();
 	const benchmarkExecutables = new Map();
 	const measurementSources = new Map();
+	const sampleIdentities = new Map();
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
@@ -928,27 +1060,77 @@ export function aggregateRunReports(reports) {
 				);
 			}
 			measurementSources.set(measurementKey, source);
+			const identity = sampleIdentity(result);
+			const priorIdentity = sampleIdentities.get(result.sample_id);
+			if (priorIdentity !== undefined) {
+				const mismatch = sampleIdentityMismatch(priorIdentity, identity);
+				if (mismatch !== null) {
+					throw new Error(
+						`cannot aggregate inconsistent identity for sample '${result.sample_id}': ` +
+							`${mismatch} differs at ${source}`,
+					);
+				}
+			} else {
+				sampleIdentities.set(result.sample_id, identity);
+			}
 			records.push({ ...result, provider: report.provider, model: report.model });
 		}
 	}
 
-	const groups = {};
-	for (const [dimension, keyFor] of DIMENSIONS) {
-		const grouped = new Map();
-		for (const record of records) {
-			const key = keyFor(record);
-			if (!grouped.has(key)) grouped.set(key, []);
-			grouped.get(key).push(record);
+	const variantsByKey = new Map();
+	for (const record of records) {
+		const identity = variantIdentity(record.provider, record.model, record.metrics.backend);
+		const key = variantKey(identity);
+		const existing = variantsByKey.get(key);
+		if (existing) {
+			existing.records.push(record);
+			existing.sampleIds.add(record.sample_id);
+		} else {
+			variantsByKey.set(key, {
+				...identity,
+				records: [record],
+				sampleIds: new Set([record.sample_id]),
+			});
 		}
-		groups[dimension] = Object.fromEntries(
-			[...grouped.entries()]
-				.sort(([a], [b]) => a.localeCompare(b))
-				.map(([key, values]) => [key, summarize(values)]),
-		);
 	}
+	const variants = [...variantsByKey.values()].sort(compareVariants);
+	const unionSampleIds = new Set(variants.flatMap((variant) => [...variant.sampleIds]));
+	const commonSampleIds = new Set(variants[0].sampleIds);
+	for (const variant of variants.slice(1)) {
+		for (const sampleId of commonSampleIds) {
+			if (!variant.sampleIds.has(sampleId)) commonSampleIds.delete(sampleId);
+		}
+	}
+	const identicalCohorts = variants.every(
+		(variant) =>
+			variant.sampleIds.size === variants[0].sampleIds.size &&
+			[...variants[0].sampleIds].every((sampleId) => variant.sampleIds.has(sampleId)),
+	);
+	const comparisonStatus =
+		variants.length < 2
+			? 'single-variant'
+			: identicalCohorts
+				? 'comparable'
+				: 'unequal-sample-cohorts';
+	const diagnostics = variants.map((variant) =>
+		summarizeVariant(
+			variantIdentity(variant.provider, variant.model, variant.backend),
+			variant.records,
+		),
+	);
+	const comparisonCohorts = variants.map((variant) => ({
+		provider: variant.provider,
+		model: variant.model,
+		backend: variant.backend,
+		observed_sample_count: variant.sampleIds.size,
+		not_common_sample_count: [...variant.sampleIds].filter(
+			(sampleId) => !commonSampleIds.has(sampleId),
+		).length,
+		missing_from_union_sample_count: unionSampleIds.size - variant.sampleIds.size,
+	}));
 
 	return {
-		schema_version: 6,
+		schema_version: 7,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
@@ -971,8 +1153,19 @@ export function aggregateRunReports(reports) {
 		),
 		thresholds,
 		source_report_count: reports.length,
-		sample_result_count: records.length,
-		groups,
+		measurement_result_count: records.length,
+		distinct_sample_count: unionSampleIds.size,
+		diagnostics: { variants: diagnostics },
+		comparison: {
+			status: comparisonStatus,
+			scope: 'supplied-variants',
+			target_completeness: 'not-assessed',
+			variant_count: variants.length,
+			union_sample_count: unionSampleIds.size,
+			common_sample_count: commonSampleIds.size,
+			cohorts: comparisonCohorts,
+			groups: comparisonStatus === 'comparable' ? comparisonGroups(diagnostics) : null,
+		},
 	};
 }
 
@@ -984,11 +1177,45 @@ function escapeCell(value) {
 	return value.replaceAll('|', '\\|');
 }
 
+function variantLabel(row) {
+	return `${row.provider}/${row.model}/${row.backend}`;
+}
+
+function appendSummaryTable(lines, rows) {
+	lines.push(
+		'| Group | Samples | Pass rate | WER | Aggregate source RTF | P50 source RTF | Aggregate model-input RTF | P50 model-input RTF | Max sampled evaluator-process host RSS | Max sampled host RSS increase from pre-model-load baseline | Hallucinated words |',
+	);
+	lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+	for (const { label, summary } of rows) {
+		const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
+		lines.push(
+			`| ${escapeCell(label)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${display(summary.max_peak_rss_delta_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+		);
+	}
+}
+
+function comparisonRowLabel(dimension, row) {
+	const variant = variantLabel(row);
+	if (dimension === 'language_variant') return `${row.language} / ${variant}`;
+	if (dimension === 'noise_condition_variant') return `${row.noise_condition} / ${variant}`;
+	if (dimension === 'language_noise_variant') {
+		return `${row.language} / ${row.noise_condition} / ${variant}`;
+	}
+	return variant;
+}
+
+function comparisonDimensionTitle(dimension) {
+	if (dimension === 'variant') return 'By exact variant';
+	if (dimension === 'language_variant') return 'By language and exact variant';
+	if (dimension === 'noise_condition_variant') return 'By noise condition and exact variant';
+	return 'By language, noise condition, and exact variant';
+}
+
 export function renderMarkdown(report) {
 	const lines = [
 		'# ASR corpus benchmark',
 		'',
-		`Generated ${report.generated_at} from ${report.source_report_count} run report(s) and ${report.sample_result_count} sample result(s).`,
+		`Generated ${report.generated_at} from ${report.source_report_count} run report(s), ${report.measurement_result_count} measurement result(s), and ${report.distinct_sample_count} distinct sample(s).`,
 		'',
 		`Corpus: \`${report.corpus_id}\``,
 		'',
@@ -1030,19 +1257,71 @@ export function renderMarkdown(report) {
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',
-		'WER is micro-averaged from total word errors / total reference words. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR. Memory is measured during local inference.',
+		'WER is micro-averaged from total word errors / total reference words. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR.',
+		'',
+		"RSS is evaluator-process host memory sampled every 10 ms from immediately before model load through the end of inference. It includes the evaluator process and runtime, excludes accelerator VRAM, and may miss peaks between samples. RSS increase is the sampled peak minus that process's pre-model-load baseline; it is not model-only memory.",
+		'',
+		'## Comparison status',
+		'',
 	];
-	for (const [dimension, groups] of Object.entries(report.groups)) {
-		lines.push('', `## ${dimension.replaceAll('_', ' ')}`, '');
+	if (report.comparison.status === 'comparable') {
 		lines.push(
-			'| Group | Samples | Pass rate | WER | Aggregate source RTF | P50 source RTF | Aggregate model-input RTF | P50 model-input RTF | Max peak RSS | Hallucinated words |',
+			`Comparable across ${report.comparison.variant_count} supplied exact variants on an identical ${report.comparison.common_sample_count}-sample cohort.`,
 		);
-		lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
-		for (const [name, summary] of Object.entries(groups)) {
-			const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
-			lines.push(
-				`| ${escapeCell(name)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+	} else if (report.comparison.status === 'single-variant') {
+		lines.push('No cross-variant comparison: only one exact variant was supplied.');
+	} else {
+		lines.push(
+			`No cross-variant comparison: supplied variants have unequal sample cohorts (${report.comparison.common_sample_count} common of ${report.comparison.union_sample_count} distinct samples). Post-hoc intersection metrics are intentionally not reported.`,
+		);
+	}
+	lines.push(
+		'',
+		'This comparison scope includes only the supplied variants and does not assess target completeness. Use `eval:coverage --require-complete` for the target-matrix gate.',
+		'',
+		'| Variant | Observed samples | Samples outside common cohort | Samples missing from union |',
+		'| --- | ---: | ---: | ---: |',
+		...report.comparison.cohorts.map(
+			(cohort) =>
+				`| ${escapeCell(variantLabel(cohort))} | ${cohort.observed_sample_count} | ${cohort.not_common_sample_count} | ${cohort.missing_from_union_sample_count} |`,
+		),
+	);
+	if (report.comparison.groups !== null) {
+		lines.push('', '## Cross-variant comparisons');
+		for (const [dimension, rows] of Object.entries(report.comparison.groups)) {
+			lines.push('', `### ${comparisonDimensionTitle(dimension)}`, '');
+			appendSummaryTable(
+				lines,
+				rows.map((row) => ({ label: comparisonRowLabel(dimension, row), summary: row.summary })),
 			);
+		}
+	} else {
+		lines.push(
+			'',
+			'## Available-sample diagnostics',
+			'',
+			'These summaries describe each exact variant independently. Because the observed sample cohorts are not comparison-safe, do not compare values across variant subsections.',
+		);
+		for (const diagnostic of report.diagnostics.variants) {
+			lines.push('', `### ${variantLabel(diagnostic)}`, '', '#### Overall', '');
+			appendSummaryTable(lines, [{ label: 'all observed', summary: diagnostic.groups.overall }]);
+			for (const [dimension, rows] of [
+				['Language', diagnostic.groups.language],
+				['Noise condition', diagnostic.groups.noise_condition],
+				['Language and noise condition', diagnostic.groups.language_noise],
+			]) {
+				lines.push('', `#### ${dimension}`, '');
+				appendSummaryTable(
+					lines,
+					rows.map((row) => ({
+						label:
+							row.language && row.noise_condition
+								? `${row.language} / ${row.noise_condition}`
+								: (row.language ?? row.noise_condition),
+						summary: row.summary,
+					})),
+				);
+			}
 		}
 	}
 	return `${lines.join('\n')}\n`;

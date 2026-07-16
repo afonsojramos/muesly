@@ -122,6 +122,42 @@ function report(results, overrides = {}) {
 	};
 }
 
+function resultForSample(sampleId, overrides = {}) {
+	const { metrics: metricsOverrides = {}, ...resultOverrides } = overrides;
+	return result({
+		sample_id: sampleId,
+		metrics: {
+			audio_sha256: sha256(`audio-${sampleId}`),
+			...metricsOverrides,
+		},
+		...resultOverrides,
+	});
+}
+
+function variantReport(results, { provider = 'whisper', model, backend = 'metal' }) {
+	const selectedModel = model ?? (provider === 'parakeet' ? 'parakeet-test' : 'whisper-test');
+	const cargoFeatures = backend === 'metal' ? ['metal'] : [];
+	const accelerator = backend === 'metal' ? 'Apple M4 Pro integrated GPU' : 'none';
+	return report(
+		results.map((entry) => ({
+			...entry,
+			metrics: {
+				...entry.metrics,
+				provider,
+				model: selectedModel,
+				backend,
+				accelerator,
+			},
+		})),
+		{
+			provider,
+			model: selectedModel,
+			model_artifact_sha256: sha256(`${provider}/${selectedModel}`),
+			evaluator_revision: evaluatorRevision(cargoFeatures),
+		},
+	);
+}
+
 function boundReport({
 	provider = 'whisper',
 	backend,
@@ -189,48 +225,90 @@ function loadedCorpus(samples = [corpusSample()], overrides = {}) {
 	};
 }
 
-test('micro-averages WER and groups quality, speed, and memory across requested dimensions', () => {
+test('compares exact provider/model/backend variants only on one identical sample cohort', () => {
+	const baseSamples = [
+		resultForSample('meeting-en-clean'),
+		resultForSample('meeting-es-office', { language: 'es', noise_condition: 'office' }),
+	];
+	const cpuSamples = baseSamples.map((entry) =>
+		resultForSample(entry.sample_id, {
+			language: entry.language,
+			noise_condition: entry.noise_condition,
+			word_errors: 2,
+			wer_percent: 20,
+			passed: false,
+			metrics: {
+				inference_seconds: 4,
+				inference_rtf: 0.2,
+				model_inference_rtf: 0.4,
+				measured_total_seconds: 5.5,
+				peak_rss_mb: 2000,
+				peak_rss_delta_mb: 1900,
+			},
+		}),
+	);
+	const parakeetSamples = baseSamples.map((entry) =>
+		resultForSample(entry.sample_id, {
+			language: entry.language,
+			noise_condition: entry.noise_condition,
+			word_errors: 0,
+			wer_percent: 0,
+		}),
+	);
 	const aggregate = aggregateRunReports([
-		report([result()]),
-		report(
-			[
-				result({
-					sample_id: 'meeting-es-office',
-					language: 'es',
-					noise_condition: 'office',
-					reference_words: 90,
-					word_errors: 18,
-					wer_percent: 20,
-					passed: false,
-					metrics: {
-						backend: 'cpu',
-						accelerator: 'none',
-						inference_seconds: 12,
-						inference_rtf: 0.3,
-						inference_audio_seconds: 20,
-						model_inference_rtf: 0.6,
-						measured_total_seconds: 13.5,
-						peak_rss_mb: 2000,
-						audio_duration_seconds: 40,
-						peak_rss_delta_mb: 1900,
-					},
-				}),
-			],
-			{ evaluator_revision: evaluatorRevision([]) },
-		),
+		variantReport(baseSamples, {
+			model: 'large-v3-turbo-q5_0',
+			backend: 'metal',
+		}),
+		variantReport(cpuSamples, {
+			model: 'large-v3-turbo-q5_0',
+			backend: 'cpu',
+		}),
+		variantReport(parakeetSamples, {
+			provider: 'parakeet',
+			model: 'parakeet-tdt-0.6b-v3-int8',
+			backend: 'onnx-cpu',
+		}),
 	]);
 
-	assert.equal(aggregate.groups.overall.all.wer_percent, 19);
-	assert.equal(aggregate.groups.overall.all.aggregate_inference_rtf, 14 / 60);
-	assert.equal(aggregate.groups.overall.all.inference_audio_seconds, 30);
-	assert.equal(aggregate.groups.overall.all.aggregate_model_inference_rtf, 14 / 30);
-	assert.equal(aggregate.groups.overall.all.median_model_inference_rtf, 0.4);
-	assert.equal(aggregate.groups.overall.all.max_peak_rss_mb, 2000);
-	assert.equal(aggregate.groups.language.en.wer_percent, 10);
-	assert.equal(aggregate.groups.noise_condition.office.samples, 1);
-	assert.equal(aggregate.groups.backend.cpu.samples, 1);
-	assert.equal(aggregate.groups.language_noise_backend['es / office / cpu'].samples, 1);
-	assert.equal(aggregate.schema_version, 6);
+	assert.equal(aggregate.schema_version, 7);
+	assert.equal(aggregate.measurement_result_count, 6);
+	assert.equal(aggregate.distinct_sample_count, 2);
+	assert.equal(aggregate.groups, undefined);
+	assert.equal(aggregate.comparison.status, 'comparable');
+	assert.equal(aggregate.comparison.scope, 'supplied-variants');
+	assert.equal(aggregate.comparison.target_completeness, 'not-assessed');
+	assert.equal(aggregate.comparison.variant_count, 3);
+	assert.equal(aggregate.comparison.common_sample_count, 2);
+	assert.equal(aggregate.comparison.union_sample_count, 2);
+	assert.equal(aggregate.comparison.groups.variant.length, 3);
+	assert.equal(aggregate.comparison.groups.language_variant.length, 6);
+	assert.equal(aggregate.comparison.groups.noise_condition_variant.length, 6);
+	assert.equal(aggregate.comparison.groups.language_noise_variant.length, 6);
+	assert.deepEqual(
+		aggregate.comparison.groups.variant.map(({ provider, model, backend }) => ({
+			provider,
+			model,
+			backend,
+		})),
+		[
+			{ provider: 'parakeet', model: 'parakeet-tdt-0.6b-v3-int8', backend: 'onnx-cpu' },
+			{ provider: 'whisper', model: 'large-v3-turbo-q5_0', backend: 'cpu' },
+			{ provider: 'whisper', model: 'large-v3-turbo-q5_0', backend: 'metal' },
+		],
+	);
+	const cpu = aggregate.diagnostics.variants.find((entry) => entry.backend === 'cpu');
+	const metal = aggregate.diagnostics.variants.find((entry) => entry.backend === 'metal');
+	const parakeet = aggregate.diagnostics.variants.find((entry) => entry.provider === 'parakeet');
+	assert.equal(cpu.groups.overall.wer_percent, 20);
+	assert.equal(cpu.groups.overall.aggregate_inference_rtf, 0.2);
+	assert.equal(cpu.groups.overall.mean_baseline_rss_mb, 100);
+	assert.equal(cpu.groups.overall.max_baseline_rss_mb, 100);
+	assert.equal(cpu.groups.overall.max_peak_rss_mb, 2000);
+	assert.equal(cpu.groups.overall.mean_peak_rss_delta_mb, 1900);
+	assert.equal(cpu.groups.overall.max_peak_rss_delta_mb, 1900);
+	assert.equal(metal.groups.overall.wer_percent, 10);
+	assert.equal(parakeet.groups.overall.wer_percent, 0);
 	assert.equal(aggregate.wer_scorer, WER_SCORER_ID);
 	assert.equal(
 		aggregate.evaluator_revisions.metal.evaluator_revision_sha256,
@@ -243,6 +321,7 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.deepEqual(aggregate.benchmark_executables, {
 		cpu: BENCHMARK_EXECUTABLE_SHA256,
 		metal: BENCHMARK_EXECUTABLE_SHA256,
+		'onnx-cpu': BENCHMARK_EXECUTABLE_SHA256,
 	});
 	assert.equal(aggregate.operating_system, 'macos');
 	assert.equal(aggregate.architecture, 'aarch64');
@@ -250,9 +329,11 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.deepEqual(aggregate.accelerators, {
 		cpu: 'none',
 		metal: 'Apple M4 Pro integrated GPU',
+		'onnx-cpu': 'none',
 	});
 	assert.deepEqual(aggregate.model_artifacts, {
-		'whisper/large-v3-turbo-q5_0': 'c'.repeat(64),
+		'parakeet/parakeet-tdt-0.6b-v3-int8': sha256('parakeet/parakeet-tdt-0.6b-v3-int8'),
+		'whisper/large-v3-turbo-q5_0': sha256('whisper/large-v3-turbo-q5_0'),
 	});
 });
 
@@ -271,12 +352,16 @@ test('tracks silence hallucinations separately from WER', () => {
 		},
 	});
 	const aggregate = aggregateRunReports([report([result(), silence])]);
-	assert.equal(aggregate.groups.overall.all.wer_percent, 10);
-	assert.equal(aggregate.groups.overall.all.hallucination_samples, 1);
-	assert.equal(aggregate.groups.overall.all.hallucinated_words_total, 2);
-	assert.equal(aggregate.groups.overall.all.aggregate_model_inference_rtf, 0.2);
+	const overall = aggregate.diagnostics.variants[0].groups.overall;
+	assert.equal(overall.wer_percent, 10);
+	assert.equal(overall.hallucination_samples, 1);
+	assert.equal(overall.hallucinated_words_total, 2);
+	assert.equal(overall.aggregate_model_inference_rtf, 0.2);
+	assert.equal(aggregate.comparison.status, 'single-variant');
+	assert.equal(aggregate.comparison.groups, null);
 	const markdown = renderMarkdown(aggregate);
-	assert.match(markdown, /language noise backend/);
+	assert.match(markdown, /Available-sample diagnostics/);
+	assert.match(markdown, /No cross-variant comparison: only one exact variant was supplied/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
 	assert.match(markdown, /WER scorer: `muesly-wer-unicode-v1`/);
 	assert.match(markdown, /Platform: `macos\/aarch64`/);
@@ -287,6 +372,11 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /Aggregate source RTF/);
 	assert.match(markdown, /Aggregate model-input RTF/);
 	assert.match(markdown, /exact post-VAD audio passed to ASR/);
+	assert.match(markdown, /Max sampled evaluator-process host RSS/);
+	assert.match(markdown, /pre-model-load baseline/);
+	assert.match(markdown, /immediately before model load through the end of inference/);
+	assert.match(markdown, /excludes accelerator VRAM/);
+	assert.doesNotMatch(markdown, /model memory/i);
 	assert.doesNotMatch(markdown, /—%/);
 });
 
@@ -320,7 +410,196 @@ test('rejects duplicate provider/model/backend/sample measurements across aggreg
 		model: 'another-model',
 		model_artifact_sha256: 'd'.repeat(64),
 	});
-	assert.equal(aggregateRunReports([first, otherModel]).sample_result_count, 2);
+	assert.equal(aggregateRunReports([first, otherModel]).measurement_result_count, 2);
+});
+
+test('keeps different models on the same backend as separate exact variants', () => {
+	const sample = resultForSample('meeting-en-clean');
+	const aggregate = aggregateRunReports([
+		variantReport([sample], { model: 'model-a', backend: 'cpu' }),
+		variantReport([sample], { model: 'model-b', backend: 'cpu' }),
+	]);
+
+	assert.equal(aggregate.comparison.status, 'comparable');
+	assert.deepEqual(
+		aggregate.comparison.groups.variant.map(({ provider, model, backend }) => ({
+			provider,
+			model,
+			backend,
+		})),
+		[
+			{ provider: 'whisper', model: 'model-a', backend: 'cpu' },
+			{ provider: 'whisper', model: 'model-b', backend: 'cpu' },
+		],
+	);
+});
+
+test('suppresses comparisons for equal-size cohorts with different sample identities', () => {
+	const shared = resultForSample('meeting-shared');
+	const highMemory = resultForSample('meeting-metal-only', {
+		metrics: { peak_rss_mb: 5000, peak_rss_delta_mb: 4900 },
+	});
+	const aggregate = aggregateRunReports([
+		variantReport([shared, highMemory], { model: 'whisper-test', backend: 'metal' }),
+		variantReport([shared, resultForSample('meeting-cpu-only')], {
+			model: 'whisper-test',
+			backend: 'cpu',
+		}),
+	]);
+
+	assert.equal(aggregate.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(aggregate.comparison.common_sample_count, 1);
+	assert.equal(aggregate.comparison.union_sample_count, 3);
+	assert.equal(aggregate.comparison.groups, null);
+	assert.deepEqual(
+		aggregate.comparison.cohorts.map(
+			({
+				backend,
+				observed_sample_count,
+				not_common_sample_count,
+				missing_from_union_sample_count,
+			}) => ({
+				backend,
+				observed_sample_count,
+				not_common_sample_count,
+				missing_from_union_sample_count,
+			}),
+		),
+		[
+			{
+				backend: 'cpu',
+				observed_sample_count: 2,
+				not_common_sample_count: 1,
+				missing_from_union_sample_count: 1,
+			},
+			{
+				backend: 'metal',
+				observed_sample_count: 2,
+				not_common_sample_count: 1,
+				missing_from_union_sample_count: 1,
+			},
+		],
+	);
+	assert.equal(
+		aggregate.diagnostics.variants.find((entry) => entry.backend === 'metal').groups.overall
+			.max_peak_rss_mb,
+		5000,
+	);
+	const markdown = renderMarkdown(aggregate);
+	assert.match(markdown, /Post-hoc intersection metrics are intentionally not reported/);
+	assert.match(markdown, /Available-sample diagnostics/);
+	assert.doesNotMatch(markdown, /## Cross-variant comparisons/);
+});
+
+test('suppresses zero-overlap and three-way comparisons when only a pair shares a cohort', () => {
+	const disjoint = aggregateRunReports([
+		variantReport([resultForSample('meeting-metal-only')], {
+			model: 'whisper-test',
+			backend: 'metal',
+		}),
+		variantReport([resultForSample('meeting-cpu-only')], {
+			model: 'whisper-test',
+			backend: 'cpu',
+		}),
+	]);
+	assert.equal(disjoint.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(disjoint.comparison.common_sample_count, 0);
+	assert.equal(disjoint.comparison.groups, null);
+
+	const shared = [resultForSample('meeting-first'), resultForSample('meeting-second')];
+	const threeWay = aggregateRunReports([
+		variantReport(shared, { model: 'model-a', backend: 'cpu' }),
+		variantReport(shared, { model: 'model-b', backend: 'cpu' }),
+		variantReport([shared[0]], { model: 'model-c', backend: 'cpu' }),
+	]);
+	assert.equal(threeWay.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(threeWay.comparison.common_sample_count, 1);
+	assert.equal(threeWay.comparison.union_sample_count, 2);
+	assert.equal(threeWay.comparison.groups, null);
+	assert.deepEqual(
+		threeWay.diagnostics.variants.map(({ model, observed_sample_count }) => ({
+			model,
+			observed_sample_count,
+		})),
+		[
+			{ model: 'model-a', observed_sample_count: 2 },
+			{ model: 'model-b', observed_sample_count: 2 },
+			{ model: 'model-c', observed_sample_count: 1 },
+		],
+	);
+});
+
+test('unions report shards and compares identical sample sets independent of input order', () => {
+	const first = resultForSample('meeting-first');
+	const second = resultForSample('meeting-second', {
+		language: 'es',
+		noise_condition: 'office',
+	});
+	const inputs = [
+		variantReport([first], { model: 'whisper-test', backend: 'cpu' }),
+		variantReport([second], { model: 'whisper-test', backend: 'cpu' }),
+		variantReport([second, first], { model: 'whisper-test', backend: 'metal' }),
+	];
+	const aggregate = aggregateRunReports(inputs);
+	assert.equal(aggregate.comparison.status, 'comparable');
+	assert.deepEqual(
+		aggregate.diagnostics.variants.map(({ backend, observed_sample_count }) => ({
+			backend,
+			observed_sample_count,
+		})),
+		[
+			{ backend: 'cpu', observed_sample_count: 2 },
+			{ backend: 'metal', observed_sample_count: 2 },
+		],
+	);
+
+	const reordered = aggregateRunReports([inputs[2], inputs[1], inputs[0]]);
+	aggregate.generated_at = '<generated>';
+	reordered.generated_at = '<generated>';
+	assert.deepEqual(reordered, aggregate);
+});
+
+test('rejects conflicting cross-variant identities for the same sample without a manifest', () => {
+	const canonical = resultForSample('meeting-en-clean');
+	const conflicts = [
+		[
+			'audio_sha256',
+			resultForSample('meeting-en-clean', { metrics: { audio_sha256: sha256('changed-audio') } }),
+		],
+		['language', resultForSample('meeting-en-clean', { language: 'es' })],
+		['noise_condition', resultForSample('meeting-en-clean', { noise_condition: 'office' })],
+		['scenario', resultForSample('meeting-en-clean', { scenario: 'dictation' })],
+		['speakers', resultForSample('meeting-en-clean', { speakers: 2 })],
+		[
+			'provenance_basis',
+			resultForSample('meeting-en-clean', { provenance_basis: 'public-domain' }),
+		],
+		[
+			'reference_words',
+			resultForSample('meeting-en-clean', {
+				reference_words: 20,
+				word_errors: 1,
+				wer_percent: 5,
+			}),
+		],
+		[
+			'audio_duration_seconds',
+			resultForSample('meeting-en-clean', {
+				metrics: { audio_duration_seconds: 21, inference_rtf: 2 / 21 },
+			}),
+		],
+	];
+
+	for (const [field, conflicting] of conflicts) {
+		assert.throws(
+			() =>
+				aggregateRunReports([
+					variantReport([canonical], { model: 'whisper-test', backend: 'metal' }),
+					variantReport([conflicting], { model: 'whisper-test', backend: 'cpu' }),
+				]),
+			new RegExp(`inconsistent identity.*${field}`),
+		);
+	}
 });
 
 test('validates reports against canonical loaded corpus identity and sample metadata', () => {
