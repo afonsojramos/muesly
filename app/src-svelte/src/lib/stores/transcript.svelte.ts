@@ -12,9 +12,9 @@ import { invoke } from '@tauri-apps/api/core';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import type { Transcript, TranscriptUpdate } from '$lib/types';
+import { formatLiveTranscriptText } from '$lib/format-live-transcript';
 import { recordingService } from '$lib/services/recording';
 import { transcriptService } from '$lib/services/transcript';
-import { formatRecordingTimestamp } from '$lib/utils/format-time';
 import { indexedDBService } from '$lib/services/indexed-db';
 import { toast } from '$lib/toast';
 import { recordingState } from './recording-state.svelte';
@@ -26,11 +26,6 @@ const isBrowser = typeof window !== 'undefined';
 /** Map a TranscriptUpdate source to the persisted speaker value. */
 function speakerFromSource(source: string | undefined): string | undefined {
 	return source === 'mic' || source === 'system' ? source : undefined;
-}
-
-function formatRecordingTime(seconds: number | undefined): string {
-	if (seconds === undefined) return '[--:--]';
-	return formatRecordingTimestamp(seconds);
 }
 
 class TranscriptStore {
@@ -115,13 +110,15 @@ class TranscriptStore {
 		);
 	};
 
-	copyTranscript = (): void => {
-		const text = this.transcripts
-			.map((t) => `${formatRecordingTime(t.audio_start_time)} ${t.text}`)
-			.join('\n');
+	copyTranscript = (options?: { timestamps?: boolean }): void => {
+		const text = formatLiveTranscriptText(this.transcripts, options);
 		if (isBrowser) {
 			void navigator.clipboard.writeText(text);
-			toast.success('Transcript copied to clipboard');
+			toast.success(
+				options?.timestamps === false
+					? 'Transcript copied (without timestamps)'
+					: 'Transcript copied to clipboard',
+			);
 		}
 	};
 
