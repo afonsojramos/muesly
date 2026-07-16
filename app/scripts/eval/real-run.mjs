@@ -140,6 +140,7 @@ let failed = false;
 const runStartedAt = new Date().toISOString();
 const runResults = [];
 const metricsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-'));
+process.once('exit', () => fs.rmSync(metricsDirectory, { recursive: true, force: true }));
 for (const sample of fixtures) {
 	const audio = sample.audio_file;
 	const refText = fs.readFileSync(sample.reference_file, 'utf8').trim();
@@ -263,6 +264,4 @@ if (outputPath) {
 	fs.writeFileSync(absoluteOutput, `${JSON.stringify(report, null, 2)}\n`);
 	console.log(`wrote benchmark report: ${absoluteOutput}`);
 }
-fs.rmSync(metricsDirectory, { recursive: true, force: true });
-
 process.exit(failed ? 1 : 0);

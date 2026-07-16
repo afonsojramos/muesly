@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -46,4 +49,30 @@ test('selects fixtures only by unique manifest sample ID', () => {
 	assert.equal(run.status, 2);
 	assert.match(run.stderr, /no corpus sample named 'real-speech'/);
 	assert.doesNotMatch(run.stderr, /running real/);
+});
+
+test('removes temporary metrics after a failed transcription process', () => {
+	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-cleanup-test-'));
+	const binDirectory = path.join(temporaryRoot, 'bin');
+	fs.mkdirSync(binDirectory);
+	fs.writeFileSync(path.join(binDirectory, 'cargo'), '#!/bin/sh\nexit 7\n', { mode: 0o755 });
+	const run = spawnSync(
+		process.execPath,
+		[realRun, '--fixture', 'und-synthetic-silence'],
+		{
+			encoding: 'utf8',
+			env: {
+				...process.env,
+				PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+				TMPDIR: temporaryRoot,
+			},
+		},
+	);
+	assert.equal(run.status, 7);
+	assert.deepEqual(
+		fs.readdirSync(temporaryRoot).filter((entry) => entry.startsWith('muesly-eval-')),
+		[],
+	);
+	fs.rmSync(temporaryRoot, { recursive: true, force: true });
 });
