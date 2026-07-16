@@ -121,3 +121,13 @@ export function preparedBundleForWithdrawal(manifestPath, sessionId) {
 export function retirePreparedBundleForWithdrawal(manifestPath, sessionId) {
 	return retirePreparedBundle(preparedBundleForWithdrawal(manifestPath, sessionId));
 }
+
+export function retirePreparedBundleIfMatching(manifestPath, sessionId) {
+	let bundleDirectory;
+	try {
+		bundleDirectory = preparedBundleForWithdrawal(manifestPath, sessionId);
+	} catch {
+		return false;
+	}
+	return retirePreparedBundle(bundleDirectory);
+}

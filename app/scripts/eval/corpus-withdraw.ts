@@ -14,6 +14,7 @@ import {
 import {
 	preparedBundleForWithdrawal,
 	retirePreparedBundle,
+	retirePreparedBundleIfMatching,
 	retirePreparedBundleForWithdrawal,
 } from './corpus-prepared-bundle.ts';
 import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
@@ -201,7 +202,7 @@ function quarantineResults(localCorpusRoot, manifestPath, marker) {
 
 function finishWithdrawal(localCorpusRoot, manifestPath, sessionId, markerPath, marker) {
 	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
-	retirePreparedBundleForWithdrawal(manifestPath, sessionId);
+	retirePreparedBundleIfMatching(manifestPath, sessionId);
 	if (marker.schema_version === 2) {
 		fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
 			recursive: true,
@@ -232,15 +233,23 @@ export function withdrawConsentedSession(options) {
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
 	const manifestExists = fs.existsSync(manifestPath);
-	const preparedBundle = preparedBundleForWithdrawal(manifestPath, options.sessionId);
 	const interruptedOperation = interruptedOrphanCleanupTargetsManifest(
 		lockPath,
 		manifestPath,
 		options.sessionId,
 	);
+	const markerMatchesManifest = markerTargetsManifest(
+		markerPath,
+		options.sessionId,
+		manifestPath,
+	);
+	const preparedBundle =
+		!manifestExists && interruptedOperation === null && !markerMatchesManifest
+			? preparedBundleForWithdrawal(manifestPath, options.sessionId)
+			: null;
 	const allowMissingManifest =
 		interruptedOperation !== null ||
-		markerTargetsManifest(markerPath, options.sessionId, manifestPath) ||
+		markerMatchesManifest ||
 		preparedBundle !== null;
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
@@ -287,14 +296,17 @@ export function withdrawConsentedSession(options) {
 			if (!sessionEntry) {
 				if (orphanCleanup || completedWithdrawal) {
 					completeRecovery();
-					retirePreparedBundleForWithdrawal(manifestPath, options.sessionId);
+					retirePreparedBundleIfMatching(manifestPath, options.sessionId);
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,
 						resumed: true,
 					};
 				}
-				if (retirePreparedBundle(preparedBundle)) {
+				const removablePreparedBundle =
+					preparedBundle ??
+					preparedBundleForWithdrawal(manifestPath, options.sessionId);
+				if (retirePreparedBundle(removablePreparedBundle)) {
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,

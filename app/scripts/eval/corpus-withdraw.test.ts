@@ -124,6 +124,37 @@ test('withdraws from the canonical manifest behind a symlink', () => {
 	);
 });
 
+test('withdraws corpus samples without deleting an unrelated prepared bundle', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
+	const unrelatedManifestPath = path.join(directory, 'another-corpus-local.json');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'unrelated source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'unrelated source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-withdraw',
+			manifestPath: unrelatedManifestPath,
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	assert(fs.existsSync(preparedBundle));
+	assert(fs.existsSync(path.join(preparedBundle, 'recording.wav')));
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(manifestPath, 'utf8')).samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
+});
+
 test('requires explicit confirmation and leaves unknown sessions unchanged', () => {
 	const { manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');
