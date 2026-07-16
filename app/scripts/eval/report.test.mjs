@@ -80,6 +80,8 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.equal(aggregate.groups.overall.all.hallucinated_words_total, 2);
 	const markdown = renderMarkdown(aggregate);
 	assert.match(markdown, /language noise backend/);
+	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
+	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
 	assert.doesNotMatch(markdown, /—%/);
 });
 

@@ -203,6 +203,10 @@ export function renderMarkdown(report) {
 		'',
 		`Generated ${report.generated_at} from ${report.source_report_count} run report(s) and ${report.sample_result_count} sample result(s).`,
 		'',
+		`Corpus: \`${report.corpus_id}\``,
+		'',
+		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
+		'',
 		'WER is micro-averaged from total word errors / total reference words. RTF and memory are measured during local inference.',
 	];
 	for (const [dimension, groups] of Object.entries(report.groups)) {
