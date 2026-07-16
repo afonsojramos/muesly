@@ -8,8 +8,13 @@ import { TextDecoder } from 'node:util';
 import { canonicalManifestPath, fileSha256, validateCorpusDocument } from './corpus.ts';
 import { processIdentity, processIsAlive, processOwnsState } from './process-identity.ts';
 
-const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
-const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
+export const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
+export const TARGET_NOISE_CONDITIONS = new Set([
+	'clean',
+	'office',
+	'remote-call',
+	'overlapping-speech',
+]);
 const REQUIRED_OPTIONS = [
 	'audio',
 	'reference',

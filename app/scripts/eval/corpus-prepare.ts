@@ -6,8 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { validateCoverageTargets } from './coverage.ts';
 import { canonicalFilePath, canonicalManifestPath, loadCorpus } from './corpus.ts';
+import { TARGET_LANGUAGES, TARGET_NOISE_CONDITIONS } from './corpus-intake.ts';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const repositoryIntakeRoot = path.join(repositoryRoot, 'app/scripts/eval');
 
 function primaryLanguage(language) {
 	return language.split('-')[0].toLowerCase();
@@ -68,6 +70,18 @@ function pendingCollectionSessions(intakeRoot) {
 
 export function planCollectionCells(corpus, targets, pendingSessions = []) {
 	const targetErrors = validateCoverageTargets(targets);
+	for (const language of targets.languages ?? []) {
+		if (!TARGET_LANGUAGES.has(language)) {
+			targetErrors.push(`targets.languages contains unsupported intake language '${language}'`);
+		}
+	}
+	for (const noiseCondition of targets.noise_conditions ?? []) {
+		if (!TARGET_NOISE_CONDITIONS.has(noiseCondition)) {
+			targetErrors.push(
+				`targets.noise_conditions contains unsupported intake condition '${noiseCondition}'`,
+			);
+		}
+	}
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
@@ -217,17 +231,32 @@ export function prepareCollectionSession(options) {
 	const targets = JSON.parse(fs.readFileSync(path.resolve(options.targetsPath), 'utf8'));
 	const corpus = fs.existsSync(manifestPath)
 		? loadCorpus(manifestPath)
-		: { corpus_id: 'consented-meetings-v1', samples: [] };
+		: { corpus_id: 'consented-meetings-v1', distribution: 'local', samples: [] };
+	if (corpus.distribution !== 'local') {
+		throw new Error('collection preparation requires a local corpus manifest');
+	}
 	const root = path.dirname(manifestPath);
 	const intakeRoot = path.join(root, 'intake');
 	const consentRoot = canonicalFilePath(options.consentRecordsDir, { allowMissing: true });
 	const protectedRepositoryRoot = canonicalFilePath(options.repositoryRoot ?? repositoryRoot);
+	const allowedRepositoryIntakeRoot = canonicalFilePath(
+		options.repositoryIntakeRoot ?? repositoryIntakeRoot,
+		{ allowMissing: true },
+	);
+	if (
+		isWithinOrEqual(protectedRepositoryRoot, manifestPath) &&
+		root !== allowedRepositoryIntakeRoot
+	) {
+		throw new Error(
+			`repository-local manifests must be stored in the ignored eval directory: ${allowedRepositoryIntakeRoot}`,
+		);
+	}
 	if (isWithinOrEqual(protectedRepositoryRoot, consentRoot)) {
 		throw new Error('consent records directory must be outside the Git repository');
 	}
+	const cells = planCollectionCells(corpus, targets, pendingCollectionSessions(intakeRoot));
 	assertPrivateDirectory(intakeRoot, 'intake directory');
 	assertPrivateDirectory(consentRoot, 'consent records directory');
-	const cells = planCollectionCells(corpus, targets, pendingCollectionSessions(intakeRoot));
 	if (cells.length === 0) {
 		throw new Error('all required session observations are collected or already prepared');
 	}

@@ -64,6 +64,7 @@ function prepareOptions(current, overrides = {}) {
 		templatePath: current.templatePath,
 		consentRecordsDir: current.consentRecordsDir,
 		repositoryRoot: current.directory,
+		repositoryIntakeRoot: current.directory,
 		...overrides,
 	};
 }
@@ -230,7 +231,7 @@ test('refuses collection roots that are symbolic links', () => {
 	fs.symlinkSync(outside, path.join(directory, 'intake'));
 	assert.throws(
 		() => prepareCollectionSession(prepareOptions(current)),
-		/intake directory cannot be a symbolic link/,
+		/intake directory must be a regular directory/,
 	);
 });
 
@@ -272,6 +273,84 @@ test('requires an explicit external consent records directory', () => {
 			}),
 		/must be outside the Git repository/,
 	);
+});
+
+test('refuses repository-local manifests outside the ignored eval directory', () => {
+	const current = fixture();
+	const unignoredManifest = path.join(current.directory, 'app', 'corpus-local.json');
+	assert.throws(
+		() =>
+			prepareCollectionSession(
+				prepareOptions(current, {
+					manifestPath: unignoredManifest,
+					repositoryIntakeRoot: path.join(current.directory, 'app', 'scripts', 'eval'),
+				}),
+			),
+		/repository-local manifests must be stored in the ignored eval directory/,
+	);
+	assert(!fs.existsSync(path.join(path.dirname(unignoredManifest), 'intake')));
+	assert.deepEqual(fs.readdirSync(current.consentRecordsDir), []);
+});
+
+test('rejects repository-distributed manifests before creating collection files', () => {
+	const current = fixture();
+	const audio = path.join(current.directory, 'public.wav');
+	const reference = path.join(current.directory, 'public.txt');
+	fs.writeFileSync(audio, 'public audio');
+	fs.writeFileSync(reference, 'public reference');
+	fs.writeFileSync(
+		current.manifestPath,
+		JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'repository-corpus',
+			description: 'Repository fixture.',
+			distribution: 'repository',
+			samples: [
+				{
+					id: 'public-speech',
+					audio_path: 'public.wav',
+					audio_sha256: hash('public audio'),
+					reference_path: 'public.txt',
+					reference_sha256: hash('public reference'),
+					language: 'en',
+					scenario: 'speech',
+					noise_condition: 'clean',
+					speakers: 1,
+					duration_seconds: 10,
+					provenance: {
+						basis: 'public-domain',
+						redistribution: 'repository',
+						source_url: 'https://example.test/audio',
+						license: 'CC0',
+					},
+				},
+			],
+		}),
+	);
+	assert.throws(
+		() => prepareCollectionSession(prepareOptions(current)),
+		/requires a local corpus manifest/,
+	);
+	assert(!fs.existsSync(path.join(current.directory, 'intake')));
+	assert.deepEqual(fs.readdirSync(current.consentRecordsDir), []);
+});
+
+test('rejects custom target values that the intake command cannot accept', () => {
+	const current = fixture();
+	fs.writeFileSync(
+		current.targetsPath,
+		JSON.stringify({
+			...targets,
+			languages: ['it'],
+			noise_conditions: ['stadium'],
+		}),
+	);
+	assert.throws(
+		() => prepareCollectionSession(prepareOptions(current)),
+		/unsupported intake language 'it'/,
+	);
+	assert(!fs.existsSync(path.join(current.directory, 'intake')));
+	assert.deepEqual(fs.readdirSync(current.consentRecordsDir), []);
 });
 
 test('parses targeted preparation options without accepting unknown flags', () => {
