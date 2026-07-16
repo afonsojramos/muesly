@@ -7,6 +7,8 @@ import { writeCorpusBoundJson } from './corpus-result.ts';
 import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
 import { validateRunReport } from './report.ts';
 
+const MAX_MATRIX_HARDWARE_COHORTS = 4096;
+
 const TARGET_FIELDS = new Set([
 	'schema_version',
 	'target_id',
@@ -123,6 +125,18 @@ function hardwareCohortKey(cohort) {
 	]);
 }
 
+function baseHardwareCohort(cohort) {
+	return {
+		operating_system: cohort.operating_system,
+		architecture: cohort.architecture,
+		hardware_profile: cohort.hardware_profile,
+	};
+}
+
+function baseHardwareCohortKey(cohort) {
+	return JSON.stringify([cohort.operating_system, cohort.architecture, cohort.hardware_profile]);
+}
+
 function addToMeasurementCell(map, key, metrics, sessionId) {
 	if (!map.has(key)) {
 		map.set(key, {
@@ -158,6 +172,82 @@ function measurementCohorts(cell) {
 				a.hardware_profile.localeCompare(b.hardware_profile) ||
 				a.accelerator.localeCompare(b.accelerator),
 		);
+}
+
+function matrixHardwareCohorts(requiredCells, measurementCells, minimumDistinctSessions) {
+	const baseCohorts = new Map();
+	const requiredBackends = [...new Set(requiredCells.map((cell) => cell.backend))].sort();
+	for (const cell of requiredCells) {
+		for (const cohort of measurementCells.get(cell.key)?.cohorts.values() ?? []) {
+			const base = baseHardwareCohort(cohort);
+			const baseKey = baseHardwareCohortKey(base);
+			if (!baseCohorts.has(baseKey)) {
+				baseCohorts.set(baseKey, {
+					...base,
+					acceleratorsByBackend: new Map(),
+					cells: new Map(),
+				});
+			}
+			const matrixCohort = baseCohorts.get(baseKey);
+			if (!matrixCohort.acceleratorsByBackend.has(cell.backend)) {
+				matrixCohort.acceleratorsByBackend.set(cell.backend, new Set());
+			}
+			matrixCohort.acceleratorsByBackend.get(cell.backend).add(cohort.accelerator);
+			if (!matrixCohort.cells.has(cell.key)) matrixCohort.cells.set(cell.key, new Map());
+			matrixCohort.cells.get(cell.key).set(cohort.accelerator, cohort.sessions);
+		}
+	}
+
+	const sortedBaseCohorts = [...baseCohorts.values()].sort(
+		(a, b) =>
+			a.operating_system.localeCompare(b.operating_system) ||
+			a.architecture.localeCompare(b.architecture) ||
+			a.hardware_profile.localeCompare(b.hardware_profile),
+	);
+	const candidates = [];
+	for (const cohort of sortedBaseCohorts) {
+		let acceleratorMappings = [{}];
+		for (const backend of requiredBackends) {
+			const accelerators = [...(cohort.acceleratorsByBackend.get(backend) ?? new Set())].sort();
+			const options = accelerators.length > 0 ? accelerators : [null];
+			if (
+				acceleratorMappings.length >
+				Math.floor((MAX_MATRIX_HARDWARE_COHORTS - candidates.length) / options.length)
+			) {
+				throw new Error(
+					`hardware matrix exceeds ${MAX_MATRIX_HARDWARE_COHORTS} candidate accelerator mappings; reduce distinct hardware profiles or accelerator identities`,
+				);
+			}
+			acceleratorMappings = acceleratorMappings.flatMap((mapping) =>
+				options.map((accelerator) => ({ ...mapping, [backend]: accelerator })),
+			);
+		}
+
+		for (const accelerators of acceleratorMappings) {
+			const counts = Object.fromEntries(
+				requiredCells.map((cell) => [
+					cell.key,
+					accelerators[cell.backend] === null
+						? 0
+						: (cohort.cells.get(cell.key)?.get(accelerators[cell.backend])?.size ?? 0),
+				]),
+			);
+			const missingCells = requiredCells
+				.filter((cell) => counts[cell.key] < minimumDistinctSessions)
+				.map((cell) => cell.key);
+			candidates.push({
+				operating_system: cohort.operating_system,
+				architecture: cohort.architecture,
+				hardware_profile: cohort.hardware_profile,
+				accelerators,
+				covered_cells: requiredCells.length - missingCells.length,
+				required_cells: requiredCells.length,
+				counts,
+				missing_cells: missingCells,
+			});
+		}
+	}
+	return candidates;
 }
 
 export function evaluateCoverage(corpus, targets, reports = []) {
@@ -245,35 +335,49 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	for (const language of targets.languages) {
 		for (const noise of targets.noise_conditions) {
 			for (const variant of targets.benchmark_variants) {
-				requiredMeasurementCells.push(
-					measurementKey(language, noise, variant.provider, variant.model, variant.backend),
-				);
+				requiredMeasurementCells.push({
+					key: measurementKey(language, noise, variant.provider, variant.model, variant.backend),
+					backend: variant.backend,
+				});
 			}
 		}
 	}
 	const measurementCoverage = Object.fromEntries(
-		requiredMeasurementCells.map((key) => [key, measurementCells.get(key)?.sessions.size ?? 0]),
+		requiredMeasurementCells.map(({ key }) => [key, measurementCells.get(key)?.sessions.size ?? 0]),
 	);
 	const measurementHardwareCohorts = Object.fromEntries(
-		requiredMeasurementCells.map((key) => [key, measurementCohorts(measurementCells.get(key))]),
+		requiredMeasurementCells.map(({ key }) => [key, measurementCohorts(measurementCells.get(key))]),
 	);
 	const compatibleMeasurementCoverage = Object.fromEntries(
-		requiredMeasurementCells.map((key) => [
+		requiredMeasurementCells.map(({ key }) => [
 			key,
 			measurementHardwareCohorts[key][0]?.distinct_sessions ?? 0,
 		]),
 	);
-	const missingMeasurementCells = requiredMeasurementCells.filter(
-		(key) => compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
+	const missingMeasurementCells = requiredMeasurementCells
+		.filter(
+			({ key }) =>
+				compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
+		)
+		.map(({ key }) => key);
+	const hardwareSplitMeasurementCells = requiredMeasurementCells
+		.filter(
+			({ key }) =>
+				measurementCoverage[key] >= targets.min_sessions_per_language_noise_cell &&
+				compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
+		)
+		.map(({ key }) => key);
+	const measurementMatrixHardwareCohorts = matrixHardwareCohorts(
+		requiredMeasurementCells,
+		measurementCells,
+		targets.min_sessions_per_language_noise_cell,
 	);
-	const hardwareSplitMeasurementCells = requiredMeasurementCells.filter(
-		(key) =>
-			measurementCoverage[key] >= targets.min_sessions_per_language_noise_cell &&
-			compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
-	);
+	const completeMatrixHardwareCohorts = measurementMatrixHardwareCohorts.filter(
+		(cohort) => cohort.missing_cells.length === 0,
+	).length;
 
 	return {
-		schema_version: 5,
+		schema_version: 6,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
@@ -299,8 +403,10 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 			hardware_cohorts: measurementHardwareCohorts,
 			hardware_split_cells: hardwareSplitMeasurementCells,
 			missing_cells: missingMeasurementCells,
+			matrix_hardware_cohorts: measurementMatrixHardwareCohorts,
+			complete_matrix_hardware_cohorts: completeMatrixHardwareCohorts,
 		},
-		complete: missingCorpusCells.length === 0 && missingMeasurementCells.length === 0,
+		complete: missingCorpusCells.length === 0 && completeMatrixHardwareCohorts > 0,
 	};
 }
 
@@ -313,7 +419,8 @@ export function formatCoverage(coverage) {
 		`${coverage.target_id} on ${coverage.corpus_id}`,
 		`Distinct participant meeting sessions: ${coverage.participant_meeting_sessions}`,
 		`Corpus cells: ${coverage.corpus.covered_cells}/${coverage.corpus.required_cells}`,
-		`Measurement cells: ${coverage.measurements.covered_cells}/${coverage.measurements.required_cells} (single compatible hardware cohort)`,
+		`Measurement cells: ${coverage.measurements.covered_cells}/${coverage.measurements.required_cells} (best compatible cohort per cell)`,
+		`Full-matrix hardware cohorts: ${coverage.measurements.complete_matrix_hardware_cohorts}/${coverage.measurements.matrix_hardware_cohorts.length}`,
 	];
 	if (coverage.corpus.missing_cells.length > 0) {
 		lines.push(`Missing corpus cells: ${summarizeMissing(coverage.corpus.missing_cells)}`);

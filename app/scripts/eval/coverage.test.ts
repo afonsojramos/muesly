@@ -115,7 +115,7 @@ test('rejects copied audio relabeled within the same session', () => {
 	assert.throws(() => evaluateCoverage(corpus, targets), /reuse identical audio/);
 });
 
-test('requires measurements for every language, noise, and backend cell', () => {
+test('requires every measurement cell and accepts a same-machine multi-backend matrix', () => {
 	const corpus = completeCorpus();
 	const partial = evaluateCoverage(corpus, targets, [runReport(corpus, 'metal')]);
 	assert.equal(partial.corpus.covered_cells, 4);
@@ -128,11 +128,19 @@ test('requires measurements for every language, noise, and backend cell', () => 
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 5);
+	assert.equal(complete.schema_version, 6);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
 	assert.equal(complete.wer_scorer, WER_SCORER_ID);
 	assert.deepEqual(complete.measurements.compatible_counts, complete.measurements.counts);
 	assert.deepEqual(complete.measurements.hardware_split_cells, []);
+	assert.equal(complete.measurements.complete_matrix_hardware_cohorts, 1);
+	assert.equal(complete.measurements.matrix_hardware_cohorts.length, 1);
+	assert.deepEqual(complete.measurements.matrix_hardware_cohorts[0].accelerators, {
+		metal: 'Apple M4 Pro integrated GPU',
+		'onnx-cpu': 'none',
+	});
+	assert.equal(complete.measurements.matrix_hardware_cohorts[0].covered_cells, 8);
+	assert.deepEqual(complete.measurements.matrix_hardware_cohorts[0].missing_cells, []);
 	assert.deepEqual(complete.model_artifacts, {
 		'parakeet/test-model': 'd'.repeat(64),
 		'whisper/test-model': 'c'.repeat(64),
@@ -204,6 +212,119 @@ test('combines separate reports only when their complete hardware cohort matches
 	assert.equal(coverage.complete, true);
 });
 
+test('does not accept a full matrix assembled from different machines by cell', () => {
+	const corpus = completeCorpus();
+	const englishSamples = corpus.samples.filter((corpusSample) =>
+		corpusSample.language.startsWith('en'),
+	);
+	const spanishSamples = corpus.samples.filter((corpusSample) =>
+		corpusSample.language.startsWith('es'),
+	);
+	const m3 = {
+		hardwareProfile: 'cpu=Apple M3 Max;logical_cpus=16;memory_bytes=68719476736',
+	};
+	const coverage = evaluateCoverage(corpus, targets, [
+		runReport(corpus, 'metal', { samples: englishSamples }),
+		runReport(corpus, 'onnx-cpu', { samples: englishSamples }),
+		runReport(corpus, 'metal', { samples: spanishSamples, ...m3 }),
+		runReport(corpus, 'onnx-cpu', { samples: spanishSamples, ...m3 }),
+	]);
+
+	assert.equal(coverage.measurements.covered_cells, 8);
+	assert.deepEqual(coverage.measurements.missing_cells, []);
+	assert.deepEqual(coverage.measurements.hardware_split_cells, []);
+	assert.equal(coverage.measurements.complete_matrix_hardware_cohorts, 0);
+	assert.equal(coverage.measurements.matrix_hardware_cohorts.length, 2);
+	assert.deepEqual(
+		coverage.measurements.matrix_hardware_cohorts.map((cohort) => ({
+			hardware_profile: cohort.hardware_profile,
+			covered_cells: cohort.covered_cells,
+			missing_cells: cohort.missing_cells,
+		})),
+		[
+			{
+				hardware_profile: 'cpu=Apple M3 Max;logical_cpus=16;memory_bytes=68719476736',
+				covered_cells: 4,
+				missing_cells: [
+					'en / clean / whisper / test-model / metal',
+					'en / clean / parakeet / test-model / onnx-cpu',
+					'en / office / whisper / test-model / metal',
+					'en / office / parakeet / test-model / onnx-cpu',
+				],
+			},
+			{
+				hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+				covered_cells: 4,
+				missing_cells: [
+					'es / clean / whisper / test-model / metal',
+					'es / clean / parakeet / test-model / onnx-cpu',
+					'es / office / whisper / test-model / metal',
+					'es / office / parakeet / test-model / onnx-cpu',
+				],
+			},
+		],
+	);
+	assert.equal(coverage.complete, false);
+	assert.match(formatCoverage(coverage), /Full-matrix hardware cohorts: 0\/2/);
+});
+
+test('requires one accelerator identity per backend across the full matrix', () => {
+	const corpus = completeCorpus();
+	const englishSamples = corpus.samples.filter((corpusSample) =>
+		corpusSample.language.startsWith('en'),
+	);
+	const spanishSamples = corpus.samples.filter((corpusSample) =>
+		corpusSample.language.startsWith('es'),
+	);
+	const coverage = evaluateCoverage(corpus, targets, [
+		runReport(corpus, 'metal', {
+			samples: englishSamples,
+			accelerator: 'Integrated Metal GPU',
+		}),
+		runReport(corpus, 'metal', {
+			samples: spanishSamples,
+			accelerator: 'External Metal GPU',
+		}),
+		runReport(corpus, 'onnx-cpu'),
+	]);
+
+	assert.equal(coverage.measurements.covered_cells, 8);
+	assert.deepEqual(coverage.measurements.missing_cells, []);
+	assert.equal(coverage.measurements.complete_matrix_hardware_cohorts, 0);
+	assert.deepEqual(
+		coverage.measurements.matrix_hardware_cohorts.map((cohort) => ({
+			accelerators: cohort.accelerators,
+			covered_cells: cohort.covered_cells,
+			missing_cells: cohort.missing_cells,
+		})),
+		[
+			{
+				accelerators: {
+					metal: 'External Metal GPU',
+					'onnx-cpu': 'none',
+				},
+				covered_cells: 6,
+				missing_cells: [
+					'en / clean / whisper / test-model / metal',
+					'en / office / whisper / test-model / metal',
+				],
+			},
+			{
+				accelerators: {
+					metal: 'Integrated Metal GPU',
+					'onnx-cpu': 'none',
+				},
+				covered_cells: 6,
+				missing_cells: [
+					'es / clean / whisper / test-model / metal',
+					'es / office / whisper / test-model / metal',
+				],
+			},
+		],
+	);
+	assert.equal(coverage.complete, false);
+});
+
 test('treats different accelerators as incompatible hardware cohorts', () => {
 	const corpus = completeCorpus();
 	const firstSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-1'));
@@ -268,10 +389,7 @@ test('rejects stale reports after a corpus revision changes', () => {
 test('rejects legacy reports without versioned scoring provenance', () => {
 	const corpus = completeCorpus();
 	const legacy = { ...runReport(corpus, 'metal'), schema_version: 7 };
-	assert.throws(
-		() => evaluateCoverage(corpus, targets, [legacy]),
-		/schema_version must be 8/,
-	);
+	assert.throws(() => evaluateCoverage(corpus, targets, [legacy]), /schema_version must be 8/);
 });
 
 test('rejects coverage assembled from different bytes for the same model', () => {
@@ -293,6 +411,27 @@ test('rejects coverage assembled with different WER scorers', () => {
 	assert.throws(
 		() => evaluateCoverage(corpus, targets, [first, changed]),
 		/reports use different WER scorers/,
+	);
+});
+
+test('fails clearly when accelerator mapping combinations are pathological', () => {
+	const corpus = completeCorpus();
+	const pathologicalTargets = {
+		...targets,
+		benchmark_variants: Array.from({ length: 13 }, (_, index) => ({
+			provider: 'whisper',
+			model: 'test-model',
+			backend: `backend-${index}`,
+		})),
+	};
+	const reports = pathologicalTargets.benchmark_variants.flatMap(({ backend }) => [
+		runReport(corpus, backend, { accelerator: `${backend}-accelerator-a` }),
+		runReport(corpus, backend, { accelerator: `${backend}-accelerator-b` }),
+	]);
+
+	assert.throws(
+		() => evaluateCoverage(corpus, pathologicalTargets, reports),
+		/hardware matrix exceeds 4096 candidate accelerator mappings/,
 	);
 });
 
