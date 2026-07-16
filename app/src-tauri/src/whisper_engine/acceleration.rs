@@ -4,7 +4,7 @@ use std::ffi::CStr;
 use std::sync::{Mutex, OnceLock};
 use whisper_rs::whisper_rs_sys as sys;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WhisperCompiledBackend {
     Metal,
     Cuda,
@@ -35,6 +35,16 @@ impl WhisperCompiledBackend {
             Self::Vulkan => "Vulkan",
             Self::HipBlas => "HipBlas",
             Self::Cpu => "Cpu",
+        }
+    }
+
+    fn ggml_registry_name(self) -> Option<&'static str> {
+        match self {
+            Self::Metal => Some("Metal"),
+            Self::Cuda => Some("CUDA"),
+            Self::Vulkan => Some("Vulkan"),
+            Self::HipBlas => Some("ROCm"),
+            Self::Cpu => None,
         }
     }
 }
@@ -116,12 +126,19 @@ pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
         ));
     }
 
-    static VERIFIED_GPU_DEVICES: OnceLock<Mutex<HashMap<i32, String>>> = OnceLock::new();
+    let compiled_backend = WhisperCompiledBackend::current();
+    let expected_registry = compiled_backend.ggml_registry_name().ok_or_else(|| {
+        "the compiled Whisper backend is CPU-only and cannot satisfy GPU acceleration".to_string()
+    })?;
+
+    static VERIFIED_GPU_DEVICES: OnceLock<Mutex<HashMap<(WhisperCompiledBackend, i32), String>>> =
+        OnceLock::new();
     let cache = VERIFIED_GPU_DEVICES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut verified_devices = cache
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(name) = verified_devices.get(&gpu_device) {
+    let cache_key = (compiled_backend, gpu_device);
+    if let Some(name) = verified_devices.get(&cache_key) {
         return Ok(name.clone());
     }
 
@@ -147,12 +164,41 @@ pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
                 continue;
             }
 
+            let registry = sys::ggml_backend_dev_backend_reg(device);
+            if registry.is_null() {
+                return Err(format!(
+                    "{} GPU device {gpu_device} has no ggml backend registry",
+                    compiled_backend.as_str()
+                ));
+            }
+            let registry_name_ptr = sys::ggml_backend_reg_name(registry);
+            if registry_name_ptr.is_null() {
+                return Err(format!(
+                    "{} GPU device {gpu_device} has no ggml backend registry name",
+                    compiled_backend.as_str()
+                ));
+            }
+            let registry_name = CStr::from_ptr(registry_name_ptr)
+                .to_str()
+                .map_err(|_| "ggml backend registry name is not valid UTF-8".to_string())?;
+            validate_gpu_backend_registry(compiled_backend, expected_registry, registry_name)?;
+
             let name_ptr = sys::ggml_backend_dev_name(device);
-            let name = if name_ptr.is_null() {
-                "unknown GPU".to_string()
-            } else {
-                CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
-            };
+            if name_ptr.is_null() {
+                return Err(format!(
+                    "{} GPU device {gpu_device} has no stable ggml device name",
+                    compiled_backend.as_str()
+                ));
+            }
+            let name = CStr::from_ptr(name_ptr)
+                .to_str()
+                .map_err(|_| "ggml GPU device name is not valid UTF-8".to_string())?
+                .to_string();
+            if name.is_empty() || name.chars().any(char::is_control) {
+                return Err(
+                    "ggml GPU device name is empty or contains control characters".to_string(),
+                );
+            }
             let backend = sys::ggml_backend_dev_init(device, std::ptr::null());
             if backend.is_null() {
                 return Err(format!(
@@ -160,7 +206,7 @@ pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
                 ));
             }
             sys::ggml_backend_free(backend);
-            verified_devices.insert(gpu_device, name.clone());
+            verified_devices.insert(cache_key, name.clone());
             return Ok(name);
         }
     }
@@ -168,6 +214,21 @@ pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
     Err(format!(
         "GPU device {gpu_device} is unavailable (found {matching_index} GPU devices)"
     ))
+}
+
+fn validate_gpu_backend_registry(
+    compiled_backend: WhisperCompiledBackend,
+    expected_registry: &str,
+    actual_registry: &str,
+) -> Result<(), String> {
+    if actual_registry == expected_registry {
+        Ok(())
+    } else {
+        Err(format!(
+            "requested {} acceleration resolved to an unexpected ggml backend registry",
+            compiled_backend.as_str()
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -254,5 +315,22 @@ mod tests {
             verify_gpu_backend_available(-1).unwrap_err(),
             "GPU device index must be non-negative, got -1"
         );
+    }
+
+    #[test]
+    fn gpu_backend_registry_identity_is_fail_closed() {
+        for (backend, registry) in [
+            (WhisperCompiledBackend::Metal, "Metal"),
+            (WhisperCompiledBackend::Cuda, "CUDA"),
+            (WhisperCompiledBackend::Vulkan, "Vulkan"),
+            (WhisperCompiledBackend::HipBlas, "ROCm"),
+        ] {
+            assert!(validate_gpu_backend_registry(backend, registry, registry).is_ok());
+            assert!(
+                validate_gpu_backend_registry(backend, registry, "unexpected")
+                    .unwrap_err()
+                    .contains("unexpected ggml backend registry")
+            );
+        }
     }
 }

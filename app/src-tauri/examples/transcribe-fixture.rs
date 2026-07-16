@@ -26,8 +26,8 @@ use std::ffi::CStr;
 use std::io::Write as _;
 use std::os::raw::{c_char, c_void};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -41,8 +41,17 @@ use serde::Serialize;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
 use whisper_rs::whisper_rs_sys::ggml_log_level;
 
-const COREML_MODEL_LOADED_MARKER: &[u8] = b"Core ML model loaded";
-static COREML_MODEL_LOADED: AtomicBool = AtomicBool::new(false);
+const GPU_BACKEND_USE_PREFIX: &[u8] = b"whisper_backend_init_gpu: using ";
+const GPU_BACKEND_USE_SUFFIX: &[u8] = b" backend";
+const GPU_BACKEND_FAILURE_PREFIX: &[u8] = b"whisper_backend_init_gpu: failed to initialize ";
+const GPU_BACKEND_NO_DEVICE: &[u8] = b"whisper_backend_init_gpu: no GPU found";
+const COREML_ATTEMPT_PREFIX: &[u8] = b"whisper_init_state: loading Core ML model from '";
+const COREML_FAILURE_PREFIX: &[u8] = b"whisper_init_state: failed to load Core ML model from '";
+const COREML_SUCCESS: &[u8] = b"whisper_init_state: Core ML model loaded";
+
+static EVALUATOR_WHISPER_RUNTIME_ATTESTATION: OnceLock<
+    Mutex<Option<EvaluatorWhisperRuntimeAttestation>>,
+> = OnceLock::new();
 
 #[derive(Serialize)]
 struct EvalMetrics {
@@ -134,6 +143,139 @@ struct BenchmarkHardware {
     backend: BenchmarkBackend,
     hardware_profile: String,
     accelerator: String,
+    whisper_gpu_device_name: Option<String>,
+}
+
+#[derive(Debug)]
+struct EvaluatorWhisperRuntimeAttestation {
+    expected_gpu_use_line: Vec<u8>,
+    expected_gpu_failure_line: Vec<u8>,
+    gpu_backend_uses: u64,
+    gpu_initialization_failures: u64,
+    missing_gpu_states: u64,
+    unexpected_gpu_events: u64,
+    coreml_attempts: u64,
+    coreml_successes: u64,
+    coreml_failures: u64,
+}
+
+impl EvaluatorWhisperRuntimeAttestation {
+    fn new(expected_gpu_device_name: &str) -> Self {
+        let mut expected_gpu_use_line = GPU_BACKEND_USE_PREFIX.to_vec();
+        expected_gpu_use_line.extend_from_slice(expected_gpu_device_name.as_bytes());
+        expected_gpu_use_line.extend_from_slice(GPU_BACKEND_USE_SUFFIX);
+
+        let mut expected_gpu_failure_line = GPU_BACKEND_FAILURE_PREFIX.to_vec();
+        expected_gpu_failure_line.extend_from_slice(expected_gpu_device_name.as_bytes());
+        expected_gpu_failure_line.extend_from_slice(GPU_BACKEND_USE_SUFFIX);
+
+        Self {
+            expected_gpu_use_line,
+            expected_gpu_failure_line,
+            gpu_backend_uses: 0,
+            gpu_initialization_failures: 0,
+            missing_gpu_states: 0,
+            unexpected_gpu_events: 0,
+            coreml_attempts: 0,
+            coreml_successes: 0,
+            coreml_failures: 0,
+        }
+    }
+
+    fn observe(&mut self, message: &[u8]) {
+        let line = strip_single_log_line_ending(message);
+
+        if line == self.expected_gpu_use_line {
+            self.gpu_backend_uses = self.gpu_backend_uses.saturating_add(1);
+        } else if line.starts_with(GPU_BACKEND_USE_PREFIX) && line.ends_with(GPU_BACKEND_USE_SUFFIX)
+        {
+            self.unexpected_gpu_events = self.unexpected_gpu_events.saturating_add(1);
+        }
+
+        if line == self.expected_gpu_failure_line {
+            self.gpu_initialization_failures = self.gpu_initialization_failures.saturating_add(1);
+        } else if line.starts_with(GPU_BACKEND_FAILURE_PREFIX)
+            && line.ends_with(GPU_BACKEND_USE_SUFFIX)
+        {
+            self.unexpected_gpu_events = self.unexpected_gpu_events.saturating_add(1);
+        }
+
+        if line == GPU_BACKEND_NO_DEVICE {
+            self.missing_gpu_states = self.missing_gpu_states.saturating_add(1);
+        }
+
+        if line.starts_with(COREML_ATTEMPT_PREFIX) && line.ends_with(b"'") {
+            self.coreml_attempts = self.coreml_attempts.saturating_add(1);
+        } else if line.starts_with(COREML_FAILURE_PREFIX) && line.ends_with(b"'") {
+            self.coreml_failures = self.coreml_failures.saturating_add(1);
+        } else if line == COREML_SUCCESS {
+            self.coreml_successes = self.coreml_successes.saturating_add(1);
+        }
+    }
+
+    fn verify(&self, backend: BenchmarkBackend) -> Result<(), String> {
+        if self.gpu_backend_uses == 0 {
+            return Err(format!(
+                "{} runtime proof observed no model context or decoder state using the requested GPU backend",
+                backend.as_str()
+            ));
+        }
+        if self.unexpected_gpu_events > 0 {
+            return Err(format!(
+                "{} runtime proof observed an unexpected GPU backend or device",
+                backend.as_str()
+            ));
+        }
+        if self.missing_gpu_states > 0 {
+            return Err(format!(
+                "{} runtime proof observed a decoder state falling back after no GPU was found",
+                backend.as_str()
+            ));
+        }
+        if self.gpu_initialization_failures > 0 {
+            return Err(format!(
+                "{} runtime proof observed a GPU backend initialization failure",
+                backend.as_str()
+            ));
+        }
+
+        if backend == BenchmarkBackend::CoreMlMetal {
+            if self.coreml_attempts == 0 {
+                return Err(
+                    "Core ML runtime proof observed no encoder initialization attempt".to_string(),
+                );
+            }
+            if self.coreml_failures > 0 {
+                return Err(
+                    "Core ML runtime proof observed an encoder initialization failure".to_string(),
+                );
+            }
+            // whisper.cpp initializes one GPU backend for the model context,
+            // then one for every decoder state. Core ML initializes only for
+            // decoder states, so a complete run has exactly one more GPU
+            // selection than Core ML encoder attempt.
+            if self.gpu_backend_uses != self.coreml_attempts.saturating_add(1) {
+                return Err(format!(
+                    "Core ML runtime proof observed {} GPU backend selections for one model context and {} encoder attempts",
+                    self.gpu_backend_uses, self.coreml_attempts
+                ));
+            }
+            if self.coreml_successes != self.coreml_attempts {
+                return Err(format!(
+                    "Core ML runtime proof observed {} successful encoder loads for {} decoder states",
+                    self.coreml_successes, self.coreml_attempts
+                ));
+            }
+        } else if self.coreml_attempts > 0 || self.coreml_successes > 0 || self.coreml_failures > 0
+        {
+            return Err(format!(
+                "{} runtime proof unexpectedly observed Core ML encoder activity",
+                backend.as_str()
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 struct MemoryObservation {
@@ -475,6 +617,7 @@ fn benchmark_hardware(provider: &str, verify_gpu: bool) -> Result<BenchmarkHardw
             system.total_memory()
         ),
         accelerator,
+        whisper_gpu_device_name: detected_gpu_name,
     })
 }
 
@@ -549,11 +692,14 @@ fn require_coreml_encoder_bundle(model_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    !needle.is_empty()
-        && haystack
-            .windows(needle.len())
-            .any(|window| window == needle)
+fn strip_single_log_line_ending(message: &[u8]) -> &[u8] {
+    let message = message.strip_suffix(b"\n").unwrap_or(message);
+    message.strip_suffix(b"\r").unwrap_or(message)
+}
+
+fn evaluator_whisper_runtime_attestation()
+-> &'static Mutex<Option<EvaluatorWhisperRuntimeAttestation>> {
+    EVALUATOR_WHISPER_RUNTIME_ATTESTATION.get_or_init(|| Mutex::new(None))
 }
 
 // SAFETY: whisper.cpp owns `text` for the duration of this callback. The
@@ -569,18 +715,38 @@ unsafe extern "C" fn evaluator_whisper_log_callback(
         return;
     }
     let message = unsafe { CStr::from_ptr(text) }.to_bytes();
-    if contains_bytes(message, COREML_MODEL_LOADED_MARKER) {
-        COREML_MODEL_LOADED.store(true, Ordering::Release);
+    let mut attestation = evaluator_whisper_runtime_attestation()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(attestation) = attestation.as_mut() {
+        attestation.observe(message);
     }
 }
 
-fn install_evaluator_whisper_log_callback() {
-    COREML_MODEL_LOADED.store(false, Ordering::Release);
+fn install_evaluator_whisper_log_callback(expected_gpu_device_name: &str) {
+    {
+        let mut attestation = evaluator_whisper_runtime_attestation()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *attestation = Some(EvaluatorWhisperRuntimeAttestation::new(
+            expected_gpu_device_name,
+        ));
+    }
     // SAFETY: evaluator_whisper_log_callback follows whisper-rs's callback
     // contract and uses no user-data pointer.
     unsafe {
         whisper_rs::set_log_callback(Some(evaluator_whisper_log_callback), std::ptr::null_mut());
     }
+}
+
+fn verify_evaluator_whisper_runtime_attestation(backend: BenchmarkBackend) -> Result<(), String> {
+    let attestation = evaluator_whisper_runtime_attestation()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    attestation
+        .as_ref()
+        .ok_or_else(|| "Whisper runtime attestation was not installed".to_string())?
+        .verify(backend)
 }
 
 #[tokio::main]
@@ -793,12 +959,17 @@ async fn main() {
             benchmark_executable_sha256().unwrap_or_else(|error| fail(error.to_string()));
         (hardware, executable_sha256)
     });
-    let coreml_runtime_proof_required = benchmark_provenance
-        .as_ref()
-        .is_some_and(|(hardware, _)| hardware.backend == BenchmarkBackend::CoreMlMetal);
-    if coreml_runtime_proof_required {
-        install_evaluator_whisper_log_callback();
-    }
+    let whisper_runtime_proof_backend = benchmark_provenance.as_ref().and_then(|(hardware, _)| {
+        hardware
+            .whisper_gpu_device_name
+            .as_deref()
+            .map(|device_name| {
+                install_evaluator_whisper_log_callback(device_name);
+                hardware.backend
+            })
+    });
+    let coreml_runtime_proof_required =
+        whisper_runtime_proof_backend == Some(BenchmarkBackend::CoreMlMetal);
     let measured_start = Instant::now();
     let decode_start = Instant::now();
     let decoded = match decode_audio_file(&audio_path) {
@@ -1045,11 +1216,8 @@ async fn main() {
         });
         (result, model_load_seconds, memory_observation)
     };
-    if coreml_runtime_proof_required && !COREML_MODEL_LOADED.load(Ordering::Acquire) {
-        fail(
-            "Core ML runtime proof was not observed; refusing coreml-metal benchmark metrics"
-                .to_string(),
-        );
+    if let Some(backend) = whisper_runtime_proof_backend {
+        verify_evaluator_whisper_runtime_attestation(backend).unwrap_or_else(|error| fail(error));
     }
     println!("{}", text.trim());
 
@@ -1216,7 +1384,6 @@ async fn download_parakeet_model(engine: &ParakeetEngine, model_name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CString;
 
     #[test]
     fn resolves_cpu_and_platform_metal_without_ambiguous_precedence() {
@@ -1447,30 +1614,108 @@ mod tests {
     }
 
     #[test]
-    fn coreml_runtime_proof_accepts_only_the_whisper_success_marker() {
-        COREML_MODEL_LOADED.store(false, Ordering::Release);
-        let unrelated = CString::new("loading Core ML model from '/private/model'").unwrap();
-        // SAFETY: both strings are valid, live C strings and the callback retains
-        // neither pointer.
-        unsafe {
-            evaluator_whisper_log_callback(
-                whisper_rs::whisper_rs_sys::ggml_log_level_GGML_LOG_LEVEL_INFO,
-                unrelated.as_ptr(),
-                std::ptr::null_mut(),
-            );
-        }
-        assert!(!COREML_MODEL_LOADED.load(Ordering::Acquire));
+    fn gpu_runtime_proof_requires_every_state_to_select_the_expected_device() {
+        let mut proof = EvaluatorWhisperRuntimeAttestation::new("CUDA0");
+        proof.observe(b"whisper_backend_init_gpu: using CUDA0 backend\n");
+        proof.observe(b"whisper_backend_init_gpu: using CUDA0 backend\n");
+        assert!(proof.verify(BenchmarkBackend::Cuda).is_ok());
 
-        let loaded = CString::new("whisper_init_state: Core ML model loaded\n").unwrap();
-        // SAFETY: see the call above.
-        unsafe {
-            evaluator_whisper_log_callback(
-                whisper_rs::whisper_rs_sys::ggml_log_level_GGML_LOG_LEVEL_INFO,
-                loaded.as_ptr(),
-                std::ptr::null_mut(),
+        proof.observe(b"whisper_backend_init_gpu: using CUDA1 backend\n");
+        assert!(
+            proof
+                .verify(BenchmarkBackend::Cuda)
+                .unwrap_err()
+                .contains("unexpected GPU backend or device")
+        );
+    }
+
+    #[test]
+    fn gpu_runtime_proof_rejects_mixed_cpu_fallback_and_initialization_failure() {
+        let mut missing = EvaluatorWhisperRuntimeAttestation::new("Vulkan0");
+        missing.observe(b"whisper_backend_init_gpu: using Vulkan0 backend\n");
+        missing.observe(b"whisper_backend_init_gpu: no GPU found\n");
+        assert!(
+            missing
+                .verify(BenchmarkBackend::Vulkan)
+                .unwrap_err()
+                .contains("falling back")
+        );
+
+        let mut failed = EvaluatorWhisperRuntimeAttestation::new("ROCm0");
+        failed.observe(b"whisper_backend_init_gpu: using ROCm0 backend\n");
+        failed.observe(b"whisper_backend_init_gpu: failed to initialize ROCm0 backend\n");
+        assert!(
+            failed
+                .verify(BenchmarkBackend::HipBlas)
+                .unwrap_err()
+                .contains("initialization failure")
+        );
+    }
+
+    #[test]
+    fn coreml_runtime_proof_rejects_success_marker_injected_through_the_model_path() {
+        let mut proof = EvaluatorWhisperRuntimeAttestation::new("Metal");
+        proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        proof.observe(
+            b"whisper_init_state: loading Core ML model from '/models/Core ML model loaded'\n",
+        );
+
+        assert_eq!(proof.coreml_attempts, 1);
+        assert_eq!(proof.coreml_successes, 0);
+        assert!(
+            proof
+                .verify(BenchmarkBackend::CoreMlMetal)
+                .unwrap_err()
+                .contains("0 successful encoder loads for 1 decoder states")
+        );
+    }
+
+    #[test]
+    fn coreml_runtime_proof_is_per_attempt_and_failure_is_sticky() {
+        let mut proof = EvaluatorWhisperRuntimeAttestation::new("Metal");
+        proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        for _ in 0..2 {
+            proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+            proof.observe(
+                b"whisper_init_state: loading Core ML model from '/models/encoder.mlmodelc'\n",
             );
         }
-        assert!(COREML_MODEL_LOADED.load(Ordering::Acquire));
+        proof.observe(b"whisper_init_state: Core ML model loaded\n");
+        assert!(
+            proof
+                .verify(BenchmarkBackend::CoreMlMetal)
+                .unwrap_err()
+                .contains("1 successful encoder loads for 2 decoder states")
+        );
+
+        proof.observe(b"whisper_init_state: Core ML model loaded\n");
+        assert!(proof.verify(BenchmarkBackend::CoreMlMetal).is_ok());
+
+        proof.observe(
+            b"whisper_init_state: failed to load Core ML model from '/models/encoder.mlmodelc'\n",
+        );
+        assert!(
+            proof
+                .verify(BenchmarkBackend::CoreMlMetal)
+                .unwrap_err()
+                .contains("encoder initialization failure")
+        );
+
+        let mut skipped = EvaluatorWhisperRuntimeAttestation::new("Metal");
+        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        skipped.observe(
+            b"whisper_init_state: loading Core ML model from '/models/encoder.mlmodelc'\n",
+        );
+        skipped.observe(b"whisper_init_state: Core ML model loaded\n");
+        assert!(
+            skipped
+                .verify(BenchmarkBackend::CoreMlMetal)
+                .unwrap_err()
+                .contains("3 GPU backend selections for one model context and 1 encoder attempts")
+        );
     }
 
     #[test]
