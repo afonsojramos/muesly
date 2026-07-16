@@ -6,28 +6,30 @@
  * for the boundary and first-run costs (workspace compile, FFmpeg
  * build-download, model download).
  *
- * Fixtures are auto-discovered: every `fixtures/<base>.wav` with a sibling
- * `fixtures/<base>-ref.txt`.
+ * Samples come from a validated consent/provenance manifest.
  *   - Non-empty reference: WER run, gated by --max-wer.
  *   - Empty reference (e.g. silence.wav): hallucination check — the engine
  *     should produce (near-)nothing; gated by --max-hallucinated-words.
  *
  * Usage: node real-run.mjs [--max-wer <pct>] [--max-hallucinated-words <n>]
  *                          [--provider whisper|parakeet] [--model <name>]
- *                          [--models-dir <path>] [--fixture <base>]
+ *                          [--models-dir <path>] [--manifest <path>]
+ *                          [--output <path>] [--fixture <id-or-audio-base>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { loadCorpus } from './corpus.mjs';
 import { wer } from './wer.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
-const fixturesDir = path.join(here, 'fixtures');
+const defaultManifest = path.join(here, 'corpus-manifest.json');
 
 function numFlag(args, name, fallback) {
 	const idx = args.indexOf(name);
@@ -60,18 +62,24 @@ const model = strFlag(
 );
 const modelsDir = strFlag(args, '--models-dir', null);
 const onlyFixture = strFlag(args, '--fixture', null);
+const manifestPath = strFlag(args, '--manifest', defaultManifest);
+const outputPath = strFlag(args, '--output', null);
 
-// Discover <base>.wav + <base>-ref.txt pairs.
-const fixtures = fs
-	.readdirSync(fixturesDir)
-	.filter((f) => f.endsWith('.wav'))
-	.map((f) => f.slice(0, -4))
-	.filter((base) => fs.existsSync(path.join(fixturesDir, `${base}-ref.txt`)))
-	.filter((base) => !onlyFixture || base === onlyFixture)
-	.sort();
+let corpus;
+try {
+	corpus = loadCorpus(manifestPath);
+} catch (error) {
+	console.error(error.message);
+	process.exit(2);
+}
+const fixtures = corpus.samples.filter((sample) => {
+	if (!onlyFixture) return true;
+	const audioBase = path.basename(sample.audio_path, path.extname(sample.audio_path));
+	return sample.id === onlyFixture || audioBase === onlyFixture;
+});
 
 if (fixtures.length === 0) {
-	console.error(onlyFixture ? `no fixture named '${onlyFixture}'` : 'no audio fixtures found');
+	console.error(onlyFixture ? `no corpus sample named '${onlyFixture}'` : 'corpus has no samples');
 	process.exit(2);
 }
 
@@ -104,9 +112,13 @@ console.error(
 );
 
 let failed = false;
-for (const base of fixtures) {
-	const audio = path.join(fixturesDir, `${base}.wav`);
-	const refText = fs.readFileSync(path.join(fixturesDir, `${base}-ref.txt`), 'utf8').trim();
+const runStartedAt = new Date().toISOString();
+const runResults = [];
+const metricsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-'));
+for (const sample of fixtures) {
+	const audio = sample.audio_file;
+	const refText = fs.readFileSync(sample.reference_file, 'utf8').trim();
+	const metricsPath = path.join(metricsDirectory, `${sample.id}.json`);
 
 	const exampleArgs = [
 		'run',
@@ -119,9 +131,12 @@ for (const base of fixtures) {
 		'--provider',
 		provider,
 		'--vad',
+		'--metrics-json',
+		metricsPath,
 		audio,
 		model,
 	];
+	if (sample.language !== 'und') exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', sample.language);
 	if (modelsDir) exampleArgs.push(modelsDir);
 	const run = spawnSync(
 		'cargo',
@@ -134,32 +149,80 @@ for (const base of fixtures) {
 		},
 	);
 	if (run.status !== 0) {
-		console.error(`${base}: real transcription failed (exit ${run.status ?? 'signal'})`);
+		console.error(`${sample.id}: real transcription failed (exit ${run.status ?? 'signal'})`);
 		process.exit(run.status || 1);
 	}
 	const hypothesis = (run.stdout ?? '').trim();
+	const metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
+	const result = {
+		sample_id: sample.id,
+		language: sample.language,
+		noise_condition: sample.noise_condition,
+		scenario: sample.scenario,
+		speakers: sample.speakers,
+		provenance_basis: sample.provenance.basis,
+		wer_percent: null,
+		hallucinated_words: null,
+		passed: true,
+		metrics,
+	};
 
 	if (refText.length === 0) {
 		// Hallucination check: silence in, (near-)nothing out.
 		const words = hypothesis.length === 0 ? 0 : hypothesis.split(/\s+/).length;
-		console.log(`${base}: hallucinated words = ${words} (limit ${maxHallucinatedWords})`);
+		result.hallucinated_words = words;
+		console.log(
+			`${sample.id}: hallucinated words = ${words} (limit ${maxHallucinatedWords}), ` +
+				`RTF ${metrics.inference_rtf.toFixed(3)}, peak RSS ${metrics.peak_rss_mb.toFixed(1)} MiB`,
+		);
 		if (words > maxHallucinatedWords) {
-			console.error(`FAIL: ${base} hallucinated ${words} words: '${hypothesis}'`);
+			console.error(`FAIL: ${sample.id} hallucinated ${words} words: '${hypothesis}'`);
 			failed = true;
+			result.passed = false;
 		}
 	} else {
 		if (hypothesis.length === 0) {
-			console.error(`FAIL: ${base} produced an empty transcript`);
+			console.error(`FAIL: ${sample.id} produced an empty transcript`);
 			failed = true;
+			result.passed = false;
+			runResults.push(result);
 			continue;
 		}
 		const pct = wer(refText, hypothesis) * 100;
-		console.log(`${base}: WER ${pct.toFixed(2)}% (limit ${maxWerPct}%)`);
+		result.wer_percent = pct;
+		console.log(
+			`${sample.id}: WER ${pct.toFixed(2)}% (limit ${maxWerPct}%), ` +
+				`RTF ${metrics.inference_rtf.toFixed(3)}, peak RSS ${metrics.peak_rss_mb.toFixed(1)} MiB`,
+		);
 		if (pct > maxWerPct) {
-			console.error(`FAIL: ${base} WER ${pct.toFixed(2)}% exceeds threshold ${maxWerPct}%`);
+			console.error(`FAIL: ${sample.id} WER ${pct.toFixed(2)}% exceeds threshold ${maxWerPct}%`);
 			failed = true;
+			result.passed = false;
 		}
 	}
+	runResults.push(result);
 }
+
+if (outputPath) {
+	const report = {
+		schema_version: 1,
+		corpus_id: corpus.corpus_id,
+		started_at: runStartedAt,
+		completed_at: new Date().toISOString(),
+		provider,
+		model,
+		thresholds: {
+			max_wer_percent: maxWerPct,
+			max_hallucinated_words: maxHallucinatedWords,
+		},
+		passed: !failed,
+		results: runResults,
+	};
+	const absoluteOutput = path.resolve(outputPath);
+	fs.mkdirSync(path.dirname(absoluteOutput), { recursive: true });
+	fs.writeFileSync(absoluteOutput, `${JSON.stringify(report, null, 2)}\n`);
+	console.log(`wrote benchmark report: ${absoluteOutput}`);
+}
+fs.rmSync(metricsDirectory, { recursive: true, force: true });
 
 process.exit(failed ? 1 : 0);
