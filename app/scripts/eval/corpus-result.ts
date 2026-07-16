@@ -227,7 +227,8 @@ export function writeCorpusBoundFiles(options) {
 			);
 		}
 		if (resultsRoot) {
-			fs.mkdirSync(resultsRoot, { recursive: true });
+			fs.mkdirSync(resultsRoot, { recursive: true, mode: 0o700 });
+			fs.chmodSync(resultsRoot, 0o700);
 			for (const output of outputs) validateLocalOutputPath(resultsRoot, output.outputPath);
 		} else {
 			for (const output of outputs) {

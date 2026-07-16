@@ -57,6 +57,25 @@ test('atomically writes results bound to the current local corpus revision', () 
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
+test('keeps the managed results directory and report files private', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory, { mode: 0o755 });
+	const outputPath = path.join(resultsDirectory, 'run.json');
+
+	writeCorpusBoundJson({
+		manifestPath,
+		expectedFingerprint: corpusFingerprint(document),
+		outputPath,
+		value: { complete: false },
+	});
+
+	if (process.platform !== 'win32') {
+		assert.equal(fs.statSync(resultsDirectory).mode & 0o777, 0o700);
+		assert.equal(fs.statSync(outputPath).mode & 0o777, 0o600);
+	}
+});
+
 test('initializes managed storage for an empty local manifest', () => {
 	const { directory, document, manifestPath } = localManifest();
 	fs.rmdirSync(path.join(directory, 'local-corpus'));
