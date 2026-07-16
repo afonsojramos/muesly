@@ -236,7 +236,6 @@ test('completes an orphan withdrawal whose cleanup finished before lock release'
 			manifest_path: manifestPath,
 			operation: 'withdrawal',
 			session_id: 'session-first',
-			orphan_cleanup: true,
 			created_at: '2026-07-16T00:00:00Z',
 		}),
 	);

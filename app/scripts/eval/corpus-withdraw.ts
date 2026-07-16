@@ -182,12 +182,13 @@ export function withdrawConsentedSession(options) {
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	}
+	const orphanCleanup =
+		interruptedOperation?.orphan_cleanup === true ||
+		(!manifestExists && interruptedOperation !== null);
 	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
 		operation: 'withdrawal',
 		sessionId: options.sessionId,
-		orphanCleanup:
-			interruptedOperation?.orphan_cleanup === true ||
-			(!manifestExists && interruptedOperation !== null),
+		orphanCleanup,
 	});
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
@@ -210,7 +211,7 @@ export function withdrawConsentedSession(options) {
 			}
 			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
 			if (!sessionEntry) {
-				if (interruptedOperation?.orphan_cleanup === true) {
+				if (orphanCleanup) {
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,
