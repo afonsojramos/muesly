@@ -206,9 +206,12 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	);
 
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
+		model_artifacts: Object.fromEntries(
+			[...modelArtifacts.entries()].sort(([a], [b]) => a.localeCompare(b)),
+		),
 		minimum_distinct_sessions_per_cell: targets.min_sessions_per_language_noise_cell,
 		participant_meeting_samples: eligibleSamples.length,
 		participant_meeting_sessions: new Set(eligibleSamples.map((sample) => sample.session_id)).size,
