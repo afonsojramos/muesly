@@ -59,8 +59,8 @@ nub run eval:corpus:validate app/scripts/eval/corpus-local.json
 
 The validator requires schema 2, at least two speakers for meetings, participant consent,
 local-only redistribution, opaque session/consent IDs, valid dates, exact hashes, and no
-identity-bearing or unknown metadata fields. Identical audio assigned to different session IDs is
-rejected so copied recordings cannot satisfy the independent-session coverage floor.
+identity-bearing or unknown metadata fields. Identical audio cannot appear in more than one sample,
+so copied recordings cannot satisfy multiple independent-session or language/noise coverage cells.
 
 ## Condition labels
 

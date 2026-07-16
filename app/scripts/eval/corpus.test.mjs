@@ -93,7 +93,7 @@ test('rejects identity fields and changed fixture contents', () => {
 	assert(errors.some((error) => error.includes('audio_sha256 does not match')));
 });
 
-test('rejects copied audio assigned to different sessions', () => {
+test('rejects copied audio assigned to another sample', () => {
 	const { directory, document } = fixture();
 	document.samples.push({
 		...structuredClone(document.samples[0]),
@@ -103,7 +103,20 @@ test('rejects copied audio assigned to different sessions', () => {
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
-	assert(errors.some((error) => error.includes('assigned to a different session')));
+	assert(errors.some((error) => error.includes('audio_sha256 duplicates sample')));
+});
+
+test('rejects copied audio relabeled within the same session', () => {
+	const { directory, document } = fixture();
+	document.samples.push({
+		...structuredClone(document.samples[0]),
+		id: 'meeting-en-office-copy',
+		noise_condition: 'office',
+	});
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('audio_sha256 duplicates sample')));
 });
 
 test('rejects invalid consent dates and local-only entries in repository manifests', () => {

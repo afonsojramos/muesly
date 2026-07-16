@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { findCrossSessionAudioDuplicates, loadCorpus } from './corpus.mjs';
+import { findDuplicateAudioSamples, loadCorpus } from './corpus.mjs';
 import { validateRunReport } from './report.mjs';
 
 const TARGET_FIELDS = new Set([
@@ -112,11 +112,11 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
-	const duplicateAudio = findCrossSessionAudioDuplicates(corpus.samples);
+	const duplicateAudio = findDuplicateAudioSamples(corpus.samples);
 	if (duplicateAudio.length > 0) {
 		const { first, duplicate } = duplicateAudio[0];
 		throw new Error(
-			`corpus samples '${first.id}' and '${duplicate.id}' reuse identical audio across different sessions`,
+			`corpus samples '${first.id}' and '${duplicate.id}' reuse identical audio`,
 		);
 	}
 	const samplesById = new Map(corpus.samples.map((sample) => [sample.id, sample]));

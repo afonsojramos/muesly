@@ -92,6 +92,13 @@ test('rejects copied audio assigned to different sessions', () => {
 	assert.throws(() => evaluateCoverage(corpus, targets), /reuse identical audio/);
 });
 
+test('rejects copied audio relabeled within the same session', () => {
+	const corpus = completeCorpus();
+	corpus.samples[1].session_id = corpus.samples[0].session_id;
+	corpus.samples[1].audio_sha256 = corpus.samples[0].audio_sha256;
+	assert.throws(() => evaluateCoverage(corpus, targets), /reuse identical audio/);
+});
+
 test('requires measurements for every language, noise, and backend cell', () => {
 	const corpus = completeCorpus();
 	const partial = evaluateCoverage(corpus, targets, [runReport(corpus, 'metal')]);
