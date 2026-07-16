@@ -257,6 +257,65 @@ test('withdraws a prepared session before corpus intake', () => {
 	assert(!fs.existsSync(manifestPath));
 });
 
+test('does not report prepared withdrawal while the manifest still contains the session', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
+	fs.rmSync(localCorpusRoot, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-withdraw',
+			manifestPath,
+		}),
+	);
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-withdraw',
+				confirmWithdrawal: true,
+			}),
+		/manifest still contains the session/,
+	);
+	assert.equal(fs.readFileSync(manifestPath, 'utf8'), manifestBefore);
+	assert(fs.existsSync(preparedBundle));
+});
+
+test('refuses prepared withdrawal through a non-directory corpus path', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-corpus-file-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+	fs.writeFileSync(localCorpusRoot, 'unexpected file');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-prepared',
+				confirmWithdrawal: true,
+			}),
+		/must be a regular directory/,
+	);
+	assert(fs.existsSync(preparedBundle));
+});
+
 test('withdraws a prepared session after a failed first intake created the corpus root', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-failed-intake-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');

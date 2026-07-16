@@ -217,10 +217,22 @@ export function withdrawConsentedSession(options) {
 	validateWithdrawalOptions(options);
 	const manifestPath = canonicalManifestPath(options.manifestPath, { allowMissing: true });
 	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
-	if (fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false })?.isSymbolicLink()) {
+	const localCorpusEntry = fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false });
+	if (localCorpusEntry?.isSymbolicLink()) {
 		throw new Error(`corpus directory cannot be a symbolic link: ${localCorpusRoot}`);
 	}
-	if (!fs.statSync(localCorpusRoot, { throwIfNoEntry: false })?.isDirectory()) {
+	if (localCorpusEntry && !localCorpusEntry.isDirectory()) {
+		throw new Error(`local corpus path must be a regular directory: ${localCorpusRoot}`);
+	}
+	if (!localCorpusEntry) {
+		if (fs.existsSync(manifestPath)) {
+			const document = readLocalManifest(manifestPath);
+			if (document.samples.some((sample) => sample.session_id === options.sessionId)) {
+				throw new Error(
+					`cannot withdraw ${options.sessionId}: manifest still contains the session but the local corpus directory is missing`,
+				);
+			}
+		}
 		if (retirePreparedBundleForWithdrawal(manifestPath, options.sessionId)) {
 			return {
 				sessionId: options.sessionId,
