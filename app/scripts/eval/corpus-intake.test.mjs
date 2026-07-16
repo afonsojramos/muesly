@@ -167,20 +167,27 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
-test('reclaims an interrupted intake lock and removes abandoned staged files', () => {
+test('reclaims interrupted intake files whether staged or already promoted', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
-	const sessionDirectory = path.join(corpusDirectory, 'session-abandoned');
+	const sessionDirectory = path.join(corpusDirectory, options.sessionId);
 	fs.mkdirSync(sessionDirectory, { recursive: true });
 	fs.writeFileSync(
 		path.join(corpusDirectory, '.intake.lock'),
 		JSON.stringify({ schema_version: 1, pid: 999_999_999, created_at: '2026-07-15T00:00:00Z' }),
 	);
-	const abandoned = path.join(sessionDirectory, 'sample.wav.tmp-123-123e4567-e89b-12d3-a456-426614174000');
-	fs.writeFileSync(abandoned, 'private staged bytes');
+	const promotedAudio = path.join(sessionDirectory, `${options.sampleId}.wav`);
+	const stagedReference = path.join(
+		sessionDirectory,
+		`${options.sampleId}.txt.tmp-123-123e4567-e89b-12d3-a456-426614174000`,
+	);
+	fs.copyFileSync(options.audio, promotedAudio);
+	fs.writeFileSync(stagedReference, 'private staged bytes');
 
 	intakeConsentedSample(options);
-	assert(!fs.existsSync(abandoned));
+	assert(!fs.existsSync(stagedReference));
+	assert(fs.existsSync(promotedAudio));
+	assert.equal(JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')).samples.length, 1);
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });
 

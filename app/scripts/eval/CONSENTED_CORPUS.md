@@ -68,11 +68,11 @@ reference material under `local-corpus/session-.../` with private permissions, d
 duration and exact hashes, rejects duplicate audio, validates the complete next manifest, and
 rolls back files if any step fails. An exclusive local lock prevents simultaneous imports from
 losing manifest entries; a later run reclaims a lock whose owner process no longer exists and
-removes abandoned temporary copies. It verifies that the supplied consent record exists but never
-copies its identity-bearing contents into the manifest. Intake accepts only the five target
-languages and four defined noise conditions so samples cannot silently fall outside the matrix.
-After validating the imported copy, dispose of the source files according to the approved retention
-policy.
+reconciles both staged and already-promoted copies against the committed manifest. It verifies that
+the supplied consent record exists but never copies its identity-bearing contents into the manifest.
+Intake accepts only the five target languages and four defined noise conditions so samples cannot
+silently fall outside the matrix. After validating the imported copy, dispose of the source files
+according to the approved retention policy.
 
 4. Validate independently:
 

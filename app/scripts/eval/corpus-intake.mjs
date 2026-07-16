@@ -59,19 +59,6 @@ function processIsRunning(pid) {
 	}
 }
 
-function removeAbandonedStagedFiles(directory) {
-	if (!fs.existsSync(directory)) return;
-	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-		const entryPath = path.join(directory, entry.name);
-		if (entry.isSymbolicLink()) continue;
-		if (entry.isDirectory()) {
-			removeAbandonedStagedFiles(entryPath);
-			continue;
-		}
-		if (/\.tmp-\d+-[0-9a-f-]+$/.test(entry.name)) fs.rmSync(entryPath, { force: true });
-	}
-}
-
 function removeAbandonedManifestFiles(manifestPath) {
 	const directory = path.dirname(manifestPath);
 	const prefix = `${path.basename(manifestPath)}.tmp-`;
@@ -86,67 +73,152 @@ function removeAbandonedManifestFiles(manifestPath) {
 	}
 }
 
-function createIntakeLock(lockPath) {
-	const descriptor = fs.openSync(lockPath, 'wx', 0o600);
+function writePrivateJson(filePath, value) {
+	fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
+}
+
+function prepareIntakeLock(localCorpusRoot) {
+	const token = randomUUID();
+	const pendingPath = path.join(localCorpusRoot, `.intake.lock.pending-${token}`);
+	fs.mkdirSync(pendingPath, { mode: 0o700 });
 	try {
-		fs.writeFileSync(
-			descriptor,
-			`${JSON.stringify({ schema_version: 1, pid: process.pid, created_at: new Date().toISOString() })}\n`,
-		);
-		fs.fsyncSync(descriptor);
-		return descriptor;
+		writePrivateJson(path.join(pendingPath, 'owner.json'), {
+			schema_version: 2,
+			pid: process.pid,
+			token,
+			created_at: new Date().toISOString(),
+		});
+		return { pendingPath, token };
 	} catch (error) {
-		fs.closeSync(descriptor);
-		fs.rmSync(lockPath, { force: true });
+		fs.rmSync(pendingPath, { recursive: true, force: true });
 		throw error;
 	}
 }
 
+function readLockOwner(lockPath) {
+	const status = fs.lstatSync(lockPath);
+	const ownerPath = status.isDirectory() ? path.join(lockPath, 'owner.json') : lockPath;
+	const contents = fs.readFileSync(ownerPath, 'utf8');
+	const owner = JSON.parse(contents);
+	if (!Number.isInteger(owner.pid) || owner.pid < 1) throw new Error('lock owner PID is invalid');
+	const key =
+		typeof owner.token === 'string' && /^[0-9a-f-]{36}$/.test(owner.token)
+			? owner.token
+			: `legacy-${createHash('sha256').update(contents).digest('hex')}`;
+	return { owner, key };
+}
+
+function referencedCorpusFiles(manifestPath) {
+	if (!fs.existsSync(manifestPath)) return new Set();
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	if (!Array.isArray(document.samples)) return new Set();
+	return new Set(
+		document.samples.flatMap((sample) =>
+			['audio_path', 'reference_path']
+				.filter((field) => typeof sample[field] === 'string')
+				.map((field) => path.resolve(path.dirname(manifestPath), sample[field])),
+		),
+	);
+}
+
+function reconcileCorpusDirectory(directory, referencedFiles, isRoot = true) {
+	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+		if (isRoot && entry.name.startsWith('.intake.lock')) continue;
+		const entryPath = path.join(directory, entry.name);
+		if (entry.isSymbolicLink()) continue;
+		if (entry.isDirectory()) {
+			reconcileCorpusDirectory(entryPath, referencedFiles, false);
+			if (fs.readdirSync(entryPath).length === 0) fs.rmdirSync(entryPath);
+			continue;
+		}
+		if (/\.tmp-\d+-[0-9a-f-]+$/.test(entry.name)) {
+			fs.rmSync(entryPath, { force: true });
+			continue;
+		}
+		if (/\.(?:wav|txt)$/i.test(entry.name) && !referencedFiles.has(path.resolve(entryPath))) {
+			fs.rmSync(entryPath, { force: true });
+		}
+	}
+}
+
+function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
+	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
+	if (unrecovered.length === 0) return;
+	reconcileCorpusDirectory(localCorpusRoot, referencedCorpusFiles(manifestPath));
+	removeAbandonedManifestFiles(manifestPath);
+	for (const stalePath of unrecovered) {
+		writePrivateJson(`${stalePath}.recovered`, {
+			recovered_at: new Date().toISOString(),
+			recovered_by_pid: process.pid,
+		});
+	}
+}
+
 function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
-	for (let attempt = 0; attempt < 3; attempt += 1) {
-		try {
-			return createIntakeLock(lockPath);
-		} catch (error) {
-			if (error.code !== 'EEXIST') throw error;
-			let owner;
+	const prepared = prepareIntakeLock(localCorpusRoot);
+	try {
+		for (let attempt = 0; attempt < 10; attempt += 1) {
+			let installed = false;
 			try {
-				owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+				fs.renameSync(prepared.pendingPath, lockPath);
+				installed = true;
+			} catch (error) {
+				if (!fs.existsSync(lockPath)) {
+					if (error.code === 'ENOENT' || error.code === 'EEXIST' || error.code === 'ENOTEMPTY') {
+						continue;
+					}
+					throw error;
+				}
+			}
+			if (installed) {
+				try {
+					const stalePaths = fs
+						.readdirSync(localCorpusRoot)
+						.filter(
+							(name) =>
+								name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
+						)
+						.map((name) => path.join(localCorpusRoot, name));
+					recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths);
+					return prepared.token;
+				} catch (error) {
+					releaseIntakeLock(lockPath, prepared.token);
+					throw error;
+				}
+			}
+
+			let observed;
+			try {
+				observed = readLockOwner(lockPath);
 			} catch {
 				throw new Error(`another corpus intake is active or left an unreadable lock: ${lockPath}`);
 			}
-			if (!Number.isInteger(owner.pid) || owner.pid < 1 || processIsRunning(owner.pid)) {
+			if (processIsRunning(observed.owner.pid)) {
 				throw new Error(`another corpus intake is active: ${lockPath}`);
 			}
-
-			const staleLock = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+			const stalePath = `${lockPath}.stale-${observed.key}`;
 			try {
-				fs.renameSync(lockPath, staleLock);
-			} catch (renameError) {
-				if (renameError.code === 'ENOENT') continue;
-				throw renameError;
-			}
-
-			let descriptor;
-			try {
-				descriptor = createIntakeLock(lockPath);
-				removeAbandonedStagedFiles(localCorpusRoot);
-				removeAbandonedManifestFiles(manifestPath);
-				return descriptor;
-			} catch (recoveryError) {
-				if (descriptor !== undefined) {
-					fs.closeSync(descriptor);
-					fs.rmSync(lockPath, { force: true });
-				}
-				if (recoveryError.code === 'EEXIST') {
-					throw new Error(`another corpus intake is active: ${lockPath}`);
-				}
-				throw recoveryError;
-			} finally {
-				fs.rmSync(staleLock, { force: true });
+				fs.renameSync(lockPath, stalePath);
+			} catch (error) {
+				if (['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(error.code)) continue;
+				throw error;
 			}
 		}
+		throw new Error(`could not acquire corpus intake lock: ${lockPath}`);
+	} catch (error) {
+		fs.rmSync(prepared.pendingPath, { recursive: true, force: true });
+		throw error;
 	}
-	throw new Error(`could not acquire corpus intake lock: ${lockPath}`);
+}
+
+function releaseIntakeLock(lockPath, token) {
+	try {
+		const { owner } = readLockOwner(lockPath);
+		if (owner.token !== token || owner.pid !== process.pid) return;
+	} catch {
+		return;
+	}
+	fs.rmSync(lockPath, { recursive: true, force: true });
 }
 
 export function wavDurationSeconds(filePath) {
@@ -293,7 +365,7 @@ export function intakeConsentedSample(options) {
 	}
 	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
-	const manifestLock = acquireIntakeLock(lockPath, localCorpusRoot, manifestPath);
+	const manifestLockToken = acquireIntakeLock(lockPath, localCorpusRoot, manifestPath);
 
 	try {
 		const document = readManifest(manifestPath);
@@ -371,8 +443,7 @@ export function intakeConsentedSample(options) {
 			throw error;
 		}
 	} finally {
-		fs.closeSync(manifestLock);
-		fs.rmSync(lockPath, { force: true });
+		releaseIntakeLock(lockPath, manifestLockToken);
 	}
 }
 
