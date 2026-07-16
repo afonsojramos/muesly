@@ -184,6 +184,42 @@ test('withdraws a first interrupted intake before any manifest exists', () => {
 	assert(!fs.existsSync(orphanDirectory));
 });
 
+test('resumes orphan cleanup when withdrawal stops before its marker is written', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-orphan-retry-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const orphanDirectory = path.join(directory, 'local-corpus', 'session-first');
+	fs.mkdirSync(orphanDirectory, { recursive: true });
+	fs.writeFileSync(path.join(orphanDirectory, 'first.wav'), 'private promoted audio');
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'withdrawal',
+			session_id: 'session-first',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-first',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-first',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert(!fs.existsSync(manifestPath));
+	assert(!fs.existsSync(orphanDirectory));
+});
+
 test('preserves session data when a missing manifest lacks matching intake evidence', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-typo-'));
 	const manifestPath = path.join(directory, 'corpus-typo.json');

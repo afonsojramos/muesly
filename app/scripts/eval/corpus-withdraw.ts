@@ -65,13 +65,13 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 	return document;
 }
 
-function interruptedIntakeTargetsManifest(lockPath, manifestPath, sessionId) {
+function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, sessionId) {
 	const lockEntry = fs.lstatSync(lockPath, { throwIfNoEntry: false });
 	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return false;
 	try {
 		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
 		return (
-			owner.operation === 'intake' &&
+			(owner.operation === 'intake' || owner.operation === 'withdrawal') &&
 			owner.session_id === sessionId &&
 			typeof owner.manifest_path === 'string' &&
 			path.resolve(owner.manifest_path) === manifestPath
@@ -170,7 +170,7 @@ export function withdrawConsentedSession(options) {
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const manifestExists = fs.existsSync(manifestPath);
-	const allowMissingManifest = interruptedIntakeTargetsManifest(
+	const allowMissingManifest = interruptedOrphanCleanupTargetsManifest(
 		lockPath,
 		manifestPath,
 		options.sessionId,
