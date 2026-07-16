@@ -178,6 +178,30 @@ test('refuses corpus withdrawal when matching prepared metadata is malformed', (
 	assert(fs.existsSync(path.join(preparedBundle, 'recording.wav')));
 });
 
+test('refuses orphan withdrawal before mutation when prepared metadata is malformed', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const sessionDirectory = path.join(directory, 'local-corpus', 'session-orphan');
+	const preparedBundle = path.join(directory, 'intake', 'session-orphan');
+	fs.mkdirSync(sessionDirectory);
+	fs.writeFileSync(path.join(sessionDirectory, 'orphan.wav'), 'private promoted audio');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'collection-session.json'), '{ invalid');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-orphan',
+				confirmWithdrawal: true,
+			}),
+		/failed to read prepared intake metadata/,
+	);
+	assert(fs.existsSync(sessionDirectory));
+	assert(fs.existsSync(path.join(preparedBundle, 'recording.wav')));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.withdrawal-session-orphan.json')));
+});
+
 test('requires explicit confirmation and leaves unknown sessions unchanged', () => {
 	const { manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');
