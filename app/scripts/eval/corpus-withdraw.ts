@@ -247,11 +247,6 @@ function withdrawPreparedWithoutCorpusRoot(manifestPath, localCorpusRoot, sessio
 		throw new Error(`local corpus directory does not exist: ${localCorpusRoot}`);
 	} finally {
 		releaseLocalCorpusLock(lockPath, lockToken);
-		try {
-			fs.rmdirSync(localCorpusRoot);
-		} catch (error) {
-			if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
-		}
 	}
 }
 

@@ -294,7 +294,8 @@ test('holds the corpus mutation lock while retiring a prepared-only session', ()
 
 	assert.equal(observedLock, true);
 	assert(!fs.existsSync(preparedBundle));
-	assert(!fs.existsSync(localCorpusRoot));
+	assert(fs.statSync(localCorpusRoot).isDirectory());
+	assert(!fs.existsSync(path.join(localCorpusRoot, '.intake.lock')));
 });
 
 test('does not report prepared withdrawal while the manifest still contains the session', () => {
