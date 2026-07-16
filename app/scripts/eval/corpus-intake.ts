@@ -28,6 +28,27 @@ function ensureFile(filePath, label) {
 	}
 }
 
+function fileIdentity(filePath) {
+	const status = fs.statSync(filePath);
+	return {
+		canonicalPath: fs.realpathSync(filePath),
+		device: status.dev,
+		inode: status.ino,
+	};
+}
+
+function areDistinctFiles(filePaths) {
+	const identities = filePaths.map(fileIdentity);
+	return identities.every(
+		(identity, index) =>
+			!identities.slice(0, index).some(
+				(previous) =>
+					previous.canonicalPath === identity.canonicalPath ||
+					(previous.device === identity.device && previous.inode === identity.inode),
+			),
+	);
+}
+
 function isWithinOrEqual(directory, filePath) {
 	const relative = path.relative(directory, filePath);
 	return (
@@ -400,7 +421,7 @@ export function intakeConsentedSample(options) {
 	ensureFile(audioSource, 'audio');
 	ensureFile(referenceSource, 'reference');
 	ensureFile(consentRecord, 'consent record');
-	if (new Set([audioSource, referenceSource, consentRecord]).size !== 3) {
+	if (!areDistinctFiles([audioSource, referenceSource, consentRecord])) {
 		throw new Error('audio, reference, and consent record must be three distinct files');
 	}
 	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');

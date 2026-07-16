@@ -92,6 +92,27 @@ test('rejects malformed UTF-8 references before writing anything', () => {
 	]);
 });
 
+test('requires audio, reference, and consent to identify distinct files', () => {
+	for (const aliasType of ['symlink', 'hard link']) {
+		const { directory, options } = intakeFixture();
+		const consentAlias = path.join(directory, `consent-${aliasType.replace(' ', '-')}.md`);
+		if (aliasType === 'symlink') {
+			fs.symlinkSync(options.reference, consentAlias);
+		} else {
+			fs.linkSync(options.reference, consentAlias);
+		}
+		options.consentRecord = consentAlias;
+
+		assert.throws(
+			() => intakeConsentedSample(options),
+			/audio, reference, and consent record must be three distinct files/,
+			aliasType,
+		);
+		assert(!fs.existsSync(options.manifestPath), aliasType);
+		assert(!fs.existsSync(path.join(directory, 'local-corpus')), aliasType);
+	}
+});
+
 test('requires consent records to remain outside the managed corpus tree', () => {
 	const { directory, options } = intakeFixture();
 	const managedConsentRecord = path.join(
