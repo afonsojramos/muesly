@@ -461,10 +461,11 @@ function sha256RegularFile(filePath, label) {
 	}
 }
 
-function commandOutput(executable, args, options, failureMessage) {
+function commandOutput(command, args, options, failureMessage) {
 	try {
-		return execFileSync(executable, args, {
+		return execFileSync(command.executablePath, args, {
 			...options,
+			argv0: command.argv0,
 			encoding: 'utf8',
 			maxBuffer: 64 * 1024 * 1024,
 			stdio: ['ignore', 'pipe', 'pipe'],
@@ -490,6 +491,105 @@ function strictCommandEnvironment(buildEnv, names, fixed = {}) {
 		environment[name] = value;
 	}
 	return { ...environment, ...fixed };
+}
+
+function commandEnvironmentValue(environment, name) {
+	if (process.platform !== 'win32') return environmentValue(environment, name);
+	const key = Object.keys(environment)
+		.sort()
+		.find((candidate) => candidate.toUpperCase() === name.toUpperCase());
+	return key === undefined ? undefined : environment[key];
+}
+
+function fullyQualifiedAbsolutePath(value) {
+	if (!path.isAbsolute(value)) return false;
+	if (process.platform !== 'win32') return true;
+	return /^[A-Za-z]:[\\/]/.test(value) || /^(?:\\\\|\/\/)/.test(value);
+}
+
+function unquoteSearchPathEntry(value) {
+	if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+		return value.slice(1, -1);
+	}
+	return value;
+}
+
+function windowsExecutableSuffixes(executable, environment) {
+	if (path.extname(executable).length > 0) return [''];
+	const pathExt = commandEnvironmentValue(environment, 'PATHEXT');
+	if (typeof pathExt !== 'string') return [];
+	const suffixes = [];
+	const seen = new Set();
+	for (const rawSuffix of pathExt.split(path.delimiter)) {
+		const suffix = rawSuffix.trim();
+		if (!/^\.[A-Za-z0-9._+-]+$/.test(suffix)) continue;
+		const identity = suffix.toUpperCase();
+		if (seen.has(identity)) continue;
+		seen.add(identity);
+		suffixes.push(suffix);
+	}
+	return suffixes;
+}
+
+/**
+ * Resolve a command without consulting the parent or child current directory.
+ *
+ * Only absolute entries from the attested PATH are searched. The returned
+ * executablePath is canonical and absolute; argv0 preserves shim dispatch
+ * (notably rustup's rustc proxy). Windows' implicit current-directory lookup
+ * and POSIX empty/relative PATH entries therefore cannot interpose.
+ */
+export function resolveAttestedCommand(executable, environment, label = 'command') {
+	if (
+		typeof executable !== 'string' ||
+		executable.length === 0 ||
+		executable.includes('\0') ||
+		environment === null ||
+		typeof environment !== 'object' ||
+		Array.isArray(environment)
+	) {
+		throw new Error(`unable to resolve ${label} from the attested command environment`);
+	}
+
+	const hasPathSeparator =
+		process.platform === 'win32' ? /[\\/]/.test(executable) : executable.includes('/');
+	let baseCandidates;
+	if (fullyQualifiedAbsolutePath(executable)) {
+		baseCandidates = [executable];
+	} else {
+		if (hasPathSeparator) {
+			throw new Error(`unable to resolve ${label} from the attested command environment`);
+		}
+		const searchPath = commandEnvironmentValue(environment, 'PATH');
+		if (typeof searchPath !== 'string') {
+			throw new Error(`unable to resolve ${label} from the attested command environment`);
+		}
+		baseCandidates = searchPath
+			.split(path.delimiter)
+			.map(unquoteSearchPathEntry)
+			.filter(fullyQualifiedAbsolutePath)
+			.map((directory) => path.join(directory, executable));
+	}
+
+	const suffixes =
+		process.platform === 'win32' ? windowsExecutableSuffixes(executable, environment) : [''];
+	for (const baseCandidate of baseCandidates) {
+		for (const suffix of suffixes) {
+			try {
+				const canonicalPath = fs.realpathSync(`${baseCandidate}${suffix}`);
+				const status = fs.statSync(canonicalPath);
+				if (!fullyQualifiedAbsolutePath(canonicalPath) || !status.isFile()) continue;
+				fs.accessSync(canonicalPath, fs.constants.X_OK);
+				return Object.freeze({
+					argv0: `${baseCandidate}${suffix}`,
+					executablePath: canonicalPath,
+				});
+			} catch {
+				// Keep searching only the attested absolute candidates.
+			}
+		}
+	}
+	throw new Error(`unable to resolve ${label} from the attested command environment`);
 }
 
 function gitCommandEnvironment(buildEnv) {
@@ -530,6 +630,7 @@ function gitOutput(gitExecutable, repositoryRoot, environment, args, failureMess
 			...args,
 		],
 		{
+			cwd: repositoryRoot,
 			env: environment,
 		},
 		failureMessage,
@@ -606,10 +707,16 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 	if (typeof executable !== 'string' || executable.length === 0) {
 		throw new Error('rustcExecutable must be a non-empty string');
 	}
-	const output = commandOutput(
+	const commandEnvironment = rustcCommandEnvironment(buildEnv);
+	const resolvedExecutable = resolveAttestedCommand(
 		executable,
+		commandEnvironment,
+		'rustc executable',
+	);
+	const output = commandOutput(
+		resolvedExecutable,
 		['-vV'],
-		{ cwd: repositoryRoot, env: rustcCommandEnvironment(buildEnv) },
+		{ cwd: repositoryRoot, env: commandEnvironment },
 		'unable to execute rustc -vV for evaluator provenance',
 	);
 	return normalizeRustcVersion(output);
@@ -635,13 +742,18 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	}
 
 	const gitEnvironment = gitCommandEnvironment(buildEnv);
-	const { canonicalRoot, gitCommit } = resolveGitState(
-		repositoryRoot,
+	const resolvedGitExecutable = resolveAttestedCommand(
 		gitExecutable,
 		gitEnvironment,
+		'Git executable',
 	);
-	requireCleanWorktree(gitExecutable, canonicalRoot, gitEnvironment);
-	requireTrackedCargoLock(gitExecutable, canonicalRoot, gitEnvironment);
+	const { canonicalRoot, gitCommit } = resolveGitState(
+		repositoryRoot,
+		resolvedGitExecutable,
+		gitEnvironment,
+	);
+	requireCleanWorktree(resolvedGitExecutable, canonicalRoot, gitEnvironment);
+	requireTrackedCargoLock(resolvedGitExecutable, canonicalRoot, gitEnvironment);
 
 	const cargoLockPath = path.join(canonicalRoot, 'Cargo.lock');
 	const cargoLockSha256 = sha256RegularFile(cargoLockPath, 'Cargo.lock');
@@ -654,9 +766,9 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	}
 	const buildEnvSha256 = buildEnvironmentSha256(buildEnv, selectedTarget, hostTriple);
 
-	requireCleanWorktree(gitExecutable, canonicalRoot, gitEnvironment);
+	requireCleanWorktree(resolvedGitExecutable, canonicalRoot, gitEnvironment);
 	const finalCommit = gitOutput(
-		gitExecutable,
+		resolvedGitExecutable,
 		canonicalRoot,
 		gitEnvironment,
 		['rev-parse', '--verify', 'HEAD^{commit}'],

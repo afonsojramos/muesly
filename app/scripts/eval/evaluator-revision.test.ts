@@ -71,6 +71,45 @@ function commandDiscoveryEnvironment() {
 	return environment;
 }
 
+function fullyQualifiedAbsolutePath(value) {
+	if (!path.isAbsolute(value)) return false;
+	if (process.platform !== 'win32') return true;
+	return /^[A-Za-z]:[\\/]/.test(value) || /^(?:\\\\|\/\/)/.test(value);
+}
+
+function safeCommandSearchPath() {
+	const searchPath = process.env.PATH ?? process.env.Path;
+	assert.equal(typeof searchPath, 'string');
+	const absoluteEntries = searchPath
+		.split(path.delimiter)
+		.map((entry) =>
+			entry.length >= 2 && entry.startsWith('"') && entry.endsWith('"')
+				? entry.slice(1, -1)
+				: entry,
+		)
+		.filter(fullyQualifiedAbsolutePath);
+	assert(absoluteEntries.length > 0);
+	return absoluteEntries.join(path.delimiter);
+}
+
+function commandSearchEnvironment(searchPath) {
+	return {
+		PATH: searchPath,
+		...(process.platform === 'win32' ? { Path: searchPath } : {}),
+	};
+}
+
+function writeCommandTrap(directory, command) {
+	const executablePath = path.join(
+		directory,
+		process.platform === 'win32' ? `${command}.exe` : command,
+	);
+	fs.writeFileSync(executablePath, 'this file must never be executed\n', {
+		mode: 0o755,
+	});
+	return executablePath;
+}
+
 function deterministicOptions(overrides = {}) {
 	const { buildEnv: buildEnvironmentOverrides = {}, ...optionOverrides } = overrides;
 	return {
@@ -228,6 +267,62 @@ test('runs rustc provenance with only attested discovery state', (t) => {
 		Object.fromEntries(HOSTILE_RUSTC_ENVIRONMENT_NAMES.map((name) => [name, ''])),
 	);
 	assert.deepEqual(evaluatorRevision(repositoryRoot, baselineOptions), baseline);
+});
+
+test('ignores current-directory command shadows and relative or empty PATH entries', (t) => {
+	const repositoryRoot = createRepository(t);
+	const benignDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-command-benign-'));
+	const hostileDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-command-hostile-'));
+	t.after(() => fs.rmSync(benignDirectory, { recursive: true, force: true }));
+	t.after(() => fs.rmSync(hostileDirectory, { recursive: true, force: true }));
+	writeCommandTrap(hostileDirectory, 'git');
+	const absoluteSearchPath = safeCommandSearchPath();
+	const searchPath = ['.', '', absoluteSearchPath].join(path.delimiter);
+	const options = deterministicOptions({
+		buildEnv: commandSearchEnvironment(searchPath),
+	});
+	const originalDirectory = process.cwd();
+	try {
+		process.chdir(benignDirectory);
+		const baseline = evaluatorRevision(repositoryRoot, options);
+		process.chdir(hostileDirectory);
+		assert.deepEqual(evaluatorRevision(repositoryRoot, options), baseline);
+	} finally {
+		process.chdir(originalDirectory);
+	}
+});
+
+test('does not resolve rustc through a repository-relative PATH entry', (t) => {
+	const repositoryRoot = createRepository(t);
+	const ignoredDirectory = path.join(repositoryRoot, 'ignored');
+	fs.mkdirSync(ignoredDirectory);
+	writeCommandTrap(ignoredDirectory, 'rustc');
+	const searchPath = ['ignored', '', safeCommandSearchPath()].join(path.delimiter);
+
+	assert.doesNotThrow(() =>
+		evaluatorRevision(
+			repositoryRoot,
+			deterministicOptions({
+				buildEnv: commandSearchEnvironment(searchPath),
+			}),
+		),
+	);
+});
+
+test('fails closed when PATH has no absolute command directory', (t) => {
+	const repositoryRoot = createRepository(t);
+	const searchPath = ['.', '', 'relative-bin'].join(path.delimiter);
+
+	assert.throws(
+		() =>
+			evaluatorRevision(
+				repositoryRoot,
+				deterministicOptions({
+					buildEnv: commandSearchEnvironment(searchPath),
+				}),
+			),
+		/unable to resolve Git executable from the attested command environment/,
+	);
 });
 
 test('validates and hashes persisted evaluator revisions canonically', (t) => {
