@@ -8,6 +8,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  corpusBenchmarkErrorExitCode,
   formatCorpusBenchmarkProgress,
   formatCorpusBenchmarkSummary,
   inspectVariantIdentity,
@@ -15,6 +16,7 @@ import {
   runCorpusBenchmarkCampaign,
   signalBenchmarkProcessTree,
 } from "./corpus-benchmark-run.ts";
+import { benchmarkExecutableSha256 } from "./benchmark-executable.ts";
 import {
   discoverCorpusBenchmarkCheckpoints,
   isCorpusBenchmarkCheckpointName,
@@ -24,6 +26,7 @@ import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
 import { loadCorpus } from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
+import { prepareRealRunSession } from "./real-run-session.ts";
 
 const MODEL_ARTIFACT = "b".repeat(64);
 const EXECUTABLE = "c".repeat(64);
@@ -119,6 +122,62 @@ function preparedSession(task, identity = currentIdentity(), hooks = {}) {
       hooks.close?.();
     },
   };
+}
+
+function cancellableRealSession(t, task, directory, markerPath) {
+  const executablePath = path.join(directory, "cancellable-transcribe-fixture");
+  const modelsDirectory = path.join(directory, "models");
+  fs.mkdirSync(modelsDirectory, { recursive: true });
+  fs.writeFileSync(path.join(modelsDirectory, `ggml-${task.model}.bin`), "prepared model", {
+    mode: 0o600,
+  });
+  fs.writeFileSync(
+    executablePath,
+    [
+      `#!${process.execPath}`,
+      'const fs = require("node:fs");',
+      "process.on('SIGTERM', () => {});",
+      `fs.writeFileSync(${JSON.stringify(markerPath)}, String(process.pid));`,
+      "setInterval(() => {}, 1000);",
+      "",
+    ].join("\n"),
+    { mode: 0o700 },
+  );
+  const identity = currentIdentity();
+  const session = prepareRealRunSession(
+    {
+      provider: task.provider,
+      model: task.model,
+      backend: task.real_run_backend,
+      accelerator: task.accelerator,
+      modelsDirectory,
+      repoRoot: directory,
+      buildEnvironment: {},
+      runtimeEnvironment: {},
+      evaluatorRevision: {
+        revision: structuredClone(task.evaluator_revision),
+        sha256: task.evaluator_revision_sha256,
+      },
+    },
+    {
+      buildBenchmarkExecutable: () => ({
+        cargoFeatures: [...task.evaluator_revision.cargo_features],
+        executablePath,
+      }),
+      prepareBenchmarkModel: () => {},
+      probeBenchmarkExecutable: (command) => ({
+        schema_version: 1,
+        backend: task.target_backend,
+        operating_system: identity.operating_system,
+        architecture: identity.architecture,
+        hardware_profile: identity.hardware_profile,
+        accelerator: identity.accelerator,
+        benchmark_executable_sha256: benchmarkExecutableSha256(command),
+      }),
+    },
+  );
+  t.after(() => session.close());
+  return session;
 }
 
 function reportForTask(task, identity = currentIdentity(), overrides = {}) {
@@ -544,6 +603,31 @@ test("closes already prepared variants when a later session fails", async (t) =>
     /second variant preparation failed/,
   );
   assert.equal(prepares, 2);
+  assert.equal(closes, 1);
+  assert.equal(fs.existsSync(current.lockPath), false);
+});
+
+test("closes a newly prepared session when its exposed identity is rejected", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  let closes = 0;
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        prepareSession: ({ task }) =>
+          preparedSession(
+            task,
+            { ...currentIdentity(), backend: "wrong-backend" },
+            {
+              close: () => {
+                closes += 1;
+              },
+            },
+          ),
+      }),
+    ),
+    /prepared benchmark session backend does not match the planned task/,
+  );
   assert.equal(closes, 1);
   assert.equal(fs.existsSync(current.lockPath), false);
 });
@@ -1095,6 +1179,74 @@ test("closes the abort race between spawning and listener registration", async (
     await waitFor(() => !processExists(childPid), "spawn-race child survived cancellation");
   }
 });
+
+test(
+  "real prepared-session SIGINT becomes a campaign interruption with CLI exit 130",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const current = fixture(t, { samples: ["sample-a"] });
+    const markerPath = path.join(current.directory, "active-real-session.pid");
+    const campaign = runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        prepareSession: ({ task }) =>
+          cancellableRealSession(t, task, current.directory, markerPath),
+        runTask: ({ task, sample, session, signal }) =>
+          session.runSample(
+            {
+              ...sample,
+              corpus_id: task.corpus_id,
+              corpus_fingerprint: task.corpus_fingerprint,
+            },
+            {
+              thresholds: {
+                maxWerPercent: task.thresholds.max_wer_percent,
+                maxHallucinatedWords: task.thresholds.max_hallucinated_words,
+              },
+              signal,
+            },
+          ),
+      }),
+    );
+    await Promise.race([
+      waitFor(() => fs.existsSync(markerPath), "timed out waiting for the real session process"),
+      campaign.then(() => {
+        throw new Error("real session campaign completed before interruption");
+      }),
+    ]);
+    const childPid = Number(fs.readFileSync(markerPath, "utf8"));
+    assert(Number.isSafeInteger(childPid) && childPid > 0);
+    t.after(() => {
+      try {
+        process.kill(childPid, "SIGKILL");
+      } catch {
+        // The campaign cancellation should already have reaped the process.
+      }
+    });
+
+    process.emit("SIGINT");
+    let failure;
+    try {
+      await campaign;
+    } catch (error) {
+      failure = error;
+    }
+    assert(failure instanceof Error);
+    assert.equal(failure.code, "MUESLY_BENCHMARK_INTERRUPTED");
+    assert.match(failure.message, /benchmark campaign interrupted by SIGINT/);
+    assert.equal(corpusBenchmarkErrorExitCode(failure), 130);
+    assert(
+      failure instanceof AggregateError &&
+        failure.errors.some((error) => error?.name === "AbortError"),
+    );
+    assert.equal(processExists(childPid), false);
+    assert.equal(fs.existsSync(current.lockPath), false);
+    assert.equal(
+      fs.readdirSync(current.resultsDirectory).filter(isCorpusBenchmarkCheckpointName).length,
+      0,
+    );
+  },
+);
 
 test("SIGINT aborts an active task and releases campaign ownership", async (t) => {
   const current = fixture(t, { samples: ["sample-a"] });

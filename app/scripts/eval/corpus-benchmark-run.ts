@@ -678,6 +678,25 @@ async function runLeasedTask({ dependencies, lease, session, signal, task }) {
   } catch (error) {
     validationError = error;
   }
+  if (signal?.aborted) {
+    let interruptionError;
+    try {
+      throwIfAborted(signal);
+    } catch (error) {
+      interruptionError = error;
+    }
+    const secondaryErrors = [runError, validationError].filter(
+      (error) => error !== null && error !== interruptionError,
+    );
+    if (secondaryErrors.length > 0) {
+      throw aggregateAfterPrimary(
+        interruptionError,
+        secondaryErrors,
+        "benchmark campaign interrupted",
+      );
+    }
+    throw interruptionError;
+  }
   if (runError !== null && validationError !== null) {
     throw aggregateAfterPrimary(runError, [validationError], "benchmark task failed");
   }
@@ -853,7 +872,22 @@ function prepareVariantSessions(tasks, options) {
         modelsDirectory: options.modelsDirectory,
         evaluatorContext: options.evaluatorContext,
       });
-      const identity = reportIdentityFromSession(session, task);
+      let identity;
+      try {
+        identity = reportIdentityFromSession(session, task);
+      } catch (error) {
+        if (typeof session?.close !== "function") throw error;
+        try {
+          session.close();
+        } catch (closeError) {
+          throw aggregateAfterPrimary(
+            error,
+            [closeError],
+            "prepared benchmark session identity validation failed",
+          );
+        }
+        throw error;
+      }
       sessions.set(key, session);
       identities.set(key, identity);
     }
@@ -1041,6 +1075,14 @@ export function formatCorpusBenchmarkSummary(result) {
     `${result.executedTasks} executed, ${result.pendingTasks} pending, ` +
     `${result.failedQualityTasks} quality failure(s)`
   );
+}
+
+export function corpusBenchmarkErrorExitCode(error) {
+  return error?.code === "MUESLY_BENCHMARK_INTERRUPTED"
+    ? 130
+    : error?.code === "MUESLY_BENCHMARK_INCOMPLETE"
+      ? 1
+      : 2;
 }
 
 export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = {}) {
@@ -1318,12 +1360,7 @@ async function main() {
     if (result.failedQualityTasks > 0) process.exitCode = 1;
   } catch (error) {
     console.error(error.message);
-    process.exitCode =
-      error.code === "MUESLY_BENCHMARK_INTERRUPTED"
-        ? 130
-        : error.code === "MUESLY_BENCHMARK_INCOMPLETE"
-          ? 1
-          : 2;
+    process.exitCode = corpusBenchmarkErrorExitCode(error);
   }
 }
 
