@@ -13,10 +13,14 @@ export const EVALUATOR_REVISION_PROTOCOL_ID = 'muesly-real-run-v1';
  */
 export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'AR',
+	'ALL_PROXY',
 	'BINDGEN_EXTRA_CLANG_ARGS',
+	'BLAS_INCLUDE_DIRS',
 	'CARGO_BUILD_RUSTFLAGS',
 	'CARGO_BUILD_TARGET',
 	'CARGO_ENCODED_RUSTFLAGS',
+	'CARGO_HOME',
+	'CARGO_INCREMENTAL',
 	'CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_CODEGEN_UNITS',
 	'CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG',
 	'CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL',
@@ -31,10 +35,14 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'CARGO_PROFILE_RELEASE_RPATH',
 	'CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO',
 	'CARGO_PROFILE_RELEASE_STRIP',
+	'CARGO_TARGET_DIR',
 	'CC',
 	'CFLAGS',
 	'CMAKE_CUDA_ARCHITECTURES',
+	'CMAKE_GENERATOR',
+	'CMAKE_MAKE_PROGRAM',
 	'CMAKE_OSX_DEPLOYMENT_TARGET',
+	'CMAKE_TOOLCHAIN_FILE',
 	'CPPFLAGS',
 	'CUDACXX',
 	'CUDAARCHS',
@@ -43,11 +51,20 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'CXX',
 	'CXXFLAGS',
 	'HIP_PATH',
+	'HOME',
+	'HTTP_PROXY',
+	'HTTPS_PROXY',
+	'INCLUDE',
 	'IPHONEOS_DEPLOYMENT_TARGET',
+	'LANG',
+	'LC_ALL',
 	'LDFLAGS',
 	'LD',
 	'LIBCLANG_PATH',
+	'LIB',
+	'LIBPATH',
 	'MACOSX_DEPLOYMENT_TARGET',
+	'NO_PROXY',
 	'OPENSSL_DIR',
 	'OPENSSL_INCLUDE_DIR',
 	'OPENSSL_LIB_DIR',
@@ -61,6 +78,9 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'PKG_CONFIG_PATH',
 	'PKG_CONFIG_SYSROOT_DIR',
 	'POSTHOG_API_KEY',
+	'PATH',
+	'Path',
+	'PATHEXT',
 	'ROCM_PATH',
 	'RUSTC',
 	'RUSTC_BOOTSTRAP',
@@ -68,12 +88,34 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'RUSTC_WORKSPACE_WRAPPER',
 	'RUSTFLAGS',
 	'RUSTUP_TOOLCHAIN',
+	'RUSTUP_HOME',
 	'RANLIB',
 	'SDKROOT',
+	'SSL_CERT_DIR',
+	'SSL_CERT_FILE',
 	'SOURCE_DATE_EPOCH',
 	'STRIP',
+	'SystemRoot',
+	'TEMP',
+	'TMP',
+	'TMPDIR',
+	'USERPROFILE',
 	'VCPKG_ROOT',
 	'VULKAN_SDK',
+	'WHISPER_DONT_GENERATE_BINDINGS',
+	'WINDIR',
+	'all_proxy',
+	'http_proxy',
+	'https_proxy',
+	'no_proxy',
+]);
+const EVALUATOR_BUILD_ENV_PREFIXES = Object.freeze([
+	'BLAS_',
+	'CCACHE_',
+	'CMAKE_',
+	'GGML_',
+	'SCCACHE_',
+	'WHISPER_',
 ]);
 
 const TARGET_TOOL_VARIABLES = Object.freeze([
@@ -227,11 +269,36 @@ function selectedBuildEnvironmentNames(buildEnv, targetTriple, hostTriple) {
 		(triple) => `CARGO_TARGET_${triple.replaceAll('-', '_').replaceAll('.', '_').toUpperCase()}_`,
 	);
 	for (const name of Object.keys(buildEnv)) {
-		if (targetNames.has(name) || cargoPrefixes.some((prefix) => name.startsWith(prefix))) {
+		if (
+			targetNames.has(name) ||
+			cargoPrefixes.some((prefix) => name.startsWith(prefix)) ||
+			EVALUATOR_BUILD_ENV_PREFIXES.some((prefix) => name.startsWith(prefix))
+		) {
 			names.add(name);
 		}
 	}
 	return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+export function evaluatorBuildEnvironment(buildEnv, targetTriple, hostTriple) {
+	if (
+		typeof targetTriple !== 'string' ||
+		!TARGET_TRIPLE_PATTERN.test(targetTriple) ||
+		typeof hostTriple !== 'string' ||
+		!TARGET_TRIPLE_PATTERN.test(hostTriple)
+	) {
+		throw new Error('targetTriple and hostTriple must be valid Rust target triples');
+	}
+	const environment = {};
+	for (const name of selectedBuildEnvironmentNames(buildEnv, targetTriple, hostTriple)) {
+		const value = environmentValue(buildEnv, name);
+		if (value === undefined) continue;
+		if (typeof value !== 'string') {
+			throw new Error(`buildEnv.${name} must be a string when set`);
+		}
+		environment[name] = value;
+	}
+	return environment;
 }
 
 function buildEnvironmentSha256(buildEnv, targetTriple, hostTriple) {
@@ -489,6 +556,28 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 			delete commandEnvironment[name];
 		} else {
 			commandEnvironment[name] = value;
+		}
+	}
+	// A partial map is useful in tests and API callers. Preserve only the
+	// process-discovery variables needed to execute the selected rustc when the
+	// caller did not provide them; rustc -vV itself remains the authoritative
+	// toolchain identity.
+	for (const name of [
+		'PATH',
+		'Path',
+		'PATHEXT',
+		'HOME',
+		'USERPROFILE',
+		'RUSTUP_HOME',
+		'CARGO_HOME',
+		'SystemRoot',
+		'WINDIR',
+	]) {
+		if (
+			environmentValue(buildEnv, name) === undefined &&
+			typeof process.env[name] === 'string'
+		) {
+			commandEnvironment[name] = process.env[name];
 		}
 	}
 	const output = commandOutput(

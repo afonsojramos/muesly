@@ -133,6 +133,7 @@ test('discovers valid checkpoints in deterministic order with raw-content digest
 test('accepts only final hash-suffixed campaign checkpoint names', () => {
 	for (const name of [
 		checkpointName(),
+		checkpointName({ backend: 'coreml-metal' }),
 		checkpointName({ provider: 'parakeet', backend: 'onnx-cpu' }),
 		checkpointName({ backend: 'openblas-cpu' }),
 	]) {

@@ -62,6 +62,83 @@ jobs:
       - name: Tests
         run: cargo test --workspace --lib -- --skip audio::incremental_saver::tests::test_checkpoint_creation
 
+      # Blocking gate for the exact CPU-only evaluator surface used by local
+      # corpus benchmarks. This exercises hardware/provenance serialization
+      # without enabling an acceleration backend or downloading a model.
+      - name: Transcription fixture tests (CPU, no defaults)
+        run: cargo test -p muesly --example transcribe-fixture --no-default-features
+
+      - name: Transcription fixture process contract (CPU, no defaults)
+        env:
+          MUESLY_EVAL_RUNTIME_ENV_SHA256: "0000000000000000000000000000000000000000000000000000000000000000"
+          MUESLY_WHISPER_FORCE_CPU: "1"
+          MUESLY_WHISPER_REQUIRE_ACCELERATION: "0"
+        run: |
+          cargo build -p muesly --example transcribe-fixture --no-default-features
+          fixture=target/debug/examples/transcribe-fixture
+          probe_json="$("$fixture" --provider whisper --hardware-json)"
+          expected_sha256="$(sha256sum "$fixture" | awk '{print $1}')"
+
+          PROBE_JSON="$probe_json" EXPECTED_SHA256="$expected_sha256" python3 - <<'PY'
+          import json
+          import os
+
+          probe = json.loads(os.environ["PROBE_JSON"])
+          expected_fields = {
+              "schema_version",
+              "backend",
+              "operating_system",
+              "architecture",
+              "hardware_profile",
+              "accelerator",
+              "benchmark_executable_sha256",
+          }
+          if set(probe) != expected_fields:
+              raise SystemExit(f"unexpected hardware probe fields: {sorted(probe)}")
+          if probe["schema_version"] != 1:
+              raise SystemExit("unexpected hardware probe schema version")
+          if probe["backend"] != "cpu" or probe["accelerator"] != "none":
+              raise SystemExit("CPU control mode reported a non-CPU backend")
+          if probe["operating_system"] != "linux" or not probe["architecture"]:
+              raise SystemExit("hardware probe reported an invalid platform")
+          if probe["benchmark_executable_sha256"] != os.environ["EXPECTED_SHA256"]:
+              raise SystemExit("hardware probe executable digest does not match the built fixture")
+
+          fields = {}
+          for field in probe["hardware_profile"].split(";"):
+              key, separator, value = field.partition("=")
+              if not separator or key in fields:
+                  raise SystemExit("hardware profile is not canonical key=value data")
+              fields[key] = value
+          if set(fields) != {
+              "cpu",
+              "logical_cpus",
+              "memory_bytes",
+              "runtime_env_sha256",
+          }:
+              raise SystemExit(f"unexpected hardware profile fields: {sorted(fields)}")
+          if not fields["cpu"] or any(ord(character) < 32 or ord(character) == 127 for character in fields["cpu"]):
+              raise SystemExit("hardware profile CPU identity is invalid")
+          for key in ("logical_cpus", "memory_bytes"):
+              if not fields[key].isdigit() or int(fields[key]) <= 0:
+                  raise SystemExit(f"hardware profile {key} must be positive")
+          if fields["runtime_env_sha256"] != "0" * 64:
+              raise SystemExit("hardware profile runtime environment digest changed")
+          PY
+
+          error_log="${RUNNER_TEMP}/transcribe-fixture-control-error.log"
+          if "$fixture" --hardware-json > /dev/null 2>"$error_log"; then
+            echo "::error::hardware control mode accepted an implicit provider"
+            exit 1
+          fi
+          grep -Fq -- "--hardware-json requires exactly one explicit --provider" "$error_log"
+
+          if "$fixture" --provider whisper --provider whisper --hardware-json > /dev/null 2>"$error_log"; then
+            echo "::error::hardware control mode accepted duplicate providers"
+            exit 1
+          fi
+          grep -Fq -- "--provider may only be provided once" "$error_log"
+
       # Advisory for now (see plan 006 maintenance notes for the ratchet to blocking).
       - name: Clippy (advisory)
         continue-on-error: true

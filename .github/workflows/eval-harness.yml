@@ -1,30 +1,42 @@
 name: Eval Harness
 
-# Quality checks against fixed fixtures: the scripts must run AND stay within
-# per-fixture WER thresholds (deterministic, so safe to gate). No live model
-# output is scored here. Expand fixtures over time.
+# Offline gates for corpus custody, evaluator provenance, report/coverage
+# contracts, and fixed-fixture quality. Fixture WER thresholds are
+# deterministic, so they are safe to gate. No live model output is scored here.
 on:
   pull_request:
     paths:
       - "app/scripts/eval/**"
+      - "app/src-tauri/examples/transcribe-fixture.rs"
+      - "app/src-tauri/src/model_integrity.rs"
+      - "app/src-tauri/src/whisper_engine/acceleration.rs"
+      - "app/src-tauri/Cargo.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/eval-harness.yml"
       - "package.json"
   push:
     branches: [main]
     paths:
       - "app/scripts/eval/**"
+      - "app/src-tauri/examples/transcribe-fixture.rs"
+      - "app/src-tauri/src/model_integrity.rs"
+      - "app/src-tauri/src/whisper_engine/acceleration.rs"
+      - "app/src-tauri/Cargo.toml"
+      - "Cargo.toml"
+      - "Cargo.lock"
       - ".github/workflows/eval-harness.yml"
       - "package.json"
   workflow_dispatch:
 
 jobs:
   eval:
-    name: WER + rubric dry-run
+    name: Corpus safety + deterministic eval
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: jdx/mise-action@v4
-      - name: Corpus manifest and consent policy
+      - name: Corpus safety, provenance, and report tests
         run: |
           nub run eval:corpus:validate
           nub run eval:corpus:test

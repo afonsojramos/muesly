@@ -6,7 +6,7 @@ import { TextDecoder } from 'node:util';
 export const MAX_CORPUS_BENCHMARK_CHECKPOINT_BYTES = 1024 * 1024;
 
 const CHECKPOINT_FILENAME_PATTERN =
-	/^run-(?:whisper-(?:cpu|metal|cuda|vulkan|hipblas|openblas-cpu)|parakeet-onnx-cpu)-[0-9a-f]{16}-[0-9a-f]{16}\.run\.json$/;
+	/^run-(?:whisper-(?:cpu|metal|coreml-metal|cuda|vulkan|hipblas|openblas-cpu)|parakeet-onnx-cpu)-[0-9a-f]{16}-[0-9a-f]{16}\.run\.json$/;
 const ATTEMPT_FILENAME_PATTERN =
 	/^\.benchmark-attempt-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/;
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });

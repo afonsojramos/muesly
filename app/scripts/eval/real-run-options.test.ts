@@ -92,4 +92,25 @@ test('validates numeric and backend-specific values', () => {
 			}),
 		/requires --accelerator/,
 	);
+	assert.throws(
+		() =>
+			parseRealRunArgs(['--backend', 'cuda', '--accelerator', 'none'], {
+				...defaults,
+				platform: 'linux',
+				architecture: 'x64',
+			}),
+		/real accelerator identity/,
+	);
+	assert.throws(
+		() => parseRealRunArgs(['--backend', 'cpu', '--accelerator', 'CPU'], defaults),
+		/only valid for a Whisper GPU backend/,
+	);
+	assert.throws(
+		() => parseRealRunArgs(['--provider', 'parakeet', '--accelerator', 'CPU'], defaults),
+		/only valid for a Whisper GPU backend/,
+	);
+	assert.equal(
+		parseRealRunArgs(['--backend', 'coreml'], defaults).backend,
+		'coreml',
+	);
 });

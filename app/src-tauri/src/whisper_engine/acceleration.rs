@@ -1,5 +1,7 @@
 use crate::audio::{GpuType, PerformanceTier};
+use std::collections::HashMap;
 use std::ffi::CStr;
+use std::sync::{Mutex, OnceLock};
 use whisper_rs::whisper_rs_sys as sys;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,12 +106,23 @@ pub fn whisper_context_acceleration_for(
 /// true but no usable GPU backend exists. That behavior is useful in the app,
 /// but would make benchmark provenance dishonest. This preflight mirrors
 /// whisper.cpp's GPU-device selection and performs a real backend
-/// initialization, then immediately frees the temporary backend.
+/// initialization, then immediately frees the temporary backend. Successful
+/// checks are cached per process and device so a benchmark can prove the device
+/// before timing without repeating the temporary initialization during load.
 pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
     if gpu_device < 0 {
         return Err(format!(
             "GPU device index must be non-negative, got {gpu_device}"
         ));
+    }
+
+    static VERIFIED_GPU_DEVICES: OnceLock<Mutex<HashMap<i32, String>>> = OnceLock::new();
+    let cache = VERIFIED_GPU_DEVICES.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut verified_devices = cache
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(name) = verified_devices.get(&gpu_device) {
+        return Ok(name.clone());
     }
 
     let mut matching_index = 0_i32;
@@ -147,6 +160,7 @@ pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
                 ));
             }
             sys::ggml_backend_free(backend);
+            verified_devices.insert(gpu_device, name.clone());
             return Ok(name);
         }
     }

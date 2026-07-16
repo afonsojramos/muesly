@@ -1,5 +1,6 @@
 import {
 	requiresExplicitAccelerator,
+	requiresWhisperGpu,
 	supportedBackends,
 } from './backend.ts';
 
@@ -68,6 +69,12 @@ export function parseRealRunArgs(
 	const accelerator = parsed.accelerator ?? null;
 	if (accelerator && /[;\r\n]/.test(accelerator)) {
 		throw new Error('--accelerator cannot contain semicolons or line breaks');
+	}
+	if (accelerator && !requiresWhisperGpu(provider, backend)) {
+		throw new Error('--accelerator is only valid for a Whisper GPU backend');
+	}
+	if (accelerator?.toLowerCase() === 'none' && requiresWhisperGpu(provider, backend)) {
+		throw new Error(`--backend ${backend} requires a real accelerator identity, not 'none'`);
 	}
 	if (requiresExplicitAccelerator(provider, backend, platform, architecture) && !accelerator) {
 		throw new Error(

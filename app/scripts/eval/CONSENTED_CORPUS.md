@@ -139,17 +139,38 @@ participant or customer identity in filenames or metadata.
 
 ## Measure and gate coverage
 
-Run each variant with the same manifest, thresholds, and model artifact:
+Run every provider/model/backend variant against the same manifest and thresholds. Pin one exact
+artifact for each provider/model across all of that variant's backend reports; Whisper and
+Parakeet, or two different model names, each retain their own artifact fingerprint.
 
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
 refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
-Run reports also persist the versioned WER scorer. When scoring or tokenization semantics change,
-rerun every variant: coverage and aggregation reject legacy reports and mixed scorer versions.
+Run-report schema 9 also persists the versioned WER scorer, a clean evaluator revision, and the
+SHA-256 digest of the exact benchmark executable. The evaluator revision binds the result to the
+Git commit, `Cargo.lock`, `rustc -vV`, release target and Cargo features, and a digest of the
+allowlisted build environment. Report generation therefore requires a clean Git worktree and
+rechecks the revision after transcription. The provider/backend executable is built once, probed,
+and invoked directly for every selected sample; metrics schema 5 must repeat its backend, platform,
+hardware, accelerator, and executable identity exactly. When scoring, source/toolchain inputs, or
+tokenization semantics change, rerun every variant: coverage and aggregation reject legacy or
+incompatible reports.
 
-For CUDA, Vulkan, HIP, or Intel Metal, also pass
+Model preparation completes before measurement, and the exact provider/model artifact set is
+fingerprinted before the first sample and after the last. A report is refused if the model bytes
+change. Each sample then runs in a fresh benchmark process so process-local engine state is reset;
+host file caches and accelerator/runtime caches may remain warm, so this is not a cold-cache claim.
+Only an allowlisted benchmark runtime environment is forwarded. Adaptive-memory overrides and
+operational logging are removed, and a digest of the remaining ambient inputs is bound into the
+hardware profile. The requested acceleration policy and accelerator identity are bound separately,
+so CPU and accelerator variants from one machine retain a comparable profile.
+
+For CUDA, Vulkan, HIP, or an Intel Mac GPU backend, also pass
 `--accelerator <stable-model-or-device-id>` (for example, the exact GPU model and PCI bus ID).
-Apple Silicon Metal records its integrated accelerator identity automatically.
+Apple Silicon Metal and Core ML record their integrated accelerator identity automatically.
+Select Core ML with `--backend coreml`; the resulting metrics and coverage cell use the canonical
+reported backend name `coreml-metal`. Core ML is supported for additional target matrices but is
+not part of the initial CPU/Metal/Parakeet 180-cell floor described above.
 
 ```bash
 nub run eval:real --manifest app/scripts/eval/corpus-local.json \
@@ -169,8 +190,10 @@ Check that at least one matrix-wide hardware cohort has three distinct sessions 
 language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
 profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
 best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
-from different machines or accelerator identities does not satisfy coverage schema 6. The command
-fails with `--require-complete` until the corpus cells and one full-matrix cohort are complete:
+from different machines or accelerator identities does not satisfy coverage schema 8. Coverage
+schema 8 also pins the evaluator-revision and benchmark-executable digest for every backend. The
+command fails with `--require-complete` until the corpus cells and one full-matrix cohort are
+complete:
 
 ```bash
 nub run eval:coverage --manifest app/scripts/eval/corpus-local.json \

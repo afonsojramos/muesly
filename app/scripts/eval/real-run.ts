@@ -14,7 +14,7 @@
  * Usage: nub real-run.ts [--max-wer <pct>] [--max-hallucinated-words <n>]
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
- *                          [--backend cpu|metal|cuda|vulkan|openblas|hipblas]
+ *                          [--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas]
  *                          [--accelerator <stable-model-or-device-id>]
  *                          [--output <path>] [--fixture <sample-id>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
@@ -26,14 +26,21 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { forcesWhisperCpu, requiresWhisperGpu } from './backend.ts';
 import {
-	forcesWhisperCpu,
-	requiresWhisperGpu,
-} from './backend.ts';
+	benchmarkExecutableSha256,
+	benchmarkRuntimeEnvironment,
+	buildBenchmarkExecutable,
+	cargoFeaturesForBenchmark,
+	prepareBenchmarkModel,
+	probeBenchmarkExecutable,
+} from './benchmark-executable.ts';
 import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
+import { evaluatorBuildEnvironment, evaluatorRevision } from './evaluator-revision.ts';
 import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
 import { parseRealRunArgs } from './real-run-options.ts';
+import { validateBenchmarkMetrics, validateRunReport } from './report.ts';
 import { WER_SCORER_ID, werDetails } from './wer.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -81,16 +88,17 @@ if (fixtures.length === 0) {
 // Building the muesly crate requires the Tauri sidecar binaries to exist; stub
 // them like CI's rust-check does when absent (the example never invokes them).
 const binariesDir = path.join(repoRoot, 'app/src-tauri/binaries');
+let rustcHostTriple = null;
 try {
-	const triple = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
+	const hostLines = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
 		.split('\n')
-		.find((l) => l.startsWith('host: '))
-		?.slice('host: '.length)
-		.trim();
-	if (triple) {
+		.filter((line) => line.startsWith('host: '))
+		.map((line) => line.slice('host: '.length).trim());
+	if (hostLines.length === 1) {
+		rustcHostTriple = hostLines[0];
 		fs.mkdirSync(binariesDir, { recursive: true });
 		for (const bin of ['llama-helper', 'diarization-helper']) {
-			const p = path.join(binariesDir, `${bin}-${triple}`);
+			const p = path.join(binariesDir, `${bin}-${rustcHostTriple}`);
 			if (!fs.existsSync(p)) {
 				fs.writeFileSync(p, '', { mode: 0o755 });
 				console.error(`stubbed missing sidecar: ${path.relative(repoRoot, p)}`);
@@ -98,13 +106,80 @@ try {
 		}
 	}
 } catch {
-	// rustc missing entirely — cargo will fail below with its own clear error.
+	// The benchmark setup below emits one stable provenance error.
 }
 
 console.error(
 	`running real ${provider} transcription with model '${model}' on ${fixtures.length} fixture(s)` +
 		' (first run compiles + downloads the model)...',
 );
+
+const benchmarkEnvironment = benchmarkRuntimeEnvironment(process.env, {
+	accelerator,
+	forceWhisperCpu: forcesWhisperCpu(provider, backend),
+	requireWhisperAcceleration: requiresWhisperGpu(provider, backend),
+});
+if (!rustcHostTriple) {
+	console.error('rustc -vV did not report exactly one host target triple');
+	process.exit(1);
+}
+const buildTargetTriple = process.env.CARGO_BUILD_TARGET || rustcHostTriple;
+let buildEnvironment;
+try {
+	buildEnvironment = evaluatorBuildEnvironment(process.env, buildTargetTriple, rustcHostTriple);
+} catch (error) {
+	console.error(error.message);
+	process.exit(1);
+}
+let builtBenchmark;
+let hardwareProbe;
+let initialBenchmarkExecutableDigest = null;
+let initialEvaluatorRevision = null;
+let initialModelArtifactDigest = null;
+try {
+	const cargoFeatures = cargoFeaturesForBenchmark(provider, backend);
+	if (outputPath) {
+		initialEvaluatorRevision = evaluatorRevision(repoRoot, {
+			buildEnv: buildEnvironment,
+			cargoFeatures,
+		});
+	}
+	builtBenchmark = buildBenchmarkExecutable(repoRoot, {
+		provider,
+		backend,
+		buildEnv: buildEnvironment,
+	});
+	initialBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+	if (
+		initialEvaluatorRevision &&
+		JSON.stringify(builtBenchmark.cargoFeatures) !== JSON.stringify(cargoFeatures)
+	) {
+		throw new Error('benchmark build features changed after evaluator provenance was collected');
+	}
+	hardwareProbe = probeBenchmarkExecutable(builtBenchmark.executablePath, {
+		provider,
+		backend,
+		environment: benchmarkEnvironment,
+	});
+	if (hardwareProbe.benchmark_executable_sha256 !== initialBenchmarkExecutableDigest) {
+		throw new Error('benchmark executable changed between build and hardware probe');
+	}
+	prepareBenchmarkModel(builtBenchmark.executablePath, {
+		provider,
+		model,
+		modelsDirectory: evalModelsDir,
+		environment: benchmarkEnvironment,
+	});
+	initialModelArtifactDigest = modelArtifactSha256(
+		provider,
+		model,
+		evalModelsDir,
+		hardwareProbe.backend,
+	);
+} catch (error) {
+	console.error(error.message);
+	process.exit(1);
+}
 
 let failed = false;
 const runStartedAt = new Date().toISOString();
@@ -117,16 +192,6 @@ for (const sample of fixtures) {
 	const metricsPath = path.join(metricsDirectory, `${sample.id}.json`);
 
 	const exampleArgs = [
-		'run',
-		'-q',
-		'--release',
-		'-p',
-		'muesly',
-		'--no-default-features',
-		...(backend === 'cpu' ? [] : ['--features', backend]),
-		'--example',
-		'transcribe-fixture',
-		'--',
 		'--provider',
 		provider,
 		'--vad',
@@ -140,29 +205,114 @@ for (const sample of fixtures) {
 		exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', whisperLanguage);
 	}
 	exampleArgs.push(evalModelsDir);
-	const run = spawnSync(
-		'cargo',
-		exampleArgs,
-		{
-			cwd: repoRoot,
-			env: {
-				...process.env,
-				MUESLY_EVAL_ACCELERATOR_ID: accelerator ?? '',
-				MUESLY_WHISPER_FORCE_CPU: forcesWhisperCpu(provider, backend) ? '1' : '0',
-				MUESLY_WHISPER_REQUIRE_ACCELERATION:
-					requiresWhisperGpu(provider, backend) ? '1' : '0',
-			},
-			encoding: 'utf8',
-			stdio: ['ignore', 'pipe', 'inherit'],
-			maxBuffer: 16 * 1024 * 1024,
-		},
-	);
+	let sampleModelArtifactDigest;
+	try {
+		sampleModelArtifactDigest = modelArtifactSha256(
+			provider,
+			model,
+			evalModelsDir,
+			hardwareProbe.backend,
+		);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint the model before transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (sampleModelArtifactDigest !== initialModelArtifactDigest) {
+		console.error(`${sample.id}: evaluated model artifact changed before transcription`);
+		process.exit(1);
+	}
+	let sampleBenchmarkExecutableDigest;
+	try {
+		sampleBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint the benchmark executable before transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (sampleBenchmarkExecutableDigest !== initialBenchmarkExecutableDigest) {
+		console.error(`${sample.id}: benchmark executable changed before transcription`);
+		process.exit(1);
+	}
+	const run = spawnSync(builtBenchmark.executablePath, exampleArgs, {
+		cwd: repoRoot,
+		env: benchmarkEnvironment,
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'inherit'],
+		maxBuffer: 16 * 1024 * 1024,
+	});
+	let finalSampleBenchmarkExecutableDigest;
+	try {
+		finalSampleBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint the benchmark executable after transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (
+		finalSampleBenchmarkExecutableDigest !== sampleBenchmarkExecutableDigest ||
+		finalSampleBenchmarkExecutableDigest !== initialBenchmarkExecutableDigest
+	) {
+		console.error(`${sample.id}: benchmark executable changed during transcription`);
+		process.exit(1);
+	}
+	let finalSampleModelArtifactDigest;
+	try {
+		finalSampleModelArtifactDigest = modelArtifactSha256(
+			provider,
+			model,
+			evalModelsDir,
+			hardwareProbe.backend,
+		);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint the model after transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (
+		finalSampleModelArtifactDigest !== sampleModelArtifactDigest ||
+		finalSampleModelArtifactDigest !== initialModelArtifactDigest
+	) {
+		console.error(`${sample.id}: evaluated model artifact changed during transcription`);
+		process.exit(1);
+	}
 	if (run.status !== 0) {
 		console.error(`${sample.id}: real transcription failed (exit ${run.status ?? 'signal'})`);
 		process.exit(run.status || 1);
 	}
 	const hypothesis = (run.stdout ?? '').trim();
-	const metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
+	let metrics;
+	try {
+		metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
+	} catch {
+		console.error(`${sample.id}: benchmark metrics are missing or invalid`);
+		process.exit(1);
+	}
+	const metricsErrors = validateBenchmarkMetrics(metrics, `${sample.id}.metrics`);
+	if (metricsErrors.length > 0) {
+		console.error(`invalid benchmark metrics:\n- ${metricsErrors.join('\n- ')}`);
+		process.exit(1);
+	}
+	for (const [field, expected] of [
+		['schema_version', 5],
+		['provider', provider],
+		['model', model],
+		['backend', hardwareProbe.backend],
+		['operating_system', hardwareProbe.operating_system],
+		['architecture', hardwareProbe.architecture],
+		['hardware_profile', hardwareProbe.hardware_profile],
+		['accelerator', hardwareProbe.accelerator],
+		['benchmark_executable_sha256', hardwareProbe.benchmark_executable_sha256],
+	]) {
+		if (metrics[field] !== expected) {
+			console.error(`${sample.id}: benchmark metrics ${field} does not match the hardware probe`);
+			process.exit(1);
+		}
+	}
 	const result = {
 		sample_id: sample.id,
 		language: sample.language,
@@ -216,24 +366,62 @@ for (const sample of fixtures) {
 	runResults.push(result);
 }
 
+let finalModelArtifactDigest;
+try {
+	finalModelArtifactDigest = modelArtifactSha256(
+		provider,
+		model,
+		evalModelsDir,
+		hardwareProbe.backend,
+	);
+} catch (error) {
+	console.error(`failed to fingerprint evaluated model: ${error.message}`);
+	process.exit(1);
+}
+if (finalModelArtifactDigest !== initialModelArtifactDigest) {
+	console.error('evaluated model artifact changed while the benchmark was running');
+	process.exit(1);
+}
+let finalBenchmarkExecutableDigest;
+try {
+	finalBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+} catch (error) {
+	console.error(`failed to fingerprint benchmark executable: ${error.message}`);
+	process.exit(1);
+}
+if (finalBenchmarkExecutableDigest !== initialBenchmarkExecutableDigest) {
+	console.error('benchmark executable changed while the benchmark was running');
+	process.exit(1);
+}
+
 if (outputPath) {
-	let modelArtifactDigest;
+	let finalEvaluatorRevision;
 	try {
-		modelArtifactDigest = modelArtifactSha256(provider, model, evalModelsDir);
+		finalEvaluatorRevision = evaluatorRevision(repoRoot, {
+			buildEnv: buildEnvironment,
+			cargoFeatures: builtBenchmark.cargoFeatures,
+		});
 	} catch (error) {
-		console.error(`failed to fingerprint evaluated model: ${error.message}`);
+		console.error(error.message);
+		process.exit(1);
+	}
+	if (finalEvaluatorRevision.sha256 !== initialEvaluatorRevision.sha256) {
+		console.error('evaluator revision changed while the benchmark was running');
 		process.exit(1);
 	}
 	const report = {
-		schema_version: 8,
+		schema_version: 9,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,
 		completed_at: new Date().toISOString(),
 		wer_scorer: WER_SCORER_ID,
+		evaluator_revision: finalEvaluatorRevision.revision,
+		evaluator_revision_sha256: finalEvaluatorRevision.sha256,
+		benchmark_executable_sha256: hardwareProbe.benchmark_executable_sha256,
 		provider,
 		model,
-		model_artifact_sha256: modelArtifactDigest,
+		model_artifact_sha256: initialModelArtifactDigest,
 		thresholds: {
 			max_wer_percent: maxWerPct,
 			max_hallucinated_words: maxHallucinatedWords,
@@ -241,6 +429,11 @@ if (outputPath) {
 		passed: !failed,
 		results: runResults,
 	};
+	const reportErrors = validateRunReport(report);
+	if (reportErrors.length > 0) {
+		console.error(`refusing to write invalid benchmark report:\n- ${reportErrors.join('\n- ')}`);
+		process.exit(1);
+	}
 	const absoluteOutput = path.resolve(outputPath);
 	try {
 		writeCorpusBoundJson({

@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import {
 	EVALUATOR_REVISION_PROTOCOL_ID,
+	evaluatorBuildEnvironment,
 	evaluatorRevision,
 	evaluatorRevisionSha256,
 	validateEvaluatorRevision,
@@ -140,6 +141,53 @@ test('Cargo features and allowlisted build inputs deterministically change the d
 	assert.notEqual(changedFeature.sha256, baseline.sha256);
 	assert.notEqual(changedAllowedEnvironment.sha256, baseline.sha256);
 	assert.equal(changedUnlistedEnvironment.sha256, baseline.sha256);
+});
+
+test('sanitizes Cargo build inputs to the same attested environment surface', () => {
+	const environment = evaluatorBuildEnvironment(
+		{
+			BLAS_INCLUDE_DIRS: '/opt/blas/include',
+			CMAKE_GENERATOR: 'Ninja',
+			GGML_METAL_EMBED_LIBRARY: '1',
+			PATH: '/usr/bin',
+			WHISPER_DONT_GENERATE_BINDINGS: '1',
+			WHISPER_PRIVATE_TOGGLE: 'enabled',
+			UNRELATED_PRIVATE_VALUE: 'must not reach Cargo',
+		},
+		'x86_64-unknown-linux-gnu',
+		'x86_64-unknown-linux-gnu',
+	);
+	assert.deepEqual(environment, {
+		BLAS_INCLUDE_DIRS: '/opt/blas/include',
+		CMAKE_GENERATOR: 'Ninja',
+		GGML_METAL_EMBED_LIBRARY: '1',
+		PATH: '/usr/bin',
+		WHISPER_DONT_GENERATE_BINDINGS: '1',
+		WHISPER_PRIVATE_TOGGLE: 'enabled',
+	});
+});
+
+test('whisper, ggml, cmake, and BLAS build inputs change provenance', (t) => {
+	const repositoryRoot = createRepository(t);
+	const baseline = evaluatorRevision(repositoryRoot, deterministicOptions());
+	for (const [name, value] of [
+		['BLAS_INCLUDE_DIRS', '/opt/blas/include'],
+		['CMAKE_GENERATOR', 'Ninja'],
+		['GGML_METAL_EMBED_LIBRARY', '1'],
+		['WHISPER_DONT_GENERATE_BINDINGS', '1'],
+		['WHISPER_CUSTOM_BUILD_TOGGLE', 'enabled'],
+	]) {
+		const changed = evaluatorRevision(
+			repositoryRoot,
+			deterministicOptions({
+				buildEnv: {
+					...deterministicOptions().buildEnv,
+					[name]: value,
+				},
+			}),
+		);
+		assert.notEqual(changed.sha256, baseline.sha256, name);
+	}
 });
 
 test('target-scoped Cargo and compiler inputs change the evaluator digest', (t) => {

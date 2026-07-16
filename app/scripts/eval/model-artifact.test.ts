@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
+import {
+	coreMlEncoderBundlePath,
+	modelArtifactSha256,
+	resolveModelsDirectory,
+} from './model-artifact.ts';
 
 test('resolves relative model directories from the Cargo working directory', () => {
 	const repositoryRoot = path.resolve('repo-root');
@@ -17,18 +21,109 @@ test('resolves relative model directories from the Cargo working directory', () 
 	assert.equal(resolveModelsDirectory(null, repositoryRoot), path.join(repositoryRoot, 'models'));
 });
 
-test('fingerprints the exact Whisper model bytes', () => {
+test('fingerprints the exact Whisper model bytes', (t) => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 	fs.writeFileSync(path.join(directory, 'ggml-test.bin'), 'whisper bytes');
 	assert.equal(
-		modelArtifactSha256('whisper', 'test', directory),
+		modelArtifactSha256('whisper', 'test', directory, 'cpu'),
 		'd83a8c24e2e979dfebef2b73e8eeba84bb52b03f5291c655a481ccacc9dccc48',
 	);
-	fs.rmSync(directory, { recursive: true, force: true });
 });
 
-test('fingerprints every file in the selected Parakeet artifact set', () => {
+test('derives the Core ML encoder bundle exactly like whisper.cpp', () => {
+	assert.equal(
+		coreMlEncoderBundlePath('/models/ggml-large-v3-turbo-q5_0.bin'),
+		'/models/ggml-large-v3-turbo-encoder.mlmodelc',
+	);
+	assert.equal(
+		coreMlEncoderBundlePath('/models/ggml-large-v3-turbo.bin'),
+		'/models/ggml-large-v3-turbo-encoder.mlmodelc',
+	);
+	assert.equal(
+		coreMlEncoderBundlePath('/models/ggml-test-q12_0.bin'),
+		'/models/ggml-test-q12_0-encoder.mlmodelc',
+	);
+});
+
+test('fingerprints the complete GGML and Core ML artifact set', (t) => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const modelPath = path.join(directory, 'ggml-test-q5_0.bin');
+	const bundlePath = path.join(directory, 'ggml-test-encoder.mlmodelc');
+	const weightsDirectory = path.join(bundlePath, 'weights');
+	fs.writeFileSync(modelPath, 'whisper bytes');
+	fs.mkdirSync(weightsDirectory, { recursive: true });
+	fs.writeFileSync(path.join(bundlePath, 'model.mil'), 'program');
+	fs.writeFileSync(path.join(weightsDirectory, 'weight.bin'), 'weights');
+
+	const before = modelArtifactSha256('whisper', 'test-q5_0', directory, 'coreml-metal');
+	fs.appendFileSync(path.join(weightsDirectory, 'weight.bin'), ' changed');
+	const after = modelArtifactSha256('whisper', 'test-q5_0', directory, 'coreml-metal');
+	assert.notEqual(after, before);
+	assert.equal(
+		modelArtifactSha256('whisper', 'test-q5_0', directory, 'metal'),
+		modelArtifactSha256('whisper', 'test-q5_0', directory, 'cpu'),
+	);
+});
+
+test('requires the exact Core ML bundle for Core ML measurements', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	fs.writeFileSync(path.join(directory, 'ggml-test-q5_0.bin'), 'whisper bytes');
+	fs.mkdirSync(path.join(directory, 'ggml-test-q5_0-encoder.mlmodelc'));
+	assert.throws(
+		() => modelArtifactSha256('whisper', 'test-q5_0', directory, 'coreml-metal'),
+		/model artifact directory must be a real directory/,
+	);
+});
+
+test('rejects aliased Core ML bundle entries', async (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const modelPath = path.join(directory, 'ggml-test.bin');
+	const bundlePath = path.join(directory, 'ggml-test-encoder.mlmodelc');
+	fs.writeFileSync(modelPath, 'whisper bytes');
+
+	await t.test('hard-linked file', () => {
+		const target = path.join(directory, 'target.bin');
+		fs.writeFileSync(target, 'weights');
+		fs.mkdirSync(bundlePath);
+		fs.linkSync(target, path.join(bundlePath, 'weight.bin'));
+		assert.throws(
+			() => modelArtifactSha256('whisper', 'test', directory, 'coreml-metal'),
+			/regular single-link file/,
+		);
+		fs.rmSync(bundlePath, { recursive: true });
+	});
+
+	await t.test('symbolic-link bundle', (t) => {
+		if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+		const target = path.join(directory, 'real-bundle');
+		fs.mkdirSync(target);
+		fs.writeFileSync(path.join(target, 'weight.bin'), 'weights');
+		fs.symlinkSync(target, bundlePath, 'dir');
+		assert.throws(
+			() => modelArtifactSha256('whisper', 'test', directory, 'coreml-metal'),
+			/must be a real directory/,
+		);
+		fs.unlinkSync(bundlePath);
+	});
+
+	await t.test('symbolic-link entry', (t) => {
+		if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+		fs.mkdirSync(bundlePath);
+		fs.symlinkSync(path.join(directory, 'target.bin'), path.join(bundlePath, 'weight.bin'));
+		assert.throws(
+			() => modelArtifactSha256('whisper', 'test', directory, 'coreml-metal'),
+			/cannot be symbolic links/,
+		);
+	});
+});
+
+test('fingerprints every file in the selected Parakeet artifact set', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 	const modelDirectory = path.join(directory, 'parakeet', 'test');
 	fs.mkdirSync(modelDirectory, { recursive: true });
 	for (const filename of [
@@ -39,8 +134,33 @@ test('fingerprints every file in the selected Parakeet artifact set', () => {
 	]) {
 		fs.writeFileSync(path.join(modelDirectory, filename), filename);
 	}
-	const before = modelArtifactSha256('parakeet', 'test', directory);
+	const before = modelArtifactSha256('parakeet', 'test', directory, 'onnx-cpu');
 	fs.appendFileSync(path.join(modelDirectory, 'vocab.txt'), 'changed');
-	assert.notEqual(modelArtifactSha256('parakeet', 'test', directory), before);
-	fs.rmSync(directory, { recursive: true, force: true });
+	assert.notEqual(modelArtifactSha256('parakeet', 'test', directory, 'onnx-cpu'), before);
+});
+
+test('rejects aliased model artifact files', async (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const target = path.join(directory, 'target.bin');
+	const model = path.join(directory, 'ggml-test.bin');
+	fs.writeFileSync(target, 'model bytes');
+
+	await t.test('hard link', () => {
+		fs.linkSync(target, model);
+		assert.throws(
+			() => modelArtifactSha256('whisper', 'test', directory, 'cpu'),
+			/regular single-link file/,
+		);
+		fs.unlinkSync(model);
+	});
+
+	await t.test('symbolic link', (t) => {
+		if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+		fs.symlinkSync(target, model);
+		assert.throws(
+			() => modelArtifactSha256('whisper', 'test', directory, 'cpu'),
+			/regular single-link file/,
+		);
+	});
 });

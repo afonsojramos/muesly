@@ -18,6 +18,10 @@ app/scripts/eval/
   corpus-prepare.ts    # scaffold the next private consented collection session
   corpus-intake.ts     # consent-gated, atomic local corpus intake
   corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
+  corpus-result.ts     # private, corpus-bound result writes
+  evaluator-revision.ts           # clean source/toolchain provenance
+  benchmark-executable.ts         # exact build, hardware probe, and binary identity
+  model-artifact.ts     # exact evaluated-model artifact fingerprinting
   coverage.ts          # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
   wer.ts               # word error rate vs golden (importable `wer()` + CLI)
@@ -70,23 +74,40 @@ consent storage, never creates fake audio, and never marks consent as granted.
   `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
 - `--provider whisper|parakeet` (default `whisper`) and `--model <name>` A/B engines
   and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
-- `--backend cpu|metal|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
-  backend (default `cpu`). Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`.
-  CPU and OpenBLAS runs explicitly disable GPU execution; GPU runs fail instead of silently
-  falling back when the requested backend cannot initialize.
+- `--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
+  backend (default `cpu`). The macOS `coreml` option reports the canonical backend name
+  `coreml-metal`. Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`. CPU and
+  OpenBLAS runs explicitly disable GPU execution; GPU runs fail instead of silently falling
+  back when the requested backend cannot initialize.
 - `--accelerator <stable-model-or-device-id>` identifies the measured GPU for CUDA,
-  Vulkan, HIP, and Intel Metal runs. Apple Silicon Metal derives its integrated GPU identity
-  from the SoC automatically. Ambiguous GPU runs fail before compilation.
+  Vulkan, HIP, and Intel Mac GPU runs. Apple Silicon Metal and Core ML runs derive their
+  integrated GPU identity from the SoC automatically. Ambiguous GPU runs fail before compilation.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
   count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, machine profile,
-  active accelerator identity, backend,
-  and a SHA-256 fingerprint of the exact model artifact bytes. Local-corpus outputs must be direct
-  files in the manifest-adjacent `results/` directory so consent withdrawal can quarantine them.
+  active accelerator identity, backend, and SHA-256 fingerprints of the exact model artifact and
+  benchmark executable bytes. Local-corpus outputs must be direct files in the manifest-adjacent
+  `results/` directory so consent withdrawal can quarantine them.
 - `--fixture <sample-id>` limits the run to one uniquely named manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
+- The selected provider/backend example is built once in the release profile and that exact
+  executable is probed, prepares the requested model, and is then invoked in a fresh process for
+  every selected sample. This resets process-local engine state, but does not claim a cold host:
+  operating-system file caches and accelerator/runtime caches may remain warm between samples.
+  Per-sample metrics must match the probe's backend, platform, hardware profile, accelerator, and
+  executable digest.
+- The benchmark forwards only an allowlisted, benchmark-relevant runtime environment. It removes
+  overrides such as `MEMORY_GB` and operational logging, hashes the remaining ambient inputs, and
+  includes that digest in the hardware profile. The requested CPU/GPU policy and accelerator
+  identity are bound separately so comparable backends on one machine retain the same profile.
+  The prepared provider/model artifact set is SHA-256 fingerprinted before transcription and
+  again after the final sample; a report is refused if those bytes changed during the run.
+- Writing a report requires a clean Git worktree. Run schema 9 records a versioned evaluator
+  revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
+  target triple, exact Cargo features, and a digest of the allowlisted build environment. The
+  revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
 - BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).
   Set `whisper_language` in the manifest when an explicit mapping is needed; unsupported
   Whisper codes fail before inference.
@@ -97,30 +118,46 @@ consent storage, never creates fake audio, and never marks consent as granted.
 Aggregate one or more run reports into transcript-free JSON and Markdown summaries:
 
 ```bash
-nub run eval:report results/whisper-metal.json results/parakeet-cpu.json \
-  --manifest corpus-local.json \
-  --json results/aggregate.json --markdown results/aggregate.md
+nub run eval:report app/scripts/eval/results/whisper-metal.json \
+  app/scripts/eval/results/parakeet-cpu.json \
+  --manifest app/scripts/eval/corpus-local.json \
+  --json app/scripts/eval/results/aggregate.json \
+  --markdown app/scripts/eval/results/aggregate.md
 ```
 
 Reports contain micro-averaged WER (total word errors divided by total reference words),
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 8 with metrics schema 4, name the
-same corpus revision, and use identical pass thresholds, model bytes, and OS/architecture; the
-aggregator rejects comparisons that would lose that artifact, machine-profile, accelerator, or
-evaluation context. Schema 8 records the versioned WER scorer (`muesly-wer-unicode-v1`);
+as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 5, name the
+same corpus revision, and use identical pass thresholds and OS/architecture. Within each
+provider/model, all reports must fingerprint identical model bytes; different provider/model
+variants retain their own artifact fingerprints. The aggregator rejects comparisons that would
+lose that artifact, machine-profile, accelerator, evaluator-revision, or executable context.
+Schema 9 records the versioned WER scorer
+(`muesly-wer-unicode-v1`);
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Coverage JSON also records the corpus fingerprint and verified model-artifact map so a saved
-completeness result remains bound to the exact corpus revision and evaluated bytes.
+Aggregate schema 5 records the common evaluator inputs plus the full evaluator revision and exact
+benchmark-executable digest for every backend. Coverage schema 8 similarly records the corpus
+fingerprint, verified model-artifact map, evaluator-revision digest by backend, and executable
+digest by backend, so a saved completeness result remains bound to the exact corpus revision,
+evaluated bytes, source/toolchain inputs, and binary.
 Measurement completeness requires one compatible hardware cohort to satisfy the session floor
 across the entire requested matrix. The operating system, architecture, and machine profile must
-match for every cell, with one consistent accelerator identity per backend. Coverage schema 6
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 8
 retains raw cross-machine counts and the largest compatible count per cell for diagnostics, then
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.
+
+Metrics schema 5 reports source-audio duration, decode, VAD, model-download, model-load, inference,
+and measured-total timings; inference RTF is inference seconds divided by source-audio seconds.
+Memory is the evaluator process's host RSS sampled every 10 ms from immediately before model load
+through the end of inference, reported as baseline, peak, and peak-minus-baseline MiB. It is not
+accelerator VRAM. Model preparation happens before the measured sample processes, so
+`model_download_seconds` ordinarily records zero while `model_load_seconds` still measures each
+fresh process's engine/model initialization.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
@@ -162,9 +199,11 @@ Fixtures:
 
 Add more fixtures under `fixtures/` as real meetings are curated.
 
-CI: `.github/workflows/eval-harness.yml` runs WER (short + multi-utterance) +
-rubric dry-run on changes to `app/scripts/eval/**`. Fixture WER is asserted
-with `--max-wer` (0% for clean hypotheses, 10% for the noisy one); fixtures are
-fixed files, so the thresholds are deterministic. **CI never runs `eval:real`**
-— the real run needs a Rust build, a model download, and hardware-dependent
-inference, so it stays a dev-machine check by design.
+CI: `.github/workflows/eval-harness.yml` runs corpus custody, campaign-safety,
+evaluator-provenance, report/coverage, WER (short + multi-utterance), and rubric dry-run tests on
+changes to `app/scripts/eval/**`. Fixture WER is asserted with `--max-wer` (0% for clean
+hypotheses, 10% for the noisy one); fixtures are fixed files, so the thresholds are deterministic.
+`rust-check.yml` also runs the CPU-only `transcribe-fixture` example tests with no default
+features as a blocking gate. **CI never runs live `eval:real` inference** — that needs a release
+build, a model download, and hardware-dependent execution, so it stays a dev-machine check by
+design.

@@ -1,6 +1,8 @@
 # GitHub Actions Workflows
 
-Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-check.yml`, `audit.yml`, and `site-check.yml`, which run automatically on relevant pull requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
+Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-check.yml`,
+`eval-harness.yml`, `audit.yml`, and `site-check.yml`, which run automatically on relevant pull
+requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
 
 ## Workflows at a Glance
 
@@ -17,7 +19,8 @@ Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-ch
 | `deploy-site.yml` | Manual verified deployment of muesly.ai | Site | - | - |
 | `site-check.yml` | Auto: format, lint, type, test, build, smoke, and dependency gates for muesly.ai | Site | - | - |
 | `pr-main-check.yml` | Version/config validation, no builds | - | - | - |
-| `rust-check.yml` | Auto: test / clippy / fmt on PR + push to `main` | - | - | - |
+| `eval-harness.yml` | Auto: corpus custody, evaluator provenance, report/coverage schemas, deterministic WER, and rubric gates | Linux | - | - |
+| `rust-check.yml` | Auto: blocking Rust unit tests plus CPU-only transcription-fixture unit and process-contract tests; advisory clippy / fmt | Linux | - | - |
 | `audit.yml` | Auto: `cargo audit` on PR + push + weekly cron | - | - | - |
 
 ## Choosing a Workflow

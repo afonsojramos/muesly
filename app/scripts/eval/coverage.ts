@@ -3,11 +3,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { benchmarkDefinitionForReportedBackend } from './benchmark-executable.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
-import { validateRunReport } from './report.ts';
+import {
+	modelArtifactBindingKey,
+	validateRunReport,
+	validateRunReportsAgainstCorpus,
+} from './report.ts';
 
 const MAX_MATRIX_HARDWARE_COHORTS = 4096;
+const EVALUATOR_REVISION_COMMON_FIELDS = Object.freeze([
+	'schema_version',
+	'protocol_id',
+	'git_commit',
+	'cargo_lock_sha256',
+	'rustc_vv',
+	'build_profile',
+	'target_triple',
+	'build_env_sha256',
+]);
 
 const TARGET_FIELDS = new Set([
 	'schema_version',
@@ -66,6 +81,7 @@ export function validateCoverageTargets(targets) {
 				errors.push(`${prefix} must be an object`);
 				continue;
 			}
+			const validSlugs = new Set();
 			for (const field of Object.keys(variant)) {
 				if (!['provider', 'model', 'backend'].includes(field)) {
 					errors.push(`${prefix}.${field} is not an allowed field`);
@@ -74,6 +90,15 @@ export function validateCoverageTargets(targets) {
 			for (const field of ['provider', 'model', 'backend']) {
 				if (typeof variant[field] !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(variant[field])) {
 					errors.push(`${prefix}.${field} must be a lowercase model slug`);
+				} else {
+					validSlugs.add(field);
+				}
+			}
+			if (validSlugs.has('provider') && validSlugs.has('backend')) {
+				try {
+					benchmarkDefinitionForReportedBackend(variant.provider, variant.backend);
+				} catch (error) {
+					errors.push(`${prefix}: ${error.message}`);
 				}
 			}
 			const key = `${variant.provider}/${variant.model}/${variant.backend}`;
@@ -155,6 +180,35 @@ function addToMeasurementCell(map, key, metrics, sessionId) {
 		});
 	}
 	cell.cohorts.get(cohortKey).sessions.add(sessionId);
+}
+
+function addBackendProvenance(map, backend, digest, kind) {
+	const priorDigest = map.get(backend);
+	if (priorDigest !== undefined && priorDigest !== digest) {
+		throw new Error(`reports use different ${kind} for backend '${backend}'`);
+	}
+	map.set(backend, digest);
+}
+
+function requireCanonicalSampleMetadata(result, sample) {
+	const canonicalMetadata = {
+		language: sample.language,
+		noise_condition: sample.noise_condition,
+		scenario: sample.scenario,
+		speakers: sample.speakers,
+		provenance_basis: sample.provenance.basis,
+	};
+	for (const [field, expected] of Object.entries(canonicalMetadata)) {
+		if (result[field] !== expected) {
+			throw new Error(
+				`report sample '${result.sample_id}' ${field} does not match the corpus manifest`,
+			);
+		}
+	}
+}
+
+function sortedMapEntries(map) {
+	return Object.fromEntries([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function measurementCohorts(cell) {
@@ -255,6 +309,12 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
+	const reportBindingErrors = validateRunReportsAgainstCorpus(reports, corpus);
+	if (reportBindingErrors.length > 0) {
+		throw new Error(
+			`benchmark reports do not match the corpus manifest:\n- ${reportBindingErrors.join('\n- ')}`,
+		);
+	}
 	const duplicateAudio = findDuplicateAudioSamples(corpus.samples);
 	if (duplicateAudio.length > 0) {
 		const { first, duplicate } = duplicateAudio[0];
@@ -287,6 +347,10 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 
 	const measurementCells = new Map();
 	const modelArtifacts = new Map();
+	const evaluatorRevisions = new Map();
+	const benchmarkExecutables = new Map();
+	const measurementKeys = new Set();
+	let commonEvaluatorRevision;
 	let werScorer;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
@@ -304,7 +368,22 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 		} else if (report.wer_scorer !== werScorer) {
 			throw new Error('reports use different WER scorers');
 		}
-		const modelKey = `${report.provider}/${report.model}`;
+		if (commonEvaluatorRevision === undefined) {
+			commonEvaluatorRevision = Object.fromEntries(
+				EVALUATOR_REVISION_COMMON_FIELDS.map((field) => [field, report.evaluator_revision[field]]),
+			);
+		} else {
+			for (const field of EVALUATOR_REVISION_COMMON_FIELDS) {
+				if (report.evaluator_revision[field] !== commonEvaluatorRevision[field]) {
+					throw new Error(`reports use different evaluator revision field '${field}'`);
+				}
+			}
+		}
+		const modelKey = modelArtifactBindingKey(
+			report.provider,
+			report.model,
+			report.results[0].metrics.backend,
+		);
 		const priorArtifact = modelArtifacts.get(modelKey);
 		if (priorArtifact !== undefined && priorArtifact !== report.model_artifact_sha256) {
 			throw new Error(`reports use different artifacts for model '${modelKey}'`);
@@ -314,6 +393,31 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 			const sample = samplesById.get(result.sample_id);
 			if (!sample)
 				throw new Error(`report sample '${result.sample_id}' is absent from the corpus manifest`);
+			requireCanonicalSampleMetadata(result, sample);
+			const measurementIdentityKey = [
+				report.provider,
+				report.model,
+				result.metrics.backend,
+				result.sample_id,
+			].join('\0');
+			if (measurementKeys.has(measurementIdentityKey)) {
+				throw new Error(
+					`duplicate measurement for ${report.provider}/${report.model}/${result.metrics.backend} sample '${result.sample_id}'`,
+				);
+			}
+			measurementKeys.add(measurementIdentityKey);
+			addBackendProvenance(
+				evaluatorRevisions,
+				result.metrics.backend,
+				report.evaluator_revision_sha256,
+				'evaluator revisions',
+			);
+			addBackendProvenance(
+				benchmarkExecutables,
+				result.metrics.backend,
+				result.metrics.benchmark_executable_sha256,
+				'benchmark executables',
+			);
 			if (sample.scenario !== 'meeting' || sample.provenance.basis !== 'participant-consent')
 				continue;
 			addToMeasurementCell(
@@ -377,14 +481,14 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	).length;
 
 	return {
-		schema_version: 6,
+		schema_version: 8,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		wer_scorer: werScorer ?? null,
-		model_artifacts: Object.fromEntries(
-			[...modelArtifacts.entries()].sort(([a], [b]) => a.localeCompare(b)),
-		),
+		model_artifacts: sortedMapEntries(modelArtifacts),
+		evaluator_revision_sha256_by_backend: sortedMapEntries(evaluatorRevisions),
+		benchmark_executable_sha256_by_backend: sortedMapEntries(benchmarkExecutables),
 		minimum_distinct_sessions_per_cell: targets.min_sessions_per_language_noise_cell,
 		participant_meeting_samples: eligibleSamples.length,
 		participant_meeting_sessions: new Set(eligibleSamples.map((sample) => sample.session_id)).size,
