@@ -8,11 +8,13 @@ on:
     paths:
       - "app/scripts/eval/**"
       - ".github/workflows/eval-harness.yml"
+      - "package.json"
   push:
     branches: [main]
     paths:
       - "app/scripts/eval/**"
       - ".github/workflows/eval-harness.yml"
+      - "package.json"
   workflow_dispatch:
 
 jobs:

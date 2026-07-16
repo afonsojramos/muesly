@@ -20,6 +20,7 @@ function fixture() {
 		document: {
 			schema_version: 1,
 			corpus_id: 'test-corpus',
+			distribution: 'local',
 			samples: [
 				{
 					id: 'meeting-en-clean',
@@ -68,11 +69,33 @@ test('rejects meeting audio without participant consent', () => {
 
 test('rejects identity fields and changed fixture contents', () => {
 	const { directory, document } = fixture();
-	document.samples[0].provenance.email = 'person@example.com';
+	document.samples[0].provenance.participants = [{ email: 'person@example.com' }];
 	fs.writeFileSync(path.join(directory, 'audio.wav'), 'changed');
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
-	assert(errors.some((error) => error.includes('must not contain participant identity')));
+	assert(errors.some((error) => error.includes('participants is not an allowed field')));
 	assert(errors.some((error) => error.includes('audio_sha256 does not match')));
+});
+
+test('rejects invalid consent dates and local-only entries in repository manifests', () => {
+	const { directory, document } = fixture();
+	document.distribution = 'repository';
+	document.samples[0].provenance.consent_date = 'tomorrow';
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('valid YYYY-MM-DD date')));
+	assert(errors.some((error) => error.includes('cannot be local-only in a repository manifest')));
+});
+
+test('requires every discovered audio fixture to be declared', () => {
+	const { directory, document } = fixture();
+	const extraAudio = path.join(directory, 'unlisted.wav');
+	fs.writeFileSync(extraAudio, 'audio');
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+		requiredAudioFiles: [path.join(directory, 'audio.wav'), extraAudio],
+	});
+	assert(errors.some((error) => error.includes('audio fixture is missing from the manifest')));
 });

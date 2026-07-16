@@ -6,7 +6,31 @@ export const CORPUS_SCHEMA_VERSION = 1;
 
 const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
-const FORBIDDEN_IDENTITY_FIELDS = new Set(['name', 'email', 'contact', 'participant_name']);
+const MANIFEST_FIELDS = new Set(['schema_version', 'corpus_id', 'description', 'distribution', 'samples']);
+const SAMPLE_FIELDS = new Set([
+	'id',
+	'audio_path',
+	'audio_sha256',
+	'reference_path',
+	'reference_sha256',
+	'language',
+	'scenario',
+	'noise_condition',
+	'speakers',
+	'duration_seconds',
+	'provenance',
+]);
+const PROVENANCE_FIELDS = {
+	'participant-consent': new Set([
+		'basis',
+		'redistribution',
+		'consent_record_id',
+		'consent_date',
+		'consented_uses',
+	]),
+	'public-domain': new Set(['basis', 'redistribution', 'source_url', 'license']),
+	synthetic: new Set(['basis', 'redistribution', 'generation_method']),
+};
 
 function isObject(value) {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -28,6 +52,19 @@ function requiredString(value, field, errors) {
 	return true;
 }
 
+function rejectUnknownFields(value, allowed, prefix, errors) {
+	for (const field of Object.keys(value)) {
+		if (!allowed.has(field)) errors.push(`${prefix}.${field} is not an allowed field`);
+	}
+}
+
+function isIsoDate(value) {
+	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const [year, month, day] = value.split('-').map(Number);
+	const date = new Date(Date.UTC(year, month - 1, day));
+	return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function validateProvenance(sample, errors) {
 	const prefix = `sample '${sample.id ?? '?'}'.provenance`;
 	const provenance = sample.provenance;
@@ -36,15 +73,11 @@ function validateProvenance(sample, errors) {
 		return;
 	}
 
-	for (const field of FORBIDDEN_IDENTITY_FIELDS) {
-		if (field in provenance) {
-			errors.push(`${prefix}.${field} must not contain participant identity; keep it out of the repository`);
-		}
-	}
-
 	if (!PROVENANCE_BASES.has(provenance.basis)) {
 		errors.push(`${prefix}.basis must be participant-consent, public-domain, or synthetic`);
+		return;
 	}
+	rejectUnknownFields(provenance, PROVENANCE_FIELDS[provenance.basis], prefix, errors);
 	if (!REDISTRIBUTION_SCOPES.has(provenance.redistribution)) {
 		errors.push(`${prefix}.redistribution must be repository or local-only`);
 	}
@@ -59,7 +92,9 @@ function validateProvenance(sample, errors) {
 		if (!Array.isArray(provenance.consented_uses) || !provenance.consented_uses.includes('asr-benchmarking')) {
 			errors.push(`${prefix}.consented_uses must include asr-benchmarking`);
 		}
-		requiredString(provenance.consent_date, `${prefix}.consent_date`, errors);
+		if (!isIsoDate(provenance.consent_date)) {
+			errors.push(`${prefix}.consent_date must be a valid YYYY-MM-DD date`);
+		}
 	} else if (provenance.basis === 'public-domain') {
 		requiredString(provenance.source_url, `${prefix}.source_url`, errors);
 		requiredString(provenance.license, `${prefix}.license`, errors);
@@ -95,13 +130,21 @@ function validateFile(sample, field, hashField, manifestPath, checkFiles, errors
 }
 
 export function validateCorpusDocument(document, options = {}) {
-	const { manifestPath = path.resolve('corpus-manifest.json'), checkFiles = true } = options;
+	const {
+		manifestPath = path.resolve('corpus-manifest.json'),
+		checkFiles = true,
+		requiredAudioFiles = [],
+	} = options;
 	const errors = [];
 	if (!isObject(document)) return ['manifest must be a JSON object'];
+	rejectUnknownFields(document, MANIFEST_FIELDS, 'manifest', errors);
 	if (document.schema_version !== CORPUS_SCHEMA_VERSION) {
 		errors.push(`schema_version must be ${CORPUS_SCHEMA_VERSION}`);
 	}
 	requiredString(document.corpus_id, 'corpus_id', errors);
+	if (!['repository', 'local'].includes(document.distribution)) {
+		errors.push('distribution must be repository or local');
+	}
 	if (!Array.isArray(document.samples) || document.samples.length === 0) {
 		errors.push('samples must be a non-empty array');
 		return errors;
@@ -114,6 +157,7 @@ export function validateCorpusDocument(document, options = {}) {
 			continue;
 		}
 		const prefix = `sample '${sample.id ?? '?'}'`;
+		rejectUnknownFields(sample, SAMPLE_FIELDS, prefix, errors);
 		if (requiredString(sample.id, `${prefix}.id`, errors)) {
 			if (!/^[a-z0-9][a-z0-9-]*$/.test(sample.id)) {
 				errors.push(`${prefix}.id must be a lowercase slug`);
@@ -137,6 +181,20 @@ export function validateCorpusDocument(document, options = {}) {
 		validateFile(sample, 'audio_path', 'audio_sha256', manifestPath, checkFiles, errors);
 		validateFile(sample, 'reference_path', 'reference_sha256', manifestPath, checkFiles, errors);
 		validateProvenance(sample, errors);
+		if (document.distribution === 'repository' && sample.provenance?.redistribution === 'local-only') {
+			errors.push(`${prefix}.provenance.redistribution cannot be local-only in a repository manifest`);
+		}
+	}
+
+	const declaredAudio = new Set(
+		document.samples
+			.filter(isObject)
+			.map((sample) => resolveSamplePath(manifestPath, sample.audio_path ?? '')),
+	);
+	for (const requiredAudio of requiredAudioFiles.map((file) => path.resolve(file))) {
+		if (!declaredAudio.has(requiredAudio)) {
+			errors.push(`audio fixture is missing from the manifest: ${requiredAudio}`);
+		}
 	}
 	return errors;
 }

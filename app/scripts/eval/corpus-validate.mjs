@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +10,14 @@ const defaultManifest = path.join(here, 'corpus-manifest.json');
 const manifestPath = process.argv[2] ?? defaultManifest;
 
 try {
-	const corpus = loadCorpus(manifestPath);
+	const requiredAudioFiles =
+		path.resolve(manifestPath) === path.resolve(defaultManifest)
+			? fs
+					.readdirSync(path.join(here, 'fixtures'))
+					.filter((file) => file.endsWith('.wav'))
+					.map((file) => path.join(here, 'fixtures', file))
+			: [];
+	const corpus = loadCorpus(manifestPath, { requiredAudioFiles });
 	const participantSamples = corpus.samples.filter(
 		(sample) => sample.provenance.basis === 'participant-consent',
 	).length;
