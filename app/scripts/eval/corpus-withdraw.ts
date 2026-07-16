@@ -20,7 +20,38 @@ function isWithinDirectory(directory, filePath) {
 	);
 }
 
+function isWithinExistingDirectory(directory, filePath) {
+	if (isWithinDirectory(directory, filePath)) return true;
+	const directoryStatus = fs.statSync(directory, { throwIfNoEntry: false });
+	const fileStatus = fs.statSync(filePath, { throwIfNoEntry: false });
+	if (!directoryStatus?.isDirectory() || !fileStatus?.isFile()) return false;
+
+	let current = path.dirname(fs.realpathSync(filePath));
+	for (;;) {
+		const currentStatus = fs.statSync(current, { throwIfNoEntry: false });
+		if (
+			currentStatus?.isDirectory() &&
+			currentStatus.dev === directoryStatus.dev &&
+			currentStatus.ino === directoryStatus.ino
+		) {
+			return true;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) return false;
+		current = parent;
+	}
+}
+
 function readLocalManifest(manifestPath) {
+	if (!fs.existsSync(manifestPath)) {
+		return {
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local-only participant-consented multilingual meeting corpus.',
+			distribution: 'local',
+			samples: [],
+		};
+	}
 	let document;
 	try {
 		document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
@@ -112,7 +143,6 @@ function finishWithdrawal(localCorpusRoot, sessionId, markerPath, marker) {
 export function withdrawConsentedSession(options) {
 	validateWithdrawalOptions(options);
 	const manifestPath = path.resolve(options.manifestPath);
-	if (!fs.existsSync(manifestPath)) throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
 	if (fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false })?.isSymbolicLink()) {
 		throw new Error(`corpus directory cannot be a symbolic link: ${localCorpusRoot}`);
@@ -152,7 +182,7 @@ export function withdrawConsentedSession(options) {
 			for (const sample of document.samples) {
 				for (const field of ['audio_path', 'reference_path']) {
 					const filePath = path.resolve(path.dirname(manifestPath), sample[field]);
-					if (isWithinDirectory(sessionDirectory, filePath)) {
+					if (isWithinExistingDirectory(sessionDirectory, filePath)) {
 						throw new Error(
 							`refusing to withdraw ${options.sessionId}: remaining sample ${sample.id} shares its directory`,
 						);
@@ -184,7 +214,7 @@ export function withdrawConsentedSession(options) {
 		for (const sample of withdrawn) {
 			for (const field of ['audio_path', 'reference_path']) {
 				const filePath = path.resolve(path.dirname(manifestPath), sample[field]);
-				if (!isWithinDirectory(sessionDirectory, filePath)) {
+				if (!isWithinExistingDirectory(sessionDirectory, filePath)) {
 					throw new Error(
 						`refusing to withdraw ${sample.id}: ${field} is outside ${options.sessionId}`,
 					);
@@ -196,7 +226,7 @@ export function withdrawConsentedSession(options) {
 		for (const sample of remaining) {
 			for (const field of ['audio_path', 'reference_path']) {
 				const filePath = path.resolve(path.dirname(manifestPath), sample[field]);
-				if (isWithinDirectory(sessionDirectory, filePath)) {
+				if (isWithinExistingDirectory(sessionDirectory, filePath)) {
 					throw new Error(
 						`refusing to withdraw ${options.sessionId}: remaining sample ${sample.id} shares its directory`,
 					);

@@ -147,6 +147,56 @@ test('withdraws files promoted by an interrupted intake before manifest commit',
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
+test('withdraws a first interrupted intake before any manifest exists', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-first-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const orphanDirectory = path.join(directory, 'local-corpus', 'session-first');
+	fs.mkdirSync(orphanDirectory, { recursive: true });
+	fs.writeFileSync(path.join(orphanDirectory, 'first.wav'), 'private promoted audio');
+	fs.writeFileSync(path.join(orphanDirectory, 'first.txt'), 'private promoted transcript');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-first',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-first',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert(!fs.existsSync(manifestPath));
+	assert(!fs.existsSync(orphanDirectory));
+});
+
+test('refuses orphan cleanup when a retained sample reaches it through an alias', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const orphanDirectory = path.join(directory, 'local-corpus', 'session-orphan');
+	fs.mkdirSync(orphanDirectory);
+	const retainedAudio = path.join(orphanDirectory, 'retained.wav');
+	writeWav(retainedAudio, 4);
+	const aliasDirectory = path.join(directory, 'orphan-alias');
+	fs.symlinkSync(orphanDirectory, aliasDirectory, 'dir');
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	const retained = document.samples.find((sample) => sample.session_id === 'session-keep');
+	retained.audio_path = 'orphan-alias/retained.wav';
+	retained.audio_sha256 = createHash('sha256').update(fs.readFileSync(retainedAudio)).digest('hex');
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-orphan',
+				confirmWithdrawal: true,
+			}),
+		/remaining sample es-clean-003 shares its directory/,
+	);
+	assert(fs.existsSync(retainedAudio));
+	assert(fs.existsSync(orphanDirectory));
+});
+
 test('completes withdrawal when target files were already partially deleted', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const missingAudio = path.join(
