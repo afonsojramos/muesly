@@ -66,6 +66,14 @@ function sameEntryMetadata(left, right) {
 	return Object.keys(left).every((field) => left[field] === right[field]);
 }
 
+function stableDirectoryIdentity(metadata) {
+	return {
+		dev: metadata.dev,
+		ino: metadata.ino,
+		mode: metadata.mode,
+	};
+}
+
 function readRegularFileNoFollow(filePath) {
 	const entryBefore = fs.lstatSync(filePath, { bigint: true });
 	if (!entryBefore.isFile() || entryBefore.isSymbolicLink()) {
@@ -154,7 +162,7 @@ function validateOwner(owner, ownerPath) {
 }
 
 function readBenchmarkLockOwnerSnapshot(lockPath) {
-	const lockEntry = fs.lstatSync(lockPath);
+	const lockEntry = fs.lstatSync(lockPath, { bigint: true });
 	if (!lockEntry.isDirectory() || lockEntry.isSymbolicLink()) {
 		throw new Error(`benchmark lock must be a regular directory: ${lockPath}`);
 	}
@@ -167,6 +175,7 @@ function readBenchmarkLockOwnerSnapshot(lockPath) {
 		throw new Error(`benchmark lock owner is not valid JSON: ${ownerPath}`);
 	}
 	return {
+		lockMetadata: statusMetadata(lockEntry),
 		metadata: snapshot.metadata,
 		owner: validateOwner(owner, ownerPath),
 	};
@@ -186,32 +195,83 @@ function sameOwner(left, right) {
 	);
 }
 
-function stableEntryMetadata(filePath, expectedType) {
-	const status = fs.lstatSync(filePath, { bigint: true });
-	const validType =
-		expectedType === 'directory'
-			? status.isDirectory() && !status.isSymbolicLink()
-			: status.isFile() && !status.isSymbolicLink();
-	if (!validType) {
-		throw new Error(`benchmark lock ${expectedType} identity is invalid: ${filePath}`);
+function openDirectoryGuard(directory, label) {
+	const entry = fs.lstatSync(directory, { bigint: true });
+	if (!entry.isDirectory() || entry.isSymbolicLink()) {
+		throw new Error(`${label} must be a regular directory: ${directory}`);
 	}
-	return statusMetadata(status);
+	const descriptor = fs.openSync(
+		directory,
+		fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		if (
+			!opened.isDirectory() ||
+			!sameEntryMetadata(statusMetadata(entry), statusMetadata(opened))
+		) {
+			throw new Error(`${label} changed while it was opened: ${directory}`);
+		}
+		return {
+			descriptor,
+			metadata: statusMetadata(opened),
+			path: directory,
+		};
+	} catch (error) {
+		fs.closeSync(descriptor);
+		throw error;
+	}
+}
+
+function assertDirectoryGuardUnchanged(guard, label) {
+	const opened = fs.fstatSync(guard.descriptor, { bigint: true });
+	const installed = fs.lstatSync(guard.path, { bigint: true, throwIfNoEntry: false });
+	if (
+		!opened.isDirectory() ||
+		!installed?.isDirectory() ||
+		installed.isSymbolicLink() ||
+		!sameEntryMetadata(guard.metadata, statusMetadata(opened)) ||
+		!sameEntryMetadata(statusMetadata(opened), statusMetadata(installed))
+	) {
+		throw new Error(`${label} changed while benchmark ownership was inspected: ${guard.path}`);
+	}
 }
 
 function readBenchmarkLockState(lockPath) {
-	const lockBefore = stableEntryMetadata(lockPath, 'directory');
-	const snapshot = readBenchmarkLockOwnerSnapshot(lockPath);
-	const lockAfter = stableEntryMetadata(lockPath, 'directory');
-	if (!sameEntryMetadata(lockBefore, lockAfter)) {
-		throw new Error(`benchmark lock changed while ownership was inspected: ${lockPath}`);
+	const localCorpusRoot = path.dirname(lockPath);
+	const manifestDirectory = path.dirname(localCorpusRoot);
+	const manifestGuard = openDirectoryGuard(manifestDirectory, 'benchmark manifest directory');
+	let localCorpusGuard;
+	let lockGuard;
+	try {
+		localCorpusGuard = openDirectoryGuard(localCorpusRoot, 'benchmark local corpus directory');
+		lockGuard = openDirectoryGuard(lockPath, 'benchmark lock directory');
+		assertDirectoryGuardUnchanged(manifestGuard, 'benchmark manifest directory');
+		assertDirectoryGuardUnchanged(localCorpusGuard, 'benchmark local corpus directory');
+		assertDirectoryGuardUnchanged(lockGuard, 'benchmark lock directory');
+
+		const snapshot = readBenchmarkLockOwnerSnapshot(lockPath);
+		if (!sameEntryMetadata(lockGuard.metadata, snapshot.lockMetadata)) {
+			throw new Error(`benchmark lock changed while ownership was inspected: ${lockPath}`);
+		}
+
+		assertDirectoryGuardUnchanged(lockGuard, 'benchmark lock directory');
+		assertDirectoryGuardUnchanged(localCorpusGuard, 'benchmark local corpus directory');
+		assertDirectoryGuardUnchanged(manifestGuard, 'benchmark manifest directory');
+		return {
+			owner: snapshot.owner,
+			lockIdentity: {
+				manifestDirectory: stableDirectoryIdentity(manifestGuard.metadata),
+				localCorpus: stableDirectoryIdentity(localCorpusGuard.metadata),
+				lock: lockGuard.metadata,
+				owner: snapshot.metadata,
+			},
+		};
+	} finally {
+		if (lockGuard) fs.closeSync(lockGuard.descriptor);
+		if (localCorpusGuard) fs.closeSync(localCorpusGuard.descriptor);
+		fs.closeSync(manifestGuard.descriptor);
 	}
-	return {
-		owner: snapshot.owner,
-		lockIdentity: {
-			lock: lockAfter,
-			owner: snapshot.metadata,
-		},
-	};
 }
 
 function currentProcessIdentity(options) {

@@ -224,6 +224,39 @@ test('binds lease ownership to one private opened owner inode', async (t) => {
 	});
 });
 
+test('rejects a transient local-corpus ancestor replacement during owner inspection', (t) => {
+	const current = fixture(t);
+	const acquired = acquireCorpusBenchmarkLock(current.manifestPath, {
+		currentIdentity: 'benchmark-process',
+	});
+	const displacedRoot = `${current.localCorpusRoot}.displaced`;
+	const originalReadFileSync = fs.readFileSync;
+	let swapped = false;
+	t.mock.method(fs, 'readFileSync', (file, ...args) => {
+		const contents = originalReadFileSync(file, ...args);
+		if (!swapped && typeof file === 'number') {
+			swapped = true;
+			fs.renameSync(current.localCorpusRoot, displacedRoot);
+			fs.renameSync(displacedRoot, current.localCorpusRoot);
+		}
+		return contents;
+	});
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+				currentIdentity: 'benchmark-process',
+			}),
+		/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/,
+	);
+	assert.equal(swapped, true);
+	assert.equal(
+		releaseCorpusBenchmarkLock(acquired.lockPath, acquired.token, {
+			currentIdentity: 'benchmark-process',
+		}),
+		true,
+	);
+});
+
 test('recovers a provably dead owner and preserves private evidence', (t) => {
 	const current = fixture(t);
 	writeOwnerLock(current.lockPath, current.manifestPath, { pid: 999_999_999 });
