@@ -14,6 +14,9 @@ import { loadCorpus } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+// The VAD flush pads one final 16 kHz processing block, so model input can
+// legitimately exceed decoded source duration by less than one 30 ms block.
+const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
 const RUN_REPORT_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
@@ -64,6 +67,8 @@ const METRICS_FIELDS = new Set([
 	'model_load_seconds',
 	'inference_seconds',
 	'inference_rtf',
+	'inference_audio_seconds',
+	'model_inference_rtf',
 	'measured_total_seconds',
 	'baseline_rss_mb',
 	'peak_rss_mb',
@@ -77,6 +82,7 @@ const NUMERIC_METRICS_FIELDS = [
 	'model_load_seconds',
 	'inference_seconds',
 	'inference_rtf',
+	'inference_audio_seconds',
 	'measured_total_seconds',
 	'baseline_rss_mb',
 	'peak_rss_mb',
@@ -200,7 +206,7 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 	);
 	if (!isObject(metrics)) return [`${label} must be an object`];
 	rejectUnknownAndMissingFields(metrics, METRICS_FIELDS, label, errors);
-	if (metrics.schema_version !== 6) errors.push(`${label}.schema_version must be 6`);
+	if (metrics.schema_version !== 7) errors.push(`${label}.schema_version must be 7`);
 	for (const field of [
 		'provider',
 		'model',
@@ -254,6 +260,16 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 	if (
 		finiteNumber(metrics.audio_duration_seconds) &&
 		metrics.audio_duration_seconds > 0 &&
+		finiteNumber(metrics.inference_audio_seconds) &&
+		metrics.inference_audio_seconds >
+			metrics.audio_duration_seconds + MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
+		!approximatelyEqual(metrics.inference_audio_seconds, metrics.audio_duration_seconds)
+	) {
+		errors.push(`${label}.inference_audio_seconds must not materially exceed source duration`);
+	}
+	if (
+		finiteNumber(metrics.audio_duration_seconds) &&
+		metrics.audio_duration_seconds > 0 &&
 		finiteNumber(metrics.inference_seconds) &&
 		metrics.inference_seconds >= 0 &&
 		finiteNumber(metrics.inference_rtf) &&
@@ -264,6 +280,43 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 		)
 	) {
 		errors.push(`${label}.inference_rtf does not match inference duration`);
+	}
+	if (
+		metrics.model_inference_rtf !== null &&
+		(!finiteNumber(metrics.model_inference_rtf) || metrics.model_inference_rtf < 0)
+	) {
+		errors.push(`${label}.model_inference_rtf must be null or a non-negative finite number`);
+	}
+	if (finiteNumber(metrics.inference_audio_seconds) && metrics.inference_audio_seconds === 0) {
+		if (metrics.model_inference_rtf !== null) {
+			errors.push(`${label}.model_inference_rtf must be null when no audio reached the ASR model`);
+		}
+		if (
+			finiteNumber(metrics.inference_seconds) &&
+			!approximatelyEqual(metrics.inference_seconds, 0)
+		) {
+			errors.push(`${label}.inference_seconds must be zero when no audio reached the ASR model`);
+		}
+	} else if (
+		finiteNumber(metrics.inference_audio_seconds) &&
+		metrics.inference_audio_seconds > 0 &&
+		finiteNumber(metrics.inference_seconds) &&
+		metrics.inference_seconds >= 0 &&
+		finiteNumber(metrics.model_inference_rtf) &&
+		metrics.model_inference_rtf >= 0 &&
+		!approximatelyEqual(
+			metrics.model_inference_rtf,
+			metrics.inference_seconds / metrics.inference_audio_seconds,
+		)
+	) {
+		errors.push(`${label}.model_inference_rtf does not match model-input duration`);
+	}
+	if (
+		finiteNumber(metrics.inference_audio_seconds) &&
+		metrics.inference_audio_seconds > 0 &&
+		metrics.model_inference_rtf === null
+	) {
+		errors.push(`${label}.model_inference_rtf must be present when audio reached the ASR model`);
 	}
 	for (const field of ['baseline_rss_mb', 'peak_rss_mb']) {
 		if (finiteNumber(metrics[field]) && metrics[field] <= 0) {
@@ -682,6 +735,9 @@ function summarize(records) {
 	const referenceWords = werRecords.reduce((sum, record) => sum + record.reference_words, 0);
 	const wordErrors = werRecords.reduce((sum, record) => sum + record.word_errors, 0);
 	const rtfs = records.map((record) => record.metrics.inference_rtf);
+	const modelRtfs = records
+		.map((record) => record.metrics.model_inference_rtf)
+		.filter((value) => value !== null);
 	const peaks = records.map((record) => record.metrics.peak_rss_mb);
 	const audioDurationSeconds = records.reduce(
 		(sum, record) => sum + record.metrics.audio_duration_seconds,
@@ -691,12 +747,17 @@ function summarize(records) {
 		(sum, record) => sum + record.metrics.inference_seconds,
 		0,
 	);
+	const inferenceAudioSeconds = records.reduce(
+		(sum, record) => sum + record.metrics.inference_audio_seconds,
+		0,
+	);
 	return {
 		samples: records.length,
 		passed_samples: records.filter((record) => record.passed).length,
 		pass_rate_percent: (records.filter((record) => record.passed).length / records.length) * 100,
 		audio_duration_seconds: audioDurationSeconds,
 		inference_seconds: inferenceSeconds,
+		inference_audio_seconds: inferenceAudioSeconds,
 		wer_samples: werRecords.length,
 		reference_words: referenceWords,
 		word_errors: wordErrors,
@@ -715,6 +776,11 @@ function summarize(records) {
 		mean_inference_rtf: mean(rtfs),
 		median_inference_rtf: median(rtfs),
 		max_inference_rtf: Math.max(...rtfs),
+		aggregate_model_inference_rtf:
+			inferenceAudioSeconds === 0 ? null : inferenceSeconds / inferenceAudioSeconds,
+		mean_model_inference_rtf: modelRtfs.length === 0 ? null : mean(modelRtfs),
+		median_model_inference_rtf: modelRtfs.length === 0 ? null : median(modelRtfs),
+		max_model_inference_rtf: modelRtfs.length === 0 ? null : Math.max(...modelRtfs),
 		mean_peak_rss_mb: mean(peaks),
 		max_peak_rss_mb: Math.max(...peaks),
 	};
@@ -879,7 +945,7 @@ export function aggregateRunReports(reports) {
 	}
 
 	return {
-		schema_version: 5,
+		schema_version: 6,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
@@ -961,18 +1027,18 @@ export function renderMarkdown(report) {
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',
-		'WER is micro-averaged from total word errors / total reference words. RTF and memory are measured during local inference.',
+		'WER is micro-averaged from total word errors / total reference words. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR. Memory is measured during local inference.',
 	];
 	for (const [dimension, groups] of Object.entries(report.groups)) {
 		lines.push('', `## ${dimension.replaceAll('_', ' ')}`, '');
 		lines.push(
-			'| Group | Samples | Pass rate | WER | Aggregate RTF | P50 RTF | Max peak RSS | Hallucinated words |',
+			'| Group | Samples | Pass rate | WER | Aggregate source RTF | P50 source RTF | Aggregate model-input RTF | P50 model-input RTF | Max peak RSS | Hallucinated words |',
 		);
-		lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+		lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
 		for (const [name, summary] of Object.entries(groups)) {
 			const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
 			lines.push(
-				`| ${escapeCell(name)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+				`| ${escapeCell(name)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
 			);
 		}
 	}

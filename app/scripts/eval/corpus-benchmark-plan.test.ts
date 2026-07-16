@@ -173,7 +173,7 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		hallucinated_words: null,
 		passed: true,
 		metrics: {
-			schema_version: 6,
+			schema_version: 7,
 			provider: task.provider,
 			model: task.model,
 			backend: task.target_backend,
@@ -195,6 +195,8 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 			model_load_seconds: 1,
 			inference_seconds: 2,
 			inference_rtf: 0.1,
+			inference_audio_seconds: 10,
+			model_inference_rtf: 0.2,
 			measured_total_seconds: 3.3,
 			baseline_rss_mb: 100,
 			peak_rss_mb: 500,
@@ -865,7 +867,7 @@ test('requires checkpoint evaluator provenance to match the planned task exactly
 	);
 });
 
-test('requires schema 9, metrics schema 6, and exact executable and audio identities', () => {
+test('requires schema 9, metrics schema 7, and exact executable and audio identities', () => {
 	const task = plannedTask();
 	const staleSchema = checkpoint(task, { report: { schema_version: 8 } });
 	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 9/);
@@ -874,7 +876,7 @@ test('requires schema 9, metrics schema 6, and exact executable and audio identi
 	staleMetrics.results[0].metrics.schema_version = 4;
 	assert.match(
 		validateTaskCheckpoint(staleMetrics, task).join('\n'),
-		/metrics\.schema_version must be 6/,
+		/metrics\.schema_version must be 7/,
 	);
 
 	const mismatchedExecutable = checkpoint(task);
@@ -1045,12 +1047,16 @@ test('rejects contradictory WER, timing, memory, timestamp, and meeting result s
 	});
 	report.results[0].wer_percent = 6;
 	report.results[0].metrics.inference_rtf = 0.2;
+	report.results[0].metrics.inference_audio_seconds = 21;
+	report.results[0].metrics.model_inference_rtf = 0.3;
 	report.results[0].metrics.peak_rss_delta_mb = 399;
 
 	const errors = validateTaskCheckpoint(report, task).join('\n');
 	assert.match(errors, /completed_at must not precede/);
 	assert.match(errors, /wer_percent does not match/);
 	assert.match(errors, /inference_rtf does not match/);
+	assert.match(errors, /inference_audio_seconds must not materially exceed source duration/);
+	assert.match(errors, /model_inference_rtf does not match/);
 	assert.match(errors, /peak_rss_delta_mb does not match/);
 
 	const hallucination = checkpoint(task, {

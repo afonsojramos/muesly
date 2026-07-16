@@ -49,7 +49,7 @@ function evaluatorIdentity(cargoFeatures = []) {
 
 function metricsFor(command, overrides = {}) {
 	return {
-		schema_version: 6,
+		schema_version: 7,
 		provider: 'whisper',
 		model: 'tiny',
 		backend: 'cpu',
@@ -66,6 +66,8 @@ function metricsFor(command, overrides = {}) {
 		model_load_seconds: 0.2,
 		inference_seconds: 0.5,
 		inference_rtf: 0.25,
+		inference_audio_seconds: 1,
+		model_inference_rtf: 0.5,
 		measured_total_seconds: 0.9,
 		baseline_rss_mb: 10,
 		peak_rss_mb: 12,
@@ -880,6 +882,10 @@ test('the standalone CLI prepares once and aggregates three one-sample reports',
 		['cli-one', 'cli-two', 'cli-three'],
 	);
 	assert.equal(logs.filter((line) => line.includes(': WER ')).length, 3);
+	assert.equal(
+		logs.filter((line) => line.includes('source RTF 0.250, model-input RTF 0.500')).length,
+		3,
+	);
 	assert.equal(logs.filter((line) => line.startsWith('wrote benchmark report:')).length, 1);
 	assert.equal(errors.filter((line) => line.startsWith('running real whisper')).length, 1);
 	assert.deepEqual(fs.readdirSync(harness.privateParent), []);

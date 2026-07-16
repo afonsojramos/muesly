@@ -131,7 +131,8 @@ each checkpoint's exact name, identity, and content digest.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
-  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, machine profile,
+  count, source-audio and model-input inference RTF, model-load/inference timings, peak RSS, OS,
+  architecture, machine profile,
   active accelerator identity, backend, and SHA-256 fingerprints of the exact model artifact and
   benchmark executable bytes. Local-corpus outputs must be direct files in the manifest-adjacent
   `results/` directory so consent withdrawal can quarantine them.
@@ -180,10 +181,10 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
 ```
 
 Reports contain micro-averaged WER (total word errors divided by total reference words),
-duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
-language, noise condition, hardware backend, provider/model, and the combined
-language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 6, name the
+duration-weighted source-audio and model-input inference RTF, peak RSS, and silence hallucinations.
+They group those metrics by language, noise condition, hardware backend, provider/model, and the
+combined language/noise/backend matrix. This avoids treating a five-word clip as equally important
+as a five-minute meeting. Inputs must use run-report schema 9 with metrics schema 7, name the
 same corpus revision, and use identical pass thresholds and OS/architecture. Within each
 provider/model, all reports must fingerprint identical model bytes; different provider/model
 variants retain their own artifact fingerprints. The aggregator rejects comparisons that would
@@ -193,8 +194,9 @@ Schema 9 records the versioned WER scorer
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 5 records the common evaluator inputs plus the full evaluator revision and exact
-benchmark-executable digest for every backend. Coverage schema 8 similarly records the corpus
+Aggregate schema 6 records both RTF definitions, the common evaluator inputs, the full evaluator
+revision, and exact benchmark-executable digest for every backend. Coverage schema 8 similarly
+records the corpus
 fingerprint, verified model-artifact map, evaluator-revision digest by backend, and executable
 digest by backend, so a saved completeness result remains bound to the exact corpus revision,
 evaluated bytes, source/toolchain inputs, and binary.
@@ -205,8 +207,13 @@ retains raw cross-machine counts and the largest compatible count per cell for d
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.
 
-Metrics schema 6 reports source-audio duration, decode, VAD, model-download, model-load, inference,
-and measured-total timings; inference RTF is inference seconds divided by source-audio seconds.
+Metrics schema 7 reports source-audio duration, exact ASR-input audio duration, decode, VAD,
+model-download, model-load, inference, and measured-total timings. `inference_rtf` remains the
+product-oriented source-audio RTF: inference seconds divided by the original audio duration.
+`model_inference_rtf` is inference seconds divided by `inference_audio_seconds`, the exact number
+of 16 kHz samples passed to the ASR engine after VAD and the minimum-segment gate. It is `null` when
+VAD sends no audio to the model. The VAD flush may pad its final processing block, so ASR-input
+duration can exceed source duration by at most one 30 ms block.
 Memory is the evaluator process's host RSS sampled every 10 ms from immediately before model load
 through the end of inference, reported as baseline, peak, and peak-minus-baseline MiB. It is not
 accelerator VRAM. Model preparation happens before the measured sample processes, so

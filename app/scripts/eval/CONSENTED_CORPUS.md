@@ -195,10 +195,13 @@ compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC
 forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
 provider/backend executable and model are built, prepared, and privately snapshotted once per
 campaign variant, then the exact snapshot is invoked directly for every selected sample;
-metrics schema 6 must repeat its backend, platform, hardware, accelerator, executable identity,
+metrics schema 7 must repeat its backend, platform, hardware, accelerator, executable identity,
 and exact corpus audio SHA-256. The campaign captures digest-bound reference text in memory,
 revalidates the selected audio and reference immediately before and after inference, and writes
 each checkpoint through the same manifest/lock lease without reloading every corpus sample.
+Schema 7 preserves source-audio RTF and also records the exact post-VAD audio duration passed to
+ASR plus model-input RTF. A sample with no ASR input records a null model-input RTF; aggregate
+reports label and weight the two RTF definitions separately.
 When scoring, source/toolchain inputs, or tokenization semantics change, rerun every
 variant: coverage and aggregation reject legacy or incompatible reports.
 

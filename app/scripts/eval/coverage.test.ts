@@ -166,7 +166,7 @@ function runReport(corpus, backend, options = {}) {
 			wer_percent: 10,
 			hallucinated_words: null,
 			metrics: {
-				schema_version: 6,
+				schema_version: 7,
 				provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
 				model: 'test-model',
 				backend,
@@ -185,6 +185,8 @@ function runReport(corpus, backend, options = {}) {
 				model_load_seconds: 2,
 				inference_seconds: 1,
 				inference_rtf: 0.1,
+				inference_audio_seconds: 5,
+				model_inference_rtf: 0.2,
 				measured_total_seconds: 4,
 				baseline_rss_mb: 20,
 				peak_rss_mb: 100,

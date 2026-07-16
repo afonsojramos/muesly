@@ -70,7 +70,7 @@ function result(overrides = {}) {
 		wer_percent: 10,
 		hallucinated_words: null,
 		metrics: {
-			schema_version: 6,
+			schema_version: 7,
 			provider: 'whisper',
 			model: 'large-v3-turbo-q5_0',
 			backend: 'metal',
@@ -87,6 +87,8 @@ function result(overrides = {}) {
 			model_load_seconds: 1,
 			inference_seconds: 2,
 			inference_rtf: 0.1,
+			inference_audio_seconds: 10,
+			model_inference_rtf: 0.2,
 			measured_total_seconds: 3.5,
 			baseline_rss_mb: 100,
 			peak_rss_mb: 1000,
@@ -205,6 +207,8 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 						accelerator: 'none',
 						inference_seconds: 12,
 						inference_rtf: 0.3,
+						inference_audio_seconds: 20,
+						model_inference_rtf: 0.6,
 						measured_total_seconds: 13.5,
 						peak_rss_mb: 2000,
 						audio_duration_seconds: 40,
@@ -218,12 +222,15 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 
 	assert.equal(aggregate.groups.overall.all.wer_percent, 19);
 	assert.equal(aggregate.groups.overall.all.aggregate_inference_rtf, 14 / 60);
+	assert.equal(aggregate.groups.overall.all.inference_audio_seconds, 30);
+	assert.equal(aggregate.groups.overall.all.aggregate_model_inference_rtf, 14 / 30);
+	assert.equal(aggregate.groups.overall.all.median_model_inference_rtf, 0.4);
 	assert.equal(aggregate.groups.overall.all.max_peak_rss_mb, 2000);
 	assert.equal(aggregate.groups.language.en.wer_percent, 10);
 	assert.equal(aggregate.groups.noise_condition.office.samples, 1);
 	assert.equal(aggregate.groups.backend.cpu.samples, 1);
 	assert.equal(aggregate.groups.language_noise_backend['es / office / cpu'].samples, 1);
-	assert.equal(aggregate.schema_version, 5);
+	assert.equal(aggregate.schema_version, 6);
 	assert.equal(aggregate.wer_scorer, WER_SCORER_ID);
 	assert.equal(
 		aggregate.evaluator_revisions.metal.evaluator_revision_sha256,
@@ -256,11 +263,18 @@ test('tracks silence hallucinations separately from WER', () => {
 		word_errors: null,
 		wer_percent: null,
 		hallucinated_words: 2,
+		metrics: {
+			inference_seconds: 0,
+			inference_rtf: 0,
+			inference_audio_seconds: 0,
+			model_inference_rtf: null,
+		},
 	});
 	const aggregate = aggregateRunReports([report([result(), silence])]);
 	assert.equal(aggregate.groups.overall.all.wer_percent, 10);
 	assert.equal(aggregate.groups.overall.all.hallucination_samples, 1);
 	assert.equal(aggregate.groups.overall.all.hallucinated_words_total, 2);
+	assert.equal(aggregate.groups.overall.all.aggregate_model_inference_rtf, 0.2);
 	const markdown = renderMarkdown(aggregate);
 	assert.match(markdown, /language noise backend/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
@@ -270,6 +284,9 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /Accelerators: `metal` = `Apple M4 Pro integrated GPU`/);
 	assert.match(markdown, /`whisper\/large-v3-turbo-q5_0`: `c{64}`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
+	assert.match(markdown, /Aggregate source RTF/);
+	assert.match(markdown, /Aggregate model-input RTF/);
+	assert.match(markdown, /exact post-VAD audio passed to ASR/);
 	assert.doesNotMatch(markdown, /—%/);
 });
 
@@ -550,6 +567,7 @@ test('validates complete metrics identity, timing arithmetic, and RSS arithmetic
 				model: 'another-model',
 				benchmark_executable_sha256: 'd'.repeat(64),
 				inference_rtf: 0.2,
+				model_inference_rtf: 0.3,
 				measured_total_seconds: 2,
 				peak_rss_mb: 99,
 				peak_rss_delta_mb: 1,
@@ -561,6 +579,7 @@ test('validates complete metrics identity, timing arithmetic, and RSS arithmetic
 	assert.match(errors, /metrics\.model must match report\.model/);
 	assert.match(errors, /metrics\.benchmark_executable_sha256 must match/);
 	assert.match(errors, /metrics\.inference_rtf does not match inference duration/);
+	assert.match(errors, /metrics\.model_inference_rtf does not match model-input duration/);
 	assert.match(errors, /measured_total_seconds must cover all measured phases/);
 	assert.match(errors, /metrics\.peak_rss_mb must not be below baseline RSS/);
 	assert.match(errors, /metrics\.peak_rss_delta_mb does not match peak minus baseline/);
@@ -576,6 +595,52 @@ test('validates complete metrics identity, timing arithmetic, and RSS arithmetic
 	assert.match(
 		validateRunReport(nonFinite).join('\n'),
 		/measured_total_seconds must be a non-negative finite number/,
+	);
+
+	const paddedFinalVadBlock = result({
+		metrics: {
+			inference_audio_seconds: 20.03,
+			model_inference_rtf: 2 / 20.03,
+		},
+	}).metrics;
+	assert.deepEqual(validateBenchmarkMetrics(paddedFinalVadBlock), []);
+
+	const materiallyLongerInput = result({
+		metrics: {
+			inference_audio_seconds: 21,
+			model_inference_rtf: 2 / 21,
+		},
+	}).metrics;
+	assert.match(
+		validateBenchmarkMetrics(materiallyLongerInput).join('\n'),
+		/inference_audio_seconds must not materially exceed source duration/,
+	);
+
+	const noModelInput = result({
+		metrics: {
+			inference_seconds: 0,
+			inference_rtf: 0,
+			inference_audio_seconds: 0,
+			model_inference_rtf: null,
+		},
+	}).metrics;
+	assert.deepEqual(validateBenchmarkMetrics(noModelInput), []);
+
+	const timedWithoutModelInput = result({
+		metrics: {
+			inference_audio_seconds: 0,
+			model_inference_rtf: null,
+		},
+	}).metrics;
+	assert.match(
+		validateBenchmarkMetrics(timedWithoutModelInput).join('\n'),
+		/inference_seconds must be zero when no audio reached the ASR model/,
+	);
+
+	const missingModelRtf = result({ metrics: { model_inference_rtf: null } }).metrics;
+	assert.match(
+		validateBenchmarkMetrics(missingModelRtf).join('\n'),
+		/model_inference_rtf must be present when audio reached the ASR model/,
 	);
 
 	const zeroMemory = result({

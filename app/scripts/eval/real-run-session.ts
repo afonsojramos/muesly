@@ -528,7 +528,7 @@ function validateMetricsIdentity(state, metrics, sample) {
 		throw new Error(`invalid benchmark metrics:\n- ${errors.join('\n- ')}`);
 	}
 	for (const [field, expected] of [
-		['schema_version', 6],
+		['schema_version', 7],
 		['provider', state.identity.provider],
 		['model', state.identity.model],
 		['backend', state.identity.backend],
@@ -964,11 +964,16 @@ export function prepareRealRunSession(input, dependencies = {}) {
 }
 
 function logSampleResult(result, thresholds, failureReason) {
+	const modelRtf =
+		result.metrics.model_inference_rtf === null
+			? 'n/a'
+			: result.metrics.model_inference_rtf.toFixed(3);
 	if (result.reference_words === null) {
 		console.log(
 			`${result.sample_id}: hallucinated words = ${result.hallucinated_words} ` +
 				`(limit ${thresholds.maxHallucinatedWords}), ` +
-				`RTF ${result.metrics.inference_rtf.toFixed(3)}, ` +
+				`source RTF ${result.metrics.inference_rtf.toFixed(3)}, ` +
+				`model-input RTF ${modelRtf}, ` +
 				`peak RSS ${result.metrics.peak_rss_mb.toFixed(1)} MiB`,
 		);
 		if (!result.passed) {
@@ -982,7 +987,8 @@ function logSampleResult(result, thresholds, failureReason) {
 	console.log(
 		`${result.sample_id}: WER ${result.wer_percent.toFixed(2)}% ` +
 			`(limit ${thresholds.maxWerPercent}%), ` +
-			`RTF ${result.metrics.inference_rtf.toFixed(3)}, ` +
+			`source RTF ${result.metrics.inference_rtf.toFixed(3)}, ` +
+			`model-input RTF ${modelRtf}, ` +
 			`peak RSS ${result.metrics.peak_rss_mb.toFixed(1)} MiB`,
 	);
 	if (result.passed) return;

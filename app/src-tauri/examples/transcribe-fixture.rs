@@ -51,6 +51,8 @@ const COREML_ATTEMPT_PREFIX: &[u8] = b"whisper_init_state: loading Core ML model
 const COREML_FAILURE_PREFIX: &[u8] = b"whisper_init_state: failed to load Core ML model from '";
 const COREML_SUCCESS: &[u8] = b"whisper_init_state: Core ML model loaded";
 const AUDIO_ATTESTATION_BUFFER_BYTES: usize = 64 * 1024;
+const ASR_SAMPLE_RATE_HZ: f64 = 16_000.0;
+const MIN_VAD_SEGMENT_SAMPLES: usize = 1_600;
 
 static EVALUATOR_WHISPER_RUNTIME_ATTESTATION: OnceLock<
     Mutex<Option<EvaluatorWhisperRuntimeAttestation>>,
@@ -75,6 +77,8 @@ struct EvalMetrics {
     model_load_seconds: f64,
     inference_seconds: f64,
     inference_rtf: f64,
+    inference_audio_seconds: f64,
+    model_inference_rtf: Option<f64>,
     measured_total_seconds: f64,
     baseline_rss_mb: f64,
     peak_rss_mb: f64,
@@ -97,6 +101,14 @@ struct PreparedModel {
     schema_version: u8,
     provider: String,
     model: String,
+}
+
+fn audio_seconds_from_samples(sample_count: usize) -> f64 {
+    sample_count as f64 / ASR_SAMPLE_RATE_HZ
+}
+
+fn model_inference_rtf(inference_seconds: f64, inference_audio_seconds: f64) -> Option<f64> {
+    (inference_audio_seconds > 0.0).then(|| inference_seconds / inference_audio_seconds)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1142,7 +1154,7 @@ async fn main() {
         let segments = vad_segments.take().expect("dump mode enables VAD");
         std::fs::create_dir_all(&dir).unwrap_or_else(|e| fail(format!("create dump dir: {e}")));
         for (index, segment) in segments.into_iter().enumerate() {
-            if segment.samples.len() < 1600 {
+            if segment.samples.len() < MIN_VAD_SEGMENT_SAMPLES {
                 continue;
             }
             let path = dir.join(format!("seg-{:03}.wav", index + 1));
@@ -1157,6 +1169,16 @@ async fn main() {
         }
         return;
     }
+
+    let inference_audio_sample_count = match vad_segments.as_ref() {
+        Some(segments) => segments
+            .iter()
+            .filter(|segment| segment.samples.len() >= MIN_VAD_SEGMENT_SAMPLES)
+            .map(|segment| segment.samples.len())
+            .sum(),
+        None => samples.len(),
+    };
+    let inference_audio_seconds = audio_seconds_from_samples(inference_audio_sample_count);
 
     let mut model_download_seconds = 0.0;
     let mut inference_seconds = 0.0;
@@ -1191,7 +1213,7 @@ async fn main() {
             let segments = vad_segments.take().expect("VAD segments were prepared");
             let mut transcripts = Vec::with_capacity(segments.len());
             for (index, segment) in segments.into_iter().enumerate() {
-                if segment.samples.len() < 1600 {
+                if segment.samples.len() < MIN_VAD_SEGMENT_SAMPLES {
                     continue;
                 }
                 eprintln!("transcribing VAD segment {}", index + 1);
@@ -1297,7 +1319,7 @@ async fn main() {
             let segments = vad_segments.take().expect("VAD segments were prepared");
             let mut transcripts = Vec::with_capacity(segments.len());
             for (index, segment) in segments.into_iter().enumerate() {
-                if segment.samples.len() < 1600 {
+                if segment.samples.len() < MIN_VAD_SEGMENT_SAMPLES {
                     continue;
                 }
                 eprintln!("transcribing VAD segment {}", index + 1);
@@ -1368,7 +1390,7 @@ async fn main() {
         let (hardware, benchmark_executable_sha256) =
             benchmark_provenance.expect("metrics run captures benchmark provenance");
         let metrics = EvalMetrics {
-            schema_version: 6,
+            schema_version: 7,
             provider: provider.clone(),
             model: model_name.clone(),
             backend: hardware.backend.as_str().to_string(),
@@ -1385,6 +1407,8 @@ async fn main() {
             model_load_seconds,
             inference_seconds,
             inference_rtf: inference_seconds / decoded.duration_seconds.max(f64::EPSILON),
+            inference_audio_seconds,
+            model_inference_rtf: model_inference_rtf(inference_seconds, inference_audio_seconds),
             measured_total_seconds: measured_start
                 .elapsed()
                 .saturating_sub(audio_reattest_duration)
@@ -1949,6 +1973,13 @@ mod tests {
         let observation = sampler.finish().unwrap();
         assert!(observation.baseline_bytes > 0);
         assert!(observation.peak_bytes >= observation.baseline_bytes);
+    }
+
+    #[test]
+    fn model_input_duration_and_rtf_use_the_exact_asr_sample_count() {
+        assert_eq!(audio_seconds_from_samples(32_000), 2.0);
+        assert_eq!(model_inference_rtf(0.5, 2.0), Some(0.25));
+        assert_eq!(model_inference_rtf(0.0, 0.0), None);
     }
 
     #[test]

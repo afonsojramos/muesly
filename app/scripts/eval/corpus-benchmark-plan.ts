@@ -25,6 +25,9 @@ const COMMON_EVALUATOR_REVISION_FIELDS = [
 	'build_env_sha256',
 ];
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+// The VAD flush pads one final 16 kHz processing block, so model input can
+// legitimately exceed decoded source duration by less than one 30 ms block.
+const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
 const PLANNING_CORPUS_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
@@ -85,6 +88,8 @@ const METRICS_FIELDS = new Set([
 	'model_load_seconds',
 	'inference_seconds',
 	'inference_rtf',
+	'inference_audio_seconds',
+	'model_inference_rtf',
 	'measured_total_seconds',
 	'baseline_rss_mb',
 	'peak_rss_mb',
@@ -98,6 +103,7 @@ const NON_NEGATIVE_METRICS = [
 	'model_load_seconds',
 	'inference_seconds',
 	'inference_rtf',
+	'inference_audio_seconds',
 	'measured_total_seconds',
 	'baseline_rss_mb',
 	'peak_rss_mb',
@@ -770,6 +776,67 @@ function validateCheckpointShape(report, errors) {
 			)
 		) {
 			errors.push(`${prefix}.metrics.inference_rtf does not match inference duration`);
+		}
+		if (
+			finiteNonNegative(result.metrics.audio_duration_seconds) &&
+			result.metrics.audio_duration_seconds > 0 &&
+			finiteNonNegative(result.metrics.inference_audio_seconds) &&
+			result.metrics.inference_audio_seconds >
+				result.metrics.audio_duration_seconds + MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
+			!approximatelyEqual(
+				result.metrics.inference_audio_seconds,
+				result.metrics.audio_duration_seconds,
+			)
+		) {
+			errors.push(
+				`${prefix}.metrics.inference_audio_seconds must not materially exceed source duration`,
+			);
+		}
+		if (
+			result.metrics.model_inference_rtf !== null &&
+			!finiteNonNegative(result.metrics.model_inference_rtf)
+		) {
+			errors.push(
+				`${prefix}.metrics.model_inference_rtf must be null or a non-negative finite number`,
+			);
+		}
+		if (
+			finiteNonNegative(result.metrics.inference_audio_seconds) &&
+			result.metrics.inference_audio_seconds === 0
+		) {
+			if (result.metrics.model_inference_rtf !== null) {
+				errors.push(
+					`${prefix}.metrics.model_inference_rtf must be null when no audio reached the ASR model`,
+				);
+			}
+			if (
+				finiteNonNegative(result.metrics.inference_seconds) &&
+				!approximatelyEqual(result.metrics.inference_seconds, 0)
+			) {
+				errors.push(
+					`${prefix}.metrics.inference_seconds must be zero when no audio reached the ASR model`,
+				);
+			}
+		} else if (
+			finiteNonNegative(result.metrics.inference_audio_seconds) &&
+			result.metrics.inference_audio_seconds > 0 &&
+			finiteNonNegative(result.metrics.inference_seconds) &&
+			finiteNonNegative(result.metrics.model_inference_rtf) &&
+			!approximatelyEqual(
+				result.metrics.model_inference_rtf,
+				result.metrics.inference_seconds / result.metrics.inference_audio_seconds,
+			)
+		) {
+			errors.push(`${prefix}.metrics.model_inference_rtf does not match model-input duration`);
+		}
+		if (
+			finiteNonNegative(result.metrics.inference_audio_seconds) &&
+			result.metrics.inference_audio_seconds > 0 &&
+			result.metrics.model_inference_rtf === null
+		) {
+			errors.push(
+				`${prefix}.metrics.model_inference_rtf must be present when audio reached the ASR model`,
+			);
 		}
 		if (
 			finiteNonNegative(result.metrics.baseline_rss_mb) &&

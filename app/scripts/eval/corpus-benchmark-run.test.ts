@@ -195,7 +195,7 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
     hallucinated_words: null,
     passed: true,
     metrics: {
-      schema_version: 6,
+      schema_version: 7,
       provider: task.provider,
       model: task.model,
       backend: task.target_backend,
@@ -212,6 +212,8 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
       model_load_seconds: 1,
       inference_seconds: 2,
       inference_rtf: 2 / task.audio_duration_seconds,
+      inference_audio_seconds: task.audio_duration_seconds / 2,
+      model_inference_rtf: 4 / task.audio_duration_seconds,
       measured_total_seconds: 3.3,
       baseline_rss_mb: 100,
       peak_rss_mb: 500,

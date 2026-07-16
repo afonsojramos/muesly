@@ -78,7 +78,7 @@ function schemaValidCheckpointReport(current) {
 				wer_percent: 5,
 				hallucinated_words: null,
 				metrics: {
-					schema_version: 6,
+					schema_version: 7,
 					provider: 'whisper',
 					model: 'large-v3-turbo-q5_0',
 					backend: 'metal',
@@ -97,6 +97,8 @@ function schemaValidCheckpointReport(current) {
 					model_load_seconds: 1,
 					inference_seconds: 2,
 					inference_rtf: 0.16,
+					inference_audio_seconds: 10,
+					model_inference_rtf: 0.2,
 					measured_total_seconds: 3.3,
 					baseline_rss_mb: 100,
 					peak_rss_mb: 500,

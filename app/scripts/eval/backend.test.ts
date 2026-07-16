@@ -222,7 +222,7 @@ try {
 	fs.writeFileSync(
 		metricsPath,
 		JSON.stringify({
-			schema_version: 6,
+			schema_version: 7,
 			provider: 'whisper',
 			model: 'tiny',
 			backend: 'cpu',
@@ -240,6 +240,8 @@ try {
 			model_load_seconds: 0,
 			inference_seconds: 0,
 			inference_rtf: 0,
+			inference_audio_seconds: 20,
+			model_inference_rtf: 0,
 			measured_total_seconds: 0,
 			baseline_rss_mb: 1,
 			peak_rss_mb: 1,
