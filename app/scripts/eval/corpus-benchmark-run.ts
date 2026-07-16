@@ -410,14 +410,53 @@ function throwIfAborted(signal) {
   throw signal.reason instanceof Error ? signal.reason : interruptedError();
 }
 
-function signalBenchmarkProcessTree(child, signalName) {
-  if (!child.pid) return false;
-  if (process.platform !== "win32") {
+function windowsTaskkillExecutable(environment = process.env) {
+  const systemRoot = environment.SystemRoot ?? environment.WINDIR;
+  if (typeof systemRoot !== "string" || !path.win32.isAbsolute(systemRoot)) {
+    throw new Error("unable to resolve the Windows taskkill executable");
+  }
+  const executablePath = path.win32.join(systemRoot, "System32", "taskkill.exe");
+  const canonicalPath = fs.realpathSync(executablePath);
+  if (!fs.statSync(canonicalPath).isFile()) {
+    throw new Error("the Windows taskkill executable is not a regular file");
+  }
+  return canonicalPath;
+}
+
+export function signalBenchmarkProcessTree(
+  child,
+  signalName,
+  {
+    environment = process.env,
+    execFileSyncImpl = execFileSync,
+    platform = process.platform,
+    taskkillExecutable,
+  } = {},
+) {
+  if (!Number.isSafeInteger(child.pid) || child.pid < 1) return false;
+  if (platform !== "win32") {
     try {
       process.kill(-child.pid, signalName);
       return true;
     } catch (error) {
       if (error?.code === "ESRCH") return false;
+    }
+  } else {
+    try {
+      execFileSyncImpl(
+        taskkillExecutable ?? windowsTaskkillExecutable(environment),
+        ["/PID", String(child.pid), "/T", "/F"],
+        {
+          env: environment,
+          stdio: "ignore",
+          timeout: 10_000,
+          windowsHide: true,
+        },
+      );
+      return true;
+    } catch {
+      // Fall back to the direct child below. A second forced tree attempt is
+      // scheduled by the caller while the child remains alive.
     }
   }
   try {
@@ -427,9 +466,12 @@ function signalBenchmarkProcessTree(child, signalName) {
   }
 }
 
-async function runRealRunCommand(args, { environment = process.env, repoRoot, signal }) {
+export async function runRealRunCommand(
+  args,
+  { environment = process.env, repoRoot, signal, spawnImpl = spawn },
+) {
   throwIfAborted(signal);
-  const child = spawn("nub", args, {
+  const child = spawnImpl("nub", args, {
     cwd: repoRoot,
     detached: process.platform !== "win32",
     env: environment,
@@ -439,6 +481,10 @@ async function runRealRunCommand(args, { environment = process.env, repoRoot, si
   let outputBytes = 0;
   let outputLimitExceeded = false;
   let forceKillTimer = null;
+  const outcomePromise = new Promise((resolve, reject) => {
+    child.once("error", () => reject(new Error("unable to start the real-run benchmark command")));
+    child.once("close", (status, terminationSignal) => resolve({ status, terminationSignal }));
+  });
   const terminate = () => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     signalBenchmarkProcessTree(child, "SIGTERM");
@@ -459,13 +505,9 @@ async function runRealRunCommand(args, { environment = process.env, repoRoot, si
 
   const abort = () => terminate();
   signal?.addEventListener("abort", abort, { once: true });
+  if (signal?.aborted) terminate();
   try {
-    const outcome = await new Promise((resolve, reject) => {
-      child.once("error", () =>
-        reject(new Error("unable to start the real-run benchmark command")),
-      );
-      child.once("close", (status, terminationSignal) => resolve({ status, terminationSignal }));
-    });
+    const outcome = await outcomePromise;
     throwIfAborted(signal);
     if (outputLimitExceeded) {
       throw new Error("real-run exceeded the private campaign output limit");

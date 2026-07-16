@@ -1,14 +1,18 @@
 import assert from "node:assert/strict";
+import { spawn as spawnChild } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   formatCorpusBenchmarkProgress,
   formatCorpusBenchmarkSummary,
+  runRealRunCommand,
   runCorpusBenchmarkCampaign,
+  signalBenchmarkProcessTree,
 } from "./corpus-benchmark-run.ts";
 import { isCorpusBenchmarkCheckpointName } from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
@@ -19,9 +23,27 @@ const MODEL_ARTIFACT = "b".repeat(64);
 const EXECUTABLE = "c".repeat(64);
 const RUNTIME_ENVIRONMENT = "d".repeat(64);
 const SECRET_REFERENCE = "private participant words must never be printed";
+const TEST_REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+async function waitFor(predicate, message, timeoutMs = 5_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
 }
 
 function evaluatorEntry(targetBackend = "cpu", overrides = {}) {
@@ -638,6 +660,132 @@ test("plan mode considers every historical hardware identity without choosing on
     new Set(planned.checkpointNames),
     new Set([...first.checkpointNames, ...second.checkpointNames]),
   );
+});
+
+test("uses Windows taskkill to terminate the full benchmark process tree", () => {
+  const calls = [];
+  const child = {
+    pid: 4242,
+    kill: () => {
+      throw new Error("the direct-child fallback must not run");
+    },
+  };
+  assert.equal(
+    signalBenchmarkProcessTree(child, "SIGTERM", {
+      environment: { SystemRoot: "C:\\Windows" },
+      execFileSyncImpl: (executable, args, options) => {
+        calls.push({ executable, args, options });
+      },
+      platform: "win32",
+      taskkillExecutable: "C:\\Windows\\System32\\taskkill.exe",
+    }),
+    true,
+  );
+  assert.deepEqual(calls, [
+    {
+      executable: "C:\\Windows\\System32\\taskkill.exe",
+      args: ["/PID", "4242", "/T", "/F"],
+      options: {
+        env: { SystemRoot: "C:\\Windows" },
+        stdio: "ignore",
+        timeout: 10_000,
+        windowsHide: true,
+      },
+    },
+  ]);
+});
+
+test("aborting a real-run command terminates its descendant process tree", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muesly-campaign-tree-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const parentMarker = path.join(directory, "parent.json");
+  const grandchildMarker = path.join(directory, "grandchild.txt");
+  const grandchildScript = path.join(directory, "grandchild.ts");
+  const parentScript = path.join(directory, "parent.ts");
+  fs.writeFileSync(
+    grandchildScript,
+    [
+      'import fs from "node:fs";',
+      "fs.writeFileSync(process.argv[2], String(process.pid));",
+      "setInterval(() => {}, 1000);",
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(
+    parentScript,
+    [
+      'import { spawn } from "node:child_process";',
+      'import fs from "node:fs";',
+      `const child = spawn("nub", [${JSON.stringify(grandchildScript)}, ${JSON.stringify(
+        grandchildMarker,
+      )}], { stdio: "ignore" });`,
+      `fs.writeFileSync(${JSON.stringify(
+        parentMarker,
+      )}, JSON.stringify({ parent: process.pid, grandchild: child.pid }));`,
+      "setInterval(() => {}, 1000);",
+      "",
+    ].join("\n"),
+  );
+
+  const controller = new AbortController();
+  const run = runRealRunCommand([parentScript], {
+    repoRoot: directory,
+    signal: controller.signal,
+  });
+  t.after(async () => {
+    if (!controller.signal.aborted) controller.abort(new Error("test cleanup"));
+    try {
+      await run;
+    } catch {
+      // Cancellation is the expected cleanup path.
+    }
+  });
+  await waitFor(
+    () => fs.existsSync(parentMarker) && fs.existsSync(grandchildMarker),
+    "timed out waiting for the benchmark descendant tree",
+  );
+  const { parent, grandchild: grandchildWrapper } = JSON.parse(
+    fs.readFileSync(parentMarker, "utf8"),
+  );
+  const grandchild = Number(fs.readFileSync(grandchildMarker, "utf8"));
+  for (const pid of [parent, grandchildWrapper, grandchild]) {
+    assert(Number.isSafeInteger(pid) && pid > 0);
+  }
+  t.after(() => {
+    for (const pid of [parent, grandchildWrapper, grandchild]) {
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // The cancellation under test already reaped the process.
+      }
+    }
+  });
+
+  controller.abort(new Error("cancel benchmark tree"));
+  await assert.rejects(run, /cancel benchmark tree/);
+  await waitFor(
+    () => !processExists(parent) && !processExists(grandchildWrapper) && !processExists(grandchild),
+    "benchmark descendant processes survived cancellation",
+  );
+});
+
+test("closes the abort race between spawning and listener registration", async () => {
+  const controller = new AbortController();
+  let childPid = null;
+  const run = runRealRunCommand(["--version"], {
+    repoRoot: TEST_REPOSITORY_ROOT,
+    signal: controller.signal,
+    spawnImpl: (...args) => {
+      const child = spawnChild(...args);
+      childPid = child.pid;
+      controller.abort(new Error("abort during spawn"));
+      return child;
+    },
+  });
+  await assert.rejects(run, /abort during spawn/);
+  if (childPid !== null) {
+    await waitFor(() => !processExists(childPid), "spawn-race child survived cancellation");
+  }
 });
 
 test("SIGINT aborts an active task and releases campaign ownership", async (t) => {
