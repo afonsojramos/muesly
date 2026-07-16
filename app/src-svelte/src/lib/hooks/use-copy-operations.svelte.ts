@@ -84,8 +84,12 @@ export async function fetchSpeakerContext(meetingId: string): Promise<SpeakerCon
 }
 
 /** The labeled, turn-grouped markdown body shared by copy and export. */
-export function transcriptMarkdownBody(rows: Transcript[], ctx: SpeakerContext): string {
-	return formatTranscriptMarkdown(rows, ctx, { formatTime });
+export function transcriptMarkdownBody(
+	rows: Transcript[],
+	ctx: SpeakerContext,
+	options?: { timestamps?: boolean },
+): string {
+	return formatTranscriptMarkdown(rows, ctx, { formatTime, timestamps: options?.timestamps });
 }
 
 export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOperations {

@@ -22,12 +22,16 @@ export interface FormatTranscriptMarkdownOptions {
 	/** Render a line's time: numeric recording offset when known, else the
 	 * row's wall-clock string (legacy rows have no audio_start_time). */
 	formatTime: (start: number | undefined, wallClock: string | undefined) => string;
+	/** Prefix each line with its time (default true). When false, no time of
+	 * any form is emitted — neither recording offsets nor wall-clock fallbacks.
+	 * The markdown export relies on the true default; don't change it. */
+	timestamps?: boolean;
 }
 
 export function formatTranscriptMarkdown(
 	rows: Transcript[],
 	ctx: SpeakerContext,
-	{ formatTime }: FormatTranscriptMarkdownOptions,
+	{ formatTime, timestamps = true }: FormatTranscriptMarkdownOptions,
 ): string {
 	if (rows.length === 0) return '';
 	const speakerRows = buildSpeakerRows(toSegments(rows), ctx);
@@ -39,8 +43,12 @@ export function formatTranscriptMarkdown(
 			if (lines.length > 0) lines.push('');
 			lines.push(`**${speaker.label}**`);
 		}
-		const time = formatTime(row.audio_start_time, row.timestamp);
-		lines.push(`${time} ${row.text}`.trimEnd());
+		if (timestamps) {
+			const time = formatTime(row.audio_start_time, row.timestamp);
+			lines.push(`${time} ${row.text}`.trimEnd());
+		} else {
+			lines.push(row.text.trimEnd());
+		}
 	});
 	return lines.join('\n');
 }

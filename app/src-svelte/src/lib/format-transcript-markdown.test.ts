@@ -91,4 +91,48 @@ describe('formatTranscriptMarkdown', () => {
 	it('returns empty string for no rows', () => {
 		expect(formatTranscriptMarkdown([], ctx(), { formatTime })).toBe('');
 	});
+
+	describe('timestamps option', () => {
+		it('defaults to timestamped output identical to passing timestamps: true', () => {
+			// The markdown export calls without the option; this pins its shape.
+			const rows = [row('a', 'hello there', 'mic', undefined, 1)];
+			const withDefault = formatTranscriptMarkdown(rows, ctx(), { formatTime });
+			const withExplicit = formatTranscriptMarkdown(rows, ctx(), { formatTime, timestamps: true });
+			expect(withDefault).toBe('**You**\n[00:01] hello there');
+			expect(withExplicit).toBe(withDefault);
+		});
+
+		it('omits time prefixes but keeps speaker labels when timestamps is false', () => {
+			const rows = [
+				row('a', 'hello there', 'mic', undefined, 1),
+				row('b', 'still me', 'mic', undefined, 4),
+				row('c', 'hi!', 'system', 0, 8),
+			];
+			const out = formatTranscriptMarkdown(rows, ctx({ names: new Map([[0, 'Ana']]) }), {
+				formatTime,
+				timestamps: false,
+			});
+			expect(out).toBe(['**You**', 'hello there', 'still me', '', '**Ana**', 'hi!'].join('\n'));
+		});
+
+		it('emits bare text lines with no speaker data when timestamps is false', () => {
+			const rows = [
+				row('a', 'one', undefined, undefined, 1),
+				row('b', 'two', undefined, undefined, 5),
+			];
+			const out = formatTranscriptMarkdown(rows, ctx(), { formatTime, timestamps: false });
+			expect(out).toBe('one\ntwo');
+		});
+
+		it('strips the wall-clock fallback on legacy rows when timestamps is false', () => {
+			const rows = [row('a', 'old row', 'mic', undefined, undefined, '14:30:05')];
+			const out = formatTranscriptMarkdown(rows, ctx(), { formatTime, timestamps: false });
+			expect(out).toBe('**You**\nold row');
+			expect(out).not.toContain('14:30:05');
+		});
+
+		it('returns empty string for no rows when timestamps is false', () => {
+			expect(formatTranscriptMarkdown([], ctx(), { formatTime, timestamps: false })).toBe('');
+		});
+	});
 });
