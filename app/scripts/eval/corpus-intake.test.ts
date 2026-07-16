@@ -192,6 +192,18 @@ test('blocks intake until an interrupted withdrawal is resumed', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
+test('blocks intake on a non-regular withdrawal marker', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	fs.mkdirSync(path.join(corpusDirectory, '.withdrawal-session-withdraw.json'), {
+		recursive: true,
+	});
+
+	assert.throws(() => intakeConsentedSample(options), /corpus withdrawal is pending/);
+	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+	assert(!fs.existsSync(options.manifestPath));
+});
+
 test('reclaims interrupted intake files whether staged or already promoted', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');

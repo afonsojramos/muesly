@@ -282,15 +282,19 @@ test('preserves valid reports when reclaiming a dead result-writer lock', () => 
 	assert(fs.existsSync(path.join(resultsDirectory, 'new.json')));
 });
 
-test('ignores directories that merely resemble withdrawal markers', () => {
+test('blocks result writes on non-regular withdrawal markers', () => {
 	const { directory, document, manifestPath } = localManifest();
 	fs.mkdirSync(path.join(directory, 'local-corpus', '.withdrawal-session-fake.json'));
 	const outputPath = path.join(directory, 'results', 'run.json');
-	writeCorpusBoundJson({
-		manifestPath,
-		expectedFingerprint: corpusFingerprint(document),
-		outputPath,
-		value: { corpus_fingerprint: corpusFingerprint(document) },
-	});
-	assert(fs.existsSync(outputPath));
+	assert.throws(
+		() =>
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpusFingerprint(document),
+				outputPath,
+				value: { corpus_fingerprint: corpusFingerprint(document) },
+			}),
+		/withdrawal is pending/,
+	);
+	assert(!fs.existsSync(outputPath));
 });
