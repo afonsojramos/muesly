@@ -11,6 +11,7 @@ import {
 	readCorpusBenchmarkCheckpoint,
 } from './corpus-benchmark-checkpoints.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
+import { processIdentity } from './process-identity.ts';
 import { validateRunReport } from './report.ts';
 import {
 	assertLeasedCorpusSampleUnchanged,
@@ -167,9 +168,10 @@ function leasedCorpusFixture(t, options = {}) {
 	};
 	fs.writeFileSync(manifestPath, `${JSON.stringify(document)}\n`, { mode: 0o600 });
 	const locks = [];
+	const benchmarkProcessIdentity = processIdentity(process.pid) ?? 'benchmark-process';
 	const acquireLock = () => {
 		const lock = acquireCorpusBenchmarkLock(manifestPath, {
-			currentIdentity: 'benchmark-process',
+			currentIdentity: benchmarkProcessIdentity,
 		});
 		locks.push(lock);
 		return lock;
