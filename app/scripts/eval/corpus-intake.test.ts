@@ -92,6 +92,27 @@ test('rejects malformed UTF-8 references before writing anything', () => {
 	]);
 });
 
+test('requires consent records to remain outside the managed corpus tree', () => {
+	const { directory, options } = intakeFixture();
+	const managedConsentRecord = path.join(
+		directory,
+		'local-corpus',
+		options.sessionId,
+		'consent.md',
+	);
+	fs.mkdirSync(path.dirname(managedConsentRecord), { recursive: true });
+	fs.writeFileSync(managedConsentRecord, 'affirmative consent record');
+	options.consentRecord = managedConsentRecord;
+
+	assert.throws(
+		() => intakeConsentedSample(options),
+		/consent record must be stored outside the managed local corpus directory/,
+	);
+	assert(fs.existsSync(managedConsentRecord));
+	assert(!fs.existsSync(options.manifestPath));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
 test('atomically imports a consented sample with verified metadata and private files', () => {
 	const { options } = intakeFixture();
 	const sample = intakeConsentedSample(options);

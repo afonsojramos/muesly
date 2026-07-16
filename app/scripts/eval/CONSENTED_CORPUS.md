@@ -85,6 +85,8 @@ losing manifest entries; a later run reclaims a lock whose owner process no long
 only abandoned temporary files, and safely reuses exact destination copies already promoted by an
 interrupted import. It verifies that
 the supplied consent record exists but never copies its identity-bearing contents into the manifest.
+It rejects consent records inside the managed `local-corpus/` tree so session withdrawal cannot
+delete externally retained consent evidence.
 Intake accepts only the five target languages and four defined noise conditions so samples cannot
 silently fall outside the matrix. After validating the imported copy, dispose of the source files
 according to the approved retention policy.

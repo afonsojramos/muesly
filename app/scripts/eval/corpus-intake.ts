@@ -28,6 +28,14 @@ function ensureFile(filePath, label) {
 	}
 }
 
+function isWithinOrEqual(directory, filePath) {
+	const relative = path.relative(directory, filePath);
+	return (
+		relative === '' ||
+		(relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+	);
+}
+
 function readReferenceTranscript(filePath) {
 	try {
 		return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(filePath));
@@ -375,6 +383,18 @@ export function intakeConsentedSample(options) {
 	if (new Set([audioSource, referenceSource, consentRecord]).size !== 3) {
 		throw new Error('audio, reference, and consent record must be three distinct files');
 	}
+	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
+	const existingCorpusRoot = fs.existsSync(localCorpusRoot)
+		? fs.realpathSync(localCorpusRoot)
+		: undefined;
+	const resolvedConsentRecord = fs.realpathSync(consentRecord);
+	if (
+		isWithinOrEqual(localCorpusRoot, consentRecord) ||
+		(existingCorpusRoot !== undefined &&
+			isWithinOrEqual(existingCorpusRoot, resolvedConsentRecord))
+	) {
+		throw new Error('consent record must be stored outside the managed local corpus directory');
+	}
 	if (fs.statSync(consentRecord).size === 0) throw new Error('consent record must not be empty');
 	if (path.extname(audioSource).toLowerCase() !== '.wav') {
 		throw new Error('audio must be a .wav file so duration can be verified locally');
@@ -383,7 +403,6 @@ export function intakeConsentedSample(options) {
 		throw new Error('reference transcript must not be empty');
 	}
 
-	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
 	if (fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false })?.isSymbolicLink()) {
 		throw new Error(`intake directory cannot be a symbolic link: ${localCorpusRoot}`);
 	}
