@@ -115,13 +115,20 @@ test('treats Windows destination-exists errors as preparation lock contention', 
 test('retries a vanished Windows preparation lock race', () => {
 	const current = fixture();
 	const renameSync = fs.renameSync;
+	const preparationLockPath = path.join(
+		fs.realpathSync(current.directory),
+		'intake',
+		'.prepare.lock',
+	);
 	let renameAttempts = 0;
 	fs.renameSync = (...args) => {
-		renameAttempts += 1;
-		if (renameAttempts === 1) {
-			const error = new Error('simulated Windows destination lock race');
-			error.code = 'EPERM';
-			throw error;
+		if (args[1] === preparationLockPath) {
+			renameAttempts += 1;
+			if (renameAttempts === 1) {
+				const error = new Error('simulated Windows destination lock race');
+				error.code = 'EPERM';
+				throw error;
+			}
 		}
 		return renameSync(...args);
 	};
@@ -212,6 +219,98 @@ setTimeout(() => fs.rmSync(lockPath, { recursive: true, force: true }), 150);
 	assert(!fs.existsSync(lockPath));
 });
 
+test('plans from an intake commit completed while waiting for the corpus lock', async () => {
+	const current = fixture();
+	const localCorpusRoot = path.join(current.directory, 'local-corpus');
+	const sessionDirectory = path.join(localCorpusRoot, 'session-committed');
+	const audioPath = path.join(sessionDirectory, 'committed.wav');
+	const referencePath = path.join(sessionDirectory, 'committed.txt');
+	const audioContents = 'committed private audio';
+	const referenceContents = 'Committed reference.\n';
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	fs.writeFileSync(audioPath, audioContents);
+	fs.writeFileSync(referencePath, referenceContents);
+	const stagedManifestPath = `${current.manifestPath}.incoming`;
+	fs.writeFileSync(
+		stagedManifestPath,
+		`${JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local test corpus.',
+			distribution: 'local',
+			samples: [
+				{
+					id: 'en-clean-committed',
+					session_id: 'session-committed',
+					audio_path: path.relative(current.directory, audioPath),
+					audio_sha256: hash(audioContents),
+					reference_path: path.relative(current.directory, referencePath),
+					reference_sha256: hash(referenceContents),
+					language: 'en',
+					scenario: 'meeting',
+					noise_condition: 'clean',
+					speakers: 2,
+					duration_seconds: 1,
+					provenance: {
+						basis: 'participant-consent',
+						redistribution: 'local-only',
+						consent_record_id: 'consent-committed',
+						consent_date: '2026-07-15',
+						consented_uses: ['asr-benchmarking'],
+					},
+				},
+			],
+		})}\n`,
+	);
+	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	const child = spawn(
+		process.execPath,
+		[
+			'-e',
+			`
+const fs = require('node:fs');
+const path = require('node:path');
+const [lockPath, stagedManifestPath, manifestPath] = process.argv.slice(1);
+fs.mkdirSync(lockPath, { mode: 0o700 });
+fs.writeFileSync(
+  path.join(lockPath, 'owner.json'),
+  JSON.stringify({
+    schema_version: 3,
+    pid: process.pid,
+    token: '00000000-0000-4000-8000-000000000020',
+    manifest_path: manifestPath,
+    operation: 'intake',
+    session_id: 'session-committed',
+    created_at: '2026-07-16T00:00:00Z',
+  }),
+  { mode: 0o600 },
+);
+process.stdout.write('locked\\n');
+setTimeout(() => {
+  fs.renameSync(stagedManifestPath, manifestPath);
+  fs.rmSync(lockPath, { recursive: true });
+}, 150);
+`,
+			lockPath,
+			stagedManifestPath,
+			current.manifestPath,
+		],
+		{ stdio: ['ignore', 'pipe', 'pipe'] },
+	);
+	await once(child.stdout, 'data');
+
+	const session = prepareCollectionSession(
+		prepareOptions(current, {
+			idFactory: () => '00000000-0000-4000-8000-000000000021',
+			lockTimeoutMs: 2_000,
+		}),
+	);
+	assert.equal(`${session.language}/${session.noiseCondition}`, 'en/office');
+	const [exitCode] = await once(child, 'exit');
+	assert.equal(exitCode, 0);
+	assert(!fs.existsSync(lockPath));
+});
+
 test('creates a private, consent-neutral collection bundle for the next cell', () => {
 	const current = fixture();
 	const { directory, manifestPath } = current;
@@ -248,6 +347,7 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
 	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
 	assert(!fs.existsSync(manifestPath));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus')));
 });
 
 test('runs the generated intake entrypoint from an external bundle directory', () => {
