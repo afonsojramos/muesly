@@ -5,17 +5,31 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { createPrivateArtifactSnapshotDirectory } from './artifact-snapshot.ts';
 import {
 	assertBenchmarkPlatform,
 	benchmarkDefinitionForReportedBackend,
+	benchmarkExecutableSha256,
 	benchmarkRuntimeEnvironment,
+	benchmarkRuntimeDependenciesSha256,
+	bindBenchmarkRuntimeDependencies,
 	buildBenchmarkExecutable,
 	cargoFeaturesForBenchmark,
 	evaluatorPlatformForTargetTriple,
 	prepareBenchmarkModel,
 	probeBenchmarkExecutable,
+	stageBenchmarkExecutableSnapshot,
 	validateHardwareProbe,
 } from './benchmark-executable.ts';
+
+const RUNTIME_ENV_SHA256 = 'd'.repeat(64);
+
+function attestedRuntimeEnvironment(overrides = {}) {
+	return {
+		MUESLY_EVAL_RUNTIME_ENV_SHA256: RUNTIME_ENV_SHA256,
+		...overrides,
+	};
+}
 
 function hardwareProbe(overrides = {}) {
 	return {
@@ -23,8 +37,7 @@ function hardwareProbe(overrides = {}) {
 		backend: 'metal',
 		operating_system: 'macos',
 		architecture: 'aarch64',
-			hardware_profile:
-				`cpu=Apple M5;logical_cpus=10;memory_bytes=17179869184;runtime_env_sha256=${'d'.repeat(64)}`,
+		hardware_profile: `cpu=Apple M5;logical_cpus=10;memory_bytes=17179869184;runtime_env_sha256=${'d'.repeat(64)}`,
 		accelerator: 'Apple M5 integrated GPU',
 		benchmark_executable_sha256: 'a'.repeat(64),
 		...overrides,
@@ -41,6 +54,28 @@ test('maps every real-run backend to deterministic Cargo features', () => {
 		() => cargoFeaturesForBenchmark('parakeet', 'cuda'),
 		/Parakeet benchmark builds require the cpu backend/,
 	);
+});
+
+test('reclaims only provably stale private artifact snapshots', (t) => {
+	const parentDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-snapshot-recovery-'));
+	t.after(() => fs.rmSync(parentDirectory, { recursive: true, force: true }));
+	const staleDirectory = path.join(parentDirectory, '.muesly-eval-artifacts-2147483647-ABC123');
+	const liveDirectory = path.join(parentDirectory, `.muesly-eval-artifacts-${process.pid}-ABC124`);
+	for (const [directory, pid] of [
+		[staleDirectory, 2147483647],
+		[liveDirectory, process.pid],
+	]) {
+		fs.mkdirSync(directory, { mode: 0o700 });
+		fs.writeFileSync(
+			path.join(directory, 'owner.json'),
+			`${JSON.stringify({ schema_version: 1, pid })}\n`,
+			{ mode: 0o600 },
+		);
+	}
+	const createdDirectory = createPrivateArtifactSnapshotDirectory(parentDirectory);
+	assert(!fs.existsSync(staleDirectory));
+	assert(fs.existsSync(liveDirectory));
+	assert(fs.existsSync(path.join(createdDirectory, 'owner.json')));
 });
 
 test('defines exact features and platforms for every canonical reported backend', () => {
@@ -183,6 +218,143 @@ test('builds once and resolves the exact regular Cargo example executable', (t) 
 	);
 });
 
+test('stages the exact executable and rejects a transient swap-copy-restore', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-snapshot-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const executablePath = path.join(directory, 'transcribe-fixture');
+	fs.writeFileSync(executablePath, 'exact benchmark executable', { mode: 0o700 });
+	const runtimeLibraryPath = path.join(directory, 'onnxruntime.dll');
+	fs.writeFileSync(runtimeLibraryPath, 'exact runtime library');
+	const expectedSha256 = benchmarkExecutableSha256(executablePath);
+	const expectedRuntimeDependenciesSha256 = benchmarkRuntimeDependenciesSha256(executablePath);
+
+	const exactSnapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(directory, 'exact-snapshot'),
+		expectedSha256,
+	);
+	assert.notEqual(exactSnapshot.executablePath, executablePath);
+	assert.equal(exactSnapshot.sha256, expectedSha256);
+	assert.equal(exactSnapshot.runtimeDependenciesSha256, expectedRuntimeDependenciesSha256);
+	assert.equal(
+		fs.readFileSync(
+			path.join(path.dirname(exactSnapshot.executablePath), 'onnxruntime.dll'),
+			'utf8',
+		),
+		'exact runtime library',
+	);
+	fs.writeFileSync(executablePath, 'later replacement', { mode: 0o700 });
+	fs.writeFileSync(runtimeLibraryPath, 'later runtime replacement');
+	assert.equal(benchmarkExecutableSha256(exactSnapshot.executablePath), expectedSha256);
+	assert.equal(
+		benchmarkRuntimeDependenciesSha256(exactSnapshot.executablePath),
+		expectedRuntimeDependenciesSha256,
+	);
+
+	fs.writeFileSync(executablePath, 'exact benchmark executable', { mode: 0o700 });
+	fs.writeFileSync(runtimeLibraryPath, 'exact runtime library');
+	const heldPath = path.join(directory, 'held-executable');
+	assert.throws(
+		() =>
+			stageBenchmarkExecutableSnapshot(
+				executablePath,
+				path.join(directory, 'attacked-snapshot'),
+				expectedSha256,
+				{
+					copyFileSnapshotImpl: (sourcePath, destinationPath, options) => {
+						fs.renameSync(sourcePath, heldPath);
+						try {
+							fs.writeFileSync(sourcePath, 'transient malicious executable', {
+								mode: 0o700,
+							});
+							fs.copyFileSync(sourcePath, destinationPath);
+							fs.chmodSync(destinationPath, options.mode);
+						} finally {
+							fs.rmSync(sourcePath, { force: true });
+							fs.renameSync(heldPath, sourcePath);
+						}
+					},
+				},
+			),
+		/snapshot does not match the expected SHA-256/,
+	);
+	assert.equal(benchmarkExecutableSha256(executablePath), expectedSha256);
+	assert(!fs.existsSync(path.join(directory, 'attacked-snapshot')));
+});
+
+test('stages runtime-library aliases and rejects transient replacement', (t) => {
+	if (process.platform === 'win32') {
+		return t.skip('runtime-library symlink behavior is Unix-specific');
+	}
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-runtime-snapshot-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const executablePath = path.join(directory, 'transcribe-fixture');
+	const versionedLibrary = path.join(directory, 'libonnxruntime.so.1');
+	const aliasLibrary = path.join(directory, 'libonnxruntime.so');
+	fs.writeFileSync(executablePath, 'exact benchmark executable', { mode: 0o700 });
+	fs.writeFileSync(versionedLibrary, 'exact runtime library');
+	fs.symlinkSync(path.basename(versionedLibrary), aliasLibrary);
+	const executableSha256 = benchmarkExecutableSha256(executablePath);
+	const runtimeDependenciesSha256 = benchmarkRuntimeDependenciesSha256(executablePath);
+	const exactSnapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(directory, 'exact-snapshot'),
+		executableSha256,
+	);
+	assert.equal(exactSnapshot.runtimeDependenciesSha256, runtimeDependenciesSha256);
+	for (const filename of ['libonnxruntime.so', 'libonnxruntime.so.1']) {
+		const snapshotLibrary = path.join(path.dirname(exactSnapshot.executablePath), filename);
+		assert.equal(fs.lstatSync(snapshotLibrary).isSymbolicLink(), false);
+		assert.equal(fs.readFileSync(snapshotLibrary, 'utf8'), 'exact runtime library');
+	}
+
+	const heldLibrary = path.join(directory, 'held-runtime-library');
+	assert.throws(
+		() =>
+			stageBenchmarkExecutableSnapshot(
+				executablePath,
+				path.join(directory, 'attacked-snapshot'),
+				executableSha256,
+				{
+					copyFileSnapshotImpl: (sourcePath, destinationPath, options) => {
+						if (sourcePath === versionedLibrary) {
+							fs.renameSync(sourcePath, heldLibrary);
+							try {
+								fs.writeFileSync(sourcePath, 'transient malicious runtime library');
+								fs.copyFileSync(sourcePath, destinationPath);
+								fs.chmodSync(destinationPath, options.mode);
+							} finally {
+								fs.rmSync(sourcePath, { force: true });
+								fs.renameSync(heldLibrary, sourcePath);
+							}
+							return;
+						}
+						fs.copyFileSync(sourcePath, destinationPath);
+						fs.chmodSync(destinationPath, options.mode);
+					},
+				},
+			),
+		/runtime library snapshot does not match the expected SHA-256/,
+	);
+	assert.equal(benchmarkRuntimeDependenciesSha256(executablePath), runtimeDependenciesSha256);
+
+	const externalLibrary = path.join(path.dirname(directory), `${path.basename(directory)}.so`);
+	t.after(() => fs.rmSync(externalLibrary, { force: true }));
+	fs.writeFileSync(externalLibrary, 'external runtime library');
+	fs.symlinkSync(externalLibrary, path.join(directory, 'escaped.so'));
+	const externalDependenciesSha256 = benchmarkRuntimeDependenciesSha256(executablePath);
+	const externalSnapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(directory, 'external-snapshot'),
+		executableSha256,
+	);
+	assert.equal(externalSnapshot.runtimeDependenciesSha256, externalDependenciesSha256);
+	assert.equal(
+		fs.readFileSync(path.join(path.dirname(externalSnapshot.executablePath), 'escaped.so'), 'utf8'),
+		'external runtime library',
+	);
+});
+
 test('rejects failed, missing, duplicate, and aliased Cargo executable results', async (t) => {
 	const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-build-'));
 	t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
@@ -322,13 +494,10 @@ test('validates the strict public hardware probe schema', () => {
 	);
 	assert.throws(
 		() =>
-			validateHardwareProbe(
-				hardwareProbe({ backend: 'cpu', accelerator: 'unexpected GPU' }),
-				{
-					provider: 'whisper',
-					backend: 'cpu',
-				},
-			),
+			validateHardwareProbe(hardwareProbe({ backend: 'cpu', accelerator: 'unexpected GPU' }), {
+				provider: 'whisper',
+				backend: 'cpu',
+			}),
 		/must be 'none' for cpu/,
 	);
 });
@@ -337,10 +506,12 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 	const environment = benchmarkRuntimeEnvironment(
 		{
 			HOME: '/private/home',
+			LD_LIBRARY_PATH: '/hostile/runtime-libraries',
 			MEMORY_GB: '1',
 			Path: 'C:\\Windows\\System32',
 			RUST_LOG: 'debug',
 			OMP_NUM_THREADS: '4',
+			MUESLY_CORPUS_BENCHMARK_TOKEN: 'private campaign lock token',
 			UNRELATED_SECRET: 'do not forward',
 		},
 		{
@@ -352,8 +523,10 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 	assert.equal(environment.HOME, '/private/home');
 	assert.equal(environment.Path, 'C:\\Windows\\System32');
 	assert.equal(environment.OMP_NUM_THREADS, '4');
+	assert.equal(environment.LD_LIBRARY_PATH, undefined);
 	assert.equal(environment.MEMORY_GB, undefined);
 	assert.equal(environment.RUST_LOG, undefined);
+	assert.equal(environment.MUESLY_CORPUS_BENCHMARK_TOKEN, undefined);
 	assert.equal(environment.UNRELATED_SECRET, undefined);
 	assert.equal(environment.MUESLY_EVAL_ACCELERATOR_ID, 'GPU 0');
 	assert.equal(environment.MUESLY_WHISPER_FORCE_CPU, '0');
@@ -389,6 +562,60 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 		).MUESLY_EVAL_RUNTIME_ENV_SHA256,
 		environment.MUESLY_EVAL_RUNTIME_ENV_SHA256,
 	);
+	const runtimeDependenciesSha256 = 'a'.repeat(64);
+	const executablePath = '/private/snapshot/transcribe-fixture';
+	const bound = bindBenchmarkRuntimeDependencies(
+		environment,
+		runtimeDependenciesSha256,
+		executablePath,
+		{ platform: 'darwin' },
+	);
+	assert.equal(bound.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256, runtimeDependenciesSha256);
+	assert.notEqual(bound.MUESLY_EVAL_RUNTIME_ENV_SHA256, environment.MUESLY_EVAL_RUNTIME_ENV_SHA256);
+	assert.deepEqual(
+		bindBenchmarkRuntimeDependencies(bound, runtimeDependenciesSha256, executablePath, {
+			platform: 'darwin',
+		}),
+		bound,
+	);
+	assert.throws(
+		() =>
+			bindBenchmarkRuntimeDependencies(bound, 'b'.repeat(64), executablePath, {
+				platform: 'darwin',
+			}),
+		/bound to different dependencies/,
+	);
+	const hostileEnvironment = {
+		...environment,
+		LD_LIBRARY_PATH: '/hostile/runtime-libraries',
+	};
+	const linuxBound = bindBenchmarkRuntimeDependencies(
+		hostileEnvironment,
+		runtimeDependenciesSha256,
+		executablePath,
+		{ platform: 'linux' },
+	);
+	assert.equal(linuxBound.LD_LIBRARY_PATH, '/private/snapshot');
+	assert.notEqual(linuxBound.MUESLY_EVAL_RUNTIME_ENV_SHA256, bound.MUESLY_EVAL_RUNTIME_ENV_SHA256);
+	assert.equal(
+		bindBenchmarkRuntimeDependencies(
+			hostileEnvironment,
+			runtimeDependenciesSha256,
+			'/different/private-snapshot/transcribe-fixture',
+			{ platform: 'linux' },
+		).MUESLY_EVAL_RUNTIME_ENV_SHA256,
+		linuxBound.MUESLY_EVAL_RUNTIME_ENV_SHA256,
+	);
+	assert.throws(
+		() =>
+			bindBenchmarkRuntimeDependencies(
+				{ ...linuxBound, LD_LIBRARY_PATH: '/hostile/runtime-libraries' },
+				runtimeDependenciesSha256,
+				executablePath,
+				{ platform: 'linux' },
+			),
+		/bound to a different library directory/,
+	);
 });
 
 test('probes the exact built executable and rejects invalid process output', (t) => {
@@ -405,7 +632,11 @@ test('probes the exact built executable and rejects invalid process output', (t)
 	const probe = probeBenchmarkExecutable(executablePath, {
 		provider: 'whisper',
 		backend: 'metal',
-		environment: { MUESLY_EVAL_ACCELERATOR_ID: 'Apple M5 integrated GPU' },
+		environment: attestedRuntimeEnvironment({
+			LD_LIBRARY_PATH: '/hostile/runtime-libraries',
+			MUESLY_EVAL_ACCELERATOR_ID: 'Apple M5 integrated GPU',
+		}),
+		platform: 'linux',
 		spawnSyncImpl: (command, args, options) => {
 			invocation = { command, args, options };
 			return { status: 0, stdout: `${JSON.stringify(expectedProbe)}\n` };
@@ -415,15 +646,25 @@ test('probes the exact built executable and rejects invalid process output', (t)
 	assert.equal(invocation.command, executablePath);
 	assert.deepEqual(invocation.args, ['--provider', 'whisper', '--hardware-json']);
 	assert.deepEqual(invocation.options.environment, undefined);
-	assert.deepEqual(invocation.options.env, {
-		MUESLY_EVAL_ACCELERATOR_ID: 'Apple M5 integrated GPU',
-	});
+	assert.deepEqual(
+		invocation.options.env,
+		bindBenchmarkRuntimeDependencies(
+			attestedRuntimeEnvironment({
+				LD_LIBRARY_PATH: '/hostile/runtime-libraries',
+				MUESLY_EVAL_ACCELERATOR_ID: 'Apple M5 integrated GPU',
+			}),
+			benchmarkRuntimeDependenciesSha256(executablePath),
+			executablePath,
+			{ platform: 'linux' },
+		),
+	);
 
 	assert.throws(
 		() =>
 			probeBenchmarkExecutable(executablePath, {
 				provider: 'whisper',
 				backend: 'metal',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => ({ status: 1, stdout: '' }),
 			}),
 		/hardware probe failed/,
@@ -433,6 +674,7 @@ test('probes the exact built executable and rejects invalid process output', (t)
 			probeBenchmarkExecutable(executablePath, {
 				provider: 'whisper',
 				backend: 'metal',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => ({ status: 0, stdout: 'not json' }),
 			}),
 		/invalid JSON/,
@@ -442,6 +684,7 @@ test('probes the exact built executable and rejects invalid process output', (t)
 			probeBenchmarkExecutable(executablePath, {
 				provider: 'whisper',
 				backend: 'metal',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => ({
 					status: 0,
 					stdout: `${JSON.stringify(
@@ -456,6 +699,7 @@ test('probes the exact built executable and rejects invalid process output', (t)
 			probeBenchmarkExecutable(executablePath, {
 				provider: 'whisper',
 				backend: 'metal',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => {
 					fs.writeFileSync(executablePath, 'replacement benchmark executable');
 					return { status: 0, stdout: `${JSON.stringify(expectedProbe)}\n` };
@@ -476,7 +720,11 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 		provider: 'parakeet',
 		model: 'parakeet-test',
 		modelsDirectory: '/private/models',
-		environment: { HOME: '/private/home' },
+		environment: attestedRuntimeEnvironment({
+			HOME: '/private/home',
+			LD_LIBRARY_PATH: '/hostile/runtime-libraries',
+		}),
+		platform: 'linux',
 		spawnSyncImpl: (command, args, options) => {
 			invocation = { command, args, options };
 			return {
@@ -504,7 +752,18 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 		'--models-dir',
 		'/private/models',
 	]);
-	assert.deepEqual(invocation.options.env, { HOME: '/private/home' });
+	assert.deepEqual(
+		invocation.options.env,
+		bindBenchmarkRuntimeDependencies(
+			attestedRuntimeEnvironment({
+				HOME: '/private/home',
+				LD_LIBRARY_PATH: '/hostile/runtime-libraries',
+			}),
+			benchmarkRuntimeDependenciesSha256(executablePath),
+			executablePath,
+			{ platform: 'linux' },
+		),
+	);
 
 	assert.throws(
 		() =>
@@ -512,6 +771,7 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				provider: 'parakeet',
 				model: 'parakeet-test',
 				modelsDirectory: '/private/models',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => ({
 					status: 0,
 					stdout: '{"schema_version":1,"provider":"parakeet","model":"wrong"}\n',
@@ -525,6 +785,7 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				provider: 'parakeet',
 				model: 'parakeet-test',
 				modelsDirectory: '/private/models',
+				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => {
 					fs.writeFileSync(executablePath, 'replacement benchmark executable');
 					return {

@@ -3,7 +3,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { copyAttestedFileSnapshot } from './artifact-snapshot.ts';
+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const RUNTIME_LIBRARY_PATTERN = /(?:\.dll|\.dylib|\.so(?:\.[^/\\]+)*)$/i;
 const HARDWARE_PROBE_FIELDS = new Set([
 	'schema_version',
 	'backend',
@@ -28,7 +31,6 @@ const BENCHMARK_RUNTIME_ENVIRONMENT_NAMES = new Set([
 	'HTTPS_PROXY',
 	'LANG',
 	'LC_ALL',
-	'LD_LIBRARY_PATH',
 	'LOCALAPPDATA',
 	'NO_PROXY',
 	'PATH',
@@ -366,6 +368,134 @@ function sameFileSnapshot(left, right) {
 	);
 }
 
+function runtimeLibraryRecords(executablePath) {
+	const executableDirectory = path.dirname(executablePath);
+	const initialDirectory = fs.lstatSync(executableDirectory, { bigint: true });
+	if (!initialDirectory.isDirectory() || initialDirectory.isSymbolicLink()) {
+		throw new Error('benchmark executable directory is not a real directory');
+	}
+	const records = [];
+	for (const filename of fs.readdirSync(executableDirectory).sort()) {
+		if (!RUNTIME_LIBRARY_PATTERN.test(filename)) continue;
+		const libraryPath = path.join(executableDirectory, filename);
+		const status = fs.lstatSync(libraryPath, { bigint: true, throwIfNoEntry: false });
+		if (status?.isSymbolicLink()) {
+			const linkTarget = fs.readlinkSync(libraryPath);
+			let resolvedPath;
+			try {
+				resolvedPath = fs.realpathSync(libraryPath);
+			} catch {
+				throw new Error('benchmark runtime library link cannot be resolved safely');
+			}
+			const targetStatus = fs.lstatSync(resolvedPath, { bigint: true });
+			if (!targetStatus.isFile() || targetStatus.isSymbolicLink() || targetStatus.nlink !== 1n) {
+				throw new Error('benchmark runtime library links must resolve to unaliased files');
+			}
+			const sha256 = benchmarkExecutableSha256(resolvedPath);
+			const finalStatus = fs.lstatSync(libraryPath, { bigint: true });
+			if (
+				!finalStatus.isSymbolicLink() ||
+				!sameFileSnapshot(status, finalStatus) ||
+				fs.readlinkSync(libraryPath) !== linkTarget
+			) {
+				throw new Error('benchmark runtime library link changed while it was being hashed');
+			}
+			records.push({ filename, sha256, sourcePath: resolvedPath });
+			continue;
+		}
+		if (!status?.isFile() || status.nlink !== 1n) {
+			throw new Error('benchmark runtime libraries must be regular unaliased files');
+		}
+		records.push({
+			filename,
+			sha256: benchmarkExecutableSha256(libraryPath),
+			sourcePath: libraryPath,
+		});
+	}
+	const finalDirectory = fs.lstatSync(executableDirectory, { bigint: true });
+	if (
+		!finalDirectory.isDirectory() ||
+		finalDirectory.isSymbolicLink() ||
+		!sameFileSnapshot(initialDirectory, finalDirectory)
+	) {
+		throw new Error('benchmark runtime library set changed while it was being hashed');
+	}
+	return records;
+}
+
+function runtimeLibraryManifest(records) {
+	return records.map(({ filename, sha256 }) => ({ filename, sha256 }));
+}
+
+export function benchmarkRuntimeDependenciesSha256(executablePath) {
+	return createHash('sha256')
+		.update(
+			JSON.stringify({
+				schema_version: 1,
+				libraries: runtimeLibraryManifest(runtimeLibraryRecords(executablePath)),
+			}),
+		)
+		.digest('hex');
+}
+
+export function bindBenchmarkRuntimeDependencies(
+	environment,
+	runtimeDependenciesSha256,
+	executablePath,
+	{ platform = process.platform } = {},
+) {
+	if (environment === null || typeof environment !== 'object') {
+		throw new Error('benchmark runtime environment must be an object');
+	}
+	if (!SHA256_PATTERN.test(runtimeDependenciesSha256)) {
+		throw new Error('benchmark runtime dependency SHA-256 is invalid');
+	}
+	const normalizedExecutablePath = requiredString(
+		executablePath,
+		'benchmark runtime executable path',
+	);
+	const runtimeLibraryDirectory =
+		platform === 'linux' ? path.dirname(path.resolve(normalizedExecutablePath)) : null;
+	const currentDependenciesSha256 = environment.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256;
+	if (currentDependenciesSha256 !== undefined) {
+		if (currentDependenciesSha256 !== runtimeDependenciesSha256) {
+			throw new Error('benchmark runtime environment is bound to different dependencies');
+		}
+		if (
+			runtimeLibraryDirectory !== null &&
+			environment.LD_LIBRARY_PATH !== runtimeLibraryDirectory
+		) {
+			throw new Error('benchmark runtime environment is bound to a different library directory');
+		}
+		return { ...environment };
+	}
+	const runtimeEnvironmentSha256 = environment.MUESLY_EVAL_RUNTIME_ENV_SHA256;
+	if (!SHA256_PATTERN.test(runtimeEnvironmentSha256 ?? '')) {
+		throw new Error('benchmark runtime environment SHA-256 is missing or invalid');
+	}
+	const boundEnvironment = {
+		...environment,
+		MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256: runtimeDependenciesSha256,
+		MUESLY_EVAL_RUNTIME_ENV_SHA256: createHash('sha256')
+			.update(
+				JSON.stringify({
+					schema_version: 1,
+					runtime_environment_sha256: runtimeEnvironmentSha256,
+					runtime_dependencies_sha256: runtimeDependenciesSha256,
+					runtime_library_binding:
+						runtimeLibraryDirectory === null
+							? 'platform-default'
+							: 'LD_LIBRARY_PATH=benchmark-executable-directory-only',
+				}),
+			)
+			.digest('hex'),
+	};
+	if (runtimeLibraryDirectory !== null) {
+		boundEnvironment.LD_LIBRARY_PATH = runtimeLibraryDirectory;
+	}
+	return boundEnvironment;
+}
+
 export function benchmarkExecutableSha256(executablePath) {
 	let descriptor;
 	try {
@@ -409,6 +539,61 @@ export function benchmarkExecutableSha256(executablePath) {
 		throw new Error('probed benchmark executable is unreadable');
 	} finally {
 		if (descriptor !== undefined) fs.closeSync(descriptor);
+	}
+}
+
+export function stageBenchmarkExecutableSnapshot(
+	executablePath,
+	snapshotDirectory,
+	expectedSha256,
+	{ copyFileSnapshotImpl = copyAttestedFileSnapshot } = {},
+) {
+	if (!SHA256_PATTERN.test(expectedSha256)) {
+		throw new Error('expected benchmark executable SHA-256 is invalid');
+	}
+	if (fs.lstatSync(snapshotDirectory, { throwIfNoEntry: false }) !== undefined) {
+		throw new Error('benchmark executable snapshot destination already exists');
+	}
+	const snapshotPath = path.join(snapshotDirectory, path.basename(executablePath));
+	try {
+		fs.mkdirSync(snapshotDirectory, { mode: 0o700 });
+		const runtimeLibraries = runtimeLibraryRecords(executablePath);
+		copyFileSnapshotImpl(executablePath, snapshotPath, {
+			expectedSha256,
+			label: 'benchmark executable snapshot',
+			mode: 0o700,
+		});
+		for (const library of runtimeLibraries) {
+			copyFileSnapshotImpl(library.sourcePath, path.join(snapshotDirectory, library.filename), {
+				expectedSha256: library.sha256,
+				label: 'benchmark runtime library snapshot',
+				mode: 0o600,
+			});
+		}
+		const snapshotSha256 = benchmarkExecutableSha256(snapshotPath);
+		if (snapshotSha256 !== expectedSha256) {
+			throw new Error('benchmark executable snapshot does not match the expected SHA-256');
+		}
+		const sourceRuntimeDependenciesSha256 = createHash('sha256')
+			.update(
+				JSON.stringify({
+					schema_version: 1,
+					libraries: runtimeLibraryManifest(runtimeLibraries),
+				}),
+			)
+			.digest('hex');
+		const snapshotRuntimeDependenciesSha256 = benchmarkRuntimeDependenciesSha256(snapshotPath);
+		if (snapshotRuntimeDependenciesSha256 !== sourceRuntimeDependenciesSha256) {
+			throw new Error('benchmark runtime library snapshot does not match the expected SHA-256');
+		}
+		return {
+			executablePath: snapshotPath,
+			sha256: snapshotSha256,
+			runtimeDependenciesSha256: snapshotRuntimeDependenciesSha256,
+		};
+	} catch (error) {
+		fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+		throw error;
 	}
 }
 
@@ -474,12 +659,7 @@ export function validateHardwareProbe(probe, { provider, backend } = {}) {
 			`hardware probe backend '${probe.backend}' does not match requested '${expectedBackend}'`,
 		);
 	}
-	for (const field of [
-		'backend',
-		'operating_system',
-		'architecture',
-		'accelerator',
-	]) {
+	for (const field of ['backend', 'operating_system', 'architecture', 'accelerator']) {
 		requiredString(probe[field], `hardware probe.${field}`);
 	}
 	validateHardwareProfile(probe.hardware_profile, 'hardware probe.hardware_profile');
@@ -503,11 +683,24 @@ export function validateHardwareProbe(probe, { provider, backend } = {}) {
 
 export function probeBenchmarkExecutable(
 	executablePath,
-	{ provider, backend, environment = process.env, spawnSyncImpl = spawnSync } = {},
+	{
+		provider,
+		backend,
+		environment = process.env,
+		platform = process.platform,
+		spawnSyncImpl = spawnSync,
+	} = {},
 ) {
 	const executableSha256Before = benchmarkExecutableSha256(executablePath);
+	const runtimeDependenciesSha256Before = benchmarkRuntimeDependenciesSha256(executablePath);
+	const boundEnvironment = bindBenchmarkRuntimeDependencies(
+		environment,
+		runtimeDependenciesSha256Before,
+		executablePath,
+		{ platform },
+	);
 	const run = spawnSyncImpl(executablePath, ['--provider', provider, '--hardware-json'], {
-		env: environment,
+		env: boundEnvironment,
 		encoding: 'utf8',
 		stdio: ['ignore', 'pipe', 'inherit'],
 		maxBuffer: 1024 * 1024,
@@ -515,6 +708,9 @@ export function probeBenchmarkExecutable(
 	const executableSha256After = benchmarkExecutableSha256(executablePath);
 	if (executableSha256After !== executableSha256Before) {
 		throw new Error('benchmark executable changed while the hardware probe was running');
+	}
+	if (benchmarkRuntimeDependenciesSha256(executablePath) !== runtimeDependenciesSha256Before) {
+		throw new Error('benchmark runtime libraries changed while the hardware probe was running');
 	}
 	if (run.error || run.status !== 0) {
 		throw new Error(
@@ -545,16 +741,21 @@ export function prepareBenchmarkModel(
 		model,
 		modelsDirectory,
 		environment = process.env,
+		platform = process.platform,
 		spawnSyncImpl = spawnSync,
 	} = {},
 ) {
 	const normalizedProvider = requiredString(provider, 'benchmark provider');
 	const normalizedModel = requiredString(model, 'benchmark model');
-	const normalizedModelsDirectory = requiredString(
-		modelsDirectory,
-		'benchmark models directory',
-	);
+	const normalizedModelsDirectory = requiredString(modelsDirectory, 'benchmark models directory');
 	const executableSha256Before = benchmarkExecutableSha256(executablePath);
+	const runtimeDependenciesSha256Before = benchmarkRuntimeDependenciesSha256(executablePath);
+	const boundEnvironment = bindBenchmarkRuntimeDependencies(
+		environment,
+		runtimeDependenciesSha256Before,
+		executablePath,
+		{ platform },
+	);
 	const run = spawnSyncImpl(
 		executablePath,
 		[
@@ -567,7 +768,7 @@ export function prepareBenchmarkModel(
 			normalizedModelsDirectory,
 		],
 		{
-			env: environment,
+			env: boundEnvironment,
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'inherit'],
 			maxBuffer: 1024 * 1024,
@@ -576,6 +777,9 @@ export function prepareBenchmarkModel(
 	const executableSha256After = benchmarkExecutableSha256(executablePath);
 	if (executableSha256After !== executableSha256Before) {
 		throw new Error('benchmark executable changed while model preparation was running');
+	}
+	if (benchmarkRuntimeDependenciesSha256(executablePath) !== runtimeDependenciesSha256Before) {
+		throw new Error('benchmark runtime libraries changed while model preparation was running');
 	}
 	if (run.error || run.status !== 0) {
 		throw new Error(

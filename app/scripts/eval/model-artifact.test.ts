@@ -8,6 +8,7 @@ import {
 	coreMlEncoderBundlePath,
 	modelArtifactSha256,
 	resolveModelsDirectory,
+	stageModelArtifactSnapshot,
 } from './model-artifact.ts';
 
 test('resolves relative model directories from the Cargo working directory', () => {
@@ -137,6 +138,158 @@ test('fingerprints every file in the selected Parakeet artifact set', (t) => {
 	const before = modelArtifactSha256('parakeet', 'test', directory, 'onnx-cpu');
 	fs.appendFileSync(path.join(modelDirectory, 'vocab.txt'), 'changed');
 	assert.notEqual(modelArtifactSha256('parakeet', 'test', directory, 'onnx-cpu'), before);
+});
+
+test('stages complete Whisper, Core ML, and Parakeet artifact snapshots', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-snapshot-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const modelsDirectory = path.join(directory, 'models');
+	fs.mkdirSync(modelsDirectory);
+
+	const whisperPath = path.join(modelsDirectory, 'ggml-whisper.bin');
+	fs.writeFileSync(whisperPath, 'whisper bytes');
+	const whisperSha256 = modelArtifactSha256('whisper', 'whisper', modelsDirectory, 'cpu');
+	const whisperSnapshot = stageModelArtifactSnapshot(
+		'whisper',
+		'whisper',
+		modelsDirectory,
+		'cpu',
+		path.join(directory, 'whisper-snapshot'),
+		whisperSha256,
+	);
+	assert.equal(whisperSnapshot.sha256, whisperSha256);
+
+	const coreMlModelPath = path.join(modelsDirectory, 'ggml-coreml-q5_0.bin');
+	const coreMlBundlePath = path.join(modelsDirectory, 'ggml-coreml-encoder.mlmodelc');
+	fs.writeFileSync(coreMlModelPath, 'Core ML GGML bytes');
+	fs.mkdirSync(path.join(coreMlBundlePath, 'weights'), { recursive: true });
+	fs.writeFileSync(path.join(coreMlBundlePath, 'model.mil'), 'Core ML program');
+	fs.writeFileSync(path.join(coreMlBundlePath, 'weights', 'weight.bin'), 'Core ML weights');
+	const coreMlSha256 = modelArtifactSha256(
+		'whisper',
+		'coreml-q5_0',
+		modelsDirectory,
+		'coreml-metal',
+	);
+	const coreMlSnapshot = stageModelArtifactSnapshot(
+		'whisper',
+		'coreml-q5_0',
+		modelsDirectory,
+		'coreml-metal',
+		path.join(directory, 'coreml-snapshot'),
+		coreMlSha256,
+	);
+	assert.equal(coreMlSnapshot.sha256, coreMlSha256);
+	assert(
+		fs.existsSync(
+			path.join(
+				coreMlSnapshot.modelsDirectory,
+				'ggml-coreml-encoder.mlmodelc',
+				'weights',
+				'weight.bin',
+			),
+		),
+	);
+
+	const parakeetDirectory = path.join(modelsDirectory, 'parakeet', 'parakeet-test');
+	fs.mkdirSync(parakeetDirectory, { recursive: true });
+	for (const filename of [
+		'encoder-model.int8.onnx',
+		'decoder_joint-model.int8.onnx',
+		'nemo128.onnx',
+		'vocab.txt',
+	]) {
+		fs.writeFileSync(path.join(parakeetDirectory, filename), filename);
+	}
+	const parakeetSha256 = modelArtifactSha256(
+		'parakeet',
+		'parakeet-test',
+		modelsDirectory,
+		'onnx-cpu',
+	);
+	const parakeetSnapshot = stageModelArtifactSnapshot(
+		'parakeet',
+		'parakeet-test',
+		modelsDirectory,
+		'onnx-cpu',
+		path.join(directory, 'parakeet-snapshot'),
+		parakeetSha256,
+	);
+	assert.equal(parakeetSnapshot.sha256, parakeetSha256);
+
+	fs.writeFileSync(whisperPath, 'changed source bytes');
+	fs.writeFileSync(path.join(coreMlBundlePath, 'weights', 'weight.bin'), 'changed source weights');
+	fs.writeFileSync(path.join(parakeetDirectory, 'vocab.txt'), 'changed source vocabulary');
+	assert.equal(
+		modelArtifactSha256('whisper', 'whisper', whisperSnapshot.modelsDirectory, 'cpu'),
+		whisperSha256,
+	);
+	assert.equal(
+		modelArtifactSha256('whisper', 'coreml-q5_0', coreMlSnapshot.modelsDirectory, 'coreml-metal'),
+		coreMlSha256,
+	);
+	assert.equal(
+		modelArtifactSha256('parakeet', 'parakeet-test', parakeetSnapshot.modelsDirectory, 'onnx-cpu'),
+		parakeetSha256,
+	);
+});
+
+test('rejects a model file transiently replaced only while its snapshot is copied', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-snapshot-attack-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const modelsDirectory = path.join(directory, 'models');
+	const modelDirectory = path.join(modelsDirectory, 'parakeet', 'test');
+	fs.mkdirSync(modelDirectory, { recursive: true });
+	for (const filename of [
+		'encoder-model.int8.onnx',
+		'decoder_joint-model.int8.onnx',
+		'nemo128.onnx',
+		'vocab.txt',
+	]) {
+		fs.writeFileSync(path.join(modelDirectory, filename), `exact ${filename}`);
+	}
+	const expectedSha256 = modelArtifactSha256('parakeet', 'test', modelsDirectory, 'onnx-cpu');
+	const attackedSource = path.join(modelDirectory, 'encoder-model.int8.onnx');
+	const heldSource = path.join(modelDirectory, 'held-encoder.onnx');
+	let attacked = false;
+
+	assert.throws(
+		() =>
+			stageModelArtifactSnapshot(
+				'parakeet',
+				'test',
+				modelsDirectory,
+				'onnx-cpu',
+				path.join(directory, 'snapshot'),
+				expectedSha256,
+				{
+					copyFileSnapshotImpl: (sourcePath, destinationPath, options) => {
+						if (!attacked && sourcePath === attackedSource) {
+							attacked = true;
+							fs.renameSync(sourcePath, heldSource);
+							try {
+								fs.writeFileSync(sourcePath, 'transient malicious model bytes');
+								fs.copyFileSync(sourcePath, destinationPath);
+								fs.chmodSync(destinationPath, options.mode);
+							} finally {
+								fs.rmSync(sourcePath, { force: true });
+								fs.renameSync(heldSource, sourcePath);
+							}
+							return;
+						}
+						fs.copyFileSync(sourcePath, destinationPath);
+						fs.chmodSync(destinationPath, options.mode);
+					},
+				},
+			),
+		/model artifact snapshot does not match the expected SHA-256/,
+	);
+	assert(attacked);
+	assert.equal(
+		modelArtifactSha256('parakeet', 'test', modelsDirectory, 'onnx-cpu'),
+		expectedSha256,
+	);
+	assert(!fs.existsSync(path.join(directory, 'snapshot')));
 });
 
 test('rejects aliased model artifact files', async (t) => {

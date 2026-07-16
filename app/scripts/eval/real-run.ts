@@ -26,19 +26,27 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { createPrivateArtifactSnapshotDirectory } from './artifact-snapshot.ts';
 import { forcesWhisperCpu, requiresWhisperGpu } from './backend.ts';
 import {
 	benchmarkExecutableSha256,
 	benchmarkRuntimeEnvironment,
+	benchmarkRuntimeDependenciesSha256,
+	bindBenchmarkRuntimeDependencies,
 	buildBenchmarkExecutable,
 	cargoFeaturesForBenchmark,
 	prepareBenchmarkModel,
 	probeBenchmarkExecutable,
+	stageBenchmarkExecutableSnapshot,
 } from './benchmark-executable.ts';
 import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { evaluatorBuildEnvironment, evaluatorRevision } from './evaluator-revision.ts';
-import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
+import {
+	modelArtifactSha256,
+	resolveModelsDirectory,
+	stageModelArtifactSnapshot,
+} from './model-artifact.ts';
 import { parseRealRunArgs } from './real-run-options.ts';
 import { validateBenchmarkMetrics, validateRunReport } from './report.ts';
 import { WER_SCORER_ID, werDetails } from './wer.ts';
@@ -114,7 +122,7 @@ console.error(
 		' (first run compiles + downloads the model)...',
 );
 
-const benchmarkEnvironment = benchmarkRuntimeEnvironment(process.env, {
+let benchmarkEnvironment = benchmarkRuntimeEnvironment(process.env, {
 	accelerator,
 	forceWhisperCpu: forcesWhisperCpu(provider, backend),
 	requireWhisperAcceleration: requiresWhisperGpu(provider, backend),
@@ -134,8 +142,35 @@ try {
 let builtBenchmark;
 let hardwareProbe;
 let initialBenchmarkExecutableDigest = null;
+let initialRuntimeDependenciesDigest = null;
 let initialEvaluatorRevision = null;
 let initialModelArtifactDigest = null;
+let benchmarkExecutablePath = null;
+let benchmarkModelsDirectory = null;
+const privateTemporaryDirectories = [];
+let privateDirectoriesCleaned = false;
+const cleanupPrivateDirectories = () => {
+	if (privateDirectoriesCleaned) return;
+	privateDirectoriesCleaned = true;
+	for (const directory of privateTemporaryDirectories.reverse()) {
+		try {
+			fs.rmSync(directory, { recursive: true, force: true });
+		} catch {
+			// Best effort during process teardown; paths remain private if removal fails.
+		}
+	}
+};
+const signalHandlers = {};
+const terminateAfterCleanup = (signal) => {
+	cleanupPrivateDirectories();
+	process.off(signal, signalHandlers[signal]);
+	process.kill(process.pid, signal);
+};
+signalHandlers.SIGINT = () => terminateAfterCleanup('SIGINT');
+signalHandlers.SIGTERM = () => terminateAfterCleanup('SIGTERM');
+process.once('exit', cleanupPrivateDirectories);
+process.on('SIGINT', signalHandlers.SIGINT);
+process.on('SIGTERM', signalHandlers.SIGTERM);
 try {
 	const cargoFeatures = cargoFeaturesForBenchmark(provider, backend);
 	if (outputPath) {
@@ -150,13 +185,29 @@ try {
 		buildEnv: buildEnvironment,
 	});
 	initialBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+	const executableSnapshotDirectory = createPrivateArtifactSnapshotDirectory(
+		path.dirname(builtBenchmark.executablePath),
+	);
+	privateTemporaryDirectories.push(executableSnapshotDirectory);
+	const executableSnapshot = stageBenchmarkExecutableSnapshot(
+		builtBenchmark.executablePath,
+		path.join(executableSnapshotDirectory, 'executable'),
+		initialBenchmarkExecutableDigest,
+	);
+	benchmarkExecutablePath = executableSnapshot.executablePath;
+	initialRuntimeDependenciesDigest = executableSnapshot.runtimeDependenciesSha256;
+	benchmarkEnvironment = bindBenchmarkRuntimeDependencies(
+		benchmarkEnvironment,
+		initialRuntimeDependenciesDigest,
+		benchmarkExecutablePath,
+	);
 	if (
 		initialEvaluatorRevision &&
 		JSON.stringify(builtBenchmark.cargoFeatures) !== JSON.stringify(cargoFeatures)
 	) {
 		throw new Error('benchmark build features changed after evaluator provenance was collected');
 	}
-	hardwareProbe = probeBenchmarkExecutable(builtBenchmark.executablePath, {
+	hardwareProbe = probeBenchmarkExecutable(benchmarkExecutablePath, {
 		provider,
 		backend,
 		environment: benchmarkEnvironment,
@@ -164,7 +215,7 @@ try {
 	if (hardwareProbe.benchmark_executable_sha256 !== initialBenchmarkExecutableDigest) {
 		throw new Error('benchmark executable changed between build and hardware probe');
 	}
-	prepareBenchmarkModel(builtBenchmark.executablePath, {
+	prepareBenchmarkModel(benchmarkExecutablePath, {
 		provider,
 		model,
 		modelsDirectory: evalModelsDir,
@@ -176,6 +227,17 @@ try {
 		evalModelsDir,
 		hardwareProbe.backend,
 	);
+	const modelSnapshotDirectory = createPrivateArtifactSnapshotDirectory(evalModelsDir);
+	privateTemporaryDirectories.push(modelSnapshotDirectory);
+	const modelSnapshot = stageModelArtifactSnapshot(
+		provider,
+		model,
+		evalModelsDir,
+		hardwareProbe.backend,
+		path.join(modelSnapshotDirectory, 'model'),
+		initialModelArtifactDigest,
+	);
+	benchmarkModelsDirectory = modelSnapshot.modelsDirectory;
 } catch (error) {
 	console.error(error.message);
 	process.exit(1);
@@ -185,7 +247,7 @@ let failed = false;
 const runStartedAt = new Date().toISOString();
 const runResults = [];
 const metricsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-'));
-process.once('exit', () => fs.rmSync(metricsDirectory, { recursive: true, force: true }));
+privateTemporaryDirectories.push(metricsDirectory);
 for (const sample of fixtures) {
 	const audio = sample.audio_file;
 	const refText = fs.readFileSync(sample.reference_file, 'utf8').trim();
@@ -204,13 +266,13 @@ for (const sample of fixtures) {
 	if (whisperLanguage) {
 		exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', whisperLanguage);
 	}
-	exampleArgs.push(evalModelsDir);
+	exampleArgs.push(benchmarkModelsDirectory);
 	let sampleModelArtifactDigest;
 	try {
 		sampleModelArtifactDigest = modelArtifactSha256(
 			provider,
 			model,
-			evalModelsDir,
+			benchmarkModelsDirectory,
 			hardwareProbe.backend,
 		);
 	} catch (error) {
@@ -225,7 +287,7 @@ for (const sample of fixtures) {
 	}
 	let sampleBenchmarkExecutableDigest;
 	try {
-		sampleBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+		sampleBenchmarkExecutableDigest = benchmarkExecutableSha256(benchmarkExecutablePath);
 	} catch (error) {
 		console.error(
 			`${sample.id}: failed to fingerprint the benchmark executable before transcription: ${error.message}`,
@@ -236,7 +298,20 @@ for (const sample of fixtures) {
 		console.error(`${sample.id}: benchmark executable changed before transcription`);
 		process.exit(1);
 	}
-	const run = spawnSync(builtBenchmark.executablePath, exampleArgs, {
+	let sampleRuntimeDependenciesDigest;
+	try {
+		sampleRuntimeDependenciesDigest = benchmarkRuntimeDependenciesSha256(benchmarkExecutablePath);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint benchmark runtime libraries before transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (sampleRuntimeDependenciesDigest !== initialRuntimeDependenciesDigest) {
+		console.error(`${sample.id}: benchmark runtime libraries changed before transcription`);
+		process.exit(1);
+	}
+	const run = spawnSync(benchmarkExecutablePath, exampleArgs, {
 		cwd: repoRoot,
 		env: benchmarkEnvironment,
 		encoding: 'utf8',
@@ -245,7 +320,7 @@ for (const sample of fixtures) {
 	});
 	let finalSampleBenchmarkExecutableDigest;
 	try {
-		finalSampleBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+		finalSampleBenchmarkExecutableDigest = benchmarkExecutableSha256(benchmarkExecutablePath);
 	} catch (error) {
 		console.error(
 			`${sample.id}: failed to fingerprint the benchmark executable after transcription: ${error.message}`,
@@ -259,12 +334,29 @@ for (const sample of fixtures) {
 		console.error(`${sample.id}: benchmark executable changed during transcription`);
 		process.exit(1);
 	}
+	let finalSampleRuntimeDependenciesDigest;
+	try {
+		finalSampleRuntimeDependenciesDigest =
+			benchmarkRuntimeDependenciesSha256(benchmarkExecutablePath);
+	} catch (error) {
+		console.error(
+			`${sample.id}: failed to fingerprint benchmark runtime libraries after transcription: ${error.message}`,
+		);
+		process.exit(1);
+	}
+	if (
+		finalSampleRuntimeDependenciesDigest !== sampleRuntimeDependenciesDigest ||
+		finalSampleRuntimeDependenciesDigest !== initialRuntimeDependenciesDigest
+	) {
+		console.error(`${sample.id}: benchmark runtime libraries changed during transcription`);
+		process.exit(1);
+	}
 	let finalSampleModelArtifactDigest;
 	try {
 		finalSampleModelArtifactDigest = modelArtifactSha256(
 			provider,
 			model,
-			evalModelsDir,
+			benchmarkModelsDirectory,
 			hardwareProbe.backend,
 		);
 	} catch (error) {
@@ -281,6 +373,9 @@ for (const sample of fixtures) {
 		process.exit(1);
 	}
 	if (run.status !== 0) {
+		if (run.signal === 'SIGINT' || run.signal === 'SIGTERM') {
+			terminateAfterCleanup(run.signal);
+		}
 		console.error(`${sample.id}: real transcription failed (exit ${run.status ?? 'signal'})`);
 		process.exit(run.status || 1);
 	}
@@ -371,7 +466,7 @@ try {
 	finalModelArtifactDigest = modelArtifactSha256(
 		provider,
 		model,
-		evalModelsDir,
+		benchmarkModelsDirectory,
 		hardwareProbe.backend,
 	);
 } catch (error) {
@@ -384,13 +479,24 @@ if (finalModelArtifactDigest !== initialModelArtifactDigest) {
 }
 let finalBenchmarkExecutableDigest;
 try {
-	finalBenchmarkExecutableDigest = benchmarkExecutableSha256(builtBenchmark.executablePath);
+	finalBenchmarkExecutableDigest = benchmarkExecutableSha256(benchmarkExecutablePath);
 } catch (error) {
 	console.error(`failed to fingerprint benchmark executable: ${error.message}`);
 	process.exit(1);
 }
 if (finalBenchmarkExecutableDigest !== initialBenchmarkExecutableDigest) {
 	console.error('benchmark executable changed while the benchmark was running');
+	process.exit(1);
+}
+let finalRuntimeDependenciesDigest;
+try {
+	finalRuntimeDependenciesDigest = benchmarkRuntimeDependenciesSha256(benchmarkExecutablePath);
+} catch (error) {
+	console.error(`failed to fingerprint benchmark runtime libraries: ${error.message}`);
+	process.exit(1);
+}
+if (finalRuntimeDependenciesDigest !== initialRuntimeDependenciesDigest) {
+	console.error('benchmark runtime libraries changed while the benchmark was running');
 	process.exit(1);
 }
 

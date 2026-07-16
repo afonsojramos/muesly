@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -93,6 +93,14 @@ process.stdout.write([
 	return { benchmarkExecutable, modelsDirectory };
 }
 
+async function waitForPath(filePath, timeoutMs = 5000) {
+	const deadline = Date.now() + timeoutMs;
+	while (!fs.existsSync(filePath)) {
+		if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path.basename(filePath)}`);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
 test('requires strict acceleration only for Whisper GPU backends', () => {
 	for (const backend of ['metal', 'coreml', 'cuda', 'vulkan', 'hipblas']) {
 		assert.equal(requiresWhisperGpu('whisper', backend), true, backend);
@@ -173,7 +181,152 @@ test('removes temporary metrics after a failed transcription process', (t) => {
 	assert.match(run.stderr, /real transcription failed \(exit 17\)/);
 	assert.doesNotMatch(run.stderr, /failed to build transcribe-fixture/);
 	assert.deepEqual(
-		fs.readdirSync(temporaryRoot).filter((entry) => entry.startsWith('muesly-eval-')),
+		fs.readdirSync(temporaryRoot).filter((entry) => entry.includes('muesly-eval')),
+		[],
+	);
+	assert.deepEqual(
+		fs.readdirSync(modelsDirectory).filter((entry) => entry.includes('muesly-eval')),
+		[],
+	);
+});
+
+test('runs inference only from private executable and model snapshots', (t) => {
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
+	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-snapshot-test-'));
+	t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+	const originalExecutable = path.join(temporaryRoot, 'transcribe-fixture');
+	const originalModelsDirectory = path.join(temporaryRoot, 'models');
+	const originalModel = path.join(originalModelsDirectory, 'ggml-tiny.bin');
+	const heldExecutable = path.join(temporaryRoot, 'held-transcribe-fixture');
+	const heldModel = path.join(temporaryRoot, 'held-model.bin');
+	const regularRunSource = `
+const metricsPath = process.argv[process.argv.indexOf('--metrics-json') + 1];
+const modelsDirectory = process.argv.at(-1);
+if (process.argv[1] === ${JSON.stringify(originalExecutable)}) process.exit(31);
+if (modelsDirectory === ${JSON.stringify(originalModelsDirectory)}) process.exit(32);
+if (fs.readFileSync(modelsDirectory + '/ggml-tiny.bin', 'utf8') !== 'prepared whisper model') {
+	process.exit(33);
+}
+fs.renameSync(${JSON.stringify(originalExecutable)}, ${JSON.stringify(heldExecutable)});
+fs.renameSync(${JSON.stringify(originalModel)}, ${JSON.stringify(heldModel)});
+try {
+	fs.writeFileSync(${JSON.stringify(originalExecutable)}, 'transient malicious executable', {
+		mode: 0o700,
+	});
+	fs.writeFileSync(${JSON.stringify(originalModel)}, 'transient malicious model');
+	const benchmarkExecutableSha256 = createHash('sha256')
+		.update(fs.readFileSync(process.argv[1]))
+		.digest('hex');
+	fs.writeFileSync(
+		metricsPath,
+		JSON.stringify({
+			schema_version: 5,
+			provider: 'whisper',
+			model: 'tiny',
+			backend: 'cpu',
+			operating_system: 'linux',
+			architecture: 'x86_64',
+			hardware_profile:
+				'cpu=test;logical_cpus=1;memory_bytes=1;runtime_env_sha256=${'d'.repeat(64)}',
+			accelerator: 'none',
+			benchmark_executable_sha256: benchmarkExecutableSha256,
+			audio_duration_seconds: 20,
+			decode_seconds: 0,
+			vad_seconds: 0,
+			model_download_seconds: 0,
+			model_load_seconds: 0,
+			inference_seconds: 0,
+			inference_rtf: 0,
+			measured_total_seconds: 0,
+			baseline_rss_mb: 1,
+			peak_rss_mb: 1,
+			peak_rss_delta_mb: 0,
+		}) + '\\n',
+	);
+} finally {
+	fs.rmSync(${JSON.stringify(originalExecutable)}, { force: true });
+	fs.rmSync(${JSON.stringify(originalModel)}, { force: true });
+	fs.renameSync(${JSON.stringify(heldExecutable)}, ${JSON.stringify(originalExecutable)});
+	fs.renameSync(${JSON.stringify(heldModel)}, ${JSON.stringify(originalModel)});
+}
+`;
+	const { modelsDirectory } = writeFakeBenchmarkToolchain(temporaryRoot, regularRunSource);
+	const run = spawnSync(
+		process.execPath,
+		[realRun, '--fixture', 'und-synthetic-silence', '--models-dir', modelsDirectory],
+		{
+			encoding: 'utf8',
+			env: isolatedToolEnvironment(temporaryRoot),
+		},
+	);
+	assert.equal(run.status, 0, run.stderr);
+	assert.equal(fs.readFileSync(originalExecutable, 'utf8').includes('--hardware-json'), true);
+	assert.equal(fs.readFileSync(originalModel, 'utf8'), 'prepared whisper model');
+	assert.deepEqual(
+		fs.readdirSync(temporaryRoot).filter((entry) => entry.includes('muesly-eval')),
+		[],
+	);
+	assert.deepEqual(
+		fs.readdirSync(modelsDirectory).filter((entry) => entry.includes('muesly-eval')),
+		[],
+	);
+});
+
+test('cleans private snapshots when the benchmark process group is terminated', async (t) => {
+	if (process.platform === 'win32') {
+		return t.skip('negative-PID process-group signals are Unix-specific');
+	}
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
+	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-signal-test-'));
+	const markerPath = path.join(temporaryRoot, 'inference-started');
+	t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
+	const { modelsDirectory } = writeFakeBenchmarkToolchain(
+		temporaryRoot,
+		`fs.writeFileSync(${JSON.stringify(markerPath)}, 'ready'); setInterval(() => {}, 1000);`,
+	);
+	const run = spawn(
+		process.execPath,
+		[realRun, '--fixture', 'und-synthetic-silence', '--models-dir', modelsDirectory],
+		{
+			detached: true,
+			env: isolatedToolEnvironment(temporaryRoot),
+			stdio: ['ignore', 'pipe', 'pipe'],
+		},
+	);
+	let stderr = '';
+	run.stderr.setEncoding('utf8');
+	run.stderr.on('data', (chunk) => {
+		stderr += chunk;
+	});
+	t.after(() => {
+		if (run.exitCode === null && run.signalCode === null) {
+			try {
+				process.kill(-run.pid, 'SIGKILL');
+			} catch {
+				// The process group already exited.
+			}
+		}
+	});
+	await waitForPath(markerPath);
+	const exitResult = new Promise((resolve, reject) => {
+		const timeout = setTimeout(
+			() => reject(new Error(`signal cleanup timed out: ${stderr}`)),
+			5000,
+		);
+		run.once('exit', (code, signal) => {
+			clearTimeout(timeout);
+			resolve({ code, signal });
+		});
+	});
+	process.kill(-run.pid, 'SIGTERM');
+	const result = await exitResult;
+	assert.deepEqual(result, { code: null, signal: 'SIGTERM' });
+	assert.deepEqual(
+		fs.readdirSync(temporaryRoot).filter((entry) => entry.includes('muesly-eval')),
+		[],
+	);
+	assert.deepEqual(
+		fs.readdirSync(modelsDirectory).filter((entry) => entry.includes('muesly-eval')),
 		[],
 	);
 });

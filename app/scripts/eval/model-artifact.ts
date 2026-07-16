@@ -2,6 +2,10 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { copyAttestedFileSnapshot } from './artifact-snapshot.ts';
+
+const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+
 function entryAt(filePath) {
 	return fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
 }
@@ -153,6 +157,76 @@ function directoryArtifactManifest(directoryPath) {
 	return records;
 }
 
+function copyDirectoryArtifactSnapshot(
+	sourceDirectory,
+	destinationDirectory,
+	copyFileSnapshotImpl,
+) {
+	const visitedDirectories = new Set();
+
+	const visit = (sourcePath, destinationPath) => {
+		const initial = requireDirectory(sourcePath, 'model artifact directory');
+		const identity = directoryIdentity(initial);
+		if (visitedDirectories.has(identity)) {
+			throw new Error(`model artifact directory is aliased: ${sourcePath}`);
+		}
+		visitedDirectories.add(identity);
+
+		let descriptor;
+		try {
+			descriptor = fs.openSync(
+				sourcePath,
+				fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0),
+			);
+			const opened = fs.fstatSync(descriptor, { bigint: true });
+			if (!isDirectory(opened) || !sameFileSnapshot(initial, opened)) {
+				throw new Error(`model artifact directory changed while it was opened: ${sourcePath}`);
+			}
+			fs.mkdirSync(destinationPath, { mode: 0o700 });
+			const entries = fs
+				.readdirSync(sourcePath, { encoding: 'buffer', withFileTypes: true })
+				.sort((left, right) => Buffer.compare(left.name, right.name));
+			for (const entry of entries) {
+				const filename = utf8Filename(entry.name, sourcePath);
+				const sourceChild = path.join(sourcePath, filename);
+				const destinationChild = path.join(destinationPath, filename);
+				const status = entryAt(sourceChild);
+				if (status?.isSymbolicLink()) {
+					throw new Error(`model artifact entries cannot be symbolic links: ${sourceChild}`);
+				}
+				if (status?.isDirectory()) {
+					visit(sourceChild, destinationChild);
+				} else if (status?.isFile()) {
+					copyFileSnapshotImpl(sourceChild, destinationChild, {
+						label: 'model artifact snapshot file',
+						mode: 0o600,
+					});
+				} else {
+					throw new Error(
+						`model artifact entries must be regular files or directories: ${sourceChild}`,
+					);
+				}
+			}
+			const finalDescriptor = fs.fstatSync(descriptor, { bigint: true });
+			const finalPath = entryAt(sourcePath);
+			if (
+				!isDirectory(finalDescriptor) ||
+				!isDirectory(finalPath) ||
+				!sameFileSnapshot(opened, finalDescriptor) ||
+				!sameFileSnapshot(finalDescriptor, finalPath)
+			) {
+				throw new Error(
+					`model artifact directory changed while it was being snapshotted: ${sourcePath}`,
+				);
+			}
+		} finally {
+			if (descriptor !== undefined) fs.closeSync(descriptor);
+		}
+	};
+
+	visit(sourceDirectory, destinationDirectory);
+}
+
 /**
  * Mirror whisper.cpp's `whisper_get_coreml_path_encoder` exactly:
  * remove the final extension, then remove a trailing five-character `-qX_Y`
@@ -201,6 +275,17 @@ function whisperArtifactSha256(modelPath, reportedBackend) {
 		.digest('hex');
 }
 
+function parakeetArtifactFilenames(modelDirectory) {
+	const int8 = entryAt(path.join(modelDirectory, 'encoder-model.int8.onnx')) !== undefined;
+	const filenames = int8
+		? ['encoder-model.int8.onnx', 'decoder_joint-model.int8.onnx', 'nemo128.onnx', 'vocab.txt']
+		: ['encoder-model.onnx', 'decoder_joint-model.onnx', 'nemo128.onnx', 'vocab.txt'];
+	if (!int8 && entryAt(path.join(modelDirectory, 'encoder-model.onnx.data')) !== undefined) {
+		filenames.splice(1, 0, 'encoder-model.onnx.data');
+	}
+	return filenames;
+}
+
 /**
  * Fingerprint the bytes actually consumed by an evaluation model.
  *
@@ -220,24 +305,87 @@ export function modelArtifactSha256(provider, model, modelsDirectory, reportedBa
 	if (provider !== 'parakeet') throw new Error(`unsupported model provider: ${provider}`);
 
 	const modelDirectory = path.join(modelsDirectory, 'parakeet', model);
-	const selectFilenames = () => {
-		const int8 = entryAt(path.join(modelDirectory, 'encoder-model.int8.onnx')) !== undefined;
-		const filenames = int8
-			? ['encoder-model.int8.onnx', 'decoder_joint-model.int8.onnx', 'nemo128.onnx', 'vocab.txt']
-			: ['encoder-model.onnx', 'decoder_joint-model.onnx', 'nemo128.onnx', 'vocab.txt'];
-		if (!int8 && entryAt(path.join(modelDirectory, 'encoder-model.onnx.data')) !== undefined) {
-			filenames.splice(1, 0, 'encoder-model.onnx.data');
-		}
-		return filenames;
-	};
-	const filenames = selectFilenames();
+	const filenames = parakeetArtifactFilenames(modelDirectory);
 	const manifest = filenames
 		.map((filename) => `${filename}\0${sha256File(path.join(modelDirectory, filename))}`)
 		.join('\n');
-	if (JSON.stringify(selectFilenames()) !== JSON.stringify(filenames)) {
+	if (JSON.stringify(parakeetArtifactFilenames(modelDirectory)) !== JSON.stringify(filenames)) {
 		throw new Error('Parakeet model artifact set changed while it was being hashed');
 	}
 	return createHash('sha256').update(manifest).digest('hex');
+}
+
+export function stageModelArtifactSnapshot(
+	provider,
+	model,
+	modelsDirectory,
+	reportedBackend,
+	snapshotRoot,
+	expectedSha256,
+	{ copyFileSnapshotImpl = copyAttestedFileSnapshot } = {},
+) {
+	if (!SHA256_PATTERN.test(expectedSha256)) {
+		throw new Error('expected model artifact SHA-256 is invalid');
+	}
+	if (entryAt(snapshotRoot) !== undefined) {
+		throw new Error('model artifact snapshot destination already exists');
+	}
+	const snapshotModelsDirectory = path.join(snapshotRoot, 'models');
+	try {
+		fs.mkdirSync(snapshotRoot, { mode: 0o700 });
+		fs.mkdirSync(snapshotModelsDirectory, { mode: 0o700 });
+		if (provider === 'whisper') {
+			const filename = `ggml-${model}.bin`;
+			copyFileSnapshotImpl(
+				path.join(modelsDirectory, filename),
+				path.join(snapshotModelsDirectory, filename),
+				{
+					label: 'Whisper model artifact snapshot',
+					mode: 0o600,
+				},
+			);
+			if (reportedBackend === 'coreml-metal') {
+				copyDirectoryArtifactSnapshot(
+					coreMlEncoderBundlePath(path.join(modelsDirectory, filename)),
+					coreMlEncoderBundlePath(path.join(snapshotModelsDirectory, filename)),
+					copyFileSnapshotImpl,
+				);
+			}
+		} else if (provider === 'parakeet') {
+			const sourceDirectory = path.join(modelsDirectory, 'parakeet', model);
+			const destinationDirectory = path.join(snapshotModelsDirectory, 'parakeet', model);
+			fs.mkdirSync(destinationDirectory, { recursive: true, mode: 0o700 });
+			for (const filename of parakeetArtifactFilenames(sourceDirectory)) {
+				copyFileSnapshotImpl(
+					path.join(sourceDirectory, filename),
+					path.join(destinationDirectory, filename),
+					{
+						label: 'Parakeet model artifact snapshot',
+						mode: 0o600,
+					},
+				);
+			}
+		} else {
+			throw new Error(`unsupported model provider: ${provider}`);
+		}
+
+		const snapshotSha256 = modelArtifactSha256(
+			provider,
+			model,
+			snapshotModelsDirectory,
+			reportedBackend,
+		);
+		if (snapshotSha256 !== expectedSha256) {
+			throw new Error('model artifact snapshot does not match the expected SHA-256');
+		}
+		return {
+			modelsDirectory: snapshotModelsDirectory,
+			sha256: snapshotSha256,
+		};
+	} catch (error) {
+		fs.rmSync(snapshotRoot, { recursive: true, force: true });
+		throw error;
+	}
 }
 
 export function resolveModelsDirectory(modelsDirectory, repositoryRoot) {
