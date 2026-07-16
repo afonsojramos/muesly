@@ -977,7 +977,7 @@ test('never clobbers a destination that appears at publication time', (t) => {
 	assert.equal(fs.readFileSync(outputPath, 'utf8'), 'attacker destination\n');
 });
 
-test('quarantines the exact published pair when final lease validation fails', (t) => {
+test('preserves the exact published pair when final lease validation fails', (t) => {
 	const current = leasedCorpusFixture(t);
 	const resultsDirectory = path.join(current.directory, 'results');
 	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
@@ -1001,7 +1001,15 @@ test('quarantines the exact published pair when final lease validation fails', (
 			}),
 		/leased corpus manifest changed/,
 	);
-	assert(!fs.existsSync(outputPath));
+	assert.equal(fs.readFileSync(outputPath, 'utf8'), expectedContents);
+	const retainedPair = fs
+		.readdirSync(resultsDirectory)
+		.find((name) => name.startsWith(`${path.basename(outputPath)}.tmp-`));
+	assert(retainedPair);
+	assert.equal(
+		fs.readFileSync(path.join(resultsDirectory, retainedPair), 'utf8'),
+		expectedContents,
+	);
 	const quarantined = quarantinedEntries(resultsDirectory);
 	assert.equal(quarantined.length, 2);
 	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));
@@ -1050,6 +1058,55 @@ test('preserves an attacker replacement swapped while failed output is linked in
 			(entryPath) => fs.readFileSync(entryPath, 'utf8') === 'attacker replacement\n',
 		),
 	);
+});
+
+test('preserves a replacement swapped after failed-output quarantine inspection', (t) => {
+	const current = leasedCorpusFixture(t);
+	const resultsDirectory = path.join(current.directory, 'results');
+	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
+	const displacedOutput = path.join(current.directory, 'writer-output-displaced.json');
+	const expectedContents = `${JSON.stringify({ complete: true }, null, 2)}\n`;
+	const originalLinkSync = fs.linkSync;
+	const originalRealpathSync = fs.realpathSync;
+	let changed = false;
+	let swapped = false;
+	t.mock.method(fs, 'linkSync', (sourcePath, destinationPath) => {
+		const result = originalLinkSync(sourcePath, destinationPath);
+		if (!changed && destinationPath === outputPath) {
+			changed = true;
+			fs.appendFileSync(current.manifestPath, ' ');
+		}
+		return result;
+	});
+	t.mock.method(fs, 'realpathSync', (filePath, ...args) => {
+		const result = originalRealpathSync(filePath, ...args);
+		if (
+			!swapped &&
+			typeof filePath === 'string' &&
+			filePath.includes('.lease-quarantine-') &&
+			path.basename(filePath) === 'entry'
+		) {
+			swapped = true;
+			fs.renameSync(outputPath, displacedOutput);
+			fs.writeFileSync(outputPath, 'attacker replacement\n', { mode: 0o600 });
+		}
+		return result;
+	});
+	assert.throws(
+		() =>
+			writeLeasedCorpusBoundJson({
+				lease: current.lease,
+				outputPath,
+				value: { complete: true },
+			}),
+		/leased corpus manifest changed/,
+	);
+	assert(swapped);
+	assert.equal(fs.readFileSync(outputPath, 'utf8'), 'attacker replacement\n');
+	assert.equal(fs.readFileSync(displacedOutput, 'utf8'), expectedContents);
+	const quarantined = quarantinedEntries(resultsDirectory);
+	assert.equal(quarantined.length, 2);
+	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));
 });
 
 test('never overwrites evidence planted at a quarantine destination', (t) => {
@@ -1163,7 +1220,8 @@ test('rejects staged symlink and hardlink swaps at no-clobber publication', asyn
 					}),
 				/regular file|hard-link count|changed during promotion|validation and quarantine|staged cleanup both failed/,
 			);
-			assert(!fs.existsSync(outputPath));
+			assert(swapped);
+			assert.equal(fs.readFileSync(outputPath, 'utf8'), expectedContents);
 			assert.equal(fs.readFileSync(outsidePath, 'utf8'), expectedContents);
 		});
 	}

@@ -896,7 +896,6 @@ function quarantineLeasedPath(state, filePath, expected, label) {
 			`${label} changed while it was linked into quarantine; both paths were preserved`,
 		);
 	}
-	fs.unlinkSync(filePath);
 	assertBoundResultsDirectory(state);
 	assertPrivateDirectoryIdentity(
 		quarantineDirectory,
@@ -909,7 +908,9 @@ function quarantineLeasedPath(state, filePath, expected, label) {
 		`${label} quarantine`,
 		hashDescriptor,
 		{
-			allowedLinks: [sourceLinks],
+			// Keep both names after validation. Unlinking the source by pathname
+			// would allow a replacement installed after inspection to be deleted.
+			allowedLinks: [sourceLinks, sourceLinks + 1n],
 		},
 	);
 	assertPrivateFileMetadata(quarantined.metadata, `${label} quarantine`);
