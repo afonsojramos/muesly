@@ -11,7 +11,11 @@ import {
 	markLocalCorpusWithdrawalCommitted,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
-import { retirePreparedBundleForWithdrawal } from './corpus-prepared-bundle.ts';
+import {
+	preparedBundleForWithdrawal,
+	retirePreparedBundle,
+	retirePreparedBundleForWithdrawal,
+} from './corpus-prepared-bundle.ts';
 import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
 
 function isWithinDirectory(directory, filePath) {
@@ -228,6 +232,7 @@ export function withdrawConsentedSession(options) {
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
 	const manifestExists = fs.existsSync(manifestPath);
+	const preparedBundle = preparedBundleForWithdrawal(manifestPath, options.sessionId);
 	const interruptedOperation = interruptedOrphanCleanupTargetsManifest(
 		lockPath,
 		manifestPath,
@@ -235,7 +240,8 @@ export function withdrawConsentedSession(options) {
 	);
 	const allowMissingManifest =
 		interruptedOperation !== null ||
-		markerTargetsManifest(markerPath, options.sessionId, manifestPath);
+		markerTargetsManifest(markerPath, options.sessionId, manifestPath) ||
+		preparedBundle !== null;
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	}
@@ -288,7 +294,7 @@ export function withdrawConsentedSession(options) {
 						resumed: true,
 					};
 				}
-				if (retirePreparedBundleForWithdrawal(manifestPath, options.sessionId)) {
+				if (retirePreparedBundle(preparedBundle)) {
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,

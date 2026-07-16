@@ -36,6 +36,25 @@ function readPreparedMetadata(bundleDirectory) {
 	}
 }
 
+function matchingPreparedBundle(manifestPath, sessionId) {
+	const bundleDirectory = regularPreparedBundle(manifestPath, sessionId);
+	if (!bundleDirectory) return null;
+	const metadata = readPreparedMetadata(bundleDirectory);
+	if (metadata.schemaVersion !== 1) {
+		throw new Error(`prepared intake metadata has an unsupported schema: ${bundleDirectory}`);
+	}
+	if (metadata.sessionId !== sessionId) {
+		throw new Error(`prepared intake metadata does not match sessionId: ${bundleDirectory}`);
+	}
+	if (
+		typeof metadata.manifestPath !== 'string' ||
+		canonicalManifestPath(metadata.manifestPath, { allowMissing: true }) !== manifestPath
+	) {
+		throw new Error(`prepared intake metadata does not match manifestPath: ${bundleDirectory}`);
+	}
+	return { bundleDirectory, metadata };
+}
+
 export function preparedBundleForIntake({
 	manifestPath,
 	audioSource,
@@ -43,8 +62,9 @@ export function preparedBundleForIntake({
 	consentRecord,
 	options,
 }) {
-	const bundleDirectory = regularPreparedBundle(manifestPath, options.sessionId);
-	if (!bundleDirectory) return null;
+	const preparedBundle = matchingPreparedBundle(manifestPath, options.sessionId);
+	if (!preparedBundle) return null;
+	const { bundleDirectory, metadata } = preparedBundle;
 	const expectedAudio = path.join(bundleDirectory, 'recording.wav');
 	const expectedReference = path.join(bundleDirectory, 'reference.txt');
 	const canonicalAudioSource = canonicalFilePath(audioSource);
@@ -60,7 +80,6 @@ export function preparedBundleForIntake({
 		throw new Error('prepared intake must use both the generated recording and reference paths');
 	}
 
-	const metadata = readPreparedMetadata(bundleDirectory);
 	const expected = {
 		schemaVersion: 1,
 		sessionId: options.sessionId,
@@ -95,6 +114,10 @@ export function retirePreparedBundle(bundleDirectory) {
 	return true;
 }
 
+export function preparedBundleForWithdrawal(manifestPath, sessionId) {
+	return matchingPreparedBundle(manifestPath, sessionId)?.bundleDirectory ?? null;
+}
+
 export function retirePreparedBundleForWithdrawal(manifestPath, sessionId) {
-	return retirePreparedBundle(regularPreparedBundle(manifestPath, sessionId));
+	return retirePreparedBundle(preparedBundleForWithdrawal(manifestPath, sessionId));
 }

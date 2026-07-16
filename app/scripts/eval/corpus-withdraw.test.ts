@@ -77,6 +77,7 @@ test('withdraws every sample in one session and invalidates derived results', ()
 		JSON.stringify({
 			schemaVersion: 1,
 			sessionId: 'session-withdraw',
+			manifestPath,
 			language: 'en',
 			noiseCondition: 'clean',
 		}),
@@ -154,6 +155,14 @@ test('withdraws a prepared session before corpus intake', () => {
 	fs.mkdirSync(preparedBundle, { recursive: true });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -168,6 +177,68 @@ test('withdraws a prepared session before corpus intake', () => {
 	});
 	assert(!fs.existsSync(preparedBundle));
 	assert(!fs.existsSync(manifestPath));
+});
+
+test('withdraws a prepared session after a failed first intake created the corpus root', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-failed-intake-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+	fs.mkdirSync(path.join(directory, 'local-corpus'), { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'invalid source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-prepared',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-prepared',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(manifestPath));
+});
+
+test('preserves a prepared session when withdrawal names a different manifest', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-manifest-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const mistypedManifestPath = path.join(directory, 'corpus-lcoal.json');
+	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath: mistypedManifestPath,
+				sessionId: 'session-prepared',
+				confirmWithdrawal: true,
+			}),
+		/prepared intake metadata does not match manifestPath/,
+	);
+	assert(fs.existsSync(preparedBundle));
+	assert(fs.existsSync(path.join(preparedBundle, 'recording.wav')));
 });
 
 test('withdraws files promoted by an interrupted intake before manifest commit', () => {
