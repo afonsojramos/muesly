@@ -90,6 +90,7 @@ const modelsDir = strFlag(args, '--models-dir', null);
 const onlyFixture = strFlag(args, '--fixture', null);
 const manifestPath = strFlag(args, '--manifest', defaultManifest);
 const outputPath = strFlag(args, '--output', null);
+const evalModelsDir = modelsDir ?? path.join(repoRoot, 'models');
 
 let corpus;
 try {
@@ -169,7 +170,7 @@ for (const sample of fixtures) {
 	if (whisperLanguage) {
 		exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', whisperLanguage);
 	}
-	if (modelsDir) exampleArgs.push(modelsDir);
+	exampleArgs.push(evalModelsDir);
 	const run = spawnSync(
 		'cargo',
 		exampleArgs,
