@@ -73,7 +73,10 @@ function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, session
 		...fs
 			.readdirSync(localCorpusRoot)
 			.filter(
-				(name) => name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
+				(name) =>
+					name.startsWith('.intake.lock.stale-') &&
+					!name.endsWith('.recovered') &&
+					!fs.existsSync(`${path.join(localCorpusRoot, name)}.recovered`),
 			)
 			.map((name) => path.join(localCorpusRoot, name)),
 	];

@@ -296,6 +296,46 @@ test('resumes orphan withdrawal intent after its lock was moved stale', () => {
 	assert(fs.existsSync(`${staleLockPath}.recovered`));
 });
 
+test('does not reuse consumed stale-lock evidence for orphan cleanup', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-consumed-stale-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const sessionDirectory = path.join(localCorpusRoot, 'session-first');
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	const recording = path.join(sessionDirectory, 'only-copy.wav');
+	fs.writeFileSync(recording, 'unrelated private recording');
+	const staleLockPath = path.join(
+		localCorpusRoot,
+		'.intake.lock.stale-00000000-0000-4000-8000-000000000001',
+	);
+	fs.mkdirSync(staleLockPath);
+	fs.writeFileSync(
+		path.join(staleLockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'intake',
+			session_id: 'session-first',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	fs.writeFileSync(`${staleLockPath}.recovered`, '{}');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-first',
+				confirmWithdrawal: true,
+			}),
+		/corpus manifest does not exist/,
+	);
+	assert(fs.existsSync(recording));
+	assert(fs.existsSync(sessionDirectory));
+});
+
 test('completes an orphan withdrawal against an existing manifest after cleanup', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');
