@@ -23,6 +23,7 @@ app/scripts/eval/
   corpus-benchmark-checkpoints.ts # bounded, alias-safe checkpoint discovery
   corpus-benchmark-options.ts     # strict campaign-option parsing
   corpus-benchmark-plan.ts        # deterministic per-sample campaign planning
+  corpus-benchmark-run.ts         # resumable consented-corpus campaign runner
   evaluator-revision.ts           # clean source/toolchain provenance
   benchmark-executable.ts         # exact build, hardware probe, and binary identity
   model-artifact.ts     # exact evaluated-model artifact fingerprinting
@@ -71,6 +72,31 @@ This creates a gitignored, private-permission session folder, an opaque consent 
 explicitly selected external encrypted records directory, a blank reference transcript, and an
 exact single-line intake command for Bash/zsh and Windows PowerShell. It refuses repository-local
 consent storage, never creates fake audio, and never marks consent as granted.
+
+Plan the complete benchmark campaign without running inference:
+
+```bash
+nub run eval:corpus:benchmark \
+  --manifest app/scripts/eval/corpus-local.json
+```
+
+Add `--run` to execute every pending sample and `--require-complete` to apply the full corpus and
+matrix-wide hardware coverage gate after the campaign:
+
+```bash
+nub run eval:corpus:benchmark \
+  --manifest app/scripts/eval/corpus-local.json \
+  --run --require-complete
+```
+
+The runner holds exclusive corpus ownership for the campaign, validates the corpus and target
+matrix, builds and probes each selected provider/model/backend, and writes a private atomic
+checkpoint after every sample. Re-running the same command resumes only exact completed task,
+model, evaluator, executable, and hardware identities. `--variant provider/model/backend` limits
+execution to a repeatable subset. Use
+`--accelerator backend=stable-device-id` where an explicit GPU identity is required. A failed
+quality threshold is checkpointed for diagnosis and makes the command exit non-zero; interruption
+keeps completed checkpoints and exits with status 130.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce
@@ -163,10 +189,10 @@ accelerator VRAM. Model preparation happens before the measured sample processes
 `model_download_seconds` ordinarily records zero while `model_load_seconds` still measures each
 fresh process's engine/model initialization.
 
-The repository currently includes strict campaign option parsing, deterministic task planning,
-exclusive corpus locking, and private checkpoint discovery/resume primitives. There is not yet a
-top-level campaign runner or `eval:corpus:benchmark` command; use the explicit `eval:real`,
-`eval:coverage`, and `eval:report` commands above until that runner is implemented.
+The corpus campaign runner creates one transcript-free checkpoint per sample. Use `eval:report`
+afterward when a JSON/Markdown aggregate is needed; the runner's `--require-complete` option uses
+the same coverage evaluator as `eval:coverage`, including distinct-session floors and one
+compatible matrix-wide hardware cohort.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.

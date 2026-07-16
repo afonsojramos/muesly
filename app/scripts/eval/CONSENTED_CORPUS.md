@@ -143,6 +143,32 @@ Run every provider/model/backend variant against the same manifest and threshold
 artifact for each provider/model across all of that variant's backend reports; Whisper and
 Parakeet, or two different model names, each retain their own artifact fingerprint.
 
+Start with a safe plan. It validates the private corpus and target matrix, reports the number of
+pending tasks, and does not build models or run inference:
+
+```bash
+nub run eval:corpus:benchmark \
+  --manifest app/scripts/eval/corpus-local.json
+```
+
+Execute and checkpoint the campaign with:
+
+```bash
+nub run eval:corpus:benchmark \
+  --manifest app/scripts/eval/corpus-local.json \
+  --run --require-complete
+```
+
+The exclusive campaign lock prevents intake or withdrawal during a run. Every completed sample is
+written atomically as a private, transcript-free checkpoint, so an interrupted command can be
+re-run safely. Resume requires the exact corpus sample revision, thresholds, evaluator revision,
+model artifact, benchmark executable, backend, accelerator, and hardware cohort. Quality failures
+remain checkpointed and make the command exit non-zero. `--require-complete` also rejects an empty
+or underfilled corpus and requires one compatible hardware cohort across the full target matrix.
+Use repeatable `--variant provider/model/backend` options for a subset and
+`--accelerator backend=stable-device-id` where the selected backend requires an explicit GPU
+identity.
+
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
 refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
@@ -210,10 +236,9 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```
 
-The campaign safety layer currently provides strict option parsing, deterministic task planning,
-an exclusive corpus benchmark lock, and private alias-safe checkpoint discovery. A top-level
-campaign runner is not exposed yet, so continue to run the three explicit `eval:real` commands and
-then the coverage/report gates above.
+The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
+is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
+reviewable aggregate JSON and Markdown.
 
 Do not publish model rankings from this corpus without reviewing session independence,
 participant mix, failure examples, confidence intervals, and the limitations above.
