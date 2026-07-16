@@ -68,7 +68,10 @@ get along, so we shut typescript up by casting `value` to `never`.
 	data-spacing={spacing}
 	style={`--gap: ${spacing}`}
 	class={cn(
-		'rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] overflow-hidden data-vertical:flex-col data-vertical:items-stretch',
+		// No overflow-hidden: clipping at the same radius the end items use for
+		// their own borders shaves the border along the corner arc (visible as
+		// notched corners in WKWebView). Items inherit this radius instead.
+		'rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch',
 		className,
 	)}
 	{...restProps}
