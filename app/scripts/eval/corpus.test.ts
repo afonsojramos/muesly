@@ -8,6 +8,7 @@ import test from 'node:test';
 import {
 	corpusFingerprint,
 	fileSha256,
+	loadCorpus,
 	validateCorpusDocument,
 	whisperLanguageForSample,
 } from './corpus.ts';
@@ -58,6 +59,19 @@ test('accepts an explicitly consented meeting sample', () => {
 		validateCorpusDocument(document, { manifestPath: path.join(directory, 'manifest.json') }),
 		[],
 	);
+});
+
+test('loads a manifest through its canonical file identity', () => {
+	const { directory, document } = fixture();
+	const manifestPath = path.join(directory, 'manifest.json');
+	const manifestAlias = path.join(directory, 'manifest-alias.json');
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	fs.symlinkSync(manifestPath, manifestAlias);
+
+	const corpus = loadCorpus(manifestAlias);
+	assert.equal(corpus.manifest_path, fs.realpathSync(manifestPath));
+	assert.equal(corpus.samples[0].audio_file, fs.realpathSync(path.join(directory, 'audio.wav')));
+	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
 });
 
 test('hashes corpus files incrementally across multiple buffer reads', () => {
@@ -180,7 +194,9 @@ test('requires every discovered audio fixture to be declared', () => {
 
 test('rejects nested consent-use data and reports invalid paths without throwing', () => {
 	const { directory, document } = fixture();
-	document.samples[0].provenance.consented_uses.push({ participants: [{ email: 'person@example.com' }] });
+	document.samples[0].provenance.consented_uses.push({
+		participants: [{ email: 'person@example.com' }],
+	});
 	document.samples[0].audio_path = 42;
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
@@ -192,10 +208,7 @@ test('rejects nested consent-use data and reports invalid paths without throwing
 test('normalizes BCP-47 locales and supports explicit Whisper mappings', () => {
 	assert.equal(whisperLanguageForSample({ language: 'en-US' }), 'en');
 	assert.equal(whisperLanguageForSample({ language: 'und' }), null);
-	assert.equal(
-		whisperLanguageForSample({ language: 'cmn-Hans', whisper_language: 'zh' }),
-		'zh',
-	);
+	assert.equal(whisperLanguageForSample({ language: 'cmn-Hans', whisper_language: 'zh' }), 'zh');
 });
 
 test('fingerprints the canonical corpus revision', () => {

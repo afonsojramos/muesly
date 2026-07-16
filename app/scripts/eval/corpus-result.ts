@@ -7,7 +7,7 @@ import {
 	hasPendingWithdrawal,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
-import { loadCorpus } from './corpus.ts';
+import { canonicalFilePath, canonicalManifestPath, loadCorpus } from './corpus.ts';
 import { processIdentity, processOwnsState } from './process-identity.ts';
 
 const RESULT_TRANSACTION_PATTERN = /^\.result-transaction-(\d+)-([0-9a-f-]{36})\.json$/;
@@ -39,10 +39,7 @@ function writeTransactionMarker(markerPath, transaction) {
 
 function isDirectFileName(value) {
 	return (
-		typeof value === 'string' &&
-		value !== '.' &&
-		value !== '..' &&
-		path.basename(value) === value
+		typeof value === 'string' && value !== '.' && value !== '..' && path.basename(value) === value
 	);
 }
 
@@ -165,17 +162,11 @@ function promoteOutputSet(stagedOutputs) {
 	try {
 		for (const output of transaction.outputs) {
 			if (output.had_original) {
-				fs.renameSync(
-					path.join(directory, output.file),
-					path.join(directory, output.backup_file),
-				);
+				fs.renameSync(path.join(directory, output.file), path.join(directory, output.backup_file));
 			}
 		}
 		for (const output of transaction.outputs) {
-			fs.renameSync(
-				path.join(directory, output.staged_file),
-				path.join(directory, output.file),
-			);
+			fs.renameSync(path.join(directory, output.staged_file), path.join(directory, output.file));
 		}
 		transaction.state = 'committed';
 		writeTransactionMarker(markerPath, transaction);
@@ -187,10 +178,10 @@ function promoteOutputSet(stagedOutputs) {
 }
 
 export function writeCorpusBoundFiles(options) {
-	const manifestPath = path.resolve(options.manifestPath);
+	const manifestPath = canonicalManifestPath(options.manifestPath);
 	const outputs = options.outputs.map((output) => ({
 		contents: output.contents,
-		outputPath: path.resolve(output.outputPath),
+		outputPath: canonicalFilePath(output.outputPath, { allowMissing: true }),
 	}));
 	if (outputs.length === 0) throw new Error('at least one corpus-bound output is required');
 	if (new Set(outputs.map((output) => output.outputPath)).size !== outputs.length) {
@@ -223,7 +214,9 @@ export function writeCorpusBoundFiles(options) {
 	}));
 	try {
 		if (localCorpusRoot && hasPendingWithdrawal(localCorpusRoot)) {
-			throw new Error('a corpus withdrawal is pending; refusing to write results until it is resumed');
+			throw new Error(
+				'a corpus withdrawal is pending; refusing to write results until it is resumed',
+			);
 		}
 		if (resultsRoot) {
 			fs.mkdirSync(resultsRoot, { recursive: true });
@@ -238,7 +231,9 @@ export function writeCorpusBoundFiles(options) {
 		}
 		const currentCorpus = loadCorpus(manifestPath);
 		if (currentCorpus.corpus_fingerprint !== options.expectedFingerprint) {
-			throw new Error('corpus changed while the benchmark was running; refusing to write stale results');
+			throw new Error(
+				'corpus changed while the benchmark was running; refusing to write stale results',
+			);
 		}
 		for (const output of stagedOutputs) {
 			fs.writeFileSync(output.stagedPath, output.contents, {

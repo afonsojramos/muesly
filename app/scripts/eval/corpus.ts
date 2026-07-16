@@ -7,7 +7,13 @@ export const CORPUS_SCHEMA_VERSION = 2;
 const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
 const CONSENTED_USES = new Set(['asr-benchmarking']);
-const MANIFEST_FIELDS = new Set(['schema_version', 'corpus_id', 'description', 'distribution', 'samples']);
+const MANIFEST_FIELDS = new Set([
+	'schema_version',
+	'corpus_id',
+	'description',
+	'distribution',
+	'samples',
+]);
 const SAMPLE_FIELDS = new Set([
 	'id',
 	'session_id',
@@ -66,7 +72,9 @@ function canonicalize(value) {
 }
 
 export function corpusFingerprint(document) {
-	return createHash('sha256').update(JSON.stringify(canonicalize(document))).digest('hex');
+	return createHash('sha256')
+		.update(JSON.stringify(canonicalize(document)))
+		.digest('hex');
 }
 
 export function findDuplicateAudioSamples(samples) {
@@ -90,6 +98,29 @@ function resolveSamplePath(manifestPath, value) {
 	return path.resolve(path.dirname(manifestPath), value);
 }
 
+export function canonicalFilePath(filePath, options = {}) {
+	const absolutePath = path.resolve(filePath);
+	if (!options.allowMissing) {
+		return fs.lstatSync(absolutePath, { throwIfNoEntry: false })
+			? fs.realpathSync(absolutePath)
+			: absolutePath;
+	}
+
+	const missingSegments = [];
+	let existingPath = absolutePath;
+	while (!fs.lstatSync(existingPath, { throwIfNoEntry: false })) {
+		const parent = path.dirname(existingPath);
+		if (parent === existingPath) return absolutePath;
+		missingSegments.unshift(path.basename(existingPath));
+		existingPath = parent;
+	}
+	return path.join(fs.realpathSync(existingPath), ...missingSegments);
+}
+
+export function canonicalManifestPath(manifestPath, options = {}) {
+	return canonicalFilePath(manifestPath, options);
+}
+
 function requiredString(value, field, errors) {
 	if (typeof value !== 'string' || value.trim().length === 0) {
 		errors.push(`${field} must be a non-empty string`);
@@ -108,7 +139,9 @@ function isIsoDate(value) {
 	if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
 	const [year, month, day] = value.split('-').map(Number);
 	const date = new Date(Date.UTC(year, month - 1, day));
-	return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+	return (
+		date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+	);
 }
 
 function validateProvenance(sample, errors) {
@@ -137,9 +170,7 @@ function validateProvenance(sample, errors) {
 		}
 		if (
 			!Array.isArray(provenance.consented_uses) ||
-			provenance.consented_uses.some(
-				(use) => typeof use !== 'string' || !CONSENTED_USES.has(use),
-			)
+			provenance.consented_uses.some((use) => typeof use !== 'string' || !CONSENTED_USES.has(use))
 		) {
 			errors.push(`${prefix}.consented_uses may only contain known string values`);
 		} else if (!provenance.consented_uses.includes('asr-benchmarking')) {
@@ -180,7 +211,10 @@ function validateFile(sample, field, hashField, manifestPath, checkFiles, errors
 		errors.push(`${prefix}.${field} must reference a file`);
 		return;
 	}
-	if (/^[a-f0-9]{64}$/.test(sample[hashField] ?? '') && fileSha256(filePath) !== sample[hashField]) {
+	if (
+		/^[a-f0-9]{64}$/.test(sample[hashField] ?? '') &&
+		fileSha256(filePath) !== sample[hashField]
+	) {
 		errors.push(`${prefix}.${hashField} does not match ${sample[field]}`);
 	}
 }
@@ -235,7 +269,10 @@ export function validateCorpusDocument(document, options = {}) {
 			if (ids.has(sample.id)) errors.push(`${prefix}.id is duplicated`);
 			ids.add(sample.id);
 		}
-		if (sample.session_id !== undefined && !/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id)) {
+		if (
+			sample.session_id !== undefined &&
+			!/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id)
+		) {
 			errors.push(`${prefix}.session_id must be an opaque session-* identifier`);
 		}
 		if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(sample.language ?? '')) {
@@ -266,8 +303,13 @@ export function validateCorpusDocument(document, options = {}) {
 		validateFile(sample, 'reference_path', 'reference_sha256', manifestPath, checkFiles, errors);
 		validateMeetingReference(sample, manifestPath, checkFiles, errors);
 		validateProvenance(sample, errors);
-		if (document.distribution === 'repository' && sample.provenance?.redistribution === 'local-only') {
-			errors.push(`${prefix}.provenance.redistribution cannot be local-only in a repository manifest`);
+		if (
+			document.distribution === 'repository' &&
+			sample.provenance?.redistribution === 'local-only'
+		) {
+			errors.push(
+				`${prefix}.provenance.redistribution cannot be local-only in a repository manifest`,
+			);
 		}
 	}
 	for (const { first, duplicate } of findDuplicateAudioSamples(document.samples)) {
@@ -300,12 +342,14 @@ export function whisperLanguageForSample(sample) {
 }
 
 export function loadCorpus(manifestPath, options = {}) {
-	const absolutePath = path.resolve(manifestPath);
+	const requestedPath = path.resolve(manifestPath);
 	let document;
+	let absolutePath;
 	try {
+		absolutePath = canonicalManifestPath(requestedPath);
 		document = JSON.parse(fs.readFileSync(absolutePath, 'utf8'));
 	} catch (error) {
-		throw new Error(`failed to read corpus manifest ${absolutePath}: ${error.message}`);
+		throw new Error(`failed to read corpus manifest ${requestedPath}: ${error.message}`);
 	}
 	const errors = validateCorpusDocument(document, { manifestPath: absolutePath, ...options });
 	if (errors.length > 0) {

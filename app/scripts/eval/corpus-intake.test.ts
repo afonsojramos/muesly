@@ -136,6 +136,35 @@ test('requires consent records to remain outside the managed corpus tree', () =>
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
+test('updates the canonical manifest when intake is invoked through a symlink', () => {
+	const { directory, options } = intakeFixture();
+	const canonicalDirectory = path.join(directory, 'canonical');
+	const aliasDirectory = path.join(directory, 'alias');
+	fs.mkdirSync(canonicalDirectory);
+	fs.mkdirSync(aliasDirectory);
+	const canonicalManifest = path.join(canonicalDirectory, 'corpus-local.json');
+	const aliasManifest = path.join(aliasDirectory, 'corpus-local.json');
+	fs.writeFileSync(
+		canonicalManifest,
+		JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local-only participant-consented multilingual meeting corpus.',
+			distribution: 'local',
+			samples: [],
+		}),
+	);
+	fs.symlinkSync(canonicalManifest, aliasManifest);
+	options.manifestPath = aliasManifest;
+
+	intakeConsentedSample(options);
+
+	assert(fs.lstatSync(aliasManifest).isSymbolicLink());
+	assert.equal(JSON.parse(fs.readFileSync(canonicalManifest, 'utf8')).samples.length, 1);
+	assert(fs.existsSync(path.join(canonicalDirectory, 'local-corpus', options.sessionId)));
+	assert(!fs.existsSync(path.join(aliasDirectory, 'local-corpus')));
+});
+
 test('rejects filesystem aliases into the managed corpus tree', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
@@ -146,11 +175,7 @@ test('rejects filesystem aliases into the managed corpus tree', () => {
 	if (!fs.existsSync(aliasedCorpusDirectory)) {
 		fs.symlinkSync(corpusDirectory, aliasedCorpusDirectory, 'dir');
 	}
-	options.consentRecord = path.join(
-		aliasedCorpusDirectory,
-		options.sessionId,
-		'consent.md',
-	);
+	options.consentRecord = path.join(aliasedCorpusDirectory, options.sessionId, 'consent.md');
 
 	assert.throws(
 		() => intakeConsentedSample(options),

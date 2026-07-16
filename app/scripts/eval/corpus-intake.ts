@@ -5,12 +5,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
-import { fileSha256, validateCorpusDocument } from './corpus.ts';
-import {
-	processIdentity,
-	processIsAlive,
-	processOwnsState,
-} from './process-identity.ts';
+import { canonicalManifestPath, fileSha256, validateCorpusDocument } from './corpus.ts';
+import { processIdentity, processIsAlive, processOwnsState } from './process-identity.ts';
 
 const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
 const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
@@ -46,11 +42,13 @@ function areDistinctFiles(filePaths) {
 	const identities = filePaths.map(fileIdentity);
 	return identities.every(
 		(identity, index) =>
-			!identities.slice(0, index).some(
-				(previous) =>
-					previous.canonicalPath === identity.canonicalPath ||
-					(previous.device === identity.device && previous.inode === identity.inode),
-			),
+			!identities
+				.slice(0, index)
+				.some(
+					(previous) =>
+						previous.canonicalPath === identity.canonicalPath ||
+						(previous.device === identity.device && previous.inode === identity.inode),
+				),
 	);
 }
 
@@ -112,9 +110,7 @@ function removeAbandonedManifestFiles(manifestPath) {
 }
 
 export function abandonedResultPids(abandonedOwners, isAlive = processIsAlive) {
-	return new Set(
-		abandonedOwners.filter((owner) => !isAlive(owner.pid)).map((owner) => owner.pid),
-	);
+	return new Set(abandonedOwners.filter((owner) => !isAlive(owner.pid)).map((owner) => owner.pid));
 }
 
 function removeAbandonedResultFiles(manifestPath, abandonedOwners) {
@@ -215,22 +211,25 @@ export function hasPendingWithdrawal(localCorpusRoot) {
 function assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata) {
 	const sessions = pendingWithdrawalSessions(localCorpusRoot);
 	if (sessions.size === 0) return;
-	if (
-		ownerMetadata.operation === 'withdrawal' &&
-		sessions.has(ownerMetadata.sessionId)
-	) {
+	if (ownerMetadata.operation === 'withdrawal' && sessions.has(ownerMetadata.sessionId)) {
 		return;
 	}
 	throw new Error('a corpus withdrawal is pending; resume it before continuing');
 }
 
 function matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata) {
+	if (typeof owner.manifest_path !== 'string') return false;
+	let ownerManifestPath;
+	try {
+		ownerManifestPath = canonicalManifestPath(owner.manifest_path, { allowMissing: true });
+	} catch {
+		return false;
+	}
 	return (
 		ownerMetadata.operation === 'withdrawal' &&
 		(owner.operation === 'intake' || owner.operation === 'withdrawal') &&
 		owner.session_id === ownerMetadata.sessionId &&
-		typeof owner.manifest_path === 'string' &&
-		path.resolve(owner.manifest_path) === path.resolve(manifestPath)
+		ownerManifestPath === manifestPath
 	);
 }
 
@@ -277,7 +276,9 @@ function stageOrReuseFile(sourcePath, targetPath, stagedPath, label) {
 			throw new Error(`intake ${label} target is not a regular file: ${targetPath}`);
 		}
 		if (fileSha256(sourcePath) !== fileSha256(targetPath)) {
-			throw new Error(`intake ${label} target already exists with different contents: ${targetPath}`);
+			throw new Error(
+				`intake ${label} target already exists with different contents: ${targetPath}`,
+			);
 		}
 		fs.chmodSync(targetPath, 0o600);
 		return { workingPath: targetPath, staged: false };
@@ -309,16 +310,10 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 					const stalePaths = fs
 						.readdirSync(localCorpusRoot)
 						.filter(
-							(name) =>
-								name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
+							(name) => name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
 						)
 						.map((name) => path.join(localCorpusRoot, name));
-					recoverInterruptedIntakes(
-						localCorpusRoot,
-						manifestPath,
-						stalePaths,
-						ownerMetadata,
-					);
+					recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths, ownerMetadata);
 					return prepared.token;
 				} catch (error) {
 					releaseLocalCorpusLock(lockPath, prepared.token);
@@ -376,11 +371,7 @@ export function markLocalCorpusOrphanCleanup(lockPath, token) {
 	}
 }
 
-export function completeLocalCorpusWithdrawalRecovery(
-	localCorpusRoot,
-	manifestPath,
-	sessionId,
-) {
+export function completeLocalCorpusWithdrawalRecovery(localCorpusRoot, manifestPath, sessionId) {
 	const ownerMetadata = { operation: 'withdrawal', sessionId };
 	for (const name of fs.readdirSync(localCorpusRoot)) {
 		if (!name.startsWith('.intake.lock.stale-') || name.endsWith('.recovered')) continue;
@@ -520,7 +511,7 @@ function validateIntakeOptions(options, today) {
 export function intakeConsentedSample(options) {
 	const today = options.today ?? localCalendarDate();
 	validateIntakeOptions(options, today);
-	const manifestPath = path.resolve(options.manifestPath);
+	const manifestPath = canonicalManifestPath(options.manifestPath, { allowMissing: true });
 	const audioSource = path.resolve(options.audio);
 	const referenceSource = path.resolve(options.reference);
 	const consentRecord = path.resolve(options.consentRecord);

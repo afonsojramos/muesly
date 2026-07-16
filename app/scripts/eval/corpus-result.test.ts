@@ -38,14 +38,8 @@ function interruptedTransaction(directory, state) {
 		fs.writeFileSync(path.join(resultsDirectory, output.file), `new ${output.file}\n`);
 		fs.writeFileSync(path.join(resultsDirectory, output.staged_file), `staged ${output.file}\n`);
 	}
-	const markerPath = path.join(
-		resultsDirectory,
-		`.result-transaction-${pid}-${token}.json`,
-	);
-	fs.writeFileSync(
-		markerPath,
-		JSON.stringify({ schema_version: 1, pid, token, state, outputs }),
-	);
+	const markerPath = path.join(resultsDirectory, `.result-transaction-${pid}-${token}.json`);
+	fs.writeFileSync(markerPath, JSON.stringify({ schema_version: 1, pid, token, state, outputs }));
 	return { markerPath, outputs, resultsDirectory };
 }
 
@@ -61,6 +55,23 @@ test('atomically writes results bound to the current local corpus revision', () 
 	});
 	assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), value);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
+test('binds results to the canonical manifest behind a symlink', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const manifestAlias = path.join(directory, 'corpus-alias.json');
+	const outputPath = path.join(directory, 'results', 'run.json');
+	fs.symlinkSync(manifestPath, manifestAlias);
+
+	writeCorpusBoundJson({
+		manifestPath: manifestAlias,
+		expectedFingerprint: corpusFingerprint(document),
+		outputPath,
+		value: { complete: true },
+	});
+
+	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
+	assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), { complete: true });
 });
 
 test('writes multiple corpus-bound outputs while holding one revision lock', () => {

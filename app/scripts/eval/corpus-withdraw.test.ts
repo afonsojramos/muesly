@@ -81,10 +81,32 @@ test('withdraws every sample in one session and invalidates derived results', ()
 	});
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	assert.deepEqual(validateCorpusDocument(document, { manifestPath }), []);
-	assert.deepEqual(document.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert.deepEqual(
+		document.samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
 	assert(fs.existsSync(path.join(directory, 'local-corpus/session-keep')));
 	assert(!fs.existsSync(resultsDirectory));
+});
+
+test('withdraws from the canonical manifest behind a symlink', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const manifestAlias = path.join(directory, 'corpus-alias.json');
+	fs.symlinkSync(manifestPath, manifestAlias);
+
+	const result = withdrawConsentedSession({
+		manifestPath: manifestAlias,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(manifestPath, 'utf8')).samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
 });
 
 test('requires explicit confirmation and leaves unknown sessions unchanged', () => {
@@ -711,12 +733,7 @@ test('refuses orphan cleanup when a retained sample reaches it through an alias'
 
 test('completes withdrawal when target files were already partially deleted', () => {
 	const { directory, manifestPath } = corpusFixture();
-	const missingAudio = path.join(
-		directory,
-		'local-corpus',
-		'session-withdraw',
-		'en-clean-001.wav',
-	);
+	const missingAudio = path.join(directory, 'local-corpus', 'session-withdraw', 'en-clean-001.wav');
 	fs.rmSync(missingAudio);
 	const resultsDirectory = path.join(directory, 'results');
 	fs.mkdirSync(resultsDirectory);
@@ -739,12 +756,7 @@ test('completes withdrawal when target files were already partially deleted', ()
 
 test('withdraws consent even when an unrelated retained sample file is missing', () => {
 	const { directory, manifestPath } = corpusFixture();
-	const missingReference = path.join(
-		directory,
-		'local-corpus',
-		'session-keep',
-		'es-clean-003.txt',
-	);
+	const missingReference = path.join(directory, 'local-corpus', 'session-keep', 'es-clean-003.txt');
 	fs.rmSync(missingReference);
 
 	const result = withdrawConsentedSession({
@@ -820,12 +832,9 @@ test('resumes cleanup without deleting results regenerated after the manifest co
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
 	fs.writeFileSync(manifestPath, JSON.stringify(document));
-	const quarantineName = '.withdrawal-results-session-withdraw-00000000-0000-4000-8000-000000000000';
-	const markerPath = path.join(
-		directory,
-		'local-corpus',
-		'.withdrawal-session-withdraw.json',
-	);
+	const quarantineName =
+		'.withdrawal-results-session-withdraw-00000000-0000-4000-8000-000000000000';
+	const markerPath = path.join(directory, 'local-corpus', '.withdrawal-session-withdraw.json');
 	fs.writeFileSync(
 		markerPath,
 		JSON.stringify({
@@ -875,11 +884,7 @@ test('conservatively completes a version 1 post-commit withdrawal marker', () =>
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
 	fs.writeFileSync(manifestPath, JSON.stringify(document));
-	const markerPath = path.join(
-		directory,
-		'local-corpus',
-		'.withdrawal-session-withdraw.json',
-	);
+	const markerPath = path.join(directory, 'local-corpus', '.withdrawal-session-withdraw.json');
 	fs.writeFileSync(
 		markerPath,
 		JSON.stringify({
@@ -908,11 +913,7 @@ test('conservatively completes a version 1 post-commit withdrawal marker', () =>
 
 test('migrates a version 1 pre-commit withdrawal marker', () => {
 	const { directory, manifestPath } = corpusFixture();
-	const markerPath = path.join(
-		directory,
-		'local-corpus',
-		'.withdrawal-session-withdraw.json',
-	);
+	const markerPath = path.join(directory, 'local-corpus', '.withdrawal-session-withdraw.json');
 	fs.writeFileSync(
 		markerPath,
 		JSON.stringify({

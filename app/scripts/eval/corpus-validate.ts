@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadCorpus } from './corpus.ts';
+import { canonicalManifestPath, loadCorpus } from './corpus.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const defaultManifest = path.join(here, 'corpus-manifest.json');
@@ -11,7 +11,7 @@ const manifestPath = process.argv[2] ?? defaultManifest;
 
 try {
 	const requiredAudioFiles =
-		path.resolve(manifestPath) === path.resolve(defaultManifest)
+		canonicalManifestPath(manifestPath) === canonicalManifestPath(defaultManifest)
 			? fs
 					.readdirSync(path.join(here, 'fixtures'))
 					.filter((file) => file.endsWith('.wav'))
