@@ -12,3 +12,7 @@ const whisperGpuBackends = new Set(['metal', 'cuda', 'vulkan', 'hipblas']);
 export function requiresWhisperGpu(provider, backend) {
 	return provider === 'whisper' && whisperGpuBackends.has(backend);
 }
+
+export function forcesWhisperCpu(provider, backend) {
+	return provider === 'whisper' && (backend === 'cpu' || backend === 'openblas');
+}

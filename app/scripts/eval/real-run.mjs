@@ -25,7 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { requiresWhisperGpu, supportedBackends } from './backend.mjs';
+import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
 import { werDetails } from './wer.mjs';
 
@@ -170,6 +170,7 @@ for (const sample of fixtures) {
 			cwd: repoRoot,
 			env: {
 				...process.env,
+				MUESLY_WHISPER_FORCE_CPU: forcesWhisperCpu(provider, backend) ? '1' : '0',
 				MUESLY_WHISPER_REQUIRE_ACCELERATION:
 					requiresWhisperGpu(provider, backend) ? '1' : '0',
 			},

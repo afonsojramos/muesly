@@ -57,6 +57,8 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
   and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
 - `--backend cpu|metal|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
   backend (default `cpu`). Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`.
+  CPU and OpenBLAS runs explicitly disable GPU execution; GPU runs fail instead of silently
+  falling back when the requested backend cannot initialize.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
