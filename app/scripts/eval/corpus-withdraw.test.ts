@@ -66,8 +66,21 @@ function corpusFixture() {
 test('withdraws every sample in one session and invalidates derived results', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const resultsDirectory = path.join(directory, 'results');
+	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
 	fs.mkdirSync(resultsDirectory);
+	fs.mkdirSync(preparedBundle, { recursive: true });
 	fs.writeFileSync(path.join(resultsDirectory, 'aggregate.json'), '{}');
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-withdraw',
+			language: 'en',
+			noiseCondition: 'clean',
+		}),
+	);
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -86,6 +99,7 @@ test('withdraws every sample in one session and invalidates derived results', ()
 		['es-clean-003'],
 	);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(!fs.existsSync(preparedBundle));
 	assert(fs.existsSync(path.join(directory, 'local-corpus/session-keep')));
 	assert(!fs.existsSync(resultsDirectory));
 });
@@ -131,6 +145,29 @@ test('requires explicit confirmation and leaves unknown sessions unchanged', () 
 		/not present/,
 	);
 	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
+});
+
+test('withdraws a prepared session before corpus intake', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-withdraw-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-prepared',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-prepared',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(manifestPath));
 });
 
 test('withdraws files promoted by an interrupted intake before manifest commit', () => {

@@ -11,6 +11,7 @@ import {
 	markLocalCorpusWithdrawalCommitted,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
+import { retirePreparedBundleForWithdrawal } from './corpus-prepared-bundle.ts';
 import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
 
 function isWithinDirectory(directory, filePath) {
@@ -194,8 +195,9 @@ function quarantineResults(localCorpusRoot, manifestPath, marker) {
 	return quarantinePath;
 }
 
-function finishWithdrawal(localCorpusRoot, sessionId, markerPath, marker) {
+function finishWithdrawal(localCorpusRoot, manifestPath, sessionId, markerPath, marker) {
 	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
+	retirePreparedBundleForWithdrawal(manifestPath, sessionId);
 	if (marker.schema_version === 2) {
 		fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
 			recursive: true,
@@ -213,6 +215,13 @@ export function withdrawConsentedSession(options) {
 		throw new Error(`corpus directory cannot be a symbolic link: ${localCorpusRoot}`);
 	}
 	if (!fs.statSync(localCorpusRoot, { throwIfNoEntry: false })?.isDirectory()) {
+		if (retirePreparedBundleForWithdrawal(manifestPath, options.sessionId)) {
+			return {
+				sessionId: options.sessionId,
+				removedSamples: 0,
+				resumed: false,
+			};
+		}
 		throw new Error(`local corpus directory does not exist: ${localCorpusRoot}`);
 	}
 
@@ -255,7 +264,13 @@ export function withdrawConsentedSession(options) {
 			if (pendingMarker) {
 				markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 				completeRecovery();
-				finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
+				finishWithdrawal(
+					localCorpusRoot,
+					manifestPath,
+					options.sessionId,
+					markerPath,
+					pendingMarker,
+				);
 				return {
 					sessionId: options.sessionId,
 					removedSamples: pendingMarker.removed_samples,
@@ -266,10 +281,18 @@ export function withdrawConsentedSession(options) {
 			if (!sessionEntry) {
 				if (orphanCleanup || completedWithdrawal) {
 					completeRecovery();
+					retirePreparedBundleForWithdrawal(manifestPath, options.sessionId);
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,
 						resumed: true,
+					};
+				}
+				if (retirePreparedBundleForWithdrawal(manifestPath, options.sessionId)) {
+					return {
+						sessionId: options.sessionId,
+						removedSamples: 0,
+						resumed: false,
 					};
 				}
 				throw new Error(`session is not present in the corpus: ${options.sessionId}`);
@@ -299,7 +322,13 @@ export function withdrawConsentedSession(options) {
 			writeWithdrawalMarker(markerPath, orphanMarker);
 			markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 			completeRecovery();
-			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, orphanMarker);
+			finishWithdrawal(
+				localCorpusRoot,
+				manifestPath,
+				options.sessionId,
+				markerPath,
+				orphanMarker,
+			);
 			return {
 				sessionId: options.sessionId,
 				removedSamples: 0,
@@ -358,7 +387,7 @@ export function withdrawConsentedSession(options) {
 		fs.renameSync(stagedManifest, manifestPath);
 		markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 		completeRecovery();
-		finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, marker);
+		finishWithdrawal(localCorpusRoot, manifestPath, options.sessionId, markerPath, marker);
 		return {
 			sessionId: options.sessionId,
 			removedSamples: withdrawn.length,

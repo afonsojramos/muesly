@@ -101,10 +101,12 @@ nub run eval:corpus:intake \
 The command initializes the gitignored `corpus-local.json` when absent, copies audio and
 reference material under `local-corpus/session-.../` with private permissions, derives WAV
 duration and exact hashes, rejects duplicate audio, validates the complete next manifest, and
-rolls back files if any step fails. An exclusive local lock prevents simultaneous imports from
-losing manifest entries; a later run reclaims a lock whose owner process no longer exists, removes
-only abandoned temporary files, and safely reuses exact destination copies already promoted by an
-interrupted import. It verifies that
+retires a matching prepared source bundle after the manifest commit. Withdrawal also removes any
+matching prepared bundle so revoked recordings and references are not retained or counted as
+pending coverage. Intake rolls back files if any pre-commit step fails. An exclusive local lock
+prevents simultaneous imports from losing manifest entries; a later run reclaims a lock whose
+owner process no longer exists, removes only abandoned temporary files, and safely reuses exact
+destination copies already promoted by an interrupted import. It verifies that
 the supplied consent record exists but never copies its identity-bearing contents into the manifest.
 It rejects consent records inside the managed `local-corpus/` and `results/` trees so session
 withdrawal cannot delete externally retained consent evidence.

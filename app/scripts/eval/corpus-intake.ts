@@ -6,6 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
 import { canonicalManifestPath, fileSha256, validateCorpusDocument } from './corpus.ts';
+import {
+	preparedBundleForIntake,
+	retirePreparedBundle,
+} from './corpus-prepared-bundle.ts';
 import { processIdentity, processIsAlive, processOwnsState } from './process-identity.ts';
 
 export const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
@@ -558,6 +562,13 @@ export function intakeConsentedSample(options) {
 	if (readReferenceTranscript(referenceSource).trim().length === 0) {
 		throw new Error('reference transcript must not be empty');
 	}
+	const preparedBundle = preparedBundleForIntake({
+		manifestPath,
+		audioSource,
+		referenceSource,
+		consentRecord,
+		options,
+	});
 
 	if (fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false })?.isSymbolicLink()) {
 		throw new Error(`intake directory cannot be a symbolic link: ${localCorpusRoot}`);
@@ -587,6 +598,7 @@ export function intakeConsentedSample(options) {
 		const stagedManifest = `${manifestPath}.tmp-${token}`;
 		const createdSessionDirectory = !fs.existsSync(sessionDirectory);
 		const promotedFiles = [];
+		let manifestCommitted = false;
 		fs.mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
 		try {
 			const preparedAudio = stageOrReuseFile(audioSource, audioTarget, stagedAudio, 'audio');
@@ -643,12 +655,24 @@ export function intakeConsentedSample(options) {
 				mode: 0o600,
 			});
 			fs.renameSync(stagedManifest, manifestPath);
+			manifestCommitted = true;
+			try {
+				retirePreparedBundle(preparedBundle);
+			} catch (error) {
+				throw new Error(
+					`sample was imported but its prepared source bundle could not be retired: ${error.message}`,
+				);
+			}
 			return sample;
 		} catch (error) {
-			for (const file of [stagedAudio, stagedReference, stagedManifest, ...promotedFiles]) {
-				fs.rmSync(file, { force: true });
+			if (!manifestCommitted) {
+				for (const file of [stagedAudio, stagedReference, stagedManifest, ...promotedFiles]) {
+					fs.rmSync(file, { force: true });
+				}
+				if (createdSessionDirectory) {
+					fs.rmSync(sessionDirectory, { recursive: true, force: true });
+				}
 			}
-			if (createdSessionDirectory) fs.rmSync(sessionDirectory, { recursive: true, force: true });
 			throw error;
 		}
 	} finally {

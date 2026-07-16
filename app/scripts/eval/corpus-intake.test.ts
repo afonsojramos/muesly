@@ -269,6 +269,39 @@ test('atomically imports a consented sample with verified metadata and private f
 	}
 });
 
+test('retires a matching prepared source bundle after successful intake', () => {
+	const { directory, options } = intakeFixture();
+	const bundleDirectory = path.join(directory, 'intake', options.sessionId);
+	fs.mkdirSync(bundleDirectory, { recursive: true, mode: 0o700 });
+	const audio = path.join(bundleDirectory, 'recording.wav');
+	const reference = path.join(bundleDirectory, 'reference.txt');
+	fs.renameSync(options.audio, audio);
+	fs.renameSync(options.reference, reference);
+	options.audio = audio;
+	options.reference = reference;
+	fs.writeFileSync(
+		path.join(bundleDirectory, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: options.sessionId,
+			consentRecordId: options.consentRecordId,
+			sampleId: options.sampleId,
+			language: options.language,
+			noiseCondition: options.noiseCondition,
+			manifestPath: options.manifestPath,
+			audioPath: audio,
+			referencePath: reference,
+			consentRecordPath: options.consentRecord,
+		}),
+	);
+
+	intakeConsentedSample(options);
+
+	assert(!fs.existsSync(bundleDirectory));
+	assert(fs.existsSync(path.join(directory, 'local-corpus', options.sessionId)));
+	assert(fs.existsSync(options.consentRecord));
+});
+
 test('rejects duplicate audio without changing the existing corpus', () => {
 	const { options } = intakeFixture();
 	intakeConsentedSample(options);
