@@ -139,6 +139,31 @@ test('completes withdrawal when target files were already partially deleted', ()
 	assert(!fs.existsSync(resultsDirectory));
 });
 
+test('withdraws consent even when an unrelated retained sample file is missing', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const missingReference = path.join(
+		directory,
+		'local-corpus',
+		'session-keep',
+		'es-clean-003.txt',
+	);
+	fs.rmSync(missingReference);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(manifestPath, 'utf8')).samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(!fs.existsSync(missingReference));
+});
+
 test('refuses to delete files outside the opaque session directory', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));

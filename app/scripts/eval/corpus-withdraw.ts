@@ -173,7 +173,7 @@ export function withdrawConsentedSession(options) {
 			}
 		}
 		const nextDocument = { ...document, samples: remaining };
-		const errors = validateCorpusDocument(nextDocument, { manifestPath });
+		const errors = validateCorpusDocument(nextDocument, { manifestPath, checkFiles: false });
 		if (errors.length > 0) {
 			throw new Error(`withdrawal would leave an invalid corpus:\n- ${errors.join('\n- ')}`);
 		}
