@@ -138,6 +138,25 @@ test('rejects filesystem aliases into the managed corpus tree', () => {
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });
 
+test('rejects external file symlinks into the managed corpus tree', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const managedConsentRecord = path.join(corpusDirectory, options.sessionId, 'consent.md');
+	fs.mkdirSync(path.dirname(managedConsentRecord), { recursive: true });
+	fs.writeFileSync(managedConsentRecord, 'affirmative consent record');
+	const consentAlias = path.join(directory, 'consent-alias.md');
+	fs.symlinkSync(managedConsentRecord, consentAlias);
+	options.consentRecord = consentAlias;
+
+	assert.throws(
+		() => intakeConsentedSample(options),
+		/consent record must be stored outside the managed local corpus directory/,
+	);
+	assert(fs.existsSync(managedConsentRecord));
+	assert(!fs.existsSync(options.manifestPath));
+	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+});
+
 test('atomically imports a consented sample with verified metadata and private files', () => {
 	const { options } = intakeFixture();
 	const sample = intakeConsentedSample(options);

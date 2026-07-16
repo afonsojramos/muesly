@@ -40,7 +40,7 @@ function isWithinExistingDirectory(directory, filePath) {
 	const directoryStatus = fs.statSync(directory, { throwIfNoEntry: false });
 	if (!directoryStatus?.isDirectory()) return false;
 
-	let current = path.dirname(filePath);
+	let current = path.dirname(fs.realpathSync(filePath));
 	for (;;) {
 		const currentStatus = fs.statSync(current, { throwIfNoEntry: false });
 		if (
