@@ -13,6 +13,7 @@ on:
       - "app/src-tauri/Cargo.toml"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "mise.toml"
       - ".github/workflows/eval-harness.yml"
       - "package.json"
   push:
@@ -25,6 +26,7 @@ on:
       - "app/src-tauri/Cargo.toml"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "mise.toml"
       - ".github/workflows/eval-harness.yml"
       - "package.json"
   workflow_dispatch:
