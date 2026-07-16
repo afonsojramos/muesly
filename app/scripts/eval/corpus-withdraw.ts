@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
 	acquireLocalCorpusLock,
+	markLocalCorpusOrphanCleanup,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
 import { validateCorpusDocument } from './corpus.ts';
@@ -71,11 +72,12 @@ function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, session
 	try {
 		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
 		const matches =
-			(owner.operation === 'intake' || owner.operation === 'withdrawal') &&
+			(owner.operation === 'intake' ||
+				(owner.operation === 'withdrawal' && owner.orphan_cleanup === true)) &&
 			owner.session_id === sessionId &&
 			typeof owner.manifest_path === 'string' &&
 			path.resolve(owner.manifest_path) === manifestPath;
-		return matches ? owner.operation : null;
+		return matches ? owner : null;
 	} catch {
 		return null;
 	}
@@ -182,6 +184,9 @@ export function withdrawConsentedSession(options) {
 	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
 		operation: 'withdrawal',
 		sessionId: options.sessionId,
+		orphanCleanup:
+			interruptedOperation?.orphan_cleanup === true ||
+			(!manifestExists && interruptedOperation?.operation === 'intake'),
 	});
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
@@ -204,7 +209,7 @@ export function withdrawConsentedSession(options) {
 			}
 			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
 			if (!sessionEntry) {
-				if (!manifestExists && interruptedOperation === 'withdrawal') {
+				if (interruptedOperation?.orphan_cleanup === true) {
 					return {
 						sessionId: options.sessionId,
 						removedSamples: 0,
@@ -226,6 +231,7 @@ export function withdrawConsentedSession(options) {
 					}
 				}
 			}
+			markLocalCorpusOrphanCleanup(lockPath, lockToken);
 			const orphanMarker = {
 				schema_version: 2,
 				session_id: options.sessionId,

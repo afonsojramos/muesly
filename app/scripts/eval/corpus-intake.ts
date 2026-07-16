@@ -154,6 +154,7 @@ function prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata) {
 			manifest_path: path.resolve(manifestPath),
 			operation: ownerMetadata.operation,
 			...(ownerMetadata.sessionId ? { session_id: ownerMetadata.sessionId } : {}),
+			...(ownerMetadata.orphanCleanup ? { orphan_cleanup: true } : {}),
 			created_at: new Date().toISOString(),
 		});
 		return { pendingPath, token };
@@ -295,6 +296,21 @@ export function releaseLocalCorpusLock(lockPath, token) {
 		return;
 	}
 	fs.rmSync(lockPath, { recursive: true, force: true });
+}
+
+export function markLocalCorpusOrphanCleanup(lockPath, token) {
+	const { owner } = readLockOwner(lockPath);
+	if (owner.token !== token || owner.pid !== process.pid) {
+		throw new Error(`cannot update corpus lock owned by another process: ${lockPath}`);
+	}
+	if (owner.orphan_cleanup === true) return;
+	const stagedOwner = path.join(lockPath, `owner.json.tmp-${process.pid}-${randomUUID()}`);
+	try {
+		writePrivateJson(stagedOwner, { ...owner, orphan_cleanup: true });
+		fs.renameSync(stagedOwner, path.join(lockPath, 'owner.json'));
+	} finally {
+		fs.rmSync(stagedOwner, { force: true });
+	}
 }
 
 export function wavDurationSeconds(filePath) {

@@ -201,6 +201,7 @@ test('resumes orphan cleanup when withdrawal stops before its marker is written'
 			manifest_path: manifestPath,
 			operation: 'withdrawal',
 			session_id: 'session-first',
+			orphan_cleanup: true,
 			created_at: '2026-07-16T00:00:00Z',
 		}),
 	);
@@ -236,6 +237,7 @@ test('completes an orphan withdrawal whose cleanup finished before lock release'
 			manifest_path: manifestPath,
 			operation: 'withdrawal',
 			session_id: 'session-first',
+			orphan_cleanup: true,
 			created_at: '2026-07-16T00:00:00Z',
 		}),
 	);
@@ -253,6 +255,68 @@ test('completes an orphan withdrawal whose cleanup finished before lock release'
 	});
 	assert(!fs.existsSync(manifestPath));
 	assert(!fs.existsSync(lockPath));
+});
+
+test('completes an orphan withdrawal against an existing manifest after cleanup', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const before = fs.readFileSync(manifestPath, 'utf8');
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'withdrawal',
+			session_id: 'session-orphan',
+			orphan_cleanup: true,
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-orphan',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-orphan',
+		removedSamples: 0,
+		resumed: true,
+	});
+	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
+	assert(!fs.existsSync(lockPath));
+});
+
+test('does not treat an interrupted unknown-session check as completed cleanup', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'withdrawal',
+			session_id: 'session-unknown',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-unknown',
+				confirmWithdrawal: true,
+			}),
+		/not present/,
+	);
 });
 
 test('preserves session data when a missing manifest lacks matching intake evidence', () => {
