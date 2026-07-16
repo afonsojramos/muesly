@@ -349,7 +349,8 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
 	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
 	assert(!fs.existsSync(manifestPath));
-	assert(!fs.existsSync(path.join(directory, 'local-corpus')));
+	assert(fs.statSync(path.join(directory, 'local-corpus')).isDirectory());
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
 test('runs the generated intake entrypoint from an external bundle directory', () => {

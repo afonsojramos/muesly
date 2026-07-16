@@ -301,13 +301,6 @@ function withCorpusPlanningLock(manifestPath, timeoutMs = 30_000, callback) {
 		return callback();
 	} finally {
 		if (lockToken) releaseLocalCorpusLock(lockPath, lockToken);
-		if (!existingRoot) {
-			try {
-				fs.rmdirSync(localCorpusRoot);
-			} catch (error) {
-				if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
-			}
-		}
 	}
 }
 
