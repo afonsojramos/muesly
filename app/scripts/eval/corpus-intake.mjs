@@ -149,7 +149,15 @@ function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	if (unrecovered.length === 0) return;
 	reconcileCorpusDirectory(localCorpusRoot, referencedCorpusFiles(manifestPath));
 	removeAbandonedManifestFiles(manifestPath);
-	fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
+	const pendingWithdrawal = fs
+		.readdirSync(localCorpusRoot, { withFileTypes: true })
+		.some(
+			(entry) =>
+				entry.isFile() && /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name),
+		);
+	if (!pendingWithdrawal) {
+		fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
+	}
 	for (const stalePath of unrecovered) {
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),

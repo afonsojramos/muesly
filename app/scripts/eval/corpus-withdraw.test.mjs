@@ -191,6 +191,17 @@ test('resumes cleanup without deleting results regenerated after the manifest co
 	const resultsDirectory = path.join(directory, 'results');
 	fs.mkdirSync(resultsDirectory);
 	fs.writeFileSync(path.join(resultsDirectory, 'regenerated.json'), '{}');
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -205,6 +216,71 @@ test('resumes cleanup without deleting results regenerated after the manifest co
 	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
 	assert(fs.existsSync(path.join(resultsDirectory, 'regenerated.json')));
 	assert(!fs.existsSync(quarantineDirectory));
+	assert(!fs.existsSync(markerPath));
+});
+
+test('conservatively completes a version 1 post-commit withdrawal marker', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	const markerPath = path.join(
+		directory,
+		'local-corpus',
+		'.withdrawal-session-withdraw.json',
+	);
+	fs.writeFileSync(
+		markerPath,
+		JSON.stringify({
+			schema_version: 1,
+			session_id: 'session-withdraw',
+			removed_samples: 2,
+			started_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'possibly-regenerated.json'), '{}');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+	assert.equal(result.resumed, true);
+	assert(fs.existsSync(path.join(resultsDirectory, 'possibly-regenerated.json')));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(!fs.existsSync(markerPath));
+});
+
+test('migrates a version 1 pre-commit withdrawal marker', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const markerPath = path.join(
+		directory,
+		'local-corpus',
+		'.withdrawal-session-withdraw.json',
+	);
+	fs.writeFileSync(
+		markerPath,
+		JSON.stringify({
+			schema_version: 1,
+			session_id: 'session-withdraw',
+			removed_samples: 2,
+			started_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'stale.json'), '{}');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+	assert.equal(result.resumed, false);
+	assert(!fs.existsSync(resultsDirectory));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
 	assert(!fs.existsSync(markerPath));
 });
 

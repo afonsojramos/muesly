@@ -114,6 +114,10 @@ participant or customer identity in filenames or metadata.
 
 Run each variant with the same manifest, thresholds, and model artifact:
 
+Before writing a real-run report, the evaluator revalidates the manifest while holding the same
+local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
+refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
+
 For CUDA, Vulkan, HIP, or Intel Metal, also pass
 `--accelerator <stable-model-or-device-id>` (for example, the exact GPU model and PCI bus ID).
 Apple Silicon Metal records its integrated accelerator identity automatically.

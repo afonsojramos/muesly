@@ -48,16 +48,27 @@ function readWithdrawalMarker(markerPath, sessionId) {
 	} catch (error) {
 		throw new Error(`failed to read pending withdrawal ${markerPath}: ${error.message}`);
 	}
-	if (
-		marker.schema_version !== 2 ||
-		marker.session_id !== sessionId ||
-		!Number.isInteger(marker.removed_samples) ||
-		marker.removed_samples < 1 ||
-		!/^\.withdrawal-results-[a-z0-9-]+-[a-f0-9-]+$/.test(marker.results_quarantine ?? '')
-	) {
+	const commonFieldsValid =
+		marker.session_id === sessionId &&
+		Number.isInteger(marker.removed_samples) &&
+		marker.removed_samples >= 1;
+	const quarantineValid =
+		marker.schema_version === 2 &&
+		/^\.withdrawal-results-[a-z0-9-]+-[a-f0-9-]+$/.test(marker.results_quarantine ?? '');
+	if (!commonFieldsValid || (marker.schema_version !== 1 && !quarantineValid)) {
 		throw new Error(`pending withdrawal record is invalid: ${markerPath}`);
 	}
 	return marker;
+}
+
+function writeWithdrawalMarker(markerPath, marker) {
+	const stagedMarker = `${markerPath}.tmp-${process.pid}-${randomUUID()}`;
+	try {
+		fs.writeFileSync(stagedMarker, `${JSON.stringify(marker)}\n`, { mode: 0o600 });
+		fs.renameSync(stagedMarker, markerPath);
+	} finally {
+		fs.rmSync(stagedMarker, { force: true });
+	}
 }
 
 function quarantineResults(localCorpusRoot, manifestPath, marker) {
@@ -80,10 +91,12 @@ function quarantineResults(localCorpusRoot, manifestPath, marker) {
 
 function finishWithdrawal(localCorpusRoot, sessionId, markerPath, marker) {
 	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
-	fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
-		recursive: true,
-		force: true,
-	});
+	if (marker.results_quarantine) {
+		fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
+			recursive: true,
+			force: true,
+		});
+	}
 	fs.rmSync(markerPath, { force: true });
 }
 
@@ -157,17 +170,16 @@ export function withdrawConsentedSession(options) {
 			throw new Error(`withdrawal would leave an invalid corpus:\n- ${errors.join('\n- ')}`);
 		}
 
-		const marker =
-			pendingMarker ??
-			{
+		let marker = pendingMarker;
+		if (marker?.schema_version !== 2) {
+			marker = {
 				schema_version: 2,
 				session_id: options.sessionId,
 				removed_samples: withdrawn.length,
 				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
-				started_at: new Date().toISOString(),
+				started_at: pendingMarker?.started_at ?? new Date().toISOString(),
 			};
-		if (!pendingMarker) {
-			fs.writeFileSync(markerPath, `${JSON.stringify(marker)}\n`, { mode: 0o600 });
+			writeWithdrawalMarker(markerPath, marker);
 		}
 		quarantineResults(localCorpusRoot, manifestPath, marker);
 		fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });

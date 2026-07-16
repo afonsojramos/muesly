@@ -33,6 +33,7 @@ import {
 	supportedBackends,
 } from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
+import { writeCorpusBoundJson } from './corpus-result.mjs';
 import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
 import { werDetails } from './wer.mjs';
 
@@ -287,8 +288,17 @@ if (outputPath) {
 		results: runResults,
 	};
 	const absoluteOutput = path.resolve(outputPath);
-	fs.mkdirSync(path.dirname(absoluteOutput), { recursive: true });
-	fs.writeFileSync(absoluteOutput, `${JSON.stringify(report, null, 2)}\n`);
+	try {
+		writeCorpusBoundJson({
+			manifestPath,
+			expectedFingerprint: corpus.corpus_fingerprint,
+			outputPath: absoluteOutput,
+			value: report,
+		});
+	} catch (error) {
+		console.error(error.message);
+		process.exit(1);
+	}
 	console.log(`wrote benchmark report: ${absoluteOutput}`);
 }
 process.exit(failed ? 1 : 0);
