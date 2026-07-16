@@ -51,7 +51,7 @@ by counsel.
    from the same meeting—coverage counts distinct sessions, not files.
 
 ```bash
-nub run eval:corpus:intake -- \
+nub run eval:corpus:intake \
   --audio /private/intake/meeting.wav \
   --reference /private/intake/reference.txt \
   --sample-id es-office-001 \
@@ -67,10 +67,12 @@ The command initializes the gitignored `corpus-local.json` when absent, copies a
 reference material under `local-corpus/session-.../` with private permissions, derives WAV
 duration and exact hashes, rejects duplicate audio, validates the complete next manifest, and
 rolls back files if any step fails. An exclusive local lock prevents simultaneous imports from
-losing manifest entries. It verifies that the supplied consent record exists but never copies its
-identity-bearing contents into the manifest. Intake accepts only the five target languages and
-four defined noise conditions so samples cannot silently fall outside the matrix. After validating
-the imported copy, dispose of the source files according to the approved retention policy.
+losing manifest entries; a later run reclaims a lock whose owner process no longer exists and
+removes abandoned temporary copies. It verifies that the supplied consent record exists but never
+copies its identity-bearing contents into the manifest. Intake accepts only the five target
+languages and four defined noise conditions so samples cannot silently fall outside the matrix.
+After validating the imported copy, dispose of the source files according to the approved retention
+policy.
 
 4. Validate independently:
 

@@ -6,7 +6,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { intakeConsentedSample, parseIntakeArgs, wavDurationSeconds } from './corpus-intake.mjs';
+import {
+	intakeConsentedSample,
+	localCalendarDate,
+	parseIntakeArgs,
+	wavDurationSeconds,
+} from './corpus-intake.mjs';
 import { validateCorpusDocument } from './corpus.mjs';
 
 function writeWav(filePath, durationSeconds = 2) {
@@ -132,6 +137,17 @@ test('rejects future consent dates and incomplete CLI values', () => {
 	);
 });
 
+test('derives consent-day boundaries from the operator local calendar', () => {
+	assert.equal(
+		localCalendarDate({
+			getFullYear: () => 2026,
+			getMonth: () => 6,
+			getDate: () => 16,
+		}),
+		'2026-07-16',
+	);
+});
+
 test('rejects path-like identifiers before creating intake directories', () => {
 	const { directory, options } = intakeFixture();
 	options.sessionId = '../../outside';
@@ -143,18 +159,38 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
 	fs.mkdirSync(corpusDirectory);
-	fs.writeFileSync(path.join(corpusDirectory, '.intake.lock'), 'busy');
+	fs.writeFileSync(
+		path.join(corpusDirectory, '.intake.lock'),
+		JSON.stringify({ schema_version: 1, pid: process.pid, created_at: new Date().toISOString() }),
+	);
 	assert.throws(() => intakeConsentedSample(options), /another corpus intake is active/);
 	assert(!fs.existsSync(options.manifestPath));
 });
 
+test('reclaims an interrupted intake lock and removes abandoned staged files', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const sessionDirectory = path.join(corpusDirectory, 'session-abandoned');
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	fs.writeFileSync(
+		path.join(corpusDirectory, '.intake.lock'),
+		JSON.stringify({ schema_version: 1, pid: 999_999_999, created_at: '2026-07-15T00:00:00Z' }),
+	);
+	const abandoned = path.join(sessionDirectory, 'sample.wav.tmp-123-123e4567-e89b-12d3-a456-426614174000');
+	fs.writeFileSync(abandoned, 'private staged bytes');
+
+	intakeConsentedSample(options);
+	assert(!fs.existsSync(abandoned));
+	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+});
+
 test('CLI imports through the documented consent-gated path', () => {
 	const { options } = intakeFixture();
-	const command = fileURLToPath(new URL('./corpus-intake.mjs', import.meta.url));
 	const run = spawnSync(
-		process.execPath,
+		'nub',
 		[
-			command,
+			'run',
+			'eval:corpus:intake',
 			'--manifest',
 			options.manifestPath,
 			'--audio',
@@ -179,7 +215,7 @@ test('CLI imports through the documented consent-gated path', () => {
 			String(options.speakers),
 			'--affirm-all-participants-consented',
 		],
-		{ encoding: 'utf8' },
+		{ encoding: 'utf8', cwd: fileURLToPath(new URL('../../..', import.meta.url)) },
 	);
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(run.stdout, /added en-clean-001: en \/ clean, 2\.0s, 2 speakers/);

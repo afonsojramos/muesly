@@ -43,6 +43,112 @@ function hashFile(filePath) {
 	return hash.digest('hex');
 }
 
+export function localCalendarDate(date = new Date()) {
+	const year = String(date.getFullYear()).padStart(4, '0');
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
+}
+
+function processIsRunning(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error.code !== 'ESRCH';
+	}
+}
+
+function removeAbandonedStagedFiles(directory) {
+	if (!fs.existsSync(directory)) return;
+	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+		const entryPath = path.join(directory, entry.name);
+		if (entry.isSymbolicLink()) continue;
+		if (entry.isDirectory()) {
+			removeAbandonedStagedFiles(entryPath);
+			continue;
+		}
+		if (/\.tmp-\d+-[0-9a-f-]+$/.test(entry.name)) fs.rmSync(entryPath, { force: true });
+	}
+}
+
+function removeAbandonedManifestFiles(manifestPath) {
+	const directory = path.dirname(manifestPath);
+	const prefix = `${path.basename(manifestPath)}.tmp-`;
+	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+		if (
+			entry.isFile() &&
+			entry.name.startsWith(prefix) &&
+			/\.tmp-\d+-[0-9a-f-]+$/.test(entry.name)
+		) {
+			fs.rmSync(path.join(directory, entry.name), { force: true });
+		}
+	}
+}
+
+function createIntakeLock(lockPath) {
+	const descriptor = fs.openSync(lockPath, 'wx', 0o600);
+	try {
+		fs.writeFileSync(
+			descriptor,
+			`${JSON.stringify({ schema_version: 1, pid: process.pid, created_at: new Date().toISOString() })}\n`,
+		);
+		fs.fsyncSync(descriptor);
+		return descriptor;
+	} catch (error) {
+		fs.closeSync(descriptor);
+		fs.rmSync(lockPath, { force: true });
+		throw error;
+	}
+}
+
+function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
+	for (let attempt = 0; attempt < 3; attempt += 1) {
+		try {
+			return createIntakeLock(lockPath);
+		} catch (error) {
+			if (error.code !== 'EEXIST') throw error;
+			let owner;
+			try {
+				owner = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+			} catch {
+				throw new Error(`another corpus intake is active or left an unreadable lock: ${lockPath}`);
+			}
+			if (!Number.isInteger(owner.pid) || owner.pid < 1 || processIsRunning(owner.pid)) {
+				throw new Error(`another corpus intake is active: ${lockPath}`);
+			}
+
+			const staleLock = `${lockPath}.stale-${process.pid}-${randomUUID()}`;
+			try {
+				fs.renameSync(lockPath, staleLock);
+			} catch (renameError) {
+				if (renameError.code === 'ENOENT') continue;
+				throw renameError;
+			}
+
+			let descriptor;
+			try {
+				descriptor = createIntakeLock(lockPath);
+				removeAbandonedStagedFiles(localCorpusRoot);
+				removeAbandonedManifestFiles(manifestPath);
+				return descriptor;
+			} catch (recoveryError) {
+				if (descriptor !== undefined) {
+					fs.closeSync(descriptor);
+					fs.rmSync(lockPath, { force: true });
+				}
+				if (recoveryError.code === 'EEXIST') {
+					throw new Error(`another corpus intake is active: ${lockPath}`);
+				}
+				throw recoveryError;
+			} finally {
+				fs.rmSync(staleLock, { force: true });
+			}
+		}
+	}
+	throw new Error(`could not acquire corpus intake lock: ${lockPath}`);
+}
+
 export function wavDurationSeconds(filePath) {
 	const descriptor = fs.openSync(filePath, 'r');
 	const fileSize = fs.fstatSync(descriptor).size;
@@ -161,7 +267,7 @@ function validateIntakeOptions(options, today) {
 }
 
 export function intakeConsentedSample(options) {
-	const today = options.today ?? new Date().toISOString().slice(0, 10);
+	const today = options.today ?? localCalendarDate();
 	validateIntakeOptions(options, today);
 	const manifestPath = path.resolve(options.manifestPath);
 	const audioSource = path.resolve(options.audio);
@@ -187,13 +293,7 @@ export function intakeConsentedSample(options) {
 	}
 	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
-	let manifestLock;
-	try {
-		manifestLock = fs.openSync(lockPath, 'wx', 0o600);
-	} catch (error) {
-		if (error.code === 'EEXIST') throw new Error(`another corpus intake is active: ${lockPath}`);
-		throw error;
-	}
+	const manifestLock = acquireIntakeLock(lockPath, localCorpusRoot, manifestPath);
 
 	try {
 		const document = readManifest(manifestPath);
@@ -286,6 +386,7 @@ export function parseIntakeArgs(args, defaultManifestPath) {
 	const options = { manifestPath: defaultManifestPath, affirmConsent: false };
 	for (let index = 0; index < args.length; index += 1) {
 		const option = args[index];
+		if (index === 0 && option === '--') continue;
 		if (option === '--affirm-all-participants-consented') {
 			options.affirmConsent = true;
 			continue;
