@@ -71,3 +71,12 @@ jobs:
           - Ship the eval harness
           MD
           nub app/scripts/eval/summary-rubric.ts /tmp/sample-summary.md
+
+  eval-filesystem-windows:
+    name: Corpus lock + result custody (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: jdx/mise-action@v4
+      - name: Windows filesystem custody tests
+        run: nub --node --test app/scripts/eval/corpus-benchmark-lock.test.ts app/scripts/eval/corpus-result.test.ts
