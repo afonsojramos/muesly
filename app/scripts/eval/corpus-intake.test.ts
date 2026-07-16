@@ -355,15 +355,34 @@ test('rejects path-like identifiers before creating intake directories', () => {
 	assert(!fs.existsSync(path.join(directory, 'local-corpus')));
 });
 
-test('serializes manifest updates with an exclusive local intake lock', () => {
+test('serializes manifest updates with an exclusive local intake lock', (t) => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
 	fs.mkdirSync(corpusDirectory);
-	fs.writeFileSync(
-		path.join(corpusDirectory, '.intake.lock'),
-		JSON.stringify({ schema_version: 1, pid: process.pid, created_at: new Date().toISOString() }),
-	);
+	const lockPath = path.join(corpusDirectory, '.intake.lock');
+	const lockContents = JSON.stringify({
+		schema_version: 1,
+		pid: process.pid,
+		created_at: new Date().toISOString(),
+	});
+	fs.writeFileSync(lockPath, lockContents);
+	const originalRenameSync = fs.renameSync;
+	let replacementAttempted = false;
+	t.mock.method(fs, 'renameSync', (sourcePath, destinationPath) => {
+		if (
+			typeof sourcePath === 'string' &&
+			sourcePath.includes('.intake.lock.pending-') &&
+			destinationPath === lockPath
+		) {
+			replacementAttempted = true;
+			fs.rmSync(lockPath, { force: true });
+		}
+		return originalRenameSync(sourcePath, destinationPath);
+	});
 	assert.throws(() => intakeConsentedSample(options), /another corpus intake is active/);
+	assert.equal(replacementAttempted, false);
+	assert.equal(fs.readFileSync(lockPath, 'utf8'), lockContents);
+	assert.equal(fs.lstatSync(lockPath).isFile(), true);
 	assert(!fs.existsSync(options.manifestPath));
 });
 

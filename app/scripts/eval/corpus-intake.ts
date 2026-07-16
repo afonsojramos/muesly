@@ -177,6 +177,20 @@ function prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata) {
 	}
 }
 
+function installPreparedIntakeLock(prepared, lockPath) {
+	fs.mkdirSync(lockPath, { mode: 0o700 });
+	try {
+		fs.renameSync(path.join(prepared.pendingPath, 'owner.json'), path.join(lockPath, 'owner.json'));
+	} catch (error) {
+		try {
+			fs.rmdirSync(lockPath);
+		} catch {
+			// Preserve a non-empty or replaced claim so later contenders fail closed.
+		}
+		throw error;
+	}
+}
+
 function readLockOwner(lockPath) {
 	const status = fs.lstatSync(lockPath);
 	const ownerPath = status.isDirectory() ? path.join(lockPath, 'owner.json') : lockPath;
@@ -357,9 +371,14 @@ export function acquireLocalCorpusLock(
 		for (let attempt = 0; attempt < retry.attempts; attempt += 1) {
 			let installed = false;
 			try {
-				fs.renameSync(prepared.pendingPath, lockPath);
+				installPreparedIntakeLock(prepared, lockPath);
 				installed = true;
+				fs.rmdirSync(prepared.pendingPath);
 			} catch (error) {
+				if (installed) {
+					releaseLocalCorpusLock(lockPath, prepared.token);
+					throw error;
+				}
 				if (!fs.existsSync(lockPath)) {
 					if (error.code === 'ENOENT' || error.code === 'EEXIST' || error.code === 'ENOTEMPTY') {
 						continue;

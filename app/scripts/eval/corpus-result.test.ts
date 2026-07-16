@@ -485,10 +485,12 @@ test('does not write while a corpus mutation holds the shared lock', () => {
 	const { directory, document, manifestPath } = localManifest();
 	const outputPath = path.join(directory, 'results', 'run.json');
 	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
-	fs.writeFileSync(
-		lockPath,
-		JSON.stringify({ schema_version: 1, pid: process.pid, created_at: new Date().toISOString() }),
-	);
+	const lockContents = JSON.stringify({
+		schema_version: 1,
+		pid: process.pid,
+		created_at: new Date().toISOString(),
+	});
+	fs.writeFileSync(lockPath, lockContents);
 	assert.throws(
 		() =>
 			writeCorpusBoundJson({
@@ -499,6 +501,8 @@ test('does not write while a corpus mutation holds the shared lock', () => {
 			}),
 		/another corpus intake is active/,
 	);
+	assert.equal(fs.readFileSync(lockPath, 'utf8'), lockContents);
+	assert.equal(fs.lstatSync(lockPath).isFile(), true);
 	assert(!fs.existsSync(outputPath));
 });
 
