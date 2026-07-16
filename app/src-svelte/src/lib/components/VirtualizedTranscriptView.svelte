@@ -48,6 +48,9 @@
 		isStopping?: boolean;
 		enableStreaming?: boolean;
 		showConfidence?: boolean;
+		/** Render the [MM:SS] gutter. Hiding it also hides the confidence
+		 * tooltip, whose trigger is the timestamp span — accepted trade-off. */
+		showTimestamps?: boolean;
 		showRecordingStatus?: boolean;
 		disableAutoScroll?: boolean;
 		hasMore?: boolean;
@@ -76,6 +79,7 @@
 		isStopping = false,
 		enableStreaming = false,
 		showConfidence = true,
+		showTimestamps = true,
 		showRecordingStatus = true,
 		disableAutoScroll = false,
 		hasMore = false,
@@ -293,30 +297,34 @@
 						)}
 					>
 						<div class="flex items-start gap-2">
-							<Tooltip.Provider delayDuration={300}>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										{#snippet child({ props })}
-											<span
-												{...props}
-												class="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/60"
-											>
-												{formatRecordingTime(segment.timestamp)}
-											</span>
-										{/snippet}
-									</Tooltip.Trigger>
-									<Tooltip.Content>
-										{#if segment.confidence != null && showConfidence}
-											<ConfidenceIndicator
-												confidence={segment.confidence}
-												showIndicator={showConfidence}
-											/>
-										{:else}
-											<span class="text-xs">No confidence data</span>
-										{/if}
-									</Tooltip.Content>
-								</Tooltip.Root>
-							</Tooltip.Provider>
+							<!-- Conditional render (not CSS hiding) so native selection-copy
+							     matches what's visible. -->
+							{#if showTimestamps}
+								<Tooltip.Provider delayDuration={300}>
+									<Tooltip.Root>
+										<Tooltip.Trigger>
+											{#snippet child({ props })}
+												<span
+													{...props}
+													class="mt-1 min-w-[46px] flex-shrink-0 text-[11px] tabular-nums text-muted-foreground/60"
+												>
+													{formatRecordingTime(segment.timestamp)}
+												</span>
+											{/snippet}
+										</Tooltip.Trigger>
+										<Tooltip.Content>
+											{#if segment.confidence != null && showConfidence}
+												<ConfidenceIndicator
+													confidence={segment.confidence}
+													showIndicator={showConfidence}
+												/>
+											{:else}
+												<span class="text-xs">No confidence data</span>
+											{/if}
+										</Tooltip.Content>
+									</Tooltip.Root>
+								</Tooltip.Provider>
+							{/if}
 							<div class={cn('min-w-0 flex-1', isMe && 'text-right')}>
 								<!-- Speaker label at each turn boundary: the "them" side is
 								     editable (assign/rename from the attendee shortlist); the

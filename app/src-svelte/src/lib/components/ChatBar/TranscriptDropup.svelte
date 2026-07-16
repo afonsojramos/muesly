@@ -1,4 +1,5 @@
 <script lang="ts">
+	import ClockIcon from '@lucide/svelte/icons/clock';
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -9,12 +10,14 @@
 	import VirtualizedTranscriptView from '$lib/components/VirtualizedTranscriptView.svelte';
 	import TalkTimeBar from '$lib/components/MeetingDetails/TalkTimeBar.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import { Toggle } from '$lib/components/ui/toggle';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import {
 		fetchSpeakerContext,
 		transcriptMarkdownBody,
 	} from '$lib/hooks/use-copy-operations.svelte';
 	import { useSpeakerContext } from '$lib/hooks/use-speaker-context.svelte';
+	import { config } from '$lib/stores/config.svelte';
 	import { transcripts as liveTranscripts } from '$lib/stores/transcript.svelte';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
 	import RecordingStatusBar from '$lib/components/RecordingStatusBar.svelte';
@@ -128,6 +131,31 @@
 				<Tooltip.Root>
 					<Tooltip.Trigger>
 						{#snippet child({ props })}
+							<Toggle
+								{...props}
+								size="sm"
+								class="text-muted-foreground data-[state=on]:text-foreground"
+								aria-label={config.showTranscriptTimestamps
+									? 'Hide timestamps'
+									: 'Show timestamps'}
+								bind:pressed={
+									() => config.showTranscriptTimestamps,
+									(v) => config.toggleTranscriptTimestamps(v)
+								}
+							>
+								<ClockIcon />
+							</Toggle>
+						{/snippet}
+					</Tooltip.Trigger>
+					<Tooltip.Content>
+						{config.showTranscriptTimestamps ? 'Hide timestamps' : 'Show timestamps'}
+					</Tooltip.Content>
+				</Tooltip.Root>
+			</Tooltip.Provider>
+			<Tooltip.Provider delayDuration={300}>
+				<Tooltip.Root>
+					<Tooltip.Trigger>
+						{#snippet child({ props })}
 							<Button
 								{...props}
 								variant="ghost"
@@ -171,6 +199,7 @@
 				isStopping={recordingState.isStopping}
 				enableStreaming={live && recordingState.isRecording}
 				showConfidence={true}
+				showTimestamps={config.showTranscriptTimestamps}
 				showRecordingStatus={false}
 				disableAutoScroll={!live}
 				showSpeakers={!live && !!meetingId}
