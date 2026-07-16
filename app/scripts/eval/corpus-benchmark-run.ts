@@ -44,6 +44,9 @@ const defaultTargets = path.join(here, "corpus-targets.json");
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const MAX_CHILD_OUTPUT_BYTES = 32 * 1024 * 1024;
+const FORCE_KILL_DELAY_MS = 5_000;
+const FORCE_KILL_CONFIRMATION_MS = 5_000;
+const PROCESS_TREE_POLL_INTERVAL_MS = 25;
 const OPTION_FIELDS = new Set([
   "manifestPath",
   "targetsPath",
@@ -455,8 +458,8 @@ export function signalBenchmarkProcessTree(
       );
       return true;
     } catch {
-      // Fall back to the direct child below. A second forced tree attempt is
-      // scheduled by the caller while the child remains alive.
+      // A direct-child fallback cannot prove that Windows descendants stopped.
+      return false;
     }
   }
   try {
@@ -466,12 +469,72 @@ export function signalBenchmarkProcessTree(
   }
 }
 
+function posixBenchmarkProcessGroupExists(child) {
+  if (!Number.isSafeInteger(child.pid) || child.pid < 1) return false;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") return false;
+    if (error?.code === "EPERM") return true;
+    throw error;
+  }
+}
+
+function waitForProcessTreePoll(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+async function terminatePosixBenchmarkProcessTree(child, forceKillDelayMs) {
+  signalBenchmarkProcessTree(child, "SIGTERM");
+  const forceKillAt = Date.now() + forceKillDelayMs;
+  while (posixBenchmarkProcessGroupExists(child)) {
+    const remainingMs = forceKillAt - Date.now();
+    if (remainingMs <= 0) break;
+    await waitForProcessTreePoll(Math.min(PROCESS_TREE_POLL_INTERVAL_MS, remainingMs));
+  }
+  if (!posixBenchmarkProcessGroupExists(child)) return;
+
+  signalBenchmarkProcessTree(child, "SIGKILL");
+  const confirmationDeadline = Date.now() + FORCE_KILL_CONFIRMATION_MS;
+  while (posixBenchmarkProcessGroupExists(child)) {
+    const remainingMs = confirmationDeadline - Date.now();
+    if (remainingMs <= 0) {
+      throw new Error("unable to confirm benchmark process-group termination after SIGKILL");
+    }
+    await waitForProcessTreePoll(Math.min(PROCESS_TREE_POLL_INTERVAL_MS, remainingMs));
+  }
+}
+
+async function terminateWindowsBenchmarkProcessTree(child) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  if (signalBenchmarkProcessTree(child, "SIGKILL")) return;
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // The full-tree failure below remains authoritative.
+  }
+  throw new Error("unable to terminate the full Windows benchmark process tree");
+}
+
 export async function runRealRunCommand(
   args,
-  { environment = process.env, repoRoot, signal, spawnImpl = spawn },
+  {
+    environment = process.env,
+    forceKillDelayMs = FORCE_KILL_DELAY_MS,
+    repoRoot,
+    signal,
+    spawnImpl = spawn,
+  },
 ) {
+  if (!Number.isSafeInteger(forceKillDelayMs) || forceKillDelayMs < 0) {
+    throw new Error("force-kill delay must be a non-negative safe integer");
+  }
   throwIfAborted(signal);
-  const child = spawnImpl("nub", args, {
+  // Nub starts its Node runtime in a separate process group. Launch the exact
+  // pinned Node executable directly so this detached child remains the stable
+  // group leader for real-run and every benchmark descendant.
+  const child = spawnImpl(process.execPath, args, {
     cwd: repoRoot,
     detached: process.platform !== "win32",
     env: environment,
@@ -480,18 +543,25 @@ export async function runRealRunCommand(
   });
   let outputBytes = 0;
   let outputLimitExceeded = false;
-  let forceKillTimer = null;
+  let terminationPromise = null;
+  let rejectTerminationFailure;
+  const terminationFailurePromise = new Promise((_, reject) => {
+    rejectTerminationFailure = reject;
+  });
+  // The race below observes this rejection; this immediate handler also covers
+  // an abort delivered synchronously before Promise.race is constructed.
+  terminationFailurePromise.catch(() => {});
   const outcomePromise = new Promise((resolve, reject) => {
     child.once("error", () => reject(new Error("unable to start the real-run benchmark command")));
     child.once("close", (status, terminationSignal) => resolve({ status, terminationSignal }));
   });
   const terminate = () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    signalBenchmarkProcessTree(child, "SIGTERM");
-    if (forceKillTimer === null) {
-      forceKillTimer = setTimeout(() => signalBenchmarkProcessTree(child, "SIGKILL"), 5_000);
-      forceKillTimer.unref();
-    }
+    if (terminationPromise !== null) return;
+    terminationPromise =
+      process.platform === "win32"
+        ? terminateWindowsBenchmarkProcessTree(child)
+        : terminatePosixBenchmarkProcessTree(child, forceKillDelayMs);
+    terminationPromise.catch(rejectTerminationFailure);
   };
   const countOutput = (chunk) => {
     outputBytes += chunk.length;
@@ -507,15 +577,22 @@ export async function runRealRunCommand(
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) terminate();
   try {
-    const outcome = await outcomePromise;
+    const { outcome, outcomeError } = await Promise.race([
+      outcomePromise.then(
+        (value) => ({ outcome: value, outcomeError: null }),
+        (error) => ({ outcome: null, outcomeError: error }),
+      ),
+      terminationFailurePromise,
+    ]);
+    if (terminationPromise !== null) await terminationPromise;
     throwIfAborted(signal);
+    if (outcomeError !== null) throw outcomeError;
     if (outputLimitExceeded) {
       throw new Error("real-run exceeded the private campaign output limit");
     }
     return outcome;
   } finally {
     signal?.removeEventListener("abort", abort);
-    if (forceKillTimer !== null) clearTimeout(forceKillTimer);
   }
 }
 

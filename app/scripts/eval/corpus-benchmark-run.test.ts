@@ -49,6 +49,15 @@ function processExists(pid) {
   }
 }
 
+function processGroupExists(pid) {
+  try {
+    process.kill(-pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === "EPERM";
+  }
+}
+
 function evaluatorEntry(targetBackend = "cpu", overrides = {}) {
   const revision = {
     schema_version: 1,
@@ -729,79 +738,116 @@ test("uses Windows taskkill to terminate the full benchmark process tree", () =>
   ]);
 });
 
-test("aborting a real-run command terminates its descendant process tree", async (t) => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muesly-campaign-tree-"));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const parentMarker = path.join(directory, "parent.json");
-  const grandchildMarker = path.join(directory, "grandchild.txt");
-  const grandchildScript = path.join(directory, "grandchild.ts");
-  const parentScript = path.join(directory, "parent.ts");
-  fs.writeFileSync(
-    grandchildScript,
-    [
-      'import fs from "node:fs";',
-      "fs.writeFileSync(process.argv[2], String(process.pid));",
-      "setInterval(() => {}, 1000);",
-      "",
-    ].join("\n"),
+test("does not report direct-child fallback as a successful Windows tree kill", () => {
+  let directChildKilled = false;
+  const child = {
+    pid: 4242,
+    kill: () => {
+      directChildKilled = true;
+      return true;
+    },
+  };
+  assert.equal(
+    signalBenchmarkProcessTree(child, "SIGKILL", {
+      environment: { SystemRoot: "C:\\Windows" },
+      execFileSyncImpl: () => {
+        throw new Error("taskkill failed");
+      },
+      platform: "win32",
+      taskkillExecutable: "C:\\Windows\\System32\\taskkill.exe",
+    }),
+    false,
   );
-  fs.writeFileSync(
-    parentScript,
-    [
-      'import { spawn } from "node:child_process";',
-      'import fs from "node:fs";',
-      `const child = spawn("nub", [${JSON.stringify(grandchildScript)}, ${JSON.stringify(
-        grandchildMarker,
-      )}], { stdio: "ignore" });`,
-      `fs.writeFileSync(${JSON.stringify(
-        parentMarker,
-      )}, JSON.stringify({ parent: process.pid, grandchild: child.pid }));`,
-      "setInterval(() => {}, 1000);",
-      "",
-    ].join("\n"),
-  );
-
-  const controller = new AbortController();
-  const run = runRealRunCommand([parentScript], {
-    repoRoot: directory,
-    signal: controller.signal,
-  });
-  t.after(async () => {
-    if (!controller.signal.aborted) controller.abort(new Error("test cleanup"));
-    try {
-      await run;
-    } catch {
-      // Cancellation is the expected cleanup path.
-    }
-  });
-  await waitFor(
-    () => fs.existsSync(parentMarker) && fs.existsSync(grandchildMarker),
-    "timed out waiting for the benchmark descendant tree",
-  );
-  const { parent, grandchild: grandchildWrapper } = JSON.parse(
-    fs.readFileSync(parentMarker, "utf8"),
-  );
-  const grandchild = Number(fs.readFileSync(grandchildMarker, "utf8"));
-  for (const pid of [parent, grandchildWrapper, grandchild]) {
-    assert(Number.isSafeInteger(pid) && pid > 0);
-  }
-  t.after(() => {
-    for (const pid of [parent, grandchildWrapper, grandchild]) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        // The cancellation under test already reaped the process.
-      }
-    }
-  });
-
-  controller.abort(new Error("cancel benchmark tree"));
-  await assert.rejects(run, /cancel benchmark tree/);
-  await waitFor(
-    () => !processExists(parent) && !processExists(grandchildWrapper) && !processExists(grandchild),
-    "benchmark descendant processes survived cancellation",
-  );
+  assert.equal(directChildKilled, false);
 });
+
+test(
+  "aborting a real-run command force-kills a SIGTERM-resistant process group",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muesly-campaign-tree-"));
+    t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    const parentMarker = path.join(directory, "parent.json");
+    const grandchildMarker = path.join(directory, "grandchild.txt");
+    const sigtermMarker = path.join(directory, "sigterm.txt");
+    const grandchildScript = path.join(directory, "grandchild.ts");
+    const parentScript = path.join(directory, "parent.ts");
+    fs.writeFileSync(
+      grandchildScript,
+      [
+        'import fs from "node:fs";',
+        'process.on("SIGTERM", () => fs.writeFileSync(process.argv[3], "received"));',
+        "fs.writeFileSync(process.argv[2], String(process.pid));",
+        "setInterval(() => {}, 1000);",
+        "",
+      ].join("\n"),
+    );
+    fs.writeFileSync(
+      parentScript,
+      [
+        'import { spawn } from "node:child_process";',
+        'import fs from "node:fs";',
+        `const child = spawn(process.execPath, [${JSON.stringify(
+          grandchildScript,
+        )}, ${JSON.stringify(grandchildMarker)}, ${JSON.stringify(sigtermMarker)}], { stdio: "ignore" });`,
+        `fs.writeFileSync(${JSON.stringify(
+          parentMarker,
+        )}, JSON.stringify({ parent: process.pid, grandchild: child.pid }));`,
+        "setInterval(() => {}, 1000);",
+        "",
+      ].join("\n"),
+    );
+
+    const controller = new AbortController();
+    let processGroupLeader = null;
+    const run = runRealRunCommand([parentScript], {
+      forceKillDelayMs: 250,
+      repoRoot: directory,
+      signal: controller.signal,
+      spawnImpl: (...args) => {
+        const child = spawnChild(...args);
+        processGroupLeader = child.pid;
+        return child;
+      },
+    });
+    t.after(async () => {
+      if (!controller.signal.aborted) controller.abort(new Error("test cleanup"));
+      try {
+        await run;
+      } catch {
+        // Cancellation is the expected cleanup path.
+      }
+    });
+    await waitFor(
+      () => fs.existsSync(parentMarker) && fs.existsSync(grandchildMarker),
+      "timed out waiting for the benchmark descendant tree",
+    );
+    const { parent, grandchild: grandchildWrapper } = JSON.parse(
+      fs.readFileSync(parentMarker, "utf8"),
+    );
+    const grandchild = Number(fs.readFileSync(grandchildMarker, "utf8"));
+    for (const pid of [parent, grandchildWrapper, grandchild]) {
+      assert(Number.isSafeInteger(pid) && pid > 0);
+    }
+    assert.equal(processGroupLeader, parent);
+    assert.equal(grandchildWrapper, grandchild);
+    assert.equal(processGroupExists(processGroupLeader), true);
+    t.after(() => {
+      for (const pid of [parent, grandchildWrapper, grandchild]) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          // The cancellation under test already reaped the process.
+        }
+      }
+    });
+
+    controller.abort(new Error("cancel benchmark tree"));
+    await assert.rejects(run, /cancel benchmark tree/);
+    assert.equal(fs.readFileSync(sigtermMarker, "utf8"), "received");
+    assert.equal(processGroupExists(processGroupLeader), false);
+  },
+);
 
 test("closes the abort race between spawning and listener registration", async () => {
   const controller = new AbortController();
