@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
+import { corpusFingerprint } from './corpus.mjs';
 import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.mjs';
 
 const targets = {
@@ -147,4 +152,55 @@ test('rejects coverage assembled from different bytes for the same model', () =>
 		() => evaluateCoverage(corpus, targets, [first, changed]),
 		/different artifacts for model 'whisper\/test-model'/,
 	);
+});
+
+test('writes coverage through the managed local corpus results path', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-coverage-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	fs.mkdirSync(path.join(directory, 'local-corpus'));
+	const document = {
+		schema_version: 2,
+		corpus_id: 'local-consented-meetings',
+		description: 'Local consented corpus.',
+		distribution: 'local',
+		samples: [],
+	};
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	const targetsPath = path.join(directory, 'targets.json');
+	fs.writeFileSync(targetsPath, JSON.stringify(targets));
+	const outputPath = path.join(directory, 'results', 'coverage.json');
+	const scriptPath = fileURLToPath(new URL('./coverage.mjs', import.meta.url));
+	const run = spawnSync(
+		process.execPath,
+		[
+			scriptPath,
+			'--manifest',
+			manifestPath,
+			'--targets',
+			targetsPath,
+			'--json',
+			outputPath,
+		],
+		{ encoding: 'utf8' },
+	);
+	assert.equal(run.status, 0, run.stderr);
+	const coverage = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+	assert.equal(coverage.corpus_fingerprint, corpusFingerprint(document));
+	assert.equal(coverage.complete, false);
+
+	const outside = spawnSync(
+		process.execPath,
+		[
+			scriptPath,
+			'--manifest',
+			manifestPath,
+			'--targets',
+			targetsPath,
+			'--json',
+			path.join(directory, 'outside.json'),
+		],
+		{ encoding: 'utf8' },
+	);
+	assert.equal(outside.status, 2);
+	assert.match(outside.stderr, /managed results directory/);
 });

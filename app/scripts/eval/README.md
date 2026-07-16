@@ -69,7 +69,8 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
   count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, machine profile,
   active accelerator identity, backend,
-  and a SHA-256 fingerprint of the exact model artifact bytes.
+  and a SHA-256 fingerprint of the exact model artifact bytes. Local-corpus outputs must be direct
+  files in the manifest-adjacent `results/` directory so consent withdrawal can quarantine them.
 - `--fixture <sample-id>` limits the run to one uniquely named manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
@@ -81,6 +82,7 @@ Aggregate one or more run reports into transcript-free JSON and Markdown summari
 
 ```bash
 nub run eval:report results/whisper-metal.json results/parakeet-cpu.json \
+  --manifest corpus-local.json \
   --json results/aggregate.json --markdown results/aggregate.md
 ```
 

@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
+import { corpusFingerprint } from './corpus.mjs';
 import { aggregateRunReports, renderMarkdown, validateRunReport } from './report.mjs';
 
 function result(overrides = {}) {
@@ -210,4 +216,53 @@ test('rejects fractional hallucination thresholds', () => {
 	assert.deepEqual(validateRunReport(fractional), [
 		'report.thresholds.max_hallucinated_words must be an integer',
 	]);
+});
+
+test('requires a manifest and coordinates aggregate output files with the local corpus', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-report-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	fs.mkdirSync(path.join(directory, 'local-corpus'));
+	const document = {
+		schema_version: 2,
+		corpus_id: 'consented-meetings-v1',
+		description: 'Local consented corpus.',
+		distribution: 'local',
+		samples: [],
+	};
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	const inputPath = path.join(directory, 'run.json');
+	fs.writeFileSync(
+		inputPath,
+		JSON.stringify({
+			...report([result()]),
+			corpus_fingerprint: corpusFingerprint(document),
+		}),
+	);
+	const jsonPath = path.join(directory, 'results', 'aggregate.json');
+	const markdownPath = path.join(directory, 'results', 'aggregate.md');
+	const scriptPath = fileURLToPath(new URL('./report.mjs', import.meta.url));
+
+	const missingManifest = spawnSync(process.execPath, [scriptPath, inputPath, '--json', jsonPath], {
+		encoding: 'utf8',
+	});
+	assert.equal(missingManifest.status, 2);
+	assert.match(missingManifest.stderr, /--manifest is required/);
+
+	const run = spawnSync(
+		process.execPath,
+		[
+			scriptPath,
+			inputPath,
+			'--manifest',
+			manifestPath,
+			'--json',
+			jsonPath,
+			'--markdown',
+			markdownPath,
+		],
+		{ encoding: 'utf8' },
+	);
+	assert.equal(run.status, 0, run.stderr);
+	assert.equal(JSON.parse(fs.readFileSync(jsonPath, 'utf8')).corpus_id, document.corpus_id);
+	assert.match(fs.readFileSync(markdownPath, 'utf8'), /# ASR corpus benchmark/);
 });

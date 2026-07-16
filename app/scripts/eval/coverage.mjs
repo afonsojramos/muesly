@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { writeCorpusBoundJson } from './corpus-result.mjs';
 import { findDuplicateAudioSamples, loadCorpus } from './corpus.mjs';
 import { validateRunReport } from './report.mjs';
 
@@ -303,9 +304,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		const coverage = evaluateCoverage(corpus, targets, reports);
 		process.stdout.write(formatCoverage(coverage));
 		if (jsonOutput) {
-			const outputPath = path.resolve(jsonOutput);
-			fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-			fs.writeFileSync(outputPath, `${JSON.stringify(coverage, null, 2)}\n`);
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpus.corpus_fingerprint,
+				outputPath: jsonOutput,
+				value: coverage,
+			});
 		}
 		if (requireComplete && !coverage.complete) process.exit(1);
 	} catch (error) {

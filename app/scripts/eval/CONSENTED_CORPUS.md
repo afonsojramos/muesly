@@ -150,6 +150,7 @@ nub run eval:coverage --manifest app/scripts/eval/corpus-local.json \
 nub run eval:report app/scripts/eval/results/whisper-cpu.json \
   app/scripts/eval/results/whisper-metal.json \
   app/scripts/eval/results/parakeet-onnx-cpu.json \
+  --manifest app/scripts/eval/corpus-local.json \
   --json app/scripts/eval/results/aggregate.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```

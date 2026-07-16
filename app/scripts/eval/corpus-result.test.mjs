@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { writeCorpusBoundJson } from './corpus-result.mjs';
+import { writeCorpusBoundFiles, writeCorpusBoundJson } from './corpus-result.mjs';
 import { corpusFingerprint } from './corpus.mjs';
 
 function localManifest() {
@@ -34,6 +34,44 @@ test('atomically writes results bound to the current local corpus revision', () 
 	});
 	assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), value);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
+test('writes multiple corpus-bound outputs while holding one revision lock', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const fingerprint = corpusFingerprint(document);
+	const jsonPath = path.join(directory, 'results', 'aggregate.json');
+	const markdownPath = path.join(directory, 'results', 'aggregate.md');
+	writeCorpusBoundFiles({
+		manifestPath,
+		expectedFingerprint: fingerprint,
+		outputs: [
+			{ outputPath: jsonPath, contents: '{"complete":true}\n' },
+			{ outputPath: markdownPath, contents: '# Complete\n' },
+		],
+	});
+	assert.equal(fs.readFileSync(jsonPath, 'utf8'), '{"complete":true}\n');
+	assert.equal(fs.readFileSync(markdownPath, 'utf8'), '# Complete\n');
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
+test('confines local corpus outputs to direct files in the managed results directory', () => {
+	const { directory, document, manifestPath } = localManifest();
+	for (const outputPath of [
+		path.join(directory, 'outside.json'),
+		path.join(directory, 'results', 'nested', 'run.json'),
+	]) {
+		assert.throws(
+			() =>
+				writeCorpusBoundJson({
+					manifestPath,
+					expectedFingerprint: corpusFingerprint(document),
+					outputPath,
+					value: { corpus_fingerprint: corpusFingerprint(document) },
+				}),
+			/managed results directory/,
+		);
+		assert(!fs.existsSync(outputPath));
+	}
 });
 
 test('refuses to overwrite output after the corpus revision changes', () => {

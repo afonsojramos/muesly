@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { writeCorpusBoundFiles } from './corpus-result.mjs';
+import { loadCorpus } from './corpus.mjs';
+
 const DIMENSIONS = [
 	['overall', () => 'all'],
 	['language', (record) => record.language],
@@ -313,24 +316,44 @@ function stringFlag(args, name) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 	try {
 		const args = process.argv.slice(2);
+		const manifestPath = stringFlag(args, '--manifest');
 		const jsonOutput = stringFlag(args, '--json');
 		const markdownOutput = stringFlag(args, '--markdown');
-		if (args.length === 0) throw new Error('Usage: report.mjs <run.json>... [--json <path>] [--markdown <path>]');
+		if (args.length === 0) {
+			throw new Error(
+				'Usage: report.mjs <run.json>... [--manifest <path>] [--json <path>] [--markdown <path>]',
+			);
+		}
+		if ((jsonOutput || markdownOutput) && !manifestPath) {
+			throw new Error('--manifest is required when writing aggregate output files');
+		}
 		const reports = args.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')));
 		const aggregate = aggregateRunReports(reports);
-		if (jsonOutput) {
-			const output = path.resolve(jsonOutput);
-			fs.mkdirSync(path.dirname(output), { recursive: true });
-			fs.writeFileSync(output, `${JSON.stringify(aggregate, null, 2)}\n`);
-		}
 		const markdown = renderMarkdown(aggregate);
-		if (markdownOutput) {
-			const output = path.resolve(markdownOutput);
-			fs.mkdirSync(path.dirname(output), { recursive: true });
-			fs.writeFileSync(output, markdown);
-		} else {
-			process.stdout.write(markdown);
+		if (jsonOutput || markdownOutput) {
+			const corpus = loadCorpus(manifestPath);
+			if (aggregate.corpus_id !== corpus.corpus_id) {
+				throw new Error(
+					`report corpus '${aggregate.corpus_id}' does not match manifest corpus '${corpus.corpus_id}'`,
+				);
+			}
+			writeCorpusBoundFiles({
+				manifestPath,
+				expectedFingerprint: aggregate.corpus_fingerprint,
+				outputs: [
+					...(jsonOutput
+						? [
+								{
+									outputPath: jsonOutput,
+									contents: `${JSON.stringify(aggregate, null, 2)}\n`,
+								},
+							]
+						: []),
+					...(markdownOutput ? [{ outputPath: markdownOutput, contents: markdown }] : []),
+				],
+			});
 		}
+		if (!markdownOutput) process.stdout.write(markdown);
 	} catch (error) {
 		console.error(error.message);
 		process.exit(2);
