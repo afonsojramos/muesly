@@ -111,6 +111,42 @@ test('requires explicit confirmation and leaves unknown sessions unchanged', () 
 	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
 });
 
+test('withdraws files promoted by an interrupted intake before manifest commit', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const before = fs.readFileSync(manifestPath, 'utf8');
+	const orphanDirectory = path.join(directory, 'local-corpus', 'session-orphan');
+	fs.mkdirSync(orphanDirectory);
+	fs.writeFileSync(path.join(orphanDirectory, 'orphan.wav'), 'private promoted audio');
+	fs.writeFileSync(path.join(orphanDirectory, 'orphan.txt'), 'private promoted transcript');
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'existing.json'), '{}');
+	fs.writeFileSync(
+		path.join(directory, 'local-corpus', '.intake.lock'),
+		JSON.stringify({
+			schema_version: 1,
+			pid: 999_999_999,
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-orphan',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-orphan',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
+	assert(!fs.existsSync(orphanDirectory));
+	assert(fs.existsSync(path.join(resultsDirectory, 'existing.json')));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
 test('completes withdrawal when target files were already partially deleted', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const missingAudio = path.join(

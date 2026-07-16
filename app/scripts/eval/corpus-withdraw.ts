@@ -48,10 +48,11 @@ function readWithdrawalMarker(markerPath, sessionId) {
 	} catch (error) {
 		throw new Error(`failed to read pending withdrawal ${markerPath}: ${error.message}`);
 	}
+	const minimumRemovedSamples = marker.schema_version === 2 ? 0 : 1;
 	const commonFieldsValid =
 		marker.session_id === sessionId &&
 		Number.isInteger(marker.removed_samples) &&
-		marker.removed_samples >= 1;
+		marker.removed_samples >= minimumRemovedSamples;
 	const quarantineValid =
 		marker.schema_version === 2 &&
 		/^\.withdrawal-results-[a-z0-9-]+-[a-f0-9-]+$/.test(marker.results_quarantine ?? '');
@@ -131,22 +132,52 @@ export function withdrawConsentedSession(options) {
 		const document = readLocalManifest(manifestPath);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
 		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId);
+		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (withdrawn.length === 0) {
-			if (!pendingMarker) {
+			if (pendingMarker) {
+				finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
+				return {
+					sessionId: options.sessionId,
+					removedSamples: pendingMarker.removed_samples,
+					resumed: true,
+				};
+			}
+			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
+			if (!sessionEntry) {
 				throw new Error(`session is not present in the corpus: ${options.sessionId}`);
 			}
-			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
+			if (!sessionEntry.isDirectory() || sessionEntry.isSymbolicLink()) {
+				throw new Error(`session directory is not a regular directory: ${sessionDirectory}`);
+			}
+			for (const sample of document.samples) {
+				for (const field of ['audio_path', 'reference_path']) {
+					const filePath = path.resolve(path.dirname(manifestPath), sample[field]);
+					if (isWithinDirectory(sessionDirectory, filePath)) {
+						throw new Error(
+							`refusing to withdraw ${options.sessionId}: remaining sample ${sample.id} shares its directory`,
+						);
+					}
+				}
+			}
+			const orphanMarker = {
+				schema_version: 2,
+				session_id: options.sessionId,
+				removed_samples: 0,
+				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
+				started_at: new Date().toISOString(),
+			};
+			writeWithdrawalMarker(markerPath, orphanMarker);
+			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, orphanMarker);
 			return {
 				sessionId: options.sessionId,
-				removedSamples: pendingMarker.removed_samples,
-				resumed: true,
+				removedSamples: 0,
+				resumed: false,
 			};
 		}
 		if (pendingMarker && pendingMarker.removed_samples !== withdrawn.length) {
 			throw new Error(`pending withdrawal sample count changed: ${markerPath}`);
 		}
 
-		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
 			throw new Error(`session directory cannot be a symbolic link: ${sessionDirectory}`);
 		}
