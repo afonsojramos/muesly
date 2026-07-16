@@ -117,7 +117,7 @@ Coverage JSON also records the corpus fingerprint and verified model-artifact ma
 completeness result remains bound to the exact corpus revision and evaluated bytes.
 Measurement completeness requires the session floor within one compatible hardware cohort:
 operating system, architecture, machine profile, and the accelerator for that backend must match.
-Coverage schema 4 retains raw cross-machine session counts for diagnostics, but reports the largest
+Coverage schema 5 retains raw cross-machine session counts for diagnostics, but reports the largest
 compatible count per cell and identifies cells whose apparent coverage is split across hardware.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
