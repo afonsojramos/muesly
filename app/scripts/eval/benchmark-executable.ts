@@ -356,10 +356,89 @@ function executableFromCargoMessages(stdout, repositoryRoot) {
 	} catch {
 		throw new Error('cargo reported an unreadable transcribe-fixture executable');
 	}
-	if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1n) {
+	if (!status.isFile() || status.isSymbolicLink()) {
 		throw new Error('cargo reported a non-regular transcribe-fixture executable');
 	}
+	if (status.nlink !== 1n) {
+		try {
+			const source = cargoExampleHardlinkSource(reportedPath, status);
+			const reportedAfter = fs.lstatSync(reportedPath, { bigint: true });
+			const sourceAfter = source && fs.lstatSync(source.path, { bigint: true });
+			if (
+				source === null ||
+				!sameFileSnapshot(status, reportedAfter) ||
+				!sameFileSnapshot(source.status, sourceAfter) ||
+				!sameFileIdentity(reportedAfter, sourceAfter)
+			) {
+				throw new Error('unsafe Cargo example hardlink');
+			}
+		} catch {
+			throw new Error('cargo reported a non-regular transcribe-fixture executable');
+		}
+	}
 	return canonicalPath;
+}
+
+function sameFileIdentity(left, right) {
+	return left.dev === right.dev && left.ino === right.ino;
+}
+
+function cargoExampleHardlinkSource(reportedPath, reportedStatus) {
+	if (reportedStatus.nlink !== 2n) return null;
+	const executableSuffix = process.platform === 'win32' ? '.exe' : '';
+	const directory = path.dirname(reportedPath);
+	if (
+		path.basename(reportedPath) !== `transcribe-fixture${executableSuffix}` ||
+		path.basename(directory) !== 'examples' ||
+		path.basename(path.dirname(directory)) !== 'release'
+	) {
+		return null;
+	}
+	// Cargo emits the example as `transcribe_fixture-<UnitHash>` and then
+	// link-or-copies that file to the unhashed executable it reports. On
+	// non-macOS filesystems this is normally an exact two-name hardlink pair.
+	const sourcePattern = new RegExp(
+		`^transcribe_fixture-[a-f0-9]{16}${executableSuffix === '' ? '' : '\\.exe'}$`,
+	);
+	const matches = [];
+	for (const name of fs.readdirSync(directory)) {
+		if (!sourcePattern.test(name)) continue;
+		const candidatePath = path.join(directory, name);
+		const candidateStatus = fs.lstatSync(candidatePath, {
+			bigint: true,
+			throwIfNoEntry: false,
+		});
+		if (
+			candidateStatus?.isFile() &&
+			!candidateStatus.isSymbolicLink() &&
+			sameFileSnapshot(reportedStatus, candidateStatus)
+		) {
+			matches.push({ path: candidatePath, status: candidateStatus });
+		}
+	}
+	return matches.length === 1 ? matches[0] : null;
+}
+
+function copyDescriptor(sourceDescriptor, destinationDescriptor) {
+	const buffer = Buffer.allocUnsafe(1024 * 1024);
+	const hash = createHash('sha256');
+	let position = 0;
+	for (;;) {
+		const bytesRead = fs.readSync(sourceDescriptor, buffer, 0, buffer.length, position);
+		if (bytesRead === 0) return hash.digest('hex');
+		hash.update(buffer.subarray(0, bytesRead));
+		let bytesWritten = 0;
+		while (bytesWritten < bytesRead) {
+			bytesWritten += fs.writeSync(
+				destinationDescriptor,
+				buffer,
+				bytesWritten,
+				bytesRead - bytesWritten,
+				null,
+			);
+		}
+		position += bytesRead;
+	}
 }
 
 function sameFileSnapshot(left, right) {
@@ -568,19 +647,20 @@ export function benchmarkExecutableSha256(executablePath) {
 	let descriptor;
 	try {
 		const pathBefore = fs.lstatSync(executablePath, { bigint: true });
-		if (!pathBefore.isFile() || pathBefore.isSymbolicLink() || pathBefore.nlink !== 1n) {
+		if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
 			throw new Error('probed benchmark executable is not a regular unaliased file');
+		}
+		const cargoSource =
+			pathBefore.nlink === 2n ? cargoExampleHardlinkSource(executablePath, pathBefore) : null;
+		if (pathBefore.nlink !== 1n && cargoSource === null) {
+			throw new Error('probed benchmark executable is not a recognized Cargo artifact');
 		}
 		descriptor = fs.openSync(
 			executablePath,
 			fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
 		);
 		const descriptorBefore = fs.fstatSync(descriptor, { bigint: true });
-		if (
-			!descriptorBefore.isFile() ||
-			descriptorBefore.nlink !== 1n ||
-			!sameFileSnapshot(pathBefore, descriptorBefore)
-		) {
+		if (!descriptorBefore.isFile() || !sameFileSnapshot(pathBefore, descriptorBefore)) {
 			throw new Error('probed benchmark executable changed while it was being opened');
 		}
 		const hash = createHash('sha256');
@@ -592,13 +672,15 @@ export function benchmarkExecutableSha256(executablePath) {
 		}
 		const descriptorAfter = fs.fstatSync(descriptor, { bigint: true });
 		const pathAfter = fs.lstatSync(executablePath, { bigint: true });
+		const cargoSourceAfter = cargoSource && fs.lstatSync(cargoSource.path, { bigint: true });
 		if (
 			!descriptorAfter.isFile() ||
-			descriptorAfter.nlink !== 1n ||
 			!pathAfter.isFile() ||
-			pathAfter.nlink !== 1n ||
 			!sameFileSnapshot(descriptorBefore, descriptorAfter) ||
-			!sameFileSnapshot(descriptorAfter, pathAfter)
+			!sameFileSnapshot(descriptorAfter, pathAfter) ||
+			(cargoSource !== null &&
+				(!sameFileSnapshot(cargoSource.status, cargoSourceAfter) ||
+					!sameFileIdentity(pathAfter, cargoSourceAfter)))
 		) {
 			throw new Error('probed benchmark executable changed while it was being hashed');
 		}
@@ -607,6 +689,93 @@ export function benchmarkExecutableSha256(executablePath) {
 		throw new Error('probed benchmark executable is unreadable');
 	} finally {
 		if (descriptor !== undefined) fs.closeSync(descriptor);
+	}
+}
+
+function copyCargoExampleHardlinkSnapshot(
+	executablePath,
+	destinationPath,
+	expectedSha256,
+	{ mode = 0o700 } = {},
+) {
+	let sourceDescriptor;
+	let destinationDescriptor;
+	let copiedSha256;
+	let copiedStatus;
+	let failure;
+	try {
+		const pathBefore = fs.lstatSync(executablePath, { bigint: true });
+		const cargoSource = cargoExampleHardlinkSource(executablePath, pathBefore);
+		if (cargoSource === null) {
+			throw new Error('benchmark executable is not an exact Cargo example hardlink pair');
+		}
+		sourceDescriptor = fs.openSync(
+			executablePath,
+			fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+		);
+		const descriptorBefore = fs.fstatSync(sourceDescriptor, { bigint: true });
+		if (!descriptorBefore.isFile() || !sameFileSnapshot(pathBefore, descriptorBefore)) {
+			throw new Error('Cargo example hardlink changed while it was being opened');
+		}
+		destinationDescriptor = fs.openSync(
+			destinationPath,
+			fs.constants.O_WRONLY |
+				fs.constants.O_CREAT |
+				fs.constants.O_EXCL |
+				(fs.constants.O_NOFOLLOW ?? 0),
+			0o600,
+		);
+		copiedSha256 = copyDescriptor(sourceDescriptor, destinationDescriptor);
+		fs.fchmodSync(destinationDescriptor, mode);
+		copiedStatus = fs.fstatSync(destinationDescriptor, { bigint: true });
+		const descriptorAfter = fs.fstatSync(sourceDescriptor, { bigint: true });
+		const pathAfter = fs.lstatSync(executablePath, { bigint: true });
+		const cargoSourceAfter = fs.lstatSync(cargoSource.path, { bigint: true });
+		const destinationAfter = fs.lstatSync(destinationPath, { bigint: true });
+		if (
+			!copiedStatus.isFile() ||
+			copiedStatus.nlink !== 1n ||
+			!sameFileSnapshot(copiedStatus, destinationAfter) ||
+			!sameFileSnapshot(descriptorBefore, descriptorAfter) ||
+			!sameFileSnapshot(descriptorAfter, pathAfter) ||
+			!sameFileSnapshot(cargoSource.status, cargoSourceAfter) ||
+			!sameFileIdentity(pathAfter, cargoSourceAfter)
+		) {
+			throw new Error('Cargo example hardlink changed while it was being snapshotted');
+		}
+	} catch (error) {
+		failure = error;
+	}
+	for (const descriptor of [destinationDescriptor, sourceDescriptor]) {
+		if (descriptor === undefined) continue;
+		try {
+			fs.closeSync(descriptor);
+		} catch (error) {
+			failure ??= error;
+		}
+	}
+	if (failure === undefined) {
+		try {
+			const destinationSha256 = benchmarkExecutableSha256(destinationPath);
+			const destinationFinal = fs.lstatSync(destinationPath, { bigint: true });
+			if (
+				copiedSha256 !== expectedSha256 ||
+				destinationSha256 !== expectedSha256 ||
+				!sameFileSnapshot(copiedStatus, destinationFinal)
+			) {
+				throw new Error('benchmark executable snapshot does not match the expected SHA-256');
+			}
+		} catch (error) {
+			failure = error;
+		}
+	}
+	if (failure !== undefined) {
+		try {
+			fs.rmSync(destinationPath, { force: true });
+		} catch {
+			// The caller removes the owned private snapshot directory as a second cleanup boundary.
+		}
+		throw failure;
 	}
 }
 
@@ -634,11 +803,16 @@ export function stageBenchmarkExecutableSnapshot(
 				}),
 			)
 			.digest('hex');
-		copyFileSnapshotImpl(executablePath, snapshotPath, {
-			expectedSha256,
-			label: 'benchmark executable snapshot',
-			mode: 0o700,
-		});
+		const sourceStatus = fs.lstatSync(executablePath, { bigint: true });
+		if (sourceStatus.nlink === 1n) {
+			copyFileSnapshotImpl(executablePath, snapshotPath, {
+				expectedSha256,
+				label: 'benchmark executable snapshot',
+				mode: 0o700,
+			});
+		} else {
+			copyCargoExampleHardlinkSnapshot(executablePath, snapshotPath, expectedSha256);
+		}
 		for (const library of runtimeLibraries) {
 			copyFileSnapshotImpl(library.sourcePath, path.join(snapshotDirectory, library.filename), {
 				expectedSha256: library.sha256,
@@ -668,7 +842,11 @@ export function stageBenchmarkExecutableSnapshot(
 			runtimeDependenciesSha256: snapshotRuntimeDependenciesSha256,
 		};
 	} catch (error) {
-		fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+		try {
+			fs.rmSync(snapshotDirectory, { recursive: true, force: true });
+		} catch {
+			// Preserve the primary validation error if private-directory cleanup also fails.
+		}
 		throw error;
 	}
 }

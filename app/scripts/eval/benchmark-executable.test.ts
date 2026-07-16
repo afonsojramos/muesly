@@ -395,6 +395,213 @@ test('overrides compiler wrapper traps from parent and Cargo home configuration'
 			path.join(repositoryRoot, 'target', 'release', 'examples', 'transcribe-fixture'),
 		),
 	);
+	assert.match(benchmarkExecutableSha256(built.executablePath), /^[a-f0-9]{64}$/);
+});
+
+test('snapshots only exact Cargo example hardlink pairs', async (t) => {
+	const executableSuffix = process.platform === 'win32' ? '.exe' : '';
+	const message = (executable) =>
+		`${JSON.stringify({
+			reason: 'compiler-artifact',
+			target: { name: 'transcribe-fixture', kind: ['example'] },
+			executable,
+		})}\n`;
+	const build = (repositoryRoot, executablePath) =>
+		buildBenchmarkExecutable(repositoryRoot, {
+			provider: 'whisper',
+			backend: 'cpu',
+			spawnSyncImpl: () => ({ status: 0, stdout: message(executablePath) }),
+		});
+	const createCargoPair = (
+		t,
+		{ hash = 'a'.repeat(16), content = 'Cargo-built executable' } = {},
+	) => {
+		const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-cargo-hardlink-'));
+		t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+		const examplesDirectory = path.join(repositoryRoot, 'target', 'release', 'examples');
+		const sourcePath = path.join(
+			examplesDirectory,
+			`transcribe_fixture-${hash}${executableSuffix}`,
+		);
+		const executablePath = path.join(examplesDirectory, `transcribe-fixture${executableSuffix}`);
+		fs.mkdirSync(examplesDirectory, { recursive: true });
+		fs.writeFileSync(sourcePath, content, { mode: 0o700 });
+		fs.linkSync(sourcePath, executablePath);
+		return { content, executablePath, repositoryRoot, sourcePath };
+	};
+
+	await t.test('Cargo hardlink pair', (t) => {
+		const { content, executablePath, repositoryRoot, sourcePath } = createCargoPair(t);
+		assert.equal(fs.lstatSync(executablePath, { bigint: true }).nlink, 2n);
+
+		assert.deepEqual(build(repositoryRoot, executablePath), {
+			cargoFeatures: [],
+			executablePath: fs.realpathSync(executablePath),
+		});
+		const expectedSha256 = createHash('sha256').update(content).digest('hex');
+		assert.equal(benchmarkExecutableSha256(executablePath), expectedSha256);
+		const sourceStatus = fs.lstatSync(sourcePath, { bigint: true });
+		const executableStatus = fs.lstatSync(executablePath, { bigint: true });
+		assert.equal(sourceStatus.nlink, 2n);
+		assert.equal(executableStatus.nlink, 2n);
+		assert.deepEqual(
+			[sourceStatus.dev, sourceStatus.ino],
+			[executableStatus.dev, executableStatus.ino],
+		);
+
+		const snapshot = stageBenchmarkExecutableSnapshot(
+			executablePath,
+			path.join(repositoryRoot, 'private-snapshot'),
+			expectedSha256,
+		);
+		const snapshotStatus = fs.lstatSync(snapshot.executablePath, { bigint: true });
+		assert.equal(fs.lstatSync(sourcePath, { bigint: true }).nlink, 2n);
+		assert.equal(fs.lstatSync(executablePath, { bigint: true }).nlink, 2n);
+		assert.equal(snapshotStatus.nlink, 1n);
+		assert.notDeepEqual(
+			[executableStatus.dev, executableStatus.ino],
+			[snapshotStatus.dev, snapshotStatus.ino],
+		);
+		assert.equal(fs.readFileSync(snapshot.executablePath, 'utf8'), content);
+		if (process.platform !== 'win32') {
+			assert.equal(snapshotStatus.mode & 0o777n, 0o700n);
+		}
+	});
+
+	await t.test('source sibling replacement during hashing', (t) => {
+		const { executablePath, sourcePath } = createCargoPair(t);
+		const displacedSource = `${sourcePath}.displaced`;
+		const readSync = fs.readSync;
+		let replaced = false;
+		t.mock.method(fs, 'readSync', (descriptor, ...args) => {
+			const bytesRead = readSync(descriptor, ...args);
+			if (!replaced && bytesRead > 0) {
+				replaced = true;
+				fs.renameSync(sourcePath, displacedSource);
+				fs.writeFileSync(sourcePath, 'replacement executable');
+			}
+			return bytesRead;
+		});
+
+		assert.throws(() => benchmarkExecutableSha256(executablePath), /unreadable/);
+		assert.equal(replaced, true);
+	});
+
+	await t.test('source sibling replacement during snapshot copy', (t) => {
+		const { content, executablePath, repositoryRoot, sourcePath } = createCargoPair(t);
+		const expectedSha256 = createHash('sha256').update(content).digest('hex');
+		const snapshotDirectory = path.join(repositoryRoot, 'private-snapshot');
+		const displacedSource = `${sourcePath}.displaced`;
+		const writeSync = fs.writeSync;
+		let replaced = false;
+		t.mock.method(fs, 'writeSync', (descriptor, ...args) => {
+			const bytesWritten = writeSync(descriptor, ...args);
+			if (!replaced && bytesWritten > 0) {
+				replaced = true;
+				fs.renameSync(sourcePath, displacedSource);
+				fs.writeFileSync(sourcePath, 'replacement executable');
+			}
+			return bytesWritten;
+		});
+
+		assert.throws(
+			() => stageBenchmarkExecutableSnapshot(executablePath, snapshotDirectory, expectedSha256),
+			/changed while it was being snapshotted/,
+		);
+		assert.equal(replaced, true);
+		assert.equal(fs.existsSync(snapshotDirectory), false);
+	});
+
+	await t.test('destination content corruption', (t) => {
+		const { content, executablePath, repositoryRoot } = createCargoPair(t);
+		const expectedSha256 = createHash('sha256').update(content).digest('hex');
+		const snapshotDirectory = path.join(repositoryRoot, 'private-snapshot');
+		const fchmodSync = fs.fchmodSync;
+		let corrupted = false;
+		t.mock.method(fs, 'fchmodSync', (descriptor, mode) => {
+			fchmodSync(descriptor, mode);
+			if (!corrupted) {
+				corrupted = true;
+				fs.writeSync(descriptor, Buffer.from('X'), 0, 1, 0);
+			}
+		});
+
+		assert.throws(
+			() => stageBenchmarkExecutableSnapshot(executablePath, snapshotDirectory, expectedSha256),
+			/does not match the expected SHA-256/,
+		);
+		assert.equal(corrupted, true);
+		assert.equal(fs.existsSync(snapshotDirectory), false);
+	});
+
+	await t.test('destination path replacement', (t) => {
+		const { content, executablePath, repositoryRoot } = createCargoPair(t);
+		const expectedSha256 = createHash('sha256').update(content).digest('hex');
+		const snapshotDirectory = path.join(repositoryRoot, 'private-snapshot');
+		const snapshotPath = path.join(snapshotDirectory, path.basename(executablePath));
+		const displacedSnapshot = `${snapshotPath}.displaced`;
+		const fchmodSync = fs.fchmodSync;
+		let replaced = false;
+		t.mock.method(fs, 'fchmodSync', (descriptor, mode) => {
+			fchmodSync(descriptor, mode);
+			if (!replaced) {
+				replaced = true;
+				fs.renameSync(snapshotPath, displacedSnapshot);
+				fs.writeFileSync(snapshotPath, content, { mode });
+			}
+		});
+
+		assert.throws(
+			() => stageBenchmarkExecutableSnapshot(executablePath, snapshotDirectory, expectedSha256),
+			/changed while it was being snapshotted/,
+		);
+		assert.equal(replaced, true);
+		assert.equal(fs.existsSync(snapshotDirectory), false);
+	});
+
+	await t.test('independent descriptor cleanup', (t) => {
+		const { content, executablePath, repositoryRoot } = createCargoPair(t);
+		const expectedSha256 = createHash('sha256').update(content).digest('hex');
+		const snapshotDirectory = path.join(repositoryRoot, 'private-snapshot');
+		const closeSync = fs.closeSync;
+		let closeCalls = 0;
+		t.mock.method(fs, 'closeSync', (descriptor) => {
+			closeSync(descriptor);
+			closeCalls += 1;
+			if (closeCalls === 1) throw new Error('destination close trap');
+		});
+
+		assert.throws(
+			() => stageBenchmarkExecutableSnapshot(executablePath, snapshotDirectory, expectedSha256),
+			/destination close trap/,
+		);
+		assert.equal(closeCalls, 2);
+		assert.equal(fs.existsSync(snapshotDirectory), false);
+	});
+
+	await t.test('arbitrary two-link executable', (t) => {
+		const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-cargo-hardlink-'));
+		t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+		const examplesDirectory = path.join(repositoryRoot, 'target', 'release', 'examples');
+		const sourcePath = path.join(examplesDirectory, 'attacker-controlled');
+		const executablePath = path.join(examplesDirectory, `transcribe-fixture${executableSuffix}`);
+		fs.mkdirSync(examplesDirectory, { recursive: true });
+		fs.writeFileSync(sourcePath, 'not a Cargo artifact');
+		fs.linkSync(sourcePath, executablePath);
+
+		assert.throws(() => build(repositoryRoot, executablePath), /non-regular/);
+		assert.equal(fs.lstatSync(executablePath, { bigint: true }).nlink, 2n);
+	});
+
+	await t.test('Cargo-looking pair with an extra alias', (t) => {
+		const { executablePath, repositoryRoot, sourcePath } = createCargoPair(t, {
+			hash: 'b'.repeat(16),
+		});
+		fs.linkSync(sourcePath, path.join(repositoryRoot, 'external-alias'));
+
+		assert.throws(() => build(repositoryRoot, executablePath), /non-regular/);
+		assert.equal(fs.lstatSync(executablePath, { bigint: true }).nlink, 3n);
+	});
 });
 
 test('stages the exact executable and rejects a transient swap-copy-restore', (t) => {
