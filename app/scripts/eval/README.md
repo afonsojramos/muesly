@@ -46,14 +46,21 @@ each `fixtures/<base>.wav` with a sibling `fixtures/<base>-ref.txt`.
 - An empty reference is a hallucination check: the engine should produce
   (near-)nothing (gated by `--max-hallucinated-words`, default 2).
   `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
-- `--model <name>` (Whisper default `tiny`) A/Bs models on the same fixtures, e.g.
-  `node app/scripts/eval/real-run.mjs --model large-v3-turbo`.
+- `--provider whisper|parakeet` (default `whisper`) and `--model <name>` A/B engines
+  and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
+- `--models-dir <path>` reuses an existing app model directory instead of downloading
+  another copy into the development directory.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
 - `--fixture <base>` limits the run to one fixture.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
+
+Cross-engine spot check (2026-07-16, checked-in fixture, production VAD/filter path):
+`large-v3-turbo-q5_0` scored 0.00% WER; `parakeet-tdt-0.6b-v3-int8` scored 1.85%
+WER (one substitution) and emitted nothing for the silence fixture. This single clean
+English clip is a regression check, not a general accuracy ranking.
 
 - **First-run costs:** compiles the Rust workspace, downloads FFmpeg during the
   build, and fetches the `tiny` model (~75 MB) into the gitignored dev models
