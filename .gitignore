@@ -45,7 +45,6 @@ docs/*
 !docs/gpu-acceleration.md
 !docs/transcription-flows.md
 !docs/transcription-models.md
-!docs/residual-review-findings/
 
 # Environment & secrets
 .env
