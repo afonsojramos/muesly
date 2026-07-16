@@ -63,7 +63,7 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
   count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, and backend.
-- `--fixture <sample-id-or-audio-base>` limits the run to one manifest sample.
+- `--fixture <sample-id>` limits the run to one uniquely named manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
 - BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).

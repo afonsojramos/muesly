@@ -15,7 +15,7 @@
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
  *                          [--backend cpu|metal|cuda|vulkan|openblas|hipblas]
- *                          [--output <path>] [--fixture <id-or-audio-base>]
+ *                          [--output <path>] [--fixture <sample-id>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
  */
@@ -99,11 +99,9 @@ try {
 	console.error(error.message);
 	process.exit(2);
 }
-const fixtures = corpus.samples.filter((sample) => {
-	if (!onlyFixture) return true;
-	const audioBase = path.basename(sample.audio_path, path.extname(sample.audio_path));
-	return sample.id === onlyFixture || audioBase === onlyFixture;
-});
+const fixtures = onlyFixture
+	? corpus.samples.filter((sample) => sample.id === onlyFixture)
+	: corpus.samples;
 
 if (fixtures.length === 0) {
 	console.error(onlyFixture ? `no corpus sample named '${onlyFixture}'` : 'corpus has no samples');

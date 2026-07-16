@@ -37,3 +37,13 @@ test('rejects missing output paths before starting a benchmark', () => {
 		assert.doesNotMatch(run.stderr, /running real/);
 	}
 });
+
+test('selects fixtures only by unique manifest sample ID', () => {
+	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const run = spawnSync(process.execPath, [realRun, '--fixture', 'real-speech'], {
+		encoding: 'utf8',
+	});
+	assert.equal(run.status, 2);
+	assert.match(run.stderr, /no corpus sample named 'real-speech'/);
+	assert.doesNotMatch(run.stderr, /running real/);
+});
