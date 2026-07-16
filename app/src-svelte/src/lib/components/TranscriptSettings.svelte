@@ -93,8 +93,9 @@
 					<Alert.Title>Fastest profile trade-offs</Alert.Title>
 					<Alert.Description>
 						<p>
-							Parakeet transcribes near-instantly but less accurately than Whisper, and it ignores
-							the transcription language setting and your custom dictionary.
+							Parakeet is optimized for very fast captions across 25 European languages. It
+							auto-detects the language and cannot translate to English or use your custom
+							dictionary.
 						</p>
 						{#if qualityPassEnabled}
 							<p>
@@ -104,7 +105,8 @@
 						{:else}
 							<div class="flex flex-wrap items-center gap-2">
 								<span>
-									Enable the post-meeting quality pass so finished meetings keep Whisper accuracy.
+									Enable the post-meeting quality pass to re-run finished meetings with Whisper's
+									language controls and custom dictionary.
 								</span>
 								<Button size="xs" variant="outline" onclick={() => void toggleQualityPass(true)}>
 									Enable quality pass

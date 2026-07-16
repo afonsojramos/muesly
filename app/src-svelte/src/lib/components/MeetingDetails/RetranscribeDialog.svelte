@@ -356,7 +356,7 @@
 						</Select.Root>
 						<p class="text-xs text-muted-foreground">
 							{selectedIsParakeet
-								? 'Parakeet is the fastest option but less accurate than Whisper, and it skips your custom dictionary'
+								? 'Parakeet is very fast across 25 European languages, but cannot translate to English or use your custom dictionary'
 								: 'Choose a transcription model'}
 						</p>
 					</div>

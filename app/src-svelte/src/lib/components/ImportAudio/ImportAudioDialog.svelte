@@ -302,7 +302,8 @@
 									</Select.Root>
 									{#if selectedModel?.provider === 'parakeet'}
 										<p class="text-xs text-muted-foreground">
-											Parakeet always auto-detects the language and is less accurate than Whisper
+											Parakeet auto-detects among 25 European languages; it cannot translate to
+											English or use your custom dictionary
 										</p>
 									{/if}
 								</div>

@@ -1,10 +1,17 @@
 <script lang="ts" module>
 	const DISPLAY_NAMES: Record<string, string> = {
-		small: 'Small',
-		'medium-q5_0': 'Medium',
-		'large-v3-q5_0': 'Large V3 Compressed',
-		'large-v3-turbo': 'Large V3 Turbo',
-		'large-v3': 'Large V3',
+		tiny: 'Whisper Tiny',
+		'tiny-q5_1': 'Whisper Tiny (compressed)',
+		base: 'Whisper Base',
+		'base-q5_1': 'Whisper Base (compressed)',
+		small: 'Whisper Small',
+		'small-q5_1': 'Whisper Small (compressed)',
+		medium: 'Whisper Medium',
+		'medium-q5_0': 'Whisper Medium (compressed)',
+		'large-v3-turbo-q5_0': 'Whisper Large V3 Turbo (compressed)',
+		'large-v3-q5_0': 'Whisper Large V3 (compressed)',
+		'large-v3-turbo': 'Whisper Large V3 Turbo',
+		'large-v3': 'Whisper Large V3',
 		'parakeet-tdt-0.6b-v3-int8': 'Parakeet V3',
 	};
 
@@ -101,7 +108,7 @@
 			modelName: PARAKEET_MODEL,
 			title: 'Fastest',
 			icon: Zap,
-			tagline: 'Near-instant captions, less accurate than Whisper',
+			tagline: 'Very fast captions in 25 European languages',
 			recommended: false,
 		},
 	]);
@@ -166,7 +173,7 @@
 					speed: 'Very Fast' as const,
 					status: m.status,
 					description:
-						'Parakeet v3: near-instant on CPU, less accurate than Whisper. Best paired with the post-meeting quality pass.',
+						'Parakeet v3: very fast multilingual captions on CPU. No manual language forcing, translation, confidence score, or vocabulary prompting.',
 				})),
 			);
 		} catch (err) {
