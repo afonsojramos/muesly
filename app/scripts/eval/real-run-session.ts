@@ -36,6 +36,7 @@ import { validateBenchmarkMetrics, validateRunReport } from './report.ts';
 import { WER_SCORER_ID, werDetails } from './wer.ts';
 
 const MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024;
+const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const FORCE_KILL_DELAY_MS = 750;
 const FORCE_KILL_CONFIRMATION_MS = 5_000;
@@ -63,6 +64,52 @@ const DEFAULT_DEPENDENCIES = Object.freeze({
 
 function errorMessage(error) {
 	return error instanceof Error ? error.message : String(error);
+}
+
+function escapeRegularExpression(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sanitizeDiagnosticControls(value) {
+	let sanitized = '';
+	for (const character of value) {
+		const codePoint = character.codePointAt(0);
+		sanitized +=
+			codePoint <= 8 ||
+			(codePoint >= 11 && codePoint <= 12) ||
+			(codePoint >= 14 && codePoint <= 31) ||
+			codePoint === 127
+				? '\uFFFD'
+				: character;
+	}
+	return sanitized;
+}
+
+function redactPrivateSamplePaths(value, sample) {
+	let diagnostic = String(value ?? '');
+	const candidates = new Set();
+	for (const filePath of [sample.audio_file, sample.reference_file]) {
+		if (typeof filePath !== 'string' || filePath.length === 0) continue;
+		const resolved = path.resolve(filePath);
+		for (const candidate of [filePath, path.normalize(filePath), resolved]) {
+			candidates.add(candidate);
+			if (process.platform === 'win32') candidates.add(candidate.replaceAll('\\', '/'));
+		}
+		candidates.add(path.basename(resolved));
+		const directory = path.dirname(resolved);
+		if (directory !== path.parse(directory).root) candidates.add(directory);
+	}
+	for (const candidate of [...candidates].sort((left, right) => right.length - left.length)) {
+		if (candidate.length === 0) continue;
+		diagnostic =
+			process.platform === 'win32'
+				? diagnostic.replace(
+						new RegExp(escapeRegularExpression(candidate), 'gi'),
+						'<private-corpus-path>',
+					)
+				: diagnostic.split(candidate).join('<private-corpus-path>');
+	}
+	return sanitizeDiagnosticControls(diagnostic.replace(/\r\n?/g, '\n')).trim();
 }
 
 function canonicalTimestamp(date) {
@@ -352,16 +399,19 @@ function defaultRunProcess(command, args, options) {
 				cwd: options.cwd,
 				detached: process.platform !== 'win32',
 				env: options.env,
-				stdio: ['ignore', 'pipe', 'inherit'],
+				stdio: ['ignore', 'pipe', 'pipe'],
 				windowsHide: true,
 			});
 		} catch (error) {
 			reject(error);
 			return;
 		}
-		const chunks = [];
-		let bytes = 0;
-		let outputExceeded = false;
+		const stdoutChunks = [];
+		const stderrChunks = [];
+		let stdoutBytes = 0;
+		let stderrBytes = 0;
+		let transcriptLimitExceeded = false;
+		let diagnosticLimitExceeded = false;
 		let aborted = false;
 		let settled = false;
 		let terminationPromise = null;
@@ -385,15 +435,26 @@ function defaultRunProcess(command, args, options) {
 		};
 		options.signal?.addEventListener('abort', onAbort, { once: true });
 		child.stdout.on('data', (chunk) => {
-			if (outputExceeded) return;
+			if (transcriptLimitExceeded) return;
 			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-			bytes += buffer.length;
-			if (bytes > options.maxOutputBytes) {
-				outputExceeded = true;
+			stdoutBytes += buffer.length;
+			if (stdoutBytes > options.maxOutputBytes) {
+				transcriptLimitExceeded = true;
 				terminate();
 				return;
 			}
-			chunks.push(buffer);
+			stdoutChunks.push(buffer);
+		});
+		child.stderr.on('data', (chunk) => {
+			if (diagnosticLimitExceeded) return;
+			const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+			stderrBytes += buffer.length;
+			if (stderrBytes > options.maxDiagnosticBytes) {
+				diagnosticLimitExceeded = true;
+				terminate();
+				return;
+			}
+			stderrChunks.push(buffer);
 		});
 		child.once('error', (error) => {
 			options.signal?.removeEventListener('abort', onAbort);
@@ -411,15 +472,20 @@ function defaultRunProcess(command, args, options) {
 				settleReject(abortError());
 				return;
 			}
-			if (outputExceeded) {
+			if (transcriptLimitExceeded) {
 				settleReject(new Error('real transcription exceeded the private output limit'));
+				return;
+			}
+			if (diagnosticLimitExceeded) {
+				settleReject(new Error('real transcription exceeded the private diagnostic output limit'));
 				return;
 			}
 			settleResolve({
 				status,
 				signal,
 				pid: child.pid,
-				stdout: Buffer.concat(chunks).toString('utf8'),
+				stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+				stderr: Buffer.concat(stderrChunks).toString('utf8'),
 			});
 		});
 	});
@@ -571,19 +637,21 @@ async function executeRealRunSampleLocked(state, sample, options) {
 				env: state.runtimeEnvironment,
 				signal: options.signal,
 				maxOutputBytes: MAX_TRANSCRIPT_BYTES,
+				maxDiagnosticBytes: MAX_DIAGNOSTIC_BYTES,
 			});
 		} finally {
 			assertSameSnapshotMetadata(state, before, `${sample.id} after transcription`);
 		}
 		if (run?.error) throw run.error;
 		if (run?.status !== 0) {
-			throw new RealRunProcessError(
-				`${sample.id}: real transcription failed (exit ${run?.status ?? 'signal'})`,
-				{
-					exitCode: Number.isInteger(run?.status) && run.status > 0 ? run.status : 1,
-					signal: run?.signal ?? null,
-				},
-			);
+			const diagnostic = redactPrivateSamplePaths(run?.stderr, sample);
+			const message =
+				`${sample.id}: real transcription failed (exit ${run?.status ?? 'signal'})` +
+				(diagnostic.length > 0 ? `\ntranscription diagnostics:\n${diagnostic}` : '');
+			throw new RealRunProcessError(message, {
+				exitCode: Number.isInteger(run?.status) && run.status > 0 ? run.status : 1,
+				signal: run?.signal ?? null,
+			});
 		}
 		let metrics;
 		try {

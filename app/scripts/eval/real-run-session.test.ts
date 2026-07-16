@@ -567,6 +567,49 @@ test('removes per-sample metrics after every reusable-session outcome', async (t
 	assert.equal(fs.existsSync(successfulMetricsPath), false);
 });
 
+test('captures useful bounded diagnostics without exposing private corpus paths', async (t) => {
+	const executableSource = [
+		`#!${process.execPath}`,
+		"const audioPath = process.argv.find((value) => value.endsWith('.wav'));",
+		"process.stderr.write('decoder rejected ' + audioPath + ': invalid RIFF header\\n');",
+		'process.exit(17);',
+		'',
+	].join('\n');
+	const harness = createHarness(t, { executableSource });
+	t.after(() => harness.session.close());
+	const sample = sampleFiles(harness.root, 'private-diagnostic');
+	let failure;
+	try {
+		await runRealRunSample(harness.session, sample, {
+			thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+		});
+	} catch (error) {
+		failure = error;
+	}
+	assert(failure instanceof Error);
+	assert.match(failure.message, /real transcription failed \(exit 17\)/);
+	assert.match(failure.message, /decoder rejected <private-corpus-path>: invalid RIFF header/);
+	assert(!failure.message.includes(sample.audio_file));
+	assert(!failure.message.includes(path.basename(sample.audio_file)));
+});
+
+test('terminates a process that exceeds the private diagnostic output limit', async (t) => {
+	const executableSource = [
+		`#!${process.execPath}`,
+		"process.stderr.write('x'.repeat(128 * 1024));",
+		'setInterval(() => {}, 1000);',
+		'',
+	].join('\n');
+	const harness = createHarness(t, { executableSource });
+	t.after(() => harness.session.close());
+	await assert.rejects(
+		runRealRunSample(harness.session, sampleFiles(harness.root, 'diagnostic-limit'), {
+			thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+		}),
+		/private diagnostic output limit/,
+	);
+});
+
 async function waitForFile(filePath, timeoutMs = 5_000) {
 	const deadline = Date.now() + timeoutMs;
 	while (!fs.existsSync(filePath)) {
