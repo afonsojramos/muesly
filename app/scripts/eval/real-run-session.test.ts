@@ -625,6 +625,63 @@ test('redacts JSON-escaped Windows corpus paths on every host platform', async (
 	assert(!failure.message.includes('meeting.txt'));
 });
 
+test('redacts multiply escaped drive, UNC, and escaped-slash corpus paths', async (t) => {
+	const harness = createHarness(t);
+	t.after(() => harness.session.close());
+	const drivePath = String.raw`C:\Users\Alice\Private Corpus\meeting.txt`;
+	const uncPath = String.raw`\\Server01\Share Name\Private Corpus\Meeting.txt`;
+	const cases = [
+		{
+			id: 'nested-drive-diagnostic',
+			referenceFile: drivePath,
+			stderr: `nested JSON ${JSON.stringify(JSON.stringify(drivePath))}`,
+			privateComponents: ['users', 'alice', 'private corpus', 'meeting.txt'],
+		},
+		{
+			id: 'nested-unc-diagnostic',
+			referenceFile: uncPath,
+			stderr: `debug payload ${JSON.stringify({ path: JSON.stringify(uncPath.toUpperCase()) })}`,
+			privateComponents: ['server01', 'share name', 'private corpus', 'meeting.txt'],
+		},
+		{
+			id: 'escaped-slash-diagnostic',
+			referenceFile: drivePath,
+			stderr: `escaped slash ${JSON.stringify(drivePath.replaceAll('\\', '\\/'))}`,
+			privateComponents: ['users', 'alice', 'private corpus', 'meeting.txt'],
+		},
+	];
+	for (const entry of cases) {
+		const sample = {
+			...sampleFiles(harness.root, entry.id),
+			reference_file: entry.referenceFile,
+			reference_text: 'hello world',
+		};
+		let failure;
+		try {
+			await runRealRunSample(harness.session, sample, {
+				thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+				runProcess() {
+					return {
+						status: 17,
+						signal: null,
+						stdout: '',
+						stderr: entry.stderr,
+						pid: process.pid,
+					};
+				},
+			});
+		} catch (error) {
+			failure = error;
+		}
+		assert(failure instanceof Error);
+		assert.match(failure.message, /<private-corpus-path>/);
+		const normalizedMessage = failure.message.toLowerCase();
+		for (const privateComponent of entry.privateComponents) {
+			assert(!normalizedMessage.includes(privateComponent), entry.id);
+		}
+	}
+});
+
 test('terminates a process that exceeds the private diagnostic output limit', async (t) => {
 	const executableSource = [
 		`#!${process.execPath}`,

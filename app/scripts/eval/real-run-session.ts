@@ -38,6 +38,7 @@ import { WER_SCORER_ID, werDetails } from './wer.ts';
 const MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024;
 const MAX_DIAGNOSTIC_BYTES = 64 * 1024;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const WINDOWS_PATH_SEPARATOR_PATTERN = String.raw`[\\/]+`;
 const FORCE_KILL_DELAY_MS = 750;
 const FORCE_KILL_CONFIRMATION_MS = 5_000;
 const PROCESS_TREE_POLL_INTERVAL_MS = 25;
@@ -87,12 +88,14 @@ function sanitizeDiagnosticControls(value) {
 
 function addPrivatePathCandidate(candidates, candidate, { windows = false } = {}) {
 	if (candidate.length === 0) return;
-	const variants = windows
-		? [candidate, candidate.replaceAll('\\', '/'), candidate.replaceAll('\\', '\\\\')]
-		: [candidate];
-	for (const variant of variants) {
-		candidates.set(variant, candidates.get(variant) === true || windows);
-	}
+	candidates.set(candidate, candidates.get(candidate) === true || windows);
+}
+
+function windowsPathCandidatePattern(candidate) {
+	return candidate
+		.split(/[\\/]+/)
+		.map(escapeRegularExpression)
+		.join(WINDOWS_PATH_SEPARATOR_PATTERN);
 }
 
 function isWindowsPrivatePath(filePath) {
@@ -123,7 +126,7 @@ function redactPrivateSamplePaths(value, sample) {
 	)) {
 		diagnostic = caseInsensitive
 			? diagnostic.replace(
-					new RegExp(escapeRegularExpression(candidate), 'gi'),
+					new RegExp(windowsPathCandidatePattern(candidate), 'gi'),
 					'<private-corpus-path>',
 				)
 			: diagnostic.split(candidate).join('<private-corpus-path>');
