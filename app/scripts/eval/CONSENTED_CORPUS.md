@@ -73,8 +73,8 @@ variable.
 Custom manifests outside the Git repository are supported. Inside the repository, preparation is
 restricted to the explicitly ignored `app/scripts/eval/corpus-local.json` manifest and its
 gitignored sibling `intake/` directory.
-The generated intake command uses the absolute TypeScript entrypoint, so it can be run directly
-from an external bundle directory.
+The generated single-line Bash/zsh and Windows PowerShell intake commands use the absolute
+TypeScript entrypoint, so either can be run directly from an external bundle directory.
 
 2. Keep the affirmative consent record in the approved encrypted records system. Never put names,
    emails, meeting titles, customer names, or consent files in the manifest or Git checkout.

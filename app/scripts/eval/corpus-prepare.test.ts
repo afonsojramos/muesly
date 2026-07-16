@@ -241,6 +241,9 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.match(readme, /Preparing this bundle does not establish consent/);
 	assert.match(readme, /--affirm-all-participants-consented/);
 	assert(readme.includes(`nub '${session.intakeScriptPath}'`));
+	assert.match(readme, /## Bash \/ zsh/);
+	assert.match(readme, /## PowerShell \(Windows\)/);
+	assert.doesNotMatch(readme, / \\\n/);
 	assert.doesNotMatch(readme, /nub run eval:corpus:intake/);
 	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
 	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
@@ -261,6 +264,24 @@ test('runs the generated intake entrypoint from an external bundle directory', (
 	assert.equal(result.status, 2);
 	assert.match(result.stderr, /--audio is required/);
 	assert.doesNotMatch(result.stderr, /ERR_NUB_NO_MANIFEST/);
+});
+
+test('quotes generated Bash and PowerShell commands independently', () => {
+	const current = fixture();
+	const intakeScriptPath = path.join(current.directory, "Muesly's tools", 'corpus intake.ts');
+	const session = prepareCollectionSession(
+		prepareOptions(current, {
+			intakeScriptPath,
+			idFactory: () => '00000000-0000-4000-8000-000000000014',
+		}),
+	);
+	const readme = fs.readFileSync(
+		path.join(current.directory, 'intake', session.sessionId, 'README.md'),
+		'utf8',
+	);
+
+	assert(readme.includes(`nub '${intakeScriptPath.replaceAll("'", "'\\''")}'`));
+	assert(readme.includes(`nub '${intakeScriptPath.replaceAll("'", "''")}'`));
 });
 
 test('allows selecting a specific still-underfilled collection cell', () => {

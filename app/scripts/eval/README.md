@@ -61,8 +61,8 @@ MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
 
 This creates a gitignored, private-permission session folder, an opaque consent record in the
 explicitly selected external encrypted records directory, a blank reference transcript, and an
-exact intake command. It refuses repository-local consent storage, never creates fake audio, and
-never marks consent as granted.
+exact single-line intake command for Bash/zsh and Windows PowerShell. It refuses repository-local
+consent storage, never creates fake audio, and never marks consent as granted.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce

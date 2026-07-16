@@ -264,8 +264,12 @@ function writePrivateFile(filePath, contents) {
 	fs.writeFileSync(filePath, contents, { flag: 'wx', mode: 0o600 });
 }
 
-function shellQuote(value) {
+function bashQuote(value) {
 	return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function powerShellQuote(value) {
+	return `'${String(value).replaceAll("'", "''")}'`;
 }
 
 function renderConsentRecord(template, session) {
@@ -295,21 +299,24 @@ function renderConsentRecord(template, session) {
 }
 
 function renderSessionReadme(session) {
-	const command = [
-		`nub ${shellQuote(session.intakeScriptPath)}`,
-		`  --manifest ${shellQuote(session.manifestPath)}`,
-		`  --audio ${shellQuote(session.audioPath)}`,
-		`  --reference ${shellQuote(session.referencePath)}`,
-		`  --sample-id ${shellQuote(session.sampleId)}`,
-		`  --session-id ${shellQuote(session.sessionId)}`,
-		`  --consent-record-id ${shellQuote(session.consentRecordId)}`,
-		`  --consent-record ${shellQuote(session.consentRecordPath)}`,
-		"  --consent-date 'YYYY-MM-DD'",
-		`  --language ${shellQuote(session.language)}`,
-		`  --noise-condition ${shellQuote(session.noiseCondition)}`,
-		"  --speakers '<count>'",
-		'  --affirm-all-participants-consented',
-	].join(' \\\n');
+	const renderCommand = (quote) =>
+		[
+			`nub ${quote(session.intakeScriptPath)}`,
+			`--manifest ${quote(session.manifestPath)}`,
+			`--audio ${quote(session.audioPath)}`,
+			`--reference ${quote(session.referencePath)}`,
+			`--sample-id ${quote(session.sampleId)}`,
+			`--session-id ${quote(session.sessionId)}`,
+			`--consent-record-id ${quote(session.consentRecordId)}`,
+			`--consent-record ${quote(session.consentRecordPath)}`,
+			`--consent-date ${quote('YYYY-MM-DD')}`,
+			`--language ${quote(session.language)}`,
+			`--noise-condition ${quote(session.noiseCondition)}`,
+			`--speakers ${quote('<count>')}`,
+			'--affirm-all-participants-consented',
+		].join(' ');
+	const bashCommand = renderCommand(bashQuote);
+	const powerShellCommand = renderCommand(powerShellQuote);
 	return `# Private ASR collection session
 
 Target: \`${session.language} / ${session.noiseCondition}\`
@@ -317,10 +324,18 @@ Target: \`${session.language} / ${session.noiseCondition}\`
 1. Complete the separate consent record before recording.
 2. Save the matching RIFF/WAVE recording as \`recording.wav\` in this directory.
 3. Write a verbatim UTF-8 transcript in \`reference.txt\`.
-4. Replace the consent date and speaker count below, then run:
+4. Replace the consent date and speaker count in the command for your shell, then run it.
+
+## Bash / zsh
 
 \`\`\`bash
-${command}
+${bashCommand}
+\`\`\`
+
+## PowerShell (Windows)
+
+\`\`\`powershell
+${powerShellCommand}
 \`\`\`
 
 Preparing this bundle does not establish consent and does not add anything to the corpus.
