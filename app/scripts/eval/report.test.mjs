@@ -28,11 +28,12 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
 		provider: 'whisper',
 		model: 'large-v3-turbo-q5_0',
+		model_artifact_sha256: 'c'.repeat(64),
 		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
 		results,
 	};
@@ -71,6 +72,9 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.equal(aggregate.groups.language_noise_backend['es / office / cuda'].samples, 1);
 	assert.equal(aggregate.operating_system, 'macos');
 	assert.equal(aggregate.architecture, 'aarch64');
+	assert.deepEqual(aggregate.model_artifacts, {
+		'whisper/large-v3-turbo-q5_0': 'c'.repeat(64),
+	});
 });
 
 test('tracks silence hallucinations separately from WER', () => {
@@ -89,6 +93,7 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /language noise backend/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
 	assert.match(markdown, /Platform: `macos\/aarch64`/);
+	assert.match(markdown, /`whisper\/large-v3-turbo-q5_0`: `c{64}`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
 	assert.doesNotMatch(markdown, /—%/);
 });
@@ -125,14 +130,23 @@ test('rejects aggregation across hardware platforms', () => {
 });
 
 test('rejects legacy reports after corpus revision binding', () => {
-	const legacy = { ...report([result()]), schema_version: 2 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 3']);
+	const legacy = { ...report([result()]), schema_version: 3 };
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 4']);
 });
 
 test('rejects aggregation across corpus revisions', () => {
 	const first = report([result()]);
 	const stale = { ...report([result()]), corpus_fingerprint: 'b'.repeat(64) };
 	assert.throws(() => aggregateRunReports([first, stale]), /different corpus revisions/);
+});
+
+test('rejects aggregation across different bytes for the same model', () => {
+	const first = report([result()]);
+	const differentArtifact = { ...report([result()]), model_artifact_sha256: 'd'.repeat(64) };
+	assert.throws(
+		() => aggregateRunReports([first, differentArtifact]),
+		/different artifacts for model 'whisper\/large-v3-turbo-q5_0'/,
+	);
 });
 
 test('rejects fractional hallucination thresholds', () => {

@@ -144,6 +144,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	);
 
 	const measurementCells = new Map();
+	const modelArtifacts = new Map();
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
@@ -157,6 +158,12 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 				`report corpus fingerprint does not match the current manifest revision`,
 			);
 		}
+		const modelKey = `${report.provider}/${report.model}`;
+		const priorArtifact = modelArtifacts.get(modelKey);
+		if (priorArtifact !== undefined && priorArtifact !== report.model_artifact_sha256) {
+			throw new Error(`reports use different artifacts for model '${modelKey}'`);
+		}
+		modelArtifacts.set(modelKey, report.model_artifact_sha256);
 		for (const result of report.results) {
 			const sample = samplesById.get(result.sample_id);
 			if (!sample) throw new Error(`report sample '${result.sample_id}' is absent from the corpus manifest`);

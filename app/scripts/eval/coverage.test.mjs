@@ -39,11 +39,12 @@ function sample(language, noise, session) {
 
 function runReport(corpus, backend) {
 	return {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
 		model: 'test-model',
+		model_artifact_sha256: backend === 'onnx-cpu' ? 'd'.repeat(64) : 'c'.repeat(64),
 		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
 		results: corpus.samples.map((corpusSample) => ({
 			sample_id: corpusSample.id,
@@ -127,4 +128,14 @@ test('rejects stale reports after a corpus revision changes', () => {
 	const corpus = completeCorpus();
 	const stale = { ...runReport(corpus, 'metal'), corpus_fingerprint: 'b'.repeat(64) };
 	assert.throws(() => evaluateCoverage(corpus, targets, [stale]), /fingerprint does not match/);
+});
+
+test('rejects coverage assembled from different bytes for the same model', () => {
+	const corpus = completeCorpus();
+	const first = runReport(corpus, 'metal');
+	const changed = { ...runReport(corpus, 'metal'), model_artifact_sha256: 'e'.repeat(64) };
+	assert.throws(
+		() => evaluateCoverage(corpus, targets, [first, changed]),
+		/different artifacts for model 'whisper\/test-model'/,
+	);
 });

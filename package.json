@@ -23,7 +23,7 @@
 		"eval:coverage": "nub app/scripts/eval/coverage.mjs",
 		"eval:coverage:test": "nub --node --test app/scripts/eval/coverage.test.mjs",
 		"eval:report": "nub app/scripts/eval/report.mjs",
-		"eval:report:test": "nub --node --test app/scripts/eval/report.test.mjs",
+		"eval:report:test": "nub --node --test app/scripts/eval/report.test.mjs app/scripts/eval/model-artifact.test.mjs",
 		"eval": "nub app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp.txt --max-wer 0 && nub app/scripts/eval/wer.mjs app/scripts/eval/fixtures/meeting-golden-ref.txt app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt --max-wer 10"
 	}
 }

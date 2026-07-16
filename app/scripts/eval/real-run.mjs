@@ -27,6 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
+import { modelArtifactSha256 } from './model-artifact.mjs';
 import { werDetails } from './wer.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -244,14 +245,22 @@ for (const sample of fixtures) {
 }
 
 if (outputPath) {
+	let modelArtifactDigest;
+	try {
+		modelArtifactDigest = modelArtifactSha256(provider, model, evalModelsDir);
+	} catch (error) {
+		console.error(`failed to fingerprint evaluated model: ${error.message}`);
+		process.exit(1);
+	}
 	const report = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,
 		completed_at: new Date().toISOString(),
 		provider,
 		model,
+		model_artifact_sha256: modelArtifactDigest,
 		thresholds: {
 			max_wer_percent: maxWerPct,
 			max_hallucinated_words: maxHallucinatedWords,

@@ -62,7 +62,8 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
-  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, and backend.
+  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, backend,
+  and a SHA-256 fingerprint of the exact model artifact bytes.
 - `--fixture <sample-id>` limits the run to one uniquely named manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
@@ -81,9 +82,9 @@ Reports contain micro-averaged WER (total word errors divided by total reference
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 3, name the same corpus revision, and
-use identical pass thresholds and OS/architecture; the aggregator rejects comparisons that would
-lose that hardware or evaluation context.
+as a five-minute meeting. Inputs must use run-report schema 4, name the same corpus revision, and
+use identical pass thresholds, model bytes, and OS/architecture; the aggregator rejects
+comparisons that would lose that artifact, hardware, or evaluation context.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
