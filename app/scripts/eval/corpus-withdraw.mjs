@@ -27,7 +27,7 @@ function readLocalManifest(manifestPath) {
 	} catch (error) {
 		throw new Error(`failed to read corpus manifest ${manifestPath}: ${error.message}`);
 	}
-	const errors = validateCorpusDocument(document, { manifestPath });
+	const errors = validateCorpusDocument(document, { manifestPath, checkFiles: false });
 	if (errors.length > 0) throw new Error(`invalid corpus manifest:\n- ${errors.join('\n- ')}`);
 	if (document.distribution !== 'local') throw new Error('withdrawal requires a local corpus manifest');
 	return document;

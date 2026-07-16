@@ -111,6 +111,34 @@ test('requires explicit confirmation and leaves unknown sessions unchanged', () 
 	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
 });
 
+test('completes withdrawal when target files were already partially deleted', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const missingAudio = path.join(
+		directory,
+		'local-corpus',
+		'session-withdraw',
+		'en-clean-001.wav',
+	);
+	fs.rmSync(missingAudio);
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'stale.json'), '{}');
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(manifestPath, 'utf8')).samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(!fs.existsSync(resultsDirectory));
+});
+
 test('refuses to delete files outside the opaque session directory', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
