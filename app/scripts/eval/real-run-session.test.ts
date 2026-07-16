@@ -19,6 +19,7 @@ import {
 	runRealRunCli,
 	runRealRunSample,
 	runRealRunSampleUnreported,
+	signalRealRunProcessTree,
 } from './real-run-session.ts';
 
 const RUSTC_VV = [
@@ -216,10 +217,18 @@ test('artifact revisions reject aliases and change with exact tree metadata', (t
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const artifact = path.join(root, 'artifact.bin');
 	fs.writeFileSync(artifact, 'first');
+	const fixedTimestamp = new Date('2026-01-01T00:00:00.000Z');
+	fs.utimesSync(artifact, fixedTimestamp, fixedTimestamp);
+	const metadataBefore = fs.statSync(artifact, { bigint: true });
 	const initial = artifactTreeRevision(root);
 	assert.equal(artifactTreeRevision(root), initial);
 
-	fs.writeFileSync(artifact, 'second');
+	fs.writeFileSync(artifact, 'later');
+	fs.utimesSync(artifact, fixedTimestamp, fixedTimestamp);
+	const metadataAfter = fs.statSync(artifact, { bigint: true });
+	assert.equal(metadataAfter.size, metadataBefore.size);
+	assert.equal(metadataAfter.mtimeNs, metadataBefore.mtimeNs);
+	assert.notEqual(metadataAfter.ctimeNs, metadataBefore.ctimeNs);
 	assert.notEqual(artifactTreeRevision(root), initial);
 
 	const alias = path.join(root, 'artifact-hardlink.bin');
@@ -495,6 +504,69 @@ test('serializes active samples and defers close until cancellation completes', 
 	assert.deepEqual(fs.readdirSync(harness.privateParent), []);
 });
 
+test('removes per-sample metrics after every reusable-session outcome', async (t) => {
+	const harness = createHarness(t);
+	t.after(() => harness.session.close());
+	const thresholds = { maxWerPercent: 10, maxHallucinatedWords: 2 };
+	const cases = [
+		{
+			id: 'process-error',
+			expected: /process failed after writing metrics/,
+			run(command, args) {
+				writeMetrics(command, args);
+				throw new Error('process failed after writing metrics');
+			},
+		},
+		{
+			id: 'nonzero-exit',
+			expected: /real transcription failed \(exit 17\)/,
+			run(command, args) {
+				writeMetrics(command, args);
+				return { status: 17, signal: null, stdout: '', pid: process.pid };
+			},
+		},
+		{
+			id: 'invalid-metrics',
+			expected: /benchmark metrics are missing or invalid/,
+			run(_command, args) {
+				const metricsPath = args[args.indexOf('--metrics-json') + 1];
+				fs.writeFileSync(metricsPath, '{invalid', { mode: 0o600 });
+				return { status: 0, signal: null, stdout: 'hello world', pid: process.pid };
+			},
+		},
+	];
+	for (const entry of cases) {
+		let metricsPath;
+		await assert.rejects(
+			runRealRunSample(harness.session, sampleFiles(harness.root, entry.id), {
+				thresholds,
+				runProcess(command, args) {
+					metricsPath = args[args.indexOf('--metrics-json') + 1];
+					return entry.run(command, args);
+				},
+			}),
+			entry.expected,
+		);
+		assert.equal(fs.existsSync(metricsPath), false);
+	}
+
+	let successfulMetricsPath;
+	const report = await runRealRunSample(
+		harness.session,
+		sampleFiles(harness.root, 'successful-cleanup'),
+		{
+			thresholds,
+			runProcess(command, args) {
+				successfulMetricsPath = args[args.indexOf('--metrics-json') + 1];
+				writeMetrics(command, args);
+				return { status: 0, signal: null, stdout: 'hello world', pid: process.pid };
+			},
+		},
+	);
+	assert.equal(report.passed, true);
+	assert.equal(fs.existsSync(successfulMetricsPath), false);
+});
+
 async function waitForFile(filePath, timeoutMs = 5_000) {
 	const deadline = Date.now() + timeoutMs;
 	while (!fs.existsSync(filePath)) {
@@ -512,6 +584,40 @@ function processExists(pid) {
 		throw error;
 	}
 }
+
+test('uses Windows taskkill for the complete inference process tree', () => {
+	const calls = [];
+	const environment = {
+		Path: 'C:\\Windows\\System32',
+		SystemRoot: 'C:\\Windows',
+	};
+	const taskkillExecutable = 'C:\\Windows\\System32\\taskkill.exe';
+	assert.equal(
+		signalRealRunProcessTree({ pid: 4321 }, 'SIGTERM', environment, {
+			execFileSyncImpl(executable, args, options) {
+				calls.push({ executable, args, options });
+			},
+			platform: 'win32',
+			windowsTaskkillExecutableImpl(receivedEnvironment) {
+				assert.equal(receivedEnvironment, environment);
+				return taskkillExecutable;
+			},
+		}),
+		true,
+	);
+	assert.deepEqual(calls, [
+		{
+			executable: taskkillExecutable,
+			args: ['/PID', '4321', '/T', '/F'],
+			options: {
+				env: environment,
+				stdio: 'ignore',
+				timeout: 10_000,
+				windowsHide: true,
+			},
+		},
+	]);
+});
 
 test('cancellation force-kills a SIGTERM-resistant inference process tree', async (t) => {
 	if (process.platform === 'win32') {

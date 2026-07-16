@@ -260,12 +260,21 @@ function windowsTaskkillExecutable(environment) {
 	return canonicalPath;
 }
 
-function signalProcessTree(child, signalName, environment) {
+export function signalRealRunProcessTree(
+	child,
+	signalName,
+	environment,
+	{
+		execFileSyncImpl = execFileSync,
+		platform = process.platform,
+		windowsTaskkillExecutableImpl = windowsTaskkillExecutable,
+	} = {},
+) {
 	if (!Number.isSafeInteger(child.pid) || child.pid < 1) return false;
-	if (process.platform === 'win32') {
+	if (platform === 'win32') {
 		try {
-			execFileSync(
-				windowsTaskkillExecutable(environment),
+			execFileSyncImpl(
+				windowsTaskkillExecutableImpl(environment),
 				['/PID', String(child.pid), '/T', '/F'],
 				{
 					env: environment,
@@ -307,7 +316,7 @@ function waitForProcessTreePoll(delayMs) {
 async function terminateProcessTree(child, environment) {
 	if (process.platform === 'win32') {
 		if (child.exitCode !== null || child.signalCode !== null) return;
-		if (signalProcessTree(child, 'SIGKILL', environment)) return;
+		if (signalRealRunProcessTree(child, 'SIGKILL', environment)) return;
 		try {
 			child.kill('SIGKILL');
 		} catch {
@@ -315,7 +324,7 @@ async function terminateProcessTree(child, environment) {
 		}
 		throw new Error('unable to terminate the full Windows benchmark process tree');
 	}
-	signalProcessTree(child, 'SIGTERM', environment);
+	signalRealRunProcessTree(child, 'SIGTERM', environment);
 	const forceKillAt = Date.now() + FORCE_KILL_DELAY_MS;
 	while (posixProcessGroupExists(child)) {
 		const remainingMs = forceKillAt - Date.now();
@@ -323,7 +332,7 @@ async function terminateProcessTree(child, environment) {
 		await waitForProcessTreePoll(Math.min(PROCESS_TREE_POLL_INTERVAL_MS, remainingMs));
 	}
 	if (!posixProcessGroupExists(child)) return;
-	signalProcessTree(child, 'SIGKILL', environment);
+	signalRealRunProcessTree(child, 'SIGKILL', environment);
 	const confirmationDeadline = Date.now() + FORCE_KILL_CONFIRMATION_MS;
 	while (posixProcessGroupExists(child)) {
 		const remainingMs = confirmationDeadline - Date.now();
@@ -529,71 +538,73 @@ async function executeRealRunSampleLocked(state, sample, options) {
 		state.metricsDirectory,
 		`${String(state.sampleCounter++).padStart(6, '0')}.json`,
 	);
-	const referenceText =
-		sample.reference_text === undefined
-			? fs.readFileSync(sample.reference_file, 'utf8').trim()
-			: (() => {
-					if (typeof sample.reference_text !== 'string') {
-						throw new Error(`${sample.id}: reference_text must be a string when provided`);
-					}
-					return sample.reference_text.trim();
-				})();
-	const args = [
-		'--provider',
-		state.identity.provider,
-		'--vad',
-		'--metrics-json',
-		metricsPath,
-		'--expected-audio-sha256',
-		sample.audio_sha256,
-		sample.audio_file,
-		state.identity.model,
-	];
-	const whisperLanguage =
-		state.identity.provider === 'whisper' ? whisperLanguageForSample(sample) : null;
-	if (whisperLanguage) args.splice(args.indexOf('--vad'), 0, '--language', whisperLanguage);
-	args.push(state.modelSnapshotDirectory);
-	const startedAt = canonicalTimestamp(state.dependencies.now());
-	let run;
 	try {
-		run = await (options.runProcess ?? defaultRunProcess)(state.executableSnapshotPath, args, {
-			cwd: state.repoRoot,
-			env: state.runtimeEnvironment,
-			signal: options.signal,
-			maxOutputBytes: MAX_TRANSCRIPT_BYTES,
-		});
-	} finally {
-		assertSameSnapshotMetadata(state, before, `${sample.id} after transcription`);
-	}
-	if (run?.error) throw run.error;
-	if (run?.status !== 0) {
-		throw new RealRunProcessError(
-			`${sample.id}: real transcription failed (exit ${run?.status ?? 'signal'})`,
-			{
-				exitCode: Number.isInteger(run?.status) && run.status > 0 ? run.status : 1,
-				signal: run?.signal ?? null,
-			},
-		);
-	}
-	let metrics;
-	try {
-		metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
-	} catch {
-		throw new Error(`${sample.id}: benchmark metrics are missing or invalid`);
+		const referenceText =
+			sample.reference_text === undefined
+				? fs.readFileSync(sample.reference_file, 'utf8').trim()
+				: (() => {
+						if (typeof sample.reference_text !== 'string') {
+							throw new Error(`${sample.id}: reference_text must be a string when provided`);
+						}
+						return sample.reference_text.trim();
+					})();
+		const args = [
+			'--provider',
+			state.identity.provider,
+			'--vad',
+			'--metrics-json',
+			metricsPath,
+			'--expected-audio-sha256',
+			sample.audio_sha256,
+			sample.audio_file,
+			state.identity.model,
+		];
+		const whisperLanguage =
+			state.identity.provider === 'whisper' ? whisperLanguageForSample(sample) : null;
+		if (whisperLanguage) args.splice(args.indexOf('--vad'), 0, '--language', whisperLanguage);
+		args.push(state.modelSnapshotDirectory);
+		const startedAt = canonicalTimestamp(state.dependencies.now());
+		let run;
+		try {
+			run = await (options.runProcess ?? defaultRunProcess)(state.executableSnapshotPath, args, {
+				cwd: state.repoRoot,
+				env: state.runtimeEnvironment,
+				signal: options.signal,
+				maxOutputBytes: MAX_TRANSCRIPT_BYTES,
+			});
+		} finally {
+			assertSameSnapshotMetadata(state, before, `${sample.id} after transcription`);
+		}
+		if (run?.error) throw run.error;
+		if (run?.status !== 0) {
+			throw new RealRunProcessError(
+				`${sample.id}: real transcription failed (exit ${run?.status ?? 'signal'})`,
+				{
+					exitCode: Number.isInteger(run?.status) && run.status > 0 ? run.status : 1,
+					signal: run?.signal ?? null,
+				},
+			);
+		}
+		let metrics;
+		try {
+			metrics = JSON.parse(fs.readFileSync(metricsPath, 'utf8'));
+		} catch {
+			throw new Error(`${sample.id}: benchmark metrics are missing or invalid`);
+		}
+		validateMetricsIdentity(state, metrics, sample);
+		const hypothesis = String(run.stdout ?? '').trim();
+		const score = scoreSample(sample, referenceText, hypothesis, metrics, thresholds);
+		const completedAt = canonicalTimestamp(state.dependencies.now());
+		return {
+			thresholds,
+			startedAt,
+			completedAt,
+			result: score.result,
+			failureReason: score.failureReason,
+		};
 	} finally {
 		fs.rmSync(metricsPath, { force: true });
 	}
-	validateMetricsIdentity(state, metrics, sample);
-	const hypothesis = String(run.stdout ?? '').trim();
-	const score = scoreSample(sample, referenceText, hypothesis, metrics, thresholds);
-	const completedAt = canonicalTimestamp(state.dependencies.now());
-	return {
-		thresholds,
-		startedAt,
-		completedAt,
-		result: score.result,
-		failureReason: score.failureReason,
-	};
 }
 
 async function executeRealRunSample(session, sample, options) {
