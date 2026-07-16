@@ -250,13 +250,13 @@ impl EvaluatorWhisperRuntimeAttestation {
                     "Core ML runtime proof observed an encoder initialization failure".to_string(),
                 );
             }
-            // whisper.cpp initializes one GPU backend for the model context,
-            // then one for every decoder state. Core ML initializes only for
-            // decoder states, so a complete run has exactly one more GPU
-            // selection than Core ML encoder attempt.
-            if self.gpu_backend_uses != self.coreml_attempts.saturating_add(1) {
+            // whisper-rs loads the model through whisper.cpp's no-state context
+            // initializer, so model loading does not select a runtime backend.
+            // Every subsequently created decoder state selects one ggml GPU
+            // backend and makes one Core ML encoder load attempt.
+            if self.gpu_backend_uses != self.coreml_attempts {
                 return Err(format!(
-                    "Core ML runtime proof observed {} GPU backend selections for one model context and {} encoder attempts",
+                    "Core ML runtime proof observed {} GPU backend selections for {} Core ML state initialization attempts",
                     self.gpu_backend_uses, self.coreml_attempts
                 ));
             }
@@ -1656,7 +1656,6 @@ mod tests {
     fn coreml_runtime_proof_rejects_success_marker_injected_through_the_model_path() {
         let mut proof = EvaluatorWhisperRuntimeAttestation::new("Metal");
         proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
-        proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
         proof.observe(
             b"whisper_init_state: loading Core ML model from '/models/Core ML model loaded'\n",
         );
@@ -1672,9 +1671,33 @@ mod tests {
     }
 
     #[test]
+    fn coreml_runtime_proof_matches_the_pinned_no_state_context_call_graph() {
+        let mut one_state = EvaluatorWhisperRuntimeAttestation::new("Metal");
+        one_state.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        one_state.observe(
+            b"whisper_init_state: loading Core ML model from '/models/encoder.mlmodelc'\n",
+        );
+        one_state.observe(b"whisper_init_state: Core ML model loaded\n");
+        assert!(one_state.verify(BenchmarkBackend::CoreMlMetal).is_ok());
+
+        let mut phantom_context_backend = EvaluatorWhisperRuntimeAttestation::new("Metal");
+        phantom_context_backend.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        phantom_context_backend.observe(b"whisper_backend_init_gpu: using Metal backend\n");
+        phantom_context_backend.observe(
+            b"whisper_init_state: loading Core ML model from '/models/encoder.mlmodelc'\n",
+        );
+        phantom_context_backend.observe(b"whisper_init_state: Core ML model loaded\n");
+        assert!(
+            phantom_context_backend
+                .verify(BenchmarkBackend::CoreMlMetal)
+                .unwrap_err()
+                .contains("2 GPU backend selections for 1 Core ML state initialization attempts")
+        );
+    }
+
+    #[test]
     fn coreml_runtime_proof_is_per_attempt_and_failure_is_sticky() {
         let mut proof = EvaluatorWhisperRuntimeAttestation::new("Metal");
-        proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
         for _ in 0..2 {
             proof.observe(b"whisper_backend_init_gpu: using Metal backend\n");
             proof.observe(
@@ -1700,21 +1723,6 @@ mod tests {
                 .verify(BenchmarkBackend::CoreMlMetal)
                 .unwrap_err()
                 .contains("encoder initialization failure")
-        );
-
-        let mut skipped = EvaluatorWhisperRuntimeAttestation::new("Metal");
-        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
-        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
-        skipped.observe(b"whisper_backend_init_gpu: using Metal backend\n");
-        skipped.observe(
-            b"whisper_init_state: loading Core ML model from '/models/encoder.mlmodelc'\n",
-        );
-        skipped.observe(b"whisper_init_state: Core ML model loaded\n");
-        assert!(
-            skipped
-                .verify(BenchmarkBackend::CoreMlMetal)
-                .unwrap_err()
-                .contains("3 GPU backend selections for one model context and 1 encoder attempts")
         );
     }
 
