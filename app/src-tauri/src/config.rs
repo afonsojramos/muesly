@@ -11,9 +11,24 @@ pub const DEFAULT_WHISPER_MODEL: &str = "large-v3-turbo";
 /// the detected hardware. Quantized models keep onboarding downloads and memory
 /// low while higher tiers retain Large v3 Turbo accuracy.
 pub fn recommended_whisper_model(profile: &crate::audio::HardwareProfile) -> &'static str {
+    recommended_whisper_model_for_task(profile, false)
+}
+
+/// Turbo is optimized for transcription, but OpenAI explicitly does not train
+/// it for speech translation. Keep automatic recommendations task-compatible
+/// instead of silently returning original-language text for "translate to
+/// English".
+pub fn recommended_whisper_model_for_task(
+    profile: &crate::audio::HardwareProfile,
+    requires_translation: bool,
+) -> &'static str {
     match profile.performance_tier {
         crate::audio::PerformanceTier::Ultra | crate::audio::PerformanceTier::High => {
-            "large-v3-turbo-q5_0"
+            if requires_translation {
+                "large-v3-q5_0"
+            } else {
+                "large-v3-turbo-q5_0"
+            }
         }
         crate::audio::PerformanceTier::Medium => "small-q5_1",
         crate::audio::PerformanceTier::Low => "base-q5_1",
@@ -33,10 +48,10 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
     (
         "tiny",
         "ggml-tiny.bin",
-        74,
+        75,
         "Decent",
         "Very Fast",
-        "Fastest processing, good for real-time use",
+        "Smallest full-precision Whisper model",
     ),
     (
         "base",
@@ -44,7 +59,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         142,
         "Good",
         "Fast",
-        "Good balance of speed and accuracy",
+        "Entry-size full-precision Whisper model",
     ),
     (
         "small",
@@ -52,7 +67,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         466,
         "Good",
         "Medium",
-        "Better accuracy, moderate speed",
+        "Mid-size full-precision Whisper model",
     ),
     (
         "medium",
@@ -60,7 +75,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1463,
         "High",
         "Slow",
-        "High accuracy for professional use",
+        "Large full-precision Whisper model with translation support",
     ),
     (
         "large-v3-turbo",
@@ -68,7 +83,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1549,
         "High",
         "Medium",
-        "Best accuracy with improved speed",
+        "Fast high-quality transcription; does not translate speech",
     ),
     (
         "large-v3",
@@ -76,7 +91,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         2951,
         "High",
         "Slow",
-        "Most Accurate, latest large model",
+        "Highest-quality Whisper model with translation support",
     ),
     // Q5_1 quantized models (balanced speed/accuracy, slightly better quality than Q5_0)
     (
@@ -85,7 +100,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         31,
         "Decent",
         "Very Fast",
-        "Quantized tiny model, ~50% faster processing",
+        "Smallest compressed Whisper model",
     ),
     (
         "base-q5_1",
@@ -93,7 +108,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         57,
         "Good",
         "Fast",
-        "Quantized base model, good speed/accuracy balance",
+        "Compressed entry-size Whisper model",
     ),
     (
         "small-q5_1",
@@ -101,7 +116,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         181,
         "Good",
         "Fast",
-        "Quantized small model, faster than f16 version",
+        "Compressed mid-size Whisper model",
     ),
     // Q5_0 quantized models (balanced speed/accuracy)
     (
@@ -110,7 +125,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         514,
         "High",
         "Medium",
-        "Quantized medium model, professional quality",
+        "Compressed large Whisper model with translation support",
     ),
     (
         "large-v3-turbo-q5_0",
@@ -118,7 +133,7 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         547,
         "High",
         "Medium",
-        "Quantized large model, best balance",
+        "Compressed Turbo transcription model; does not translate speech",
     ),
     (
         "large-v3-q5_0",
@@ -126,13 +141,13 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
         1031,
         "High",
         "Slow",
-        "Quantized large model, high accuracy",
+        "Compressed highest-quality Whisper model with translation support",
     ),
 ];
 
 #[cfg(test)]
 mod tests {
-    use super::recommended_whisper_model;
+    use super::{recommended_whisper_model, recommended_whisper_model_for_task};
     use crate::audio::{GpuType, HardwareProfile, PerformanceTier};
 
     fn profile(performance_tier: PerformanceTier) -> HardwareProfile {
@@ -162,6 +177,22 @@ mod tests {
         assert_eq!(
             recommended_whisper_model(&profile(PerformanceTier::Ultra)),
             "large-v3-turbo-q5_0"
+        );
+    }
+
+    #[test]
+    fn translation_recommendations_never_use_turbo() {
+        for tier in [
+            PerformanceTier::Low,
+            PerformanceTier::Medium,
+            PerformanceTier::High,
+            PerformanceTier::Ultra,
+        ] {
+            assert!(!recommended_whisper_model_for_task(&profile(tier), true).contains("turbo"));
+        }
+        assert_eq!(
+            recommended_whisper_model_for_task(&profile(PerformanceTier::High), true),
+            "large-v3-q5_0"
         );
     }
 }

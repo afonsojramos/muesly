@@ -166,6 +166,7 @@ pub async fn start_retranscription<R: Runtime>(
         &app,
         provider.as_deref(),
         model.as_deref(),
+        language.as_deref(),
     )
     .await
     .map_err(anyhow::Error::msg)?;

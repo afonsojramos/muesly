@@ -19,6 +19,10 @@ pub struct ResolvedTranscriptionModel {
     pub reason: String,
 }
 
+pub fn supports_speech_translation(provider: &str, model: &str) -> bool {
+    provider == "localWhisper" && !model.contains("turbo")
+}
+
 /// Choose a stable model for one transcription operation. The caller supplies
 /// only models that are already downloaded and verified: automatic mode never
 /// starts a surprise download. The returned model remains fixed until the next
@@ -27,21 +31,40 @@ pub fn choose_automatic_transcription_model(
     profile: &crate::audio::HardwareProfile,
     available_whisper: &[String],
     available_parakeet: &[String],
+    requires_translation: bool,
 ) -> Result<ResolvedTranscriptionModel, String> {
-    let preferred = crate::config::recommended_whisper_model(profile);
+    let preferred =
+        crate::config::recommended_whisper_model_for_task(profile, requires_translation);
     let tier_candidates: &[&str] = match profile.performance_tier {
-        crate::audio::PerformanceTier::Ultra | crate::audio::PerformanceTier::High => &[
-            "large-v3-turbo-q5_0",
-            "large-v3-turbo",
-            "medium-q5_0",
-            "medium",
-            "small-q5_1",
-            "small",
-            "base-q5_1",
-            "base",
-            "tiny-q5_1",
-            "tiny",
-        ],
+        crate::audio::PerformanceTier::Ultra | crate::audio::PerformanceTier::High => {
+            if requires_translation {
+                &[
+                    "large-v3-q5_0",
+                    "large-v3",
+                    "medium-q5_0",
+                    "medium",
+                    "small-q5_1",
+                    "small",
+                    "base-q5_1",
+                    "base",
+                    "tiny-q5_1",
+                    "tiny",
+                ]
+            } else {
+                &[
+                    "large-v3-turbo-q5_0",
+                    "large-v3-turbo",
+                    "medium-q5_0",
+                    "medium",
+                    "small-q5_1",
+                    "small",
+                    "base-q5_1",
+                    "base",
+                    "tiny-q5_1",
+                    "tiny",
+                ]
+            }
+        }
         crate::audio::PerformanceTier::Medium => &[
             "small-q5_1",
             "small",
@@ -68,7 +91,7 @@ pub fn choose_automatic_transcription_model(
         });
     }
 
-    if let Some(model) = available_parakeet.first() {
+    if !requires_translation && let Some(model) = available_parakeet.first() {
         return Ok(ResolvedTranscriptionModel {
             provider: "parakeet".to_string(),
             model: model.clone(),
@@ -79,7 +102,7 @@ pub fn choose_automatic_transcription_model(
 
     // A manually downloaded legacy/full-precision Whisper model is still more
     // useful than refusing to transcribe. Preserve catalog quality order here.
-    const WHISPER_FALLBACKS: &[&str] = &[
+    const TRANSCRIPTION_FALLBACKS: &[&str] = &[
         "large-v3",
         "large-v3-q5_0",
         "large-v3-turbo",
@@ -93,7 +116,24 @@ pub fn choose_automatic_transcription_model(
         "tiny",
         "tiny-q5_1",
     ];
-    if let Some(model) = WHISPER_FALLBACKS
+    const TRANSLATION_FALLBACKS: &[&str] = &[
+        "large-v3",
+        "large-v3-q5_0",
+        "medium",
+        "medium-q5_0",
+        "small",
+        "small-q5_1",
+        "base",
+        "base-q5_1",
+        "tiny",
+        "tiny-q5_1",
+    ];
+    let fallbacks = if requires_translation {
+        TRANSLATION_FALLBACKS
+    } else {
+        TRANSCRIPTION_FALLBACKS
+    };
+    if let Some(model) = fallbacks
         .iter()
         .find(|candidate| available_whisper.iter().any(|model| model == **candidate))
     {
@@ -104,10 +144,13 @@ pub fn choose_automatic_transcription_model(
         });
     }
 
-    Err(
+    Err(if requires_translation {
+        "No downloaded model can translate speech to English. Download a non-Turbo Whisper model in Settings first."
+            .to_string()
+    } else {
         "No downloaded transcription model is available. Download a model in Settings first."
-            .to_string(),
-    )
+            .to_string()
+    })
 }
 
 /// Lifecycle status of a transcription model on disk.
@@ -149,6 +192,7 @@ mod tests {
             &profile(PerformanceTier::High),
             &["base-q5_1".into(), "large-v3-turbo-q5_0".into()],
             &["parakeet-tdt-0.6b-v3-int8".into()],
+            false,
         )
         .unwrap();
         assert_eq!(resolved.provider, "localWhisper");
@@ -161,6 +205,7 @@ mod tests {
             &profile(PerformanceTier::Low),
             &["large-v3".into()],
             &["parakeet-tdt-0.6b-v3-int8".into()],
+            false,
         )
         .unwrap();
         assert_eq!(resolved.provider, "parakeet");
@@ -172,6 +217,7 @@ mod tests {
             &profile(PerformanceTier::Medium),
             &["tiny-q5_1".into(), "base-q5_1".into()],
             &[],
+            false,
         )
         .unwrap();
         assert_eq!(resolved.model, "base-q5_1");
@@ -180,8 +226,38 @@ mod tests {
     #[test]
     fn automatic_requires_a_downloaded_model() {
         assert!(
-            choose_automatic_transcription_model(&profile(PerformanceTier::Medium), &[], &[])
-                .is_err()
+            choose_automatic_transcription_model(
+                &profile(PerformanceTier::Medium),
+                &[],
+                &[],
+                false,
+            )
+            .is_err()
         );
+    }
+
+    #[test]
+    fn automatic_translation_excludes_turbo_and_parakeet() {
+        let resolved = choose_automatic_transcription_model(
+            &profile(PerformanceTier::High),
+            &["large-v3-turbo-q5_0".into(), "medium-q5_0".into()],
+            &["parakeet-tdt-0.6b-v3-int8".into()],
+            true,
+        )
+        .unwrap();
+        assert_eq!(resolved.provider, "localWhisper");
+        assert_eq!(resolved.model, "medium-q5_0");
+    }
+
+    #[test]
+    fn automatic_translation_errors_when_only_incompatible_models_exist() {
+        let error = choose_automatic_transcription_model(
+            &profile(PerformanceTier::High),
+            &["large-v3-turbo-q5_0".into()],
+            &["parakeet-tdt-0.6b-v3-int8".into()],
+            true,
+        )
+        .unwrap_err();
+        assert!(error.contains("non-Turbo Whisper"));
     }
 }

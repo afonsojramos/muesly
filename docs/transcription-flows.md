@@ -46,6 +46,11 @@ Parakeet when no hardware-suitable Whisper model exists. The resolved provider
 and model—not the `automatic` sentinel—are written to meeting metadata and
 analytics.
 
+For "translate to English," Automatic excludes Parakeet and both Large v3
+Turbo artifacts: upstream Whisper documents Turbo as transcription-only. A
+manual incompatible choice fails before audio processing instead of silently
+returning the original language.
+
 On stop (`use-recording-stop.svelte.ts`): wait for the queue to drain → flush
 buffer → save meeting to SQLite. Then, without holding the stop UI: an
 optional **quality pass** (a retranscription of the saved file;
@@ -53,9 +58,10 @@ optional **quality pass** (a retranscription of the saved file;
 if calendar attendees exist and models are downloaded), plus an independent
 title pass. The summary auto-generates when the meeting first opens.
 
-The quality pass ALWAYS runs Whisper, regardless of the live provider: with
-Parakeet selected for live captions ("Fastest" profile in settings), it is
-exactly the pass that upgrades the transcript to whisper quality afterwards.
+The quality pass ALWAYS runs Whisper, regardless of the live provider. With
+Parakeet selected for live captions ("Fastest" profile in settings), the pass
+adds Whisper-specific language control, prompt continuity, confidence gating,
+and custom-vocabulary prompting afterwards.
 
 ## Retranscribe (manual) and import
 

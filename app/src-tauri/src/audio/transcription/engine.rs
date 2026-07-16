@@ -6,9 +6,9 @@ use log::{info, warn};
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, Runtime};
 
-/// The engine driving LIVE transcription: Whisper (default, highest quality)
-/// or Parakeet (the fast multilingual alternative; ~10x faster on CPU, no GPU
-/// use, but no language lock, no vocabulary prompting, and no confidence).
+/// The engine driving LIVE transcription: Whisper (broad language controls and
+/// prompting) or Parakeet (the fast 25-language alternative, but no language
+/// lock, vocabulary prompting, or confidence exposed to the app).
 /// Offline jobs (retranscribe/import) resolve their own engines from the
 /// request; this enum serves only the live worker, which is why the
 /// whisper-only machinery (prompt continuity, auto-language repair, vocabulary
@@ -86,6 +86,14 @@ impl TranscriptionEngine {
 #[specta::specta]
 pub async fn get_automatic_transcription_model()
 -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    let requires_translation =
+        crate::get_language_preference_internal().as_deref() == Some("auto-translate");
+    automatic_transcription_model_for_task(requires_translation).await
+}
+
+async fn automatic_transcription_model_for_task(
+    requires_translation: bool,
+) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
     let mut whisper_models = Vec::new();
     if crate::whisper_engine::commands::whisper_init()
         .await
@@ -138,7 +146,26 @@ pub async fn get_automatic_transcription_model()
         crate::audio::HardwareProfile::detect(),
         &whisper_models,
         &parakeet_models,
+        requires_translation,
     )
+}
+
+fn ensure_task_compatible(
+    selection: crate::transcription_models::ResolvedTranscriptionModel,
+    requires_translation: bool,
+) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    if requires_translation
+        && !crate::transcription_models::supports_speech_translation(
+            &selection.provider,
+            &selection.model,
+        )
+    {
+        return Err(format!(
+            "{} cannot translate speech to English. Choose a non-Turbo Whisper model or use original-language transcription.",
+            selection.model
+        ));
+    }
+    Ok(selection)
 }
 
 /// Resolve the saved setting once at an operation boundary. Manual choices are
@@ -147,12 +174,23 @@ pub async fn get_automatic_transcription_model()
 pub async fn configured_transcription_model<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    configured_transcription_model_for_task(
+        app,
+        crate::get_language_preference_internal().as_deref() == Some("auto-translate"),
+    )
+    .await
+}
+
+async fn configured_transcription_model_for_task<R: Runtime>(
+    app: &AppHandle<R>,
+    requires_translation: bool,
+) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
     let config = crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
         .await?
         .ok_or_else(|| "No transcription model is configured".to_string())?;
 
     if config.provider == crate::transcription_models::AUTOMATIC_TRANSCRIPTION_PROVIDER {
-        let resolved = get_automatic_transcription_model().await?;
+        let resolved = automatic_transcription_model_for_task(requires_translation).await?;
         info!(
             "✨ Automatic transcription resolved to {}/{}: {}",
             resolved.provider, resolved.model, resolved.reason
@@ -160,24 +198,31 @@ pub async fn configured_transcription_model<R: Runtime>(
         return Ok(resolved);
     }
 
-    Ok(crate::transcription_models::ResolvedTranscriptionModel {
-        provider: if config.provider == "parakeet" {
-            "parakeet".to_string()
-        } else {
-            "localWhisper".to_string()
+    ensure_task_compatible(
+        crate::transcription_models::ResolvedTranscriptionModel {
+            provider: if config.provider == "parakeet" {
+                "parakeet".to_string()
+            } else {
+                "localWhisper".to_string()
+            },
+            model: config.model,
+            reason: "Selected manually".to_string(),
         },
-        model: config.model,
-        reason: "Selected manually".to_string(),
-    })
+        requires_translation,
+    )
 }
 
 pub async fn resolve_requested_transcription_model<R: Runtime>(
     app: &AppHandle<R>,
     provider: Option<&str>,
     model: Option<&str>,
+    language: Option<&str>,
 ) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
-    match (provider, model) {
-        (Some("automatic"), _) => get_automatic_transcription_model().await,
+    let requires_translation = language == Some("auto-translate");
+    let selection = match (provider, model) {
+        (Some("automatic"), _) => {
+            automatic_transcription_model_for_task(requires_translation).await
+        }
         (Some("parakeet"), Some(model)) if !model.is_empty() => {
             Ok(crate::transcription_models::ResolvedTranscriptionModel {
                 provider: "parakeet".to_string(),
@@ -192,8 +237,9 @@ pub async fn resolve_requested_transcription_model<R: Runtime>(
                 reason: "Selected for this operation".to_string(),
             })
         }
-        _ => configured_transcription_model(app).await,
-    }
+        _ => configured_transcription_model_for_task(app, requires_translation).await,
+    }?;
+    ensure_task_compatible(selection, requires_translation)
 }
 
 /// Validate that the configured local transcription model is ready before

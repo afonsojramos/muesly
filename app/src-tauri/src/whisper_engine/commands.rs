@@ -77,7 +77,13 @@ pub async fn whisper_get_available_models() -> Result<Vec<WhisperModelInfo>, Str
 #[tauri::command]
 #[specta::specta]
 pub fn whisper_get_recommended_model() -> String {
-    crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect()).to_string()
+    let requires_translation =
+        crate::get_language_preference_internal().as_deref() == Some("auto-translate");
+    crate::config::recommended_whisper_model_for_task(
+        crate::audio::HardwareProfile::detect(),
+        requires_translation,
+    )
+    .to_string()
 }
 
 /// Discover Whisper models by scanning the models directory directly
