@@ -71,6 +71,14 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'VULKAN_SDK',
 ]);
 
+const EVALUATOR_TARGET_BUILD_ENV_PATTERNS = Object.freeze([
+	/^CARGO_TARGET_[A-Z0-9_]+$/,
+	/^(?:AR|CC|CFLAGS|CPPFLAGS|CXX|CXXFLAGS|LDFLAGS)_.+$/,
+	/^(?:HOST|TARGET)_(?:AR|CC|CFLAGS|CPPFLAGS|CXX|CXXFLAGS|LDFLAGS)$/,
+	/^PKG_CONFIG_[A-Z0-9_]+_.+$/,
+	/^.+_PKG_CONFIG_(?:LIBDIR|PATH|SYSROOT_DIR)$/,
+]);
+
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const GIT_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
 const TARGET_TRIPLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
@@ -165,12 +173,24 @@ function environmentValue(buildEnv, name) {
 	return Object.hasOwn(buildEnv, name) ? buildEnv[name] : undefined;
 }
 
-function buildEnvironmentSha256(buildEnv) {
-	if (buildEnv === null || typeof buildEnv !== 'object' || Array.isArray(buildEnv)) {
-		throw new Error('buildEnv must be an environment map');
+function selectedBuildEnvironmentNames(...environments) {
+	const names = new Set(EVALUATOR_BUILD_ENV_ALLOWLIST);
+	for (const environment of environments) {
+		if (environment === null || typeof environment !== 'object' || Array.isArray(environment)) {
+			throw new Error('buildEnv must be an environment map');
+		}
+		for (const name of Object.keys(environment)) {
+			if (EVALUATOR_TARGET_BUILD_ENV_PATTERNS.some((pattern) => pattern.test(name))) {
+				names.add(name);
+			}
+		}
 	}
+	return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+function buildEnvironmentSha256(buildEnv) {
 	const variables = {};
-	for (const name of EVALUATOR_BUILD_ENV_ALLOWLIST) {
+	for (const name of selectedBuildEnvironmentNames(buildEnv)) {
 		const value = environmentValue(buildEnv, name);
 		if (value !== undefined && typeof value !== 'string') {
 			throw new Error(`buildEnv.${name} must be a string when set`);
@@ -417,7 +437,7 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 		throw new Error('rustcExecutable must be a non-empty string');
 	}
 	const commandEnvironment = { ...process.env };
-	for (const name of EVALUATOR_BUILD_ENV_ALLOWLIST) {
+	for (const name of selectedBuildEnvironmentNames(process.env, buildEnv)) {
 		const value = environmentValue(buildEnv, name);
 		if (value === undefined) {
 			delete commandEnvironment[name];

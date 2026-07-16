@@ -142,6 +142,43 @@ test('Cargo features and allowlisted build inputs deterministically change the d
 	assert.equal(changedUnlistedEnvironment.sha256, baseline.sha256);
 });
 
+test('target-scoped Cargo and compiler inputs change the evaluator digest', (t) => {
+	const repositoryRoot = createRepository(t);
+	const baseline = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=x86-64',
+				CC_x86_64_unknown_linux_gnu: 'clang',
+			},
+		}),
+	);
+	const changedCargoTarget = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=native',
+				CC_x86_64_unknown_linux_gnu: 'clang',
+			},
+		}),
+	);
+	const changedCompiler = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=x86-64',
+				CC_x86_64_unknown_linux_gnu: 'zig cc',
+			},
+		}),
+	);
+
+	assert.notEqual(changedCargoTarget.sha256, baseline.sha256);
+	assert.notEqual(changedCompiler.sha256, baseline.sha256);
+});
+
 test('refuses tracked unstaged evaluator changes without exposing their path or content', (t) => {
 	const repositoryRoot = createRepository(t);
 	fs.appendFileSync(path.join(repositoryRoot, 'tracked.txt'), 'private transcript fragment\n');
