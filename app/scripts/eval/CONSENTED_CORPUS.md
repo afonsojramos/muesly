@@ -40,20 +40,39 @@ by counsel.
 
 ## Local intake
 
-1. Copy `corpus-local.example.json` to the gitignored `corpus-local.json`. The empty local
-   manifest is valid, so it can be initialized before intake and remain valid if every session
-   is later withdrawn.
-2. Store audio and references under the gitignored `local-corpus/session-.../` directory.
-   Use one opaque session ID for every clip from the same meeting; coverage counts distinct
-   sessions, not files.
-3. Create the consent record under the gitignored `consent-records/` directory or an encrypted
-   records system. Never put names, emails, meeting titles, customer names, or consent files in
-   the manifest.
-4. Produce a verbatim reference in the spoken language. Remove an entire sensitive audio
-   interval and its matching reference rather than retaining secrets or scoring a redacted
-   transcript against unredacted speech.
-5. Compute lowercase SHA-256 hashes for both files (`shasum -a 256 <file>` on macOS/Linux),
-   record decoded audio duration, and validate:
+1. Keep the affirmative consent record in the gitignored `consent-records/` directory or an
+   encrypted records system. Never put names, emails, meeting titles, customer names, or consent
+   files in the manifest.
+2. Produce a verbatim UTF-8 reference in the spoken language and export the matching audio as
+   RIFF/WAVE. Remove an entire sensitive audio interval and its matching reference rather than
+   retaining secrets or scoring a redacted transcript against unredacted speech.
+3. Import the files. The explicit affirmation is mandatory; it means every audible participant
+   consented to `asr-benchmarking` before recording. Use one opaque session ID for every clip
+   from the same meeting—coverage counts distinct sessions, not files.
+
+```bash
+nub run eval:corpus:intake -- \
+  --audio /private/intake/meeting.wav \
+  --reference /private/intake/reference.txt \
+  --sample-id es-office-001 \
+  --session-id session-opaque-001 \
+  --consent-record-id consent-opaque-001 \
+  --consent-record app/scripts/eval/consent-records/consent-opaque-001.md \
+  --consent-date 2026-07-16 \
+  --language es --noise-condition office --speakers 3 \
+  --affirm-all-participants-consented
+```
+
+The command initializes the gitignored `corpus-local.json` when absent, copies audio and
+reference material under `local-corpus/session-.../` with private permissions, derives WAV
+duration and exact hashes, rejects duplicate audio, validates the complete next manifest, and
+rolls back files if any step fails. An exclusive local lock prevents simultaneous imports from
+losing manifest entries. It verifies that the supplied consent record exists but never copies its
+identity-bearing contents into the manifest. Intake accepts only the five target languages and
+four defined noise conditions so samples cannot silently fall outside the matrix. After validating
+the imported copy, dispose of the source files according to the approved retention policy.
+
+4. Validate independently:
 
 ```bash
 nub run eval:corpus:validate app/scripts/eval/corpus-local.json

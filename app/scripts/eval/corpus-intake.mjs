@@ -1,0 +1,328 @@
+#!/usr/bin/env node
+import { createHash, randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { validateCorpusDocument } from './corpus.mjs';
+
+const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
+const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
+const REQUIRED_OPTIONS = [
+	'audio',
+	'reference',
+	'sampleId',
+	'sessionId',
+	'consentRecordId',
+	'consentRecord',
+	'consentDate',
+	'language',
+	'noiseCondition',
+	'speakers',
+];
+
+function ensureFile(filePath, label) {
+	if (!fs.statSync(filePath, { throwIfNoEntry: false })?.isFile()) {
+		throw new Error(`${label} does not exist or is not a file: ${filePath}`);
+	}
+}
+
+function hashFile(filePath) {
+	const hash = createHash('sha256');
+	const descriptor = fs.openSync(filePath, 'r');
+	const buffer = Buffer.allocUnsafe(1024 * 1024);
+	try {
+		for (;;) {
+			const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+			if (bytesRead === 0) break;
+			hash.update(buffer.subarray(0, bytesRead));
+		}
+	} finally {
+		fs.closeSync(descriptor);
+	}
+	return hash.digest('hex');
+}
+
+export function wavDurationSeconds(filePath) {
+	const descriptor = fs.openSync(filePath, 'r');
+	const fileSize = fs.fstatSync(descriptor).size;
+	const header = Buffer.alloc(12);
+	try {
+		if (fs.readSync(descriptor, header, 0, header.length, 0) !== header.length) {
+			throw new Error('WAV header is truncated');
+		}
+		if (header.toString('ascii', 0, 4) !== 'RIFF' || header.toString('ascii', 8, 12) !== 'WAVE') {
+			throw new Error('audio must be a RIFF/WAVE file');
+		}
+
+		let offset = 12;
+		let byteRate = null;
+		let dataBytes = null;
+		const chunkHeader = Buffer.alloc(8);
+		while (offset + chunkHeader.length <= fileSize) {
+			if (
+				fs.readSync(descriptor, chunkHeader, 0, chunkHeader.length, offset) !== chunkHeader.length
+			) {
+				break;
+			}
+			const chunkId = chunkHeader.toString('ascii', 0, 4);
+			const chunkSize = chunkHeader.readUInt32LE(4);
+			const chunkStart = offset + chunkHeader.length;
+			if (chunkStart + chunkSize > fileSize) throw new Error(`WAV ${chunkId} chunk is truncated`);
+			if (chunkId === 'fmt ') {
+				if (chunkSize < 16) throw new Error('WAV fmt chunk is invalid');
+				const format = Buffer.alloc(16);
+				fs.readSync(descriptor, format, 0, format.length, chunkStart);
+				byteRate = format.readUInt32LE(8);
+				if (byteRate === 0) throw new Error('WAV byte rate must be positive');
+			} else if (chunkId === 'data') {
+				dataBytes = chunkSize;
+			}
+			if (byteRate !== null && dataBytes !== null) return dataBytes / byteRate;
+			offset = chunkStart + chunkSize + (chunkSize % 2);
+		}
+		throw new Error('WAV must contain valid fmt and data chunks');
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
+function relativeManifestPath(manifestPath, filePath) {
+	return path.relative(path.dirname(manifestPath), filePath).split(path.sep).join('/');
+}
+
+function readManifest(manifestPath) {
+	if (!fs.existsSync(manifestPath)) {
+		return {
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local-only participant-consented multilingual meeting corpus.',
+			distribution: 'local',
+			samples: [],
+		};
+	}
+	let document;
+	try {
+		document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	} catch (error) {
+		throw new Error(`failed to read corpus manifest ${manifestPath}: ${error.message}`);
+	}
+	const errors = validateCorpusDocument(document, { manifestPath });
+	if (errors.length > 0)
+		throw new Error(`existing corpus manifest is invalid:\n- ${errors.join('\n- ')}`);
+	if (document.distribution !== 'local') throw new Error('intake requires a local corpus manifest');
+	return document;
+}
+
+function isIsoDate(value) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const [year, month, day] = value.split('-').map(Number);
+	const date = new Date(Date.UTC(year, month - 1, day));
+	return (
+		date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+	);
+}
+
+function validateIntakeOptions(options, today) {
+	for (const field of REQUIRED_OPTIONS) {
+		if (options[field] === undefined || options[field] === null || options[field] === '') {
+			const option = field.replaceAll(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+			throw new Error(`--${option} is required`);
+		}
+	}
+	if (!options.affirmConsent) {
+		throw new Error('--affirm-all-participants-consented is required');
+	}
+	if (!Number.isInteger(options.speakers) || options.speakers < 2) {
+		throw new Error('--speakers must be an integer of at least 2');
+	}
+	if (!/^[a-z0-9][a-z0-9-]*$/.test(options.sampleId)) {
+		throw new Error('--sample-id must be a lowercase slug');
+	}
+	if (!/^session-[a-z0-9][a-z0-9-]*$/.test(options.sessionId)) {
+		throw new Error('--session-id must be an opaque session-* identifier');
+	}
+	if (!/^consent-[a-z0-9][a-z0-9-]*$/.test(options.consentRecordId)) {
+		throw new Error('--consent-record-id must be an opaque consent-* identifier');
+	}
+	if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(options.language)) {
+		throw new Error('--language must be a BCP-47-style language tag');
+	}
+	const primaryLanguage = options.language.split('-')[0].toLowerCase();
+	if (!TARGET_LANGUAGES.has(primaryLanguage)) {
+		throw new Error(`--language must target one of: ${[...TARGET_LANGUAGES].join(', ')}`);
+	}
+	if (!TARGET_NOISE_CONDITIONS.has(options.noiseCondition)) {
+		throw new Error(`--noise-condition must be one of: ${[...TARGET_NOISE_CONDITIONS].join(', ')}`);
+	}
+	if (!isIsoDate(options.consentDate) || options.consentDate > today) {
+		throw new Error('--consent-date must be a valid, non-future YYYY-MM-DD date');
+	}
+}
+
+export function intakeConsentedSample(options) {
+	const today = options.today ?? new Date().toISOString().slice(0, 10);
+	validateIntakeOptions(options, today);
+	const manifestPath = path.resolve(options.manifestPath);
+	const audioSource = path.resolve(options.audio);
+	const referenceSource = path.resolve(options.reference);
+	const consentRecord = path.resolve(options.consentRecord);
+	ensureFile(audioSource, 'audio');
+	ensureFile(referenceSource, 'reference');
+	ensureFile(consentRecord, 'consent record');
+	if (new Set([audioSource, referenceSource, consentRecord]).size !== 3) {
+		throw new Error('audio, reference, and consent record must be three distinct files');
+	}
+	if (fs.statSync(consentRecord).size === 0) throw new Error('consent record must not be empty');
+	if (path.extname(audioSource).toLowerCase() !== '.wav') {
+		throw new Error('audio must be a .wav file so duration can be verified locally');
+	}
+	if (fs.readFileSync(referenceSource, 'utf8').trim().length === 0) {
+		throw new Error('reference transcript must not be empty');
+	}
+
+	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
+	if (fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false })?.isSymbolicLink()) {
+		throw new Error(`intake directory cannot be a symbolic link: ${localCorpusRoot}`);
+	}
+	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
+	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	let manifestLock;
+	try {
+		manifestLock = fs.openSync(lockPath, 'wx', 0o600);
+	} catch (error) {
+		if (error.code === 'EEXIST') throw new Error(`another corpus intake is active: ${lockPath}`);
+		throw error;
+	}
+
+	try {
+		const document = readManifest(manifestPath);
+		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
+		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
+			throw new Error(`intake directory cannot be a symbolic link: ${sessionDirectory}`);
+		}
+		const audioTarget = path.join(sessionDirectory, `${options.sampleId}.wav`);
+		const referenceTarget = path.join(sessionDirectory, `${options.sampleId}.txt`);
+		for (const target of [audioTarget, referenceTarget]) {
+			if (fs.existsSync(target)) throw new Error(`intake target already exists: ${target}`);
+		}
+
+		const token = `${process.pid}-${randomUUID()}`;
+		const stagedAudio = `${audioTarget}.tmp-${token}`;
+		const stagedReference = `${referenceTarget}.tmp-${token}`;
+		const stagedManifest = `${manifestPath}.tmp-${token}`;
+		const createdSessionDirectory = !fs.existsSync(sessionDirectory);
+		const promotedFiles = [];
+		fs.mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
+		try {
+			fs.copyFileSync(audioSource, stagedAudio);
+			fs.copyFileSync(referenceSource, stagedReference);
+			fs.chmodSync(stagedAudio, 0o600);
+			fs.chmodSync(stagedReference, 0o600);
+			const sample = {
+				id: options.sampleId,
+				session_id: options.sessionId,
+				audio_path: relativeManifestPath(manifestPath, audioTarget),
+				audio_sha256: hashFile(stagedAudio),
+				reference_path: relativeManifestPath(manifestPath, referenceTarget),
+				reference_sha256: hashFile(stagedReference),
+				language: options.language,
+				scenario: 'meeting',
+				noise_condition: options.noiseCondition,
+				speakers: options.speakers,
+				duration_seconds: wavDurationSeconds(stagedAudio),
+				provenance: {
+					basis: 'participant-consent',
+					consent_record_id: options.consentRecordId,
+					consent_date: options.consentDate,
+					consented_uses: ['asr-benchmarking'],
+					redistribution: 'local-only',
+				},
+			};
+			const nextDocument = { ...document, samples: [...document.samples, sample] };
+			const structuralErrors = validateCorpusDocument(nextDocument, {
+				manifestPath,
+				checkFiles: false,
+			});
+			if (structuralErrors.length > 0) {
+				throw new Error(
+					`intake would create an invalid corpus:\n- ${structuralErrors.join('\n- ')}`,
+				);
+			}
+
+			fs.renameSync(stagedAudio, audioTarget);
+			promotedFiles.push(audioTarget);
+			fs.renameSync(stagedReference, referenceTarget);
+			promotedFiles.push(referenceTarget);
+			const fileErrors = validateCorpusDocument(nextDocument, { manifestPath });
+			if (fileErrors.length > 0) {
+				throw new Error(`intake would create an invalid corpus:\n- ${fileErrors.join('\n- ')}`);
+			}
+			fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, {
+				mode: 0o600,
+			});
+			fs.renameSync(stagedManifest, manifestPath);
+			return sample;
+		} catch (error) {
+			for (const file of [stagedAudio, stagedReference, stagedManifest, ...promotedFiles]) {
+				fs.rmSync(file, { force: true });
+			}
+			if (createdSessionDirectory) fs.rmSync(sessionDirectory, { recursive: true, force: true });
+			throw error;
+		}
+	} finally {
+		fs.closeSync(manifestLock);
+		fs.rmSync(lockPath, { force: true });
+	}
+}
+
+function requiredValue(args, index, option) {
+	const value = args[index + 1];
+	if (!value || value.startsWith('--')) throw new Error(`${option} requires a value`);
+	return value;
+}
+
+export function parseIntakeArgs(args, defaultManifestPath) {
+	const options = { manifestPath: defaultManifestPath, affirmConsent: false };
+	for (let index = 0; index < args.length; index += 1) {
+		const option = args[index];
+		if (option === '--affirm-all-participants-consented') {
+			options.affirmConsent = true;
+			continue;
+		}
+		const fields = {
+			'--manifest': 'manifestPath',
+			'--audio': 'audio',
+			'--reference': 'reference',
+			'--sample-id': 'sampleId',
+			'--session-id': 'sessionId',
+			'--consent-record-id': 'consentRecordId',
+			'--consent-record': 'consentRecord',
+			'--consent-date': 'consentDate',
+			'--language': 'language',
+			'--noise-condition': 'noiseCondition',
+			'--speakers': 'speakers',
+		};
+		const field = fields[option];
+		if (!field) throw new Error(`unknown option: ${option}`);
+		options[field] = requiredValue(args, index, option);
+		index += 1;
+	}
+	if (options.speakers !== undefined) options.speakers = Number(options.speakers);
+	return options;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	try {
+		const here = path.dirname(fileURLToPath(import.meta.url));
+		const options = parseIntakeArgs(process.argv.slice(2), path.join(here, 'corpus-local.json'));
+		const sample = intakeConsentedSample(options);
+		console.log(
+			`added ${sample.id}: ${sample.language} / ${sample.noise_condition}, ` +
+				`${sample.duration_seconds.toFixed(1)}s, ${sample.speakers} speakers`,
+		);
+	} catch (error) {
+		console.error(error.message);
+		process.exit(2);
+	}
+}

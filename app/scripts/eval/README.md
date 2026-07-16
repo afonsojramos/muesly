@@ -15,6 +15,7 @@ app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
   corpus-targets.json  # private meeting-corpus coverage floor
   corpus.mjs           # manifest validation and language normalization
+  corpus-intake.mjs    # consent-gated, atomic local corpus intake
   coverage.mjs         # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
   wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
