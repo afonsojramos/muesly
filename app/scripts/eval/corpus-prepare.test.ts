@@ -8,6 +8,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+	isPreparationLockContention,
 	parsePrepareArgs,
 	planCollectionCells,
 	prepareCollectionSession,
@@ -99,6 +100,15 @@ test('balances repeated preparation across pending session bundles', () => {
 	]);
 	assert.equal(`${cells[0].language}/${cells[0].noiseCondition}`, 'en/office');
 	assert.equal(cells.at(-1).prepared, 1);
+});
+
+test('treats Windows destination-exists errors as preparation lock contention', () => {
+	assert.equal(isPreparationLockContention('EPERM', true), true);
+	assert.equal(isPreparationLockContention('EACCES', true), true);
+	assert.equal(isPreparationLockContention('EIO', true), true);
+	assert.equal(isPreparationLockContention('EPERM', false), false);
+	assert.equal(isPreparationLockContention('EACCES', false), false);
+	assert.equal(isPreparationLockContention('EIO', false), false);
 });
 
 test('serializes preparation before reserving the next collection cell', async () => {

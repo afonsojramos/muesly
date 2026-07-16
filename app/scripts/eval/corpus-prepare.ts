@@ -161,6 +161,10 @@ function waitForPreparationLock(milliseconds) {
 	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+export function isPreparationLockContention(errorCode, lockExists) {
+	return lockExists || ['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(errorCode);
+}
+
 function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
 	const lockPath = path.join(intakeRoot, '.prepare.lock');
 	const token = randomUUID();
@@ -184,7 +188,7 @@ function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
 				fs.renameSync(pendingPath, lockPath);
 				return { lockPath, token };
 			} catch (error) {
-				if (!['EEXIST', 'ENOTEMPTY'].includes(error.code)) throw error;
+				if (!isPreparationLockContention(error.code, fs.existsSync(lockPath))) throw error;
 			}
 
 			let owner;
