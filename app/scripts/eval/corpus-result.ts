@@ -8,17 +8,9 @@ import {
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
 import { loadCorpus } from './corpus.ts';
+import { bootIdentity, processIdentity, processOwnsState } from './process-identity.ts';
 
 const RESULT_TRANSACTION_PATTERN = /^\.result-transaction-(\d+)-([0-9a-f-]{36})\.json$/;
-
-function processIsRunning(pid) {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return error.code !== 'ESRCH';
-	}
-}
 
 function validateLocalOutputPath(resultsRoot, outputPath) {
 	if (path.dirname(outputPath) !== resultsRoot) {
@@ -70,9 +62,12 @@ function readTransactionMarker(directory, entry) {
 	const pid = Number(match[1]);
 	const token = match[2];
 	if (
-		transaction.schema_version !== 1 ||
+		![1, 2].includes(transaction.schema_version) ||
 		transaction.pid !== pid ||
 		transaction.token !== token ||
+		(transaction.schema_version === 2 &&
+			(typeof transaction.process_identity !== 'string' ||
+				transaction.process_identity.length === 0)) ||
 		!['prepared', 'committed'].includes(transaction.state) ||
 		!Array.isArray(transaction.outputs) ||
 		transaction.outputs.length < 2
@@ -129,7 +124,7 @@ function recoverResultTransactions(directory) {
 	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
 		const recovered = readTransactionMarker(directory, entry);
 		if (!recovered) continue;
-		if (processIsRunning(recovered.transaction.pid)) {
+		if (processOwnsState(recovered.transaction)) {
 			throw new Error(`another result transaction is active: ${recovered.markerPath}`);
 		}
 		if (recovered.transaction.state === 'committed') {
@@ -145,8 +140,10 @@ function promoteOutputSet(stagedOutputs) {
 	const token = randomUUID();
 	const markerPath = path.join(directory, `.result-transaction-${process.pid}-${token}.json`);
 	const transaction = {
-		schema_version: 1,
+		schema_version: 2,
 		pid: process.pid,
+		process_identity: processIdentity(process.pid),
+		boot_identity: bootIdentity(),
 		token,
 		state: 'prepared',
 		outputs: stagedOutputs.map((output) => {

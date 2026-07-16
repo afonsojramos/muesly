@@ -290,6 +290,30 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
+test('reclaims a lock whose PID belongs to a different process incarnation', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const lockPath = path.join(corpusDirectory, '.intake.lock');
+	fs.mkdirSync(lockPath, { recursive: true });
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 3,
+			pid: process.pid,
+			process_identity: 'reused-pid',
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: options.manifestPath,
+			operation: 'intake',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	intakeConsentedSample(options);
+
+	assert.equal(JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')).samples.length, 1);
+	assert(!fs.existsSync(lockPath));
+});
+
 test('blocks intake until an interrupted withdrawal is resumed', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');

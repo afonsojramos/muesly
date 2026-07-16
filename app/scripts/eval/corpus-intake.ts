@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
 import { fileSha256, validateCorpusDocument } from './corpus.ts';
+import { bootIdentity, processIdentity, processOwnsState } from './process-identity.ts';
 
 const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
 const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
@@ -92,15 +93,6 @@ export function localCalendarDate(date = new Date()) {
 	return `${year}-${month}-${day}`;
 }
 
-function processIsRunning(pid) {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error) {
-		return error.code !== 'ESRCH';
-	}
-}
-
 function removeAbandonedManifestFiles(manifestPath) {
 	const directory = path.dirname(manifestPath);
 	const prefix = `${path.basename(manifestPath)}.tmp-`;
@@ -148,8 +140,10 @@ function prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata) {
 	fs.mkdirSync(pendingPath, { mode: 0o700 });
 	try {
 		writePrivateJson(path.join(pendingPath, 'owner.json'), {
-			schema_version: 2,
+			schema_version: 3,
 			pid: process.pid,
+			process_identity: processIdentity(process.pid),
+			boot_identity: bootIdentity(),
 			token,
 			manifest_path: path.resolve(manifestPath),
 			operation: ownerMetadata.operation,
@@ -324,7 +318,7 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 			} catch {
 				throw new Error(`another corpus intake is active or left an unreadable lock: ${lockPath}`);
 			}
-			if (processIsRunning(observed.owner.pid)) {
+			if (processOwnsState(observed.owner)) {
 				throw new Error(`another corpus intake is active: ${lockPath}`);
 			}
 			assertNoConflictingWithdrawal(observed.owner, manifestPath, ownerMetadata);
