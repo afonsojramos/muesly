@@ -57,6 +57,27 @@ export function corpusFingerprint(document) {
 	return createHash('sha256').update(JSON.stringify(canonicalize(document))).digest('hex');
 }
 
+export function findCrossSessionAudioDuplicates(samples) {
+	const audioByHash = new Map();
+	const duplicates = [];
+	for (const sample of samples) {
+		if (
+			!isObject(sample) ||
+			typeof sample.audio_sha256 !== 'string' ||
+			typeof sample.session_id !== 'string'
+		) {
+			continue;
+		}
+		const previous = audioByHash.get(sample.audio_sha256);
+		if (previous && previous.session_id !== sample.session_id) {
+			duplicates.push({ first: previous, duplicate: sample });
+		} else if (!previous) {
+			audioByHash.set(sample.audio_sha256, sample);
+		}
+	}
+	return duplicates;
+}
+
 function resolveSamplePath(manifestPath, value) {
 	return path.resolve(path.dirname(manifestPath), value);
 }
@@ -237,6 +258,11 @@ export function validateCorpusDocument(document, options = {}) {
 		if (document.distribution === 'repository' && sample.provenance?.redistribution === 'local-only') {
 			errors.push(`${prefix}.provenance.redistribution cannot be local-only in a repository manifest`);
 		}
+	}
+	for (const { first, duplicate } of findCrossSessionAudioDuplicates(document.samples)) {
+		errors.push(
+			`sample '${duplicate.id ?? '?'}'.audio_sha256 duplicates sample '${first.id ?? '?'}' assigned to a different session`,
+		);
 	}
 
 	const declaredAudio = new Set(

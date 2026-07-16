@@ -93,6 +93,19 @@ test('rejects identity fields and changed fixture contents', () => {
 	assert(errors.some((error) => error.includes('audio_sha256 does not match')));
 });
 
+test('rejects copied audio assigned to different sessions', () => {
+	const { directory, document } = fixture();
+	document.samples.push({
+		...structuredClone(document.samples[0]),
+		id: 'meeting-en-clean-copy',
+		session_id: 'session-example-002',
+	});
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('assigned to a different session')));
+});
+
 test('rejects invalid consent dates and local-only entries in repository manifests', () => {
 	const { directory, document } = fixture();
 	document.distribution = 'repository';

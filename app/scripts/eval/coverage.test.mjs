@@ -29,6 +29,7 @@ function sample(language, noise, session) {
 	return {
 		id: `${language}-${noise}-${session}`,
 		session_id: `session-${session}`,
+		audio_sha256: `${session.padEnd(64, '0').slice(0, 64)}`,
 		language,
 		noise_condition: noise,
 		scenario: 'meeting',
@@ -83,6 +84,12 @@ test('requires distinct sessions for every language and noise cell', () => {
 	assert.deepEqual(coverage.corpus.missing_cells, ['en / clean']);
 	assert.equal(coverage.complete, false);
 	assert.match(formatCoverage(coverage), /Missing measurement cells: en \/ clean/);
+});
+
+test('rejects copied audio assigned to different sessions', () => {
+	const corpus = completeCorpus();
+	corpus.samples[1].audio_sha256 = corpus.samples[0].audio_sha256;
+	assert.throws(() => evaluateCoverage(corpus, targets), /reuse identical audio/);
 });
 
 test('requires measurements for every language, noise, and backend cell', () => {
