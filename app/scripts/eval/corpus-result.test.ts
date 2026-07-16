@@ -57,6 +57,22 @@ test('atomically writes results bound to the current local corpus revision', () 
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
+test('initializes managed storage for an empty local manifest', () => {
+	const { directory, document, manifestPath } = localManifest();
+	fs.rmdirSync(path.join(directory, 'local-corpus'));
+	const outputPath = path.join(directory, 'results', 'coverage.json');
+
+	writeCorpusBoundJson({
+		manifestPath,
+		expectedFingerprint: corpusFingerprint(document),
+		outputPath,
+		value: { complete: false },
+	});
+
+	assert(fs.statSync(path.join(directory, 'local-corpus')).isDirectory());
+	assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), { complete: false });
+});
+
 test('binds results to the canonical manifest behind a symlink', () => {
 	const { directory, document, manifestPath } = localManifest();
 	const manifestAlias = path.join(directory, 'corpus-alias.json');

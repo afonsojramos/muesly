@@ -202,6 +202,14 @@ export function writeCorpusBoundFiles(options) {
 		localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
 		resultsRoot = path.join(path.dirname(manifestPath), 'results');
 		for (const output of outputs) validateLocalOutputPath(resultsRoot, output.outputPath);
+		const localCorpusEntry = fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false });
+		if (localCorpusEntry?.isSymbolicLink()) {
+			throw new Error(`local corpus directory cannot be a symbolic link: ${localCorpusRoot}`);
+		}
+		if (localCorpusEntry && !localCorpusEntry.isDirectory()) {
+			throw new Error(`local corpus path is not a directory: ${localCorpusRoot}`);
+		}
+		fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
 		lockPath = path.join(localCorpusRoot, '.intake.lock');
 		lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
 			operation: 'result-write',
