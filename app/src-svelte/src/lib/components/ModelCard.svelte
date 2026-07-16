@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Component } from 'svelte';
-	import { fly, slide } from 'svelte/transition';
-	import { Box, CircleCheck, Gauge, HardDrive, Target, Trash2 } from '@lucide/svelte';
+	import { mergeProps } from 'bits-ui';
+	import { slide } from 'svelte/transition';
+	import { Box, CircleCheck, Ellipsis, Gauge, HardDrive, Target, Trash2 } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -9,6 +10,7 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Tooltip from '$lib/components/ui/tooltip';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 
 	// Shared, data-agnostic model card used by the transcription managers (Whisper,
 	// transcription and summary model lists. Callers pass already-derived display
@@ -56,20 +58,24 @@
 		onDelete,
 	}: Props = $props();
 
-	let isHovered = $state(false);
-
 	const isDownloading = $derived(downloadProgress !== null);
 	const isAvailable = $derived(status === 'available' && !isDownloading);
+
+	function handleCardKeydown(event: KeyboardEvent): void {
+		if (event.target !== event.currentTarget || !isAvailable) return;
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			onSelect();
+		}
+	}
 </script>
 
-<div in:fly={{ y: 5, duration: 200 }}>
+<div>
 	<Card.Root
 		role="button"
 		tabindex={0}
-		onmouseenter={() => (isHovered = true)}
-		onmouseleave={() => (isHovered = false)}
 		onclick={() => isAvailable && onSelect()}
-		onkeydown={(e) => e.key === 'Enter' && isAvailable && onSelect()}
+		onkeydown={handleCardKeydown}
 		class={cn(
 			'relative gap-0 overflow-visible p-4 transition-[border-color,background-color,box-shadow]',
 			isSelected && isAvailable
@@ -139,32 +145,33 @@
 						</div>
 					{/if}
 					{#if onDelete}
-						{#if isHovered}
-							<div in:fly={{ duration: 150 }}>
-								<Tooltip.Provider delayDuration={300}>
-									<Tooltip.Root>
-										<Tooltip.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon-sm"
-													aria-label="Delete model"
-													onclick={(e) => {
-														e.stopPropagation();
-														onDelete?.();
-													}}
-													class="text-muted-foreground hover:text-destructive"
-												>
-													<Trash2 />
-												</Button>
-											{/snippet}
-										</Tooltip.Trigger>
-										<Tooltip.Content>Delete model to free up space</Tooltip.Content>
-									</Tooltip.Root>
-								</Tooltip.Provider>
-							</div>
-						{/if}
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger>
+								{#snippet child({ props })}
+									<Button
+										{...mergeProps(props, {
+											onclick: (event: MouseEvent) => event.stopPropagation(),
+										})}
+										variant="ghost"
+										size="icon"
+										aria-label={`${title} actions`}
+										class="-mr-2 size-10 text-muted-foreground transition-[color,background-color,scale] duration-150 ease-out active:scale-[0.96]"
+									>
+										<Ellipsis />
+									</Button>
+								{/snippet}
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="end" class="min-w-48">
+								<DropdownMenu.Item
+									variant="destructive"
+									class="min-h-10"
+									onSelect={() => onDelete?.()}
+								>
+									<Trash2 />
+									Remove download
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
 					{/if}
 				{:else if status === 'missing' && onDownload}
 					<Button
