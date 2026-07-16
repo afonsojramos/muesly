@@ -444,11 +444,14 @@ export function intakeConsentedSample(options) {
 		throw new Error('audio, reference, and consent record must be three distinct files');
 	}
 	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
+	const resultsRoot = path.join(path.dirname(manifestPath), 'results');
 	if (
 		isWithinOrEqual(localCorpusRoot, consentRecord) ||
-		isWithinExistingDirectory(localCorpusRoot, consentRecord)
+		isWithinExistingDirectory(localCorpusRoot, consentRecord) ||
+		isWithinOrEqual(resultsRoot, consentRecord) ||
+		isWithinExistingDirectory(resultsRoot, consentRecord)
 	) {
-		throw new Error('consent record must be stored outside the managed local corpus directory');
+		throw new Error('consent record must be stored outside managed corpus and results directories');
 	}
 	if (fs.statSync(consentRecord).size === 0) throw new Error('consent record must not be empty');
 	if (path.extname(audioSource).toLowerCase() !== '.wav') {

@@ -127,7 +127,7 @@ test('requires consent records to remain outside the managed corpus tree', () =>
 
 	assert.throws(
 		() => intakeConsentedSample(options),
-		/consent record must be stored outside the managed local corpus directory/,
+		/consent record must be stored outside managed corpus and results directories/,
 	);
 	assert(fs.existsSync(managedConsentRecord));
 	assert(!fs.existsSync(options.manifestPath));
@@ -152,7 +152,7 @@ test('rejects filesystem aliases into the managed corpus tree', () => {
 
 	assert.throws(
 		() => intakeConsentedSample(options),
-		/consent record must be stored outside the managed local corpus directory/,
+		/consent record must be stored outside managed corpus and results directories/,
 	);
 	assert(fs.existsSync(managedConsentRecord));
 	assert(!fs.existsSync(options.manifestPath));
@@ -171,11 +171,36 @@ test('rejects external file symlinks into the managed corpus tree', () => {
 
 	assert.throws(
 		() => intakeConsentedSample(options),
-		/consent record must be stored outside the managed local corpus directory/,
+		/consent record must be stored outside managed corpus and results directories/,
 	);
 	assert(fs.existsSync(managedConsentRecord));
 	assert(!fs.existsSync(options.manifestPath));
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+});
+
+test('rejects consent records in managed results through direct paths and aliases', () => {
+	for (const alias of [false, true]) {
+		const { directory, options } = intakeFixture();
+		const resultsDirectory = path.join(directory, 'results');
+		const managedConsentRecord = path.join(resultsDirectory, 'consent.md');
+		fs.mkdirSync(resultsDirectory);
+		fs.writeFileSync(managedConsentRecord, 'affirmative consent record');
+		if (alias) {
+			const consentAlias = path.join(directory, 'external-consent-alias.md');
+			fs.symlinkSync(managedConsentRecord, consentAlias);
+			options.consentRecord = consentAlias;
+		} else {
+			options.consentRecord = managedConsentRecord;
+		}
+
+		assert.throws(
+			() => intakeConsentedSample(options),
+			/consent record must be stored outside managed corpus and results directories/,
+		);
+		assert(fs.existsSync(managedConsentRecord));
+		assert(!fs.existsSync(options.manifestPath));
+		assert(!fs.existsSync(path.join(directory, 'local-corpus')));
+	}
 });
 
 test('atomically imports a consented sample with verified metadata and private files', () => {
