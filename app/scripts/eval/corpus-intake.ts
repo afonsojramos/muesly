@@ -393,6 +393,12 @@ export function acquireLocalCorpusLock(
 				throw new Error(`another corpus intake is active or left an unreadable lock: ${lockPath}`);
 			}
 			if (processOwnsState(observed.owner)) {
+				if (
+					ownerMetadata.operation === 'benchmark-start' &&
+					observed.owner.operation === 'benchmark-start'
+				) {
+					throw new Error(`another corpus benchmark is starting: ${lockPath}`);
+				}
 				if (retry.hasBenchmarkToken && attempt + 1 < retry.attempts) {
 					assertLocalLockBenchmarkAccess(manifestPath, benchmarkToken, ownerMetadata, options);
 					retry.waitForRetry(retry.delayMs);

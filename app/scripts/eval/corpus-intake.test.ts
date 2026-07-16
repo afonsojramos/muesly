@@ -466,6 +466,38 @@ test('rejects a benchmark contender before it can hold the mutation lock or run 
 	}
 });
 
+test('labels concurrent benchmark-start mutation-lock contention accurately', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-start-race-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const mutationLockPath = path.join(corpusDirectory, '.intake.lock');
+	fs.writeFileSync(manifestPath, '{}\n', { mode: 0o600 });
+	fs.mkdirSync(mutationLockPath, { recursive: true, mode: 0o700 });
+	fs.writeFileSync(
+		path.join(mutationLockPath, 'owner.json'),
+		`${JSON.stringify({
+			schema_version: 3,
+			pid: process.pid,
+			token: '00000000-0000-4000-8000-000000000005',
+			manifest_path: canonicalManifestPath(manifestPath),
+			operation: 'benchmark-start',
+			created_at: '2026-07-16T00:00:00.000Z',
+		})}\n`,
+		{ mode: 0o600 },
+	);
+	try {
+		assert.throws(
+			() =>
+				acquireLocalCorpusLock(mutationLockPath, corpusDirectory, manifestPath, {
+					operation: 'benchmark-start',
+				}),
+			/another corpus benchmark is starting/,
+		);
+	} finally {
+		fs.rmSync(directory, { recursive: true, force: true });
+	}
+});
+
 test('authorized benchmark writers retry the narrow precheck-to-install contender race', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-writer-lock-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');
