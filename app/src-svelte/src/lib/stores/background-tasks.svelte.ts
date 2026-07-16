@@ -112,8 +112,32 @@ class BackgroundTasksStore {
 		}
 	}
 
+	/**
+	 * Remove a terminal task from the list. REFUSES running tasks: work in this
+	 * registry continues independently of any view, so a running entry may only
+	 * disappear by reaching a terminal state (via the global events) or through
+	 * `cancel()` from the flow that genuinely stopped the work. This guard is
+	 * what keeps a navigation/unmount from silently orphaning live work.
+	 */
 	dismiss(id: string): void {
+		const task = this.tasks.find((t) => t.id === id);
+		if (task?.status === 'running') {
+			console.warn(
+				`[BackgroundTasks] Refusing to dismiss running task '${id}'; ` +
+					'running work must finish or be cancelled via cancel().',
+			);
+			return;
+		}
 		this.tasks = this.tasks.filter((t) => t.id !== id);
+	}
+
+	/**
+	 * Remove a task whose underlying work was genuinely stopped (user-initiated
+	 * cancel, or cleanup of a job that never started). The explicit name forces
+	 * call sites to mean it; view lifecycles must never call this.
+	 */
+	cancel(kind: BackgroundTaskKind, meetingId: string): void {
+		this.tasks = this.tasks.filter((t) => t.id !== `${kind}:${meetingId}`);
 	}
 
 	/**

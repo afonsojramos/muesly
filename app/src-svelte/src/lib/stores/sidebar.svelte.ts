@@ -310,7 +310,8 @@ class SidebarStore {
 					} else if (result.status === 'error' || result.status === 'failed') {
 						backgroundTasks.finish('summary', meetingId, 'error', result.error ?? 'Failed');
 					} else {
-						backgroundTasks.dismiss(`summary:${meetingId}`);
+						// Idle-after-start: the generation never actually ran.
+						backgroundTasks.cancel('summary', meetingId);
 					}
 				}
 			} catch (error) {
@@ -345,7 +346,7 @@ class SidebarStore {
 		if (entry) {
 			clearInterval(entry.interval);
 			this.activeSummaryPolls.delete(meetingId);
-			backgroundTasks.dismiss(`summary:${meetingId}`);
+			backgroundTasks.cancel('summary', meetingId);
 		}
 	};
 
