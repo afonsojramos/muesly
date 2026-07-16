@@ -164,7 +164,9 @@ nub run eval:real --manifest app/scripts/eval/corpus-local.json \
 ```
 
 Check that every required language/noise/provider/model/backend cell has at least three
-distinct sessions. The command fails with `--require-complete` while any cell is missing:
+distinct sessions measured on one compatible OS, architecture, machine profile, and backend
+accelerator cohort. Raw counts split across machines remain visible but do not satisfy the floor.
+The command fails with `--require-complete` while any compatible-cohort cell is missing:
 
 ```bash
 nub run eval:coverage --manifest app/scripts/eval/corpus-local.json \

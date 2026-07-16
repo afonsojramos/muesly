@@ -42,7 +42,8 @@ function sample(language, noise, session) {
 	};
 }
 
-function runReport(corpus, backend) {
+function runReport(corpus, backend, options = {}) {
+	const reportSamples = options.samples ?? corpus.samples;
 	return {
 		schema_version: 7,
 		corpus_id: corpus.corpus_id,
@@ -51,7 +52,7 @@ function runReport(corpus, backend) {
 		model: 'test-model',
 		model_artifact_sha256: backend === 'onnx-cpu' ? 'd'.repeat(64) : 'c'.repeat(64),
 		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
-		results: corpus.samples.map((corpusSample) => ({
+		results: reportSamples.map((corpusSample) => ({
 			sample_id: corpusSample.id,
 			language: corpusSample.language,
 			noise_condition: corpusSample.noise_condition,
@@ -62,10 +63,12 @@ function runReport(corpus, backend) {
 			metrics: {
 				schema_version: 4,
 				backend,
-				operating_system: 'macos',
-				architecture: 'aarch64',
-				hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
-				accelerator: backend === 'onnx-cpu' ? 'none' : 'Apple M4 Pro integrated GPU',
+				operating_system: options.operatingSystem ?? 'macos',
+				architecture: options.architecture ?? 'aarch64',
+				hardware_profile:
+					options.hardwareProfile ?? 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+				accelerator:
+					options.accelerator ?? (backend === 'onnx-cpu' ? 'none' : 'Apple M4 Pro integrated GPU'),
 				inference_seconds: 1,
 				inference_rtf: 0.1,
 				peak_rss_mb: 100,
@@ -123,12 +126,127 @@ test('requires measurements for every language, noise, and backend cell', () => 
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 3);
+	assert.equal(complete.schema_version, 4);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
+	assert.deepEqual(complete.measurements.compatible_counts, complete.measurements.counts);
+	assert.deepEqual(complete.measurements.hardware_split_cells, []);
 	assert.deepEqual(complete.model_artifacts, {
 		'parakeet/test-model': 'd'.repeat(64),
 		'whisper/test-model': 'c'.repeat(64),
 	});
+});
+
+test('does not combine sessions from incompatible hardware profiles', () => {
+	const corpus = completeCorpus();
+	const firstSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-1'));
+	const secondSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-2'));
+	const coverage = evaluateCoverage(corpus, targets, [
+		runReport(corpus, 'metal', {
+			samples: firstSessions,
+			hardwareProfile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+			accelerator: 'Shared Metal GPU',
+		}),
+		runReport(corpus, 'metal', {
+			samples: secondSessions,
+			hardwareProfile: 'cpu=Apple M3 Max;logical_cpus=16;memory_bytes=68719476736',
+			accelerator: 'Shared Metal GPU',
+		}),
+		runReport(corpus, 'onnx-cpu'),
+	]);
+
+	const cell = 'en / clean / whisper / test-model / metal';
+	assert.equal(coverage.measurements.counts[cell], 2);
+	assert.equal(coverage.measurements.compatible_counts[cell], 1);
+	assert.deepEqual(
+		coverage.measurements.hardware_cohorts[cell].map((cohort) => ({
+			hardware_profile: cohort.hardware_profile,
+			accelerator: cohort.accelerator,
+			distinct_sessions: cohort.distinct_sessions,
+		})),
+		[
+			{
+				hardware_profile: 'cpu=Apple M3 Max;logical_cpus=16;memory_bytes=68719476736',
+				accelerator: 'Shared Metal GPU',
+				distinct_sessions: 1,
+			},
+			{
+				hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+				accelerator: 'Shared Metal GPU',
+				distinct_sessions: 1,
+			},
+		],
+	);
+	assert.equal(coverage.measurements.covered_cells, 4);
+	assert(coverage.measurements.missing_cells.includes(cell));
+	assert(coverage.measurements.hardware_split_cells.includes(cell));
+	assert.equal(coverage.complete, false);
+	assert.match(formatCoverage(coverage), /Hardware-split measurement cells: en \/ clean/);
+});
+
+test('combines separate reports only when their complete hardware cohort matches', () => {
+	const corpus = completeCorpus();
+	const firstSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-1'));
+	const secondSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-2'));
+	const coverage = evaluateCoverage(corpus, targets, [
+		runReport(corpus, 'metal', { samples: firstSessions }),
+		runReport(corpus, 'metal', { samples: secondSessions }),
+		runReport(corpus, 'onnx-cpu'),
+	]);
+
+	const cell = 'en / clean / whisper / test-model / metal';
+	assert.equal(coverage.measurements.counts[cell], 2);
+	assert.equal(coverage.measurements.compatible_counts[cell], 2);
+	assert.equal(coverage.measurements.hardware_cohorts[cell].length, 1);
+	assert.equal(coverage.measurements.hardware_cohorts[cell][0].distinct_sessions, 2);
+	assert.equal(coverage.complete, true);
+});
+
+test('treats different accelerators as incompatible hardware cohorts', () => {
+	const corpus = completeCorpus();
+	const firstSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-1'));
+	const secondSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-2'));
+	const coverage = evaluateCoverage(corpus, targets, [
+		runReport(corpus, 'metal', { samples: firstSessions }),
+		runReport(corpus, 'metal', {
+			samples: secondSessions,
+			accelerator: 'External Metal GPU',
+		}),
+		runReport(corpus, 'onnx-cpu'),
+	]);
+
+	const cell = 'en / clean / whisper / test-model / metal';
+	assert.equal(coverage.measurements.counts[cell], 2);
+	assert.equal(coverage.measurements.compatible_counts[cell], 1);
+	assert.equal(coverage.measurements.hardware_cohorts[cell].length, 2);
+	assert(coverage.measurements.hardware_split_cells.includes(cell));
+	assert.equal(coverage.complete, false);
+});
+
+test('treats operating system and architecture changes as incompatible hardware cohorts', async (t) => {
+	for (const [dimension, options] of [
+		['operating system', { operatingSystem: 'linux' }],
+		['architecture', { architecture: 'x86_64' }],
+	]) {
+		await t.test(dimension, () => {
+			const corpus = completeCorpus();
+			const firstSessions = corpus.samples.filter((corpusSample) => corpusSample.id.endsWith('-1'));
+			const secondSessions = corpus.samples.filter((corpusSample) =>
+				corpusSample.id.endsWith('-2'),
+			);
+			const coverage = evaluateCoverage(corpus, targets, [
+				runReport(corpus, 'metal', { samples: firstSessions }),
+				runReport(corpus, 'metal', { samples: secondSessions, ...options }),
+				runReport(corpus, 'onnx-cpu'),
+			]);
+
+			const cell = 'en / clean / whisper / test-model / metal';
+			assert.equal(coverage.measurements.counts[cell], 2);
+			assert.equal(coverage.measurements.compatible_counts[cell], 1);
+			assert.equal(coverage.measurements.hardware_cohorts[cell].length, 2);
+			assert(coverage.measurements.hardware_split_cells.includes(cell));
+			assert.equal(coverage.complete, false);
+		});
+	}
 });
 
 test('rejects malformed targets and reports for another corpus', () => {
@@ -172,15 +290,7 @@ test('writes coverage through the managed local corpus results path', () => {
 	const scriptPath = fileURLToPath(new URL('./coverage.ts', import.meta.url));
 	const run = spawnSync(
 		process.execPath,
-		[
-			scriptPath,
-			'--manifest',
-			manifestPath,
-			'--targets',
-			targetsPath,
-			'--json',
-			outputPath,
-		],
+		[scriptPath, '--manifest', manifestPath, '--targets', targetsPath, '--json', outputPath],
 		{ encoding: 'utf8' },
 	);
 	assert.equal(run.status, 0, run.stderr);
