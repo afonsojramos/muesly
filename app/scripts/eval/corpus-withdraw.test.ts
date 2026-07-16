@@ -154,6 +154,18 @@ test('withdraws a first interrupted intake before any manifest exists', () => {
 	fs.mkdirSync(orphanDirectory, { recursive: true });
 	fs.writeFileSync(path.join(orphanDirectory, 'first.wav'), 'private promoted audio');
 	fs.writeFileSync(path.join(orphanDirectory, 'first.txt'), 'private promoted transcript');
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -168,6 +180,27 @@ test('withdraws a first interrupted intake before any manifest exists', () => {
 	});
 	assert(!fs.existsSync(manifestPath));
 	assert(!fs.existsSync(orphanDirectory));
+});
+
+test('preserves session data when a missing manifest lacks matching intake evidence', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-typo-'));
+	const manifestPath = path.join(directory, 'corpus-typo.json');
+	const sessionDirectory = path.join(directory, 'local-corpus', 'session-existing');
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	const recording = path.join(sessionDirectory, 'existing.wav');
+	fs.writeFileSync(recording, 'private recording');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-existing',
+				confirmWithdrawal: true,
+			}),
+		/corpus manifest does not exist/,
+	);
+	assert(fs.existsSync(recording));
+	assert(fs.existsSync(sessionDirectory));
 });
 
 test('refuses orphan cleanup when a retained sample reaches it through an alias', () => {

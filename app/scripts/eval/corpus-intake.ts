@@ -142,7 +142,7 @@ function writePrivateJson(filePath, value) {
 	fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
 }
 
-function prepareIntakeLock(localCorpusRoot) {
+function prepareIntakeLock(localCorpusRoot, manifestPath) {
 	const token = randomUUID();
 	const pendingPath = path.join(localCorpusRoot, `.intake.lock.pending-${token}`);
 	fs.mkdirSync(pendingPath, { mode: 0o700 });
@@ -151,6 +151,7 @@ function prepareIntakeLock(localCorpusRoot) {
 			schema_version: 2,
 			pid: process.pid,
 			token,
+			manifest_path: path.resolve(manifestPath),
 			created_at: new Date().toISOString(),
 		});
 		return { pendingPath, token };
@@ -228,7 +229,7 @@ function stageOrReuseFile(sourcePath, targetPath, stagedPath, label) {
 }
 
 export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath) {
-	const prepared = prepareIntakeLock(localCorpusRoot);
+	const prepared = prepareIntakeLock(localCorpusRoot, manifestPath);
 	try {
 		for (let attempt = 0; attempt < 10; attempt += 1) {
 			let installed = false;

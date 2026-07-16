@@ -42,8 +42,9 @@ function isWithinExistingDirectory(directory, filePath) {
 	}
 }
 
-function readLocalManifest(manifestPath) {
+function readLocalManifest(manifestPath, allowMissing = false) {
 	if (!fs.existsSync(manifestPath)) {
+		if (!allowMissing) throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 		return {
 			schema_version: 2,
 			corpus_id: 'consented-meetings-v1',
@@ -62,6 +63,20 @@ function readLocalManifest(manifestPath) {
 	if (errors.length > 0) throw new Error(`invalid corpus manifest:\n- ${errors.join('\n- ')}`);
 	if (document.distribution !== 'local') throw new Error('withdrawal requires a local corpus manifest');
 	return document;
+}
+
+function interruptedIntakeTargetsManifest(lockPath, manifestPath) {
+	const lockEntry = fs.lstatSync(lockPath, { throwIfNoEntry: false });
+	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return false;
+	try {
+		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
+		return (
+			typeof owner.manifest_path === 'string' &&
+			path.resolve(owner.manifest_path) === manifestPath
+		);
+	} catch {
+		return false;
+	}
 }
 
 function validateWithdrawalOptions(options) {
@@ -152,6 +167,7 @@ export function withdrawConsentedSession(options) {
 	}
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	const allowMissingManifest = interruptedIntakeTargetsManifest(lockPath, manifestPath);
 	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
@@ -159,7 +175,7 @@ export function withdrawConsentedSession(options) {
 		if (fs.lstatSync(markerPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
 			throw new Error(`pending withdrawal record cannot be a symbolic link: ${markerPath}`);
 		}
-		const document = readLocalManifest(manifestPath);
+		const document = readLocalManifest(manifestPath, allowMissingManifest);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
 		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId);
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
