@@ -271,7 +271,7 @@ if (outputPath) {
 		process.exit(1);
 	}
 	const report = {
-		schema_version: 6,
+		schema_version: 7,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,

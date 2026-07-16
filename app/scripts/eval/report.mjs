@@ -28,7 +28,7 @@ export function validateRunReport(report, label = 'report') {
 	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	if (report.schema_version !== 6) errors.push(`${label}.schema_version must be 6`);
+	if (report.schema_version !== 7) errors.push(`${label}.schema_version must be 7`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	if (!/^[a-f0-9]{64}$/.test(report.corpus_fingerprint ?? '')) {
 		errors.push(`${label}.corpus_fingerprint must be a lowercase SHA-256 digest`);
@@ -68,16 +68,14 @@ export function validateRunReport(report, label = 'report') {
 			errors.push(`${prefix}.metrics must be an object`);
 			continue;
 		}
-		if (result.metrics.schema_version !== 3) {
-			errors.push(`${prefix}.metrics.schema_version must be 3`);
+		if (result.metrics.schema_version !== 4) {
+			errors.push(`${prefix}.metrics.schema_version must be 4`);
 		}
 		requireString(result.metrics.backend, `${prefix}.metrics.backend`, errors);
 		requireString(result.metrics.operating_system, `${prefix}.metrics.operating_system`, errors);
 		requireString(result.metrics.architecture, `${prefix}.metrics.architecture`, errors);
 		requireString(result.metrics.hardware_profile, `${prefix}.metrics.hardware_profile`, errors);
-		if (!/(?:^|;)accelerator=[^;]+$/.test(result.metrics.hardware_profile ?? '')) {
-			errors.push(`${prefix}.metrics.hardware_profile must include an accelerator identity`);
-		}
+		requireString(result.metrics.accelerator, `${prefix}.metrics.accelerator`, errors);
 		for (const field of [
 			'inference_seconds',
 			'inference_rtf',
@@ -164,6 +162,7 @@ export function aggregateRunReports(reports) {
 	let operatingSystem;
 	let architecture;
 	let hardwareProfile;
+	const accelerators = new Map();
 	const modelArtifacts = new Map();
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
@@ -193,7 +192,7 @@ export function aggregateRunReports(reports) {
 		) {
 			throw new Error('cannot aggregate reports produced with different pass thresholds');
 		}
-		for (const result of report.results) {
+			for (const result of report.results) {
 			if (operatingSystem === undefined) {
 				operatingSystem = result.metrics.operating_system;
 				architecture = result.metrics.architecture;
@@ -202,10 +201,20 @@ export function aggregateRunReports(reports) {
 				result.metrics.operating_system !== operatingSystem ||
 				result.metrics.architecture !== architecture ||
 				result.metrics.hardware_profile !== hardwareProfile
-			) {
-				throw new Error('cannot aggregate reports from different hardware profiles');
-			}
-			records.push({ ...result, provider: report.provider, model: report.model });
+				) {
+					throw new Error('cannot aggregate reports from different hardware profiles');
+				}
+				const priorAccelerator = accelerators.get(result.metrics.backend);
+				if (
+					priorAccelerator !== undefined &&
+					priorAccelerator !== result.metrics.accelerator
+				) {
+					throw new Error(
+						`cannot aggregate different accelerators for backend '${result.metrics.backend}'`,
+					);
+				}
+				accelerators.set(result.metrics.backend, result.metrics.accelerator);
+				records.push({ ...result, provider: report.provider, model: report.model });
 		}
 	}
 
@@ -223,13 +232,16 @@ export function aggregateRunReports(reports) {
 	}
 
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
 		operating_system: operatingSystem,
 		architecture,
 		hardware_profile: hardwareProfile,
+		accelerators: Object.fromEntries(
+			[...accelerators.entries()].sort(([a], [b]) => a.localeCompare(b)),
+		),
 		model_artifacts: Object.fromEntries(
 			[...modelArtifacts.entries()].sort(([a], [b]) => a.localeCompare(b)),
 		),
@@ -261,6 +273,9 @@ export function renderMarkdown(report) {
 		`Platform: \`${report.operating_system}/${report.architecture}\``,
 		'',
 		`Hardware profile: \`${report.hardware_profile}\``,
+		`Accelerators: ${Object.entries(report.accelerators)
+			.map(([backend, accelerator]) => `\`${backend}\` = \`${accelerator}\``)
+			.join('; ')}`,
 		'',
 		'Model artifacts:',
 		'',

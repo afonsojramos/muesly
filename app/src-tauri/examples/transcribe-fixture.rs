@@ -45,6 +45,7 @@ struct EvalMetrics {
     operating_system: &'static str,
     architecture: &'static str,
     hardware_profile: String,
+    accelerator: String,
     audio_duration_seconds: f64,
     decode_seconds: f64,
     vad_seconds: f64,
@@ -150,7 +151,7 @@ fn megabytes(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
-fn hardware_profile(provider: &str) -> String {
+fn hardware_identity(provider: &str) -> (String, String) {
     let system = System::new_all();
     let cpu_model = system
         .cpus()
@@ -179,10 +180,13 @@ fn hardware_profile(provider: &str) -> String {
     if accelerator.contains([';', '\n', '\r']) {
         fail("MUESLY_EVAL_ACCELERATOR_ID cannot contain semicolons or line breaks".to_string());
     }
-    format!(
-        "cpu={cpu_model};logical_cpus={};memory_bytes={};accelerator={accelerator}",
-        system.cpus().len(),
-        system.total_memory()
+    (
+        format!(
+            "cpu={cpu_model};logical_cpus={};memory_bytes={}",
+            system.cpus().len(),
+            system.total_memory()
+        ),
+        accelerator,
     )
 }
 
@@ -520,14 +524,16 @@ async fn main() {
 
     if let Some(metrics_path) = metrics_path {
         let memory = memory_observation.expect("metrics run starts a memory sampler");
+        let (hardware_profile, accelerator) = hardware_identity(&provider);
         let metrics = EvalMetrics {
-            schema_version: 3,
+            schema_version: 4,
             provider: provider.clone(),
             model: model_name.clone(),
             backend: compiled_backend(&provider),
             operating_system: std::env::consts::OS,
             architecture: std::env::consts::ARCH,
-            hardware_profile: hardware_profile(&provider),
+            hardware_profile,
+            accelerator,
             audio_duration_seconds: decoded.duration_seconds,
             decode_seconds,
             vad_seconds,

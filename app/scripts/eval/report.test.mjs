@@ -14,12 +14,12 @@ function result(overrides = {}) {
 		wer_percent: 10,
 		hallucinated_words: null,
 		metrics: {
-			schema_version: 3,
+			schema_version: 4,
 			backend: 'metal',
 			operating_system: 'macos',
 			architecture: 'aarch64',
-			hardware_profile:
-				'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
+			hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+			accelerator: 'Apple M4 Pro integrated GPU',
 			inference_seconds: 2,
 			inference_rtf: 0.1,
 			peak_rss_mb: 1000,
@@ -31,7 +31,7 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 6,
+		schema_version: 7,
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
 		provider: 'whisper',
@@ -54,12 +54,12 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 				word_errors: 18,
 				wer_percent: 20,
 				metrics: {
-					schema_version: 3,
+					schema_version: 4,
 					backend: 'cuda',
 					operating_system: 'macos',
 					architecture: 'aarch64',
-					hardware_profile:
-						'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
+					hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+					accelerator: 'Apple M4 Pro integrated GPU',
 					inference_seconds: 12,
 					inference_rtf: 0.3,
 					peak_rss_mb: 2000,
@@ -80,8 +80,12 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.equal(aggregate.architecture, 'aarch64');
 	assert.equal(
 		aggregate.hardware_profile,
-		'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
+		'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
 	);
+	assert.deepEqual(aggregate.accelerators, {
+		cuda: 'Apple M4 Pro integrated GPU',
+		metal: 'Apple M4 Pro integrated GPU',
+	});
 	assert.deepEqual(aggregate.model_artifacts, {
 		'whisper/large-v3-turbo-q5_0': 'c'.repeat(64),
 	});
@@ -104,6 +108,7 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
 	assert.match(markdown, /Platform: `macos\/aarch64`/);
 	assert.match(markdown, /Hardware profile: `cpu=Apple M4 Pro/);
+	assert.match(markdown, /Accelerators: `metal` = `Apple M4 Pro integrated GPU`/);
 	assert.match(markdown, /`whisper\/large-v3-turbo-q5_0`: `c{64}`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
 	assert.doesNotMatch(markdown, /—%/);
@@ -143,17 +148,43 @@ test('rejects aggregation across hardware profiles', () => {
 		result({
 			metrics: {
 				...result().metrics,
-				hardware_profile:
-					'cpu=Apple M1;logical_cpus=8;memory_bytes=17179869184;accelerator=Apple M1 integrated GPU',
+				hardware_profile: 'cpu=Apple M1;logical_cpus=8;memory_bytes=17179869184',
 			},
 		}),
 	]);
 	assert.throws(() => aggregateRunReports([first, otherMachine]), /different hardware profiles/);
 });
 
+test('allows cross-backend reports on one machine but rejects mixed accelerators per backend', () => {
+	const metal = report([result()]);
+	const cpu = report([
+		result({
+			metrics: {
+				...result().metrics,
+				backend: 'cpu',
+				accelerator: 'none',
+			},
+		}),
+	]);
+	assert.deepEqual(aggregateRunReports([metal, cpu]).accelerators, {
+		cpu: 'none',
+		metal: 'Apple M4 Pro integrated GPU',
+	});
+
+	const otherMetal = report([
+		result({
+			metrics: { ...result().metrics, accelerator: 'External GPU' },
+		}),
+	]);
+	assert.throws(
+		() => aggregateRunReports([metal, otherMetal]),
+		/different accelerators for backend 'metal'/,
+	);
+});
+
 test('rejects legacy reports after corpus revision binding', () => {
 	const legacy = { ...report([result()]), schema_version: 4 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 6']);
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 7']);
 });
 
 test('rejects aggregation across corpus revisions', () => {

@@ -39,7 +39,7 @@ function sample(language, noise, session) {
 
 function runReport(corpus, backend) {
 	return {
-		schema_version: 6,
+		schema_version: 7,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
@@ -55,12 +55,12 @@ function runReport(corpus, backend) {
 			word_errors: 1,
 			hallucinated_words: null,
 			metrics: {
-				schema_version: 3,
+				schema_version: 4,
 				backend,
 				operating_system: 'macos',
 				architecture: 'aarch64',
-				hardware_profile:
-					'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
+				hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+				accelerator: backend === 'onnx-cpu' ? 'none' : 'Apple M4 Pro integrated GPU',
 				inference_seconds: 1,
 				inference_rtf: 0.1,
 				peak_rss_mb: 100,
