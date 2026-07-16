@@ -162,7 +162,9 @@ function waitForPreparationLock(milliseconds) {
 }
 
 export function isPreparationLockContention(errorCode, lockExists) {
-	return lockExists || ['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(errorCode);
+	return (
+		lockExists || ['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(errorCode)
+	);
 }
 
 function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
@@ -183,13 +185,25 @@ function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
 			})}\n`,
 		);
 		const deadline = Date.now() + timeoutMs;
+		let vanishedLockRetries = 0;
 		for (;;) {
+			if (Date.now() >= deadline) {
+				throw new Error(`timed out waiting for another collection preparation: ${lockPath}`);
+			}
 			try {
 				fs.renameSync(pendingPath, lockPath);
 				return { lockPath, token };
 			} catch (error) {
-				if (!isPreparationLockContention(error.code, fs.existsSync(lockPath))) throw error;
+				const lockExists = fs.existsSync(lockPath);
+				if (!isPreparationLockContention(error.code, lockExists)) throw error;
+				if (!lockExists) {
+					vanishedLockRetries += 1;
+					if (vanishedLockRetries > 10) throw error;
+					waitForPreparationLock(Math.min(25, Math.max(1, deadline - Date.now())));
+					continue;
+				}
 			}
+			vanishedLockRetries = 0;
 
 			let owner;
 			try {
@@ -201,9 +215,6 @@ function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
 				);
 			}
 			if (processOwnsState(owner)) {
-				if (Date.now() >= deadline) {
-					throw new Error(`timed out waiting for another collection preparation: ${lockPath}`);
-				}
 				waitForPreparationLock(Math.min(25, Math.max(1, deadline - Date.now())));
 				continue;
 			}

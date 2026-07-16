@@ -106,9 +106,57 @@ test('treats Windows destination-exists errors as preparation lock contention', 
 	assert.equal(isPreparationLockContention('EPERM', true), true);
 	assert.equal(isPreparationLockContention('EACCES', true), true);
 	assert.equal(isPreparationLockContention('EIO', true), true);
-	assert.equal(isPreparationLockContention('EPERM', false), false);
-	assert.equal(isPreparationLockContention('EACCES', false), false);
+	assert.equal(isPreparationLockContention('EPERM', false), true);
+	assert.equal(isPreparationLockContention('EACCES', false), true);
 	assert.equal(isPreparationLockContention('EIO', false), false);
+	assert.equal(isPreparationLockContention('ENOENT', false), false);
+});
+
+test('retries a vanished Windows preparation lock race', () => {
+	const current = fixture();
+	const renameSync = fs.renameSync;
+	let renameAttempts = 0;
+	fs.renameSync = (...args) => {
+		renameAttempts += 1;
+		if (renameAttempts === 1) {
+			const error = new Error('simulated Windows destination lock race');
+			error.code = 'EPERM';
+			throw error;
+		}
+		return renameSync(...args);
+	};
+	try {
+		const session = prepareCollectionSession(
+			prepareOptions(current, {
+				idFactory: () => '00000000-0000-4000-8000-000000000012',
+			}),
+		);
+		assert.equal(session.language, 'en');
+		assert.equal(renameAttempts, 2);
+	} finally {
+		fs.renameSync = renameSync;
+	}
+});
+
+test('does not retry a missing preparation lock source', () => {
+	const current = fixture();
+	const renameSync = fs.renameSync;
+	let renameAttempts = 0;
+	fs.renameSync = () => {
+		renameAttempts += 1;
+		const error = new Error('simulated missing pending lock');
+		error.code = 'ENOENT';
+		throw error;
+	};
+	try {
+		assert.throws(
+			() => prepareCollectionSession(prepareOptions(current)),
+			(error) => error.code === 'ENOENT',
+		);
+		assert.equal(renameAttempts, 1);
+	} finally {
+		fs.renameSync = renameSync;
+	}
 });
 
 test('serializes preparation before reserving the next collection cell', async () => {
