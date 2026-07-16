@@ -4,7 +4,18 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { modelArtifactSha256 } from './model-artifact.mjs';
+import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
+
+test('resolves relative model directories from the Cargo working directory', () => {
+	const repositoryRoot = path.resolve('repo-root');
+	const absoluteModels = path.resolve('absolute-models');
+	assert.equal(
+		resolveModelsDirectory('shared-models', repositoryRoot),
+		path.join(repositoryRoot, 'shared-models'),
+	);
+	assert.equal(resolveModelsDirectory(absoluteModels, repositoryRoot), absoluteModels);
+	assert.equal(resolveModelsDirectory(null, repositoryRoot), path.join(repositoryRoot, 'models'));
+});
 
 test('fingerprints the exact Whisper model bytes', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-artifact-'));

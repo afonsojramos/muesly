@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 
 import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
-import { modelArtifactSha256 } from './model-artifact.mjs';
+import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
 import { werDetails } from './wer.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -91,7 +91,7 @@ const modelsDir = strFlag(args, '--models-dir', null);
 const onlyFixture = strFlag(args, '--fixture', null);
 const manifestPath = strFlag(args, '--manifest', defaultManifest);
 const outputPath = strFlag(args, '--output', null);
-const evalModelsDir = modelsDir ?? path.join(repoRoot, 'models');
+const evalModelsDir = resolveModelsDirectory(modelsDir, repoRoot);
 
 let corpus;
 try {

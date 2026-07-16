@@ -53,3 +53,7 @@ export function modelArtifactSha256(provider, model, modelsDirectory) {
 		.join('\n');
 	return createHash('sha256').update(manifest).digest('hex');
 }
+
+export function resolveModelsDirectory(modelsDirectory, repositoryRoot) {
+	return path.resolve(repositoryRoot, modelsDirectory ?? 'models');
+}
