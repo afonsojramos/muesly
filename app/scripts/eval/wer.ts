@@ -9,6 +9,8 @@ const APOSTROPHE_VARIANTS = /[\u02bc\u2018-\u201b\uff07]/gu;
 const DASH_VARIANTS = /[\u002d\u00ad\u2010-\u2015\u2212\ufe58\ufe63\uff0d]/gu;
 const WORD_TOKEN = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*(?:'[\p{L}\p{N}][\p{L}\p{M}\p{N}]*)*/gu;
 
+export const WER_SCORER_ID = 'muesly-wer-unicode-v1';
+
 export function tokenizeForWer(text) {
 	const normalized = text
 		.normalize('NFKC')

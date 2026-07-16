@@ -26,16 +26,23 @@ function requireString(value, field, errors) {
 	if (typeof value !== 'string' || value.length === 0) errors.push(`${field} must be a non-empty string`);
 }
 
+function requireVersionedIdentifier(value, field, errors) {
+	if (typeof value !== 'string' || !/^[a-z0-9][a-z0-9._-]*-v[1-9][0-9]*$/.test(value)) {
+		errors.push(`${field} must be a lowercase versioned identifier ending in -v<number>`);
+	}
+}
+
 export function validateRunReport(report, label = 'report') {
 	const errors = [];
 	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	if (report.schema_version !== 7) errors.push(`${label}.schema_version must be 7`);
+	if (report.schema_version !== 8) errors.push(`${label}.schema_version must be 8`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	if (!/^[a-f0-9]{64}$/.test(report.corpus_fingerprint ?? '')) {
 		errors.push(`${label}.corpus_fingerprint must be a lowercase SHA-256 digest`);
 	}
+	requireVersionedIdentifier(report.wer_scorer, `${label}.wer_scorer`, errors);
 	requireString(report.provider, `${label}.provider`, errors);
 	requireString(report.model, `${label}.model`, errors);
 	if (!/^[a-f0-9]{64}$/.test(report.model_artifact_sha256 ?? '')) {
@@ -161,6 +168,7 @@ export function aggregateRunReports(reports) {
 	const records = [];
 	let corpusId;
 	let corpusFingerprint;
+	let werScorer;
 	let thresholds;
 	let operatingSystem;
 	let architecture;
@@ -180,6 +188,11 @@ export function aggregateRunReports(reports) {
 		}
 		if (report.corpus_fingerprint !== corpusFingerprint) {
 			throw new Error('cannot aggregate reports from different corpus revisions');
+		}
+		if (werScorer === undefined) {
+			werScorer = report.wer_scorer;
+		} else if (report.wer_scorer !== werScorer) {
+			throw new Error('cannot aggregate reports produced with different WER scorers');
 		}
 		const modelKey = `${report.provider}/${report.model}`;
 		const priorArtifact = modelArtifacts.get(modelKey);
@@ -235,10 +248,11 @@ export function aggregateRunReports(reports) {
 	}
 
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
+		wer_scorer: werScorer,
 		operating_system: operatingSystem,
 		architecture,
 		hardware_profile: hardwareProfile,
@@ -272,6 +286,8 @@ export function renderMarkdown(report) {
 		`Corpus: \`${report.corpus_id}\``,
 		'',
 		`Corpus fingerprint: \`${report.corpus_fingerprint}\``,
+		'',
+		`WER scorer: \`${report.wer_scorer}\``,
 		'',
 		`Platform: \`${report.operating_system}/${report.architecture}\``,
 		'',

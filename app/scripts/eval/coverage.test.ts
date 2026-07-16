@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { corpusFingerprint } from './corpus.ts';
 import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.ts';
+import { WER_SCORER_ID } from './wer.ts';
 
 const targets = {
 	schema_version: 1,
@@ -45,9 +46,10 @@ function sample(language, noise, session) {
 function runReport(corpus, backend, options = {}) {
 	const reportSamples = options.samples ?? corpus.samples;
 	return {
-		schema_version: 7,
+		schema_version: 8,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
+		wer_scorer: options.werScorer ?? WER_SCORER_ID,
 		provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
 		model: 'test-model',
 		model_artifact_sha256: backend === 'onnx-cpu' ? 'd'.repeat(64) : 'c'.repeat(64),
@@ -126,8 +128,9 @@ test('requires measurements for every language, noise, and backend cell', () => 
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 4);
+	assert.equal(complete.schema_version, 5);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
+	assert.equal(complete.wer_scorer, WER_SCORER_ID);
 	assert.deepEqual(complete.measurements.compatible_counts, complete.measurements.counts);
 	assert.deepEqual(complete.measurements.hardware_split_cells, []);
 	assert.deepEqual(complete.model_artifacts, {
@@ -262,6 +265,15 @@ test('rejects stale reports after a corpus revision changes', () => {
 	assert.throws(() => evaluateCoverage(corpus, targets, [stale]), /fingerprint does not match/);
 });
 
+test('rejects legacy reports without versioned scoring provenance', () => {
+	const corpus = completeCorpus();
+	const legacy = { ...runReport(corpus, 'metal'), schema_version: 7 };
+	assert.throws(
+		() => evaluateCoverage(corpus, targets, [legacy]),
+		/schema_version must be 8/,
+	);
+});
+
 test('rejects coverage assembled from different bytes for the same model', () => {
 	const corpus = completeCorpus();
 	const first = runReport(corpus, 'metal');
@@ -269,6 +281,18 @@ test('rejects coverage assembled from different bytes for the same model', () =>
 	assert.throws(
 		() => evaluateCoverage(corpus, targets, [first, changed]),
 		/different artifacts for model 'whisper\/test-model'/,
+	);
+});
+
+test('rejects coverage assembled with different WER scorers', () => {
+	const corpus = completeCorpus();
+	const first = runReport(corpus, 'metal');
+	const changed = runReport(corpus, 'onnx-cpu', {
+		werScorer: 'muesly-wer-unicode-v2',
+	});
+	assert.throws(
+		() => evaluateCoverage(corpus, targets, [first, changed]),
+		/reports use different WER scorers/,
 	);
 });
 
@@ -296,6 +320,7 @@ test('writes coverage through the managed local corpus results path', () => {
 	assert.equal(run.status, 0, run.stderr);
 	const coverage = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
 	assert.equal(coverage.corpus_fingerprint, corpusFingerprint(document));
+	assert.equal(coverage.wer_scorer, null);
 	assert.equal(coverage.complete, false);
 
 	const outside = spawnSync(

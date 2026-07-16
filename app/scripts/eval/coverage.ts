@@ -197,6 +197,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 
 	const measurementCells = new Map();
 	const modelArtifacts = new Map();
+	let werScorer;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
@@ -207,6 +208,11 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 		}
 		if (report.corpus_fingerprint !== corpus.corpus_fingerprint) {
 			throw new Error(`report corpus fingerprint does not match the current manifest revision`);
+		}
+		if (werScorer === undefined) {
+			werScorer = report.wer_scorer;
+		} else if (report.wer_scorer !== werScorer) {
+			throw new Error('reports use different WER scorers');
 		}
 		const modelKey = `${report.provider}/${report.model}`;
 		const priorArtifact = modelArtifacts.get(modelKey);
@@ -267,10 +273,11 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	);
 
 	return {
-		schema_version: 4,
+		schema_version: 5,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
+		wer_scorer: werScorer ?? null,
 		model_artifacts: Object.fromEntries(
 			[...modelArtifacts.entries()].sort(([a], [b]) => a.localeCompare(b)),
 		),

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { corpusFingerprint } from './corpus.ts';
 import { aggregateRunReports, renderMarkdown, validateRunReport } from './report.ts';
+import { WER_SCORER_ID } from './wer.ts';
 
 function result(overrides = {}) {
 	return {
@@ -37,9 +38,10 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 7,
+		schema_version: 8,
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
+		wer_scorer: WER_SCORER_ID,
 		provider: 'whisper',
 		model: 'large-v3-turbo-q5_0',
 		model_artifact_sha256: 'c'.repeat(64),
@@ -82,6 +84,8 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.equal(aggregate.groups.noise_condition.office.samples, 1);
 	assert.equal(aggregate.groups.backend.cuda.samples, 1);
 	assert.equal(aggregate.groups.language_noise_backend['es / office / cuda'].samples, 1);
+	assert.equal(aggregate.schema_version, 3);
+	assert.equal(aggregate.wer_scorer, WER_SCORER_ID);
 	assert.equal(aggregate.operating_system, 'macos');
 	assert.equal(aggregate.architecture, 'aarch64');
 	assert.equal(
@@ -112,6 +116,7 @@ test('tracks silence hallucinations separately from WER', () => {
 	const markdown = renderMarkdown(aggregate);
 	assert.match(markdown, /language noise backend/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
+	assert.match(markdown, /WER scorer: `muesly-wer-unicode-v1`/);
 	assert.match(markdown, /Platform: `macos\/aarch64`/);
 	assert.match(markdown, /Hardware profile: `cpu=Apple M4 Pro/);
 	assert.match(markdown, /Accelerators: `metal` = `Apple M4 Pro integrated GPU`/);
@@ -188,9 +193,27 @@ test('allows cross-backend reports on one machine but rejects mixed accelerators
 	);
 });
 
-test('rejects legacy reports after corpus revision binding', () => {
-	const legacy = { ...report([result()]), schema_version: 4 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 7']);
+test('rejects legacy reports and missing scorer provenance', () => {
+	const legacy = { ...report([result()]), schema_version: 7 };
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 8']);
+	assert.throws(
+		() => aggregateRunReports([report([result()]), legacy]),
+		/schema_version must be 8/,
+	);
+
+	const missingScorer = { ...report([result()]), wer_scorer: undefined };
+	assert.deepEqual(validateRunReport(missingScorer), [
+		'report.wer_scorer must be a lowercase versioned identifier ending in -v<number>',
+	]);
+});
+
+test('rejects aggregation across WER scoring semantics', () => {
+	const first = report([result()]);
+	const differentScorer = { ...report([result()]), wer_scorer: 'muesly-wer-unicode-v2' };
+	assert.throws(
+		() => aggregateRunReports([first, differentScorer]),
+		/different WER scorers/,
+	);
 });
 
 test('rejects aggregation across corpus revisions', () => {
@@ -263,6 +286,8 @@ test('requires a manifest and coordinates aggregate output files with the local 
 		{ encoding: 'utf8' },
 	);
 	assert.equal(run.status, 0, run.stderr);
-	assert.equal(JSON.parse(fs.readFileSync(jsonPath, 'utf8')).corpus_id, document.corpus_id);
+	const aggregate = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+	assert.equal(aggregate.corpus_id, document.corpus_id);
+	assert.equal(aggregate.wer_scorer, WER_SCORER_ID);
 	assert.match(fs.readFileSync(markdownPath, 'utf8'), /# ASR corpus benchmark/);
 });

@@ -144,6 +144,8 @@ Run each variant with the same manifest, thresholds, and model artifact:
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
 refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
+Run reports also persist the versioned WER scorer. When scoring or tokenization semantics change,
+rerun every variant: coverage and aggregation reject legacy reports and mixed scorer versions.
 
 For CUDA, Vulkan, HIP, or Intel Metal, also pass
 `--accelerator <stable-model-or-device-id>` (for example, the exact GPU model and PCI bus ID).

@@ -34,7 +34,7 @@ import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
 import { parseRealRunArgs } from './real-run-options.ts';
-import { werDetails } from './wer.ts';
+import { WER_SCORER_ID, werDetails } from './wer.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -225,11 +225,12 @@ if (outputPath) {
 		process.exit(1);
 	}
 	const report = {
-		schema_version: 7,
+		schema_version: 8,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,
 		completed_at: new Date().toISOString(),
+		wer_scorer: WER_SCORER_ID,
 		provider,
 		model,
 		model_artifact_sha256: modelArtifactDigest,
