@@ -232,33 +232,76 @@ test('rejects a transient local-corpus ancestor replacement during owner inspect
 	const displacedRoot = `${current.localCorpusRoot}.displaced`;
 	const originalReadFileSync = fs.readFileSync;
 	let swapped = false;
+	let firstRenameSucceeded = false;
+	let renameFailure = null;
 	t.mock.method(fs, 'readFileSync', (file, ...args) => {
 		const contents = originalReadFileSync(file, ...args);
 		if (!swapped && typeof file === 'number') {
 			swapped = true;
-			fs.renameSync(current.localCorpusRoot, displacedRoot);
-			fs.renameSync(displacedRoot, current.localCorpusRoot);
+			try {
+				fs.renameSync(current.localCorpusRoot, displacedRoot);
+				firstRenameSucceeded = true;
+				fs.renameSync(displacedRoot, current.localCorpusRoot);
+			} catch (error) {
+				renameFailure = error;
+				throw error;
+			}
 		}
 		return contents;
 	});
-	assert.throws(
-		() =>
-			assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
-				currentIdentity: 'benchmark-process',
-			}),
-		(error) => {
-			const replacementDetected =
-				error instanceof Error &&
-				/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/.test(
-					error.message,
-				);
-			const replacementDenied =
-				process.platform === 'win32' && error?.code === 'EPERM' && error?.syscall === 'rename';
-			assert(replacementDetected || replacementDenied);
-			return true;
-		},
-	);
+	let inspectionFailure = null;
+	let rootPresentAfterInspection = false;
+	let displacedPresentAfterInspection = false;
+	try {
+		assert.throws(
+			() =>
+				assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+					currentIdentity: 'benchmark-process',
+				}),
+			(error) => {
+				inspectionFailure = error;
+				return true;
+			},
+		);
+	} finally {
+		rootPresentAfterInspection = fs.existsSync(current.localCorpusRoot);
+		displacedPresentAfterInspection = fs.existsSync(displacedRoot);
+		// Windows can allow the first rename but deny the restore until directory guards close.
+		if (displacedPresentAfterInspection && !rootPresentAfterInspection) {
+			fs.renameSync(displacedRoot, current.localCorpusRoot);
+		}
+	}
 	assert.equal(swapped, true);
+	assert(inspectionFailure instanceof Error);
+	const replacementDetected =
+		/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/.test(
+			inspectionFailure.message,
+		);
+	if (renameFailure === null) {
+		assert.equal(replacementDetected, true);
+		assert.equal(rootPresentAfterInspection, true);
+		assert.equal(displacedPresentAfterInspection, false);
+	} else {
+		assert.equal(process.platform, 'win32');
+		assert.equal(renameFailure.code, 'EPERM');
+		assert.equal(renameFailure.syscall, 'rename');
+		if (firstRenameSucceeded) {
+			assert.equal(rootPresentAfterInspection, false);
+			assert.equal(displacedPresentAfterInspection, true);
+			assert.equal(
+				inspectionFailure.message,
+				'the owned corpus benchmark lock is no longer available',
+			);
+		} else {
+			assert.equal(rootPresentAfterInspection, true);
+			assert.equal(displacedPresentAfterInspection, false);
+			assert(
+				inspectionFailure === renameFailure ||
+					inspectionFailure.message ===
+						`the owned corpus benchmark lock is invalid or unreadable: ${acquired.lockPath}; ${renameFailure.message}`,
+			);
+		}
+	}
 	assert.equal(
 		releaseCorpusBenchmarkLock(acquired.lockPath, acquired.token, {
 			currentIdentity: 'benchmark-process',
