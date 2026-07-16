@@ -395,6 +395,9 @@ export function intakeConsentedSample(options) {
 	const manifestLockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
 
 	try {
+		if (hasPendingWithdrawal(localCorpusRoot)) {
+			throw new Error('a corpus withdrawal is pending; resume it before importing new samples');
+		}
 		const document = readManifest(manifestPath);
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {

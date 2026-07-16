@@ -179,6 +179,19 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
+test('blocks intake until an interrupted withdrawal is resumed', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	fs.mkdirSync(corpusDirectory);
+	const markerPath = path.join(corpusDirectory, '.withdrawal-session-withdraw.json');
+	fs.writeFileSync(markerPath, '{}');
+
+	assert.throws(() => intakeConsentedSample(options), /corpus withdrawal is pending/);
+	assert(fs.existsSync(markerPath));
+	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+	assert(!fs.existsSync(options.manifestPath));
+});
+
 test('reclaims interrupted intake files whether staged or already promoted', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
