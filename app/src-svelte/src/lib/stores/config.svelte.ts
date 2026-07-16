@@ -133,6 +133,7 @@ class ConfigStore {
 	selectedLanguage = $state<string>(readLocalString('primaryLanguage', 'auto'));
 	customVocabulary = $state<VocabularyEntry[]>([]);
 	showConfidenceIndicator = $state<boolean>(readLocalBoolean('showConfidenceIndicator', true));
+	showTranscriptTimestamps = $state<boolean>(readLocalBoolean('showTranscriptTimestamps', true));
 	isAutoSummary = $state<boolean>(readLocalBoolean('isAutoSummary', false));
 	globalShortcutEnabled = $state<boolean>(readLocalBoolean('globalShortcutEnabled', true));
 
@@ -463,6 +464,11 @@ class ConfigStore {
 		if (isBrowser) {
 			window.dispatchEvent(new CustomEvent('confidenceIndicatorChanged', { detail: checked }));
 		}
+	};
+
+	toggleTranscriptTimestamps = (checked: boolean): void => {
+		this.showTranscriptTimestamps = checked;
+		writeLocalBoolean('showTranscriptTimestamps', checked);
 	};
 
 	toggleIsAutoSummary = (checked: boolean): void => {
