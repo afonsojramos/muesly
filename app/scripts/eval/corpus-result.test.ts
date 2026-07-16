@@ -1000,8 +1000,16 @@ test('rejects results-directory replacement during staged output creation', (t) 
 				outputPath,
 				value: { complete: false },
 			}),
-		/results directory changed/,
+		(error) => {
+			const replacementDetected =
+				error instanceof Error && /results directory changed/.test(error.message);
+			const replacementDenied =
+				process.platform === 'win32' && error?.code === 'EPERM' && error?.syscall === 'rename';
+			assert(replacementDetected || replacementDenied);
+			return true;
+		},
 	);
+	assert.equal(replaced, true);
 	assert(!fs.existsSync(outputPath));
 });
 

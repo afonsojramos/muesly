@@ -247,14 +247,14 @@ test('rejects a transient local-corpus ancestor replacement during owner inspect
 				currentIdentity: 'benchmark-process',
 			}),
 		(error) => {
-			if (process.platform === 'win32') {
-				assert.equal(error.code, 'EPERM');
-			} else {
-				assert.match(
+			const replacementDetected =
+				error instanceof Error &&
+				/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/.test(
 					error.message,
-					/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/,
 				);
-			}
+			const replacementDenied =
+				process.platform === 'win32' && error?.code === 'EPERM' && error?.syscall === 'rename';
+			assert(replacementDetected || replacementDenied);
 			return true;
 		},
 	);
