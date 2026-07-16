@@ -37,7 +37,11 @@ import {
 import { writeCorpusBoundJson } from "./corpus-result.ts";
 import { canonicalFilePath, canonicalManifestPath, loadCorpus } from "./corpus.ts";
 import { evaluateCoverage, validateCoverageTargets } from "./coverage.ts";
-import { evaluatorBuildEnvironment, evaluatorRevision } from "./evaluator-revision.ts";
+import {
+  attestedRustcVersion,
+  evaluatorBuildEnvironment,
+  evaluatorRevision,
+} from "./evaluator-revision.ts";
 import { modelArtifactSha256, resolveModelsDirectory } from "./model-artifact.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -255,30 +259,8 @@ function selectTargets(targets, selectedVariants) {
   };
 }
 
-function rustcHostTriple(environment = process.env) {
-  const rustcExecutable = environment.RUSTC || "rustc";
-  let output;
-  try {
-    output = execFileSync(rustcExecutable, ["-vV"], {
-      encoding: "utf8",
-      env: environment,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-  } catch {
-    throw new Error("unable to execute rustc -vV for the benchmark campaign");
-  }
-  const hosts = output
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("host: "))
-    .map((line) => line.slice("host: ".length).trim());
-  if (hosts.length !== 1) {
-    throw new Error("rustc -vV did not report exactly one host target triple");
-  }
-  return hosts[0];
-}
-
 function collectEvaluatorContext({ repoRoot, targets }) {
-  const hostTriple = rustcHostTriple();
+  const hostTriple = attestedRustcVersion(repoRoot, { buildEnv: process.env }).hostTriple;
   const targetTriple = process.env.CARGO_BUILD_TARGET || hostTriple;
   const buildEnvironment = evaluatorBuildEnvironment(process.env, targetTriple, hostTriple);
   const revisions = {};

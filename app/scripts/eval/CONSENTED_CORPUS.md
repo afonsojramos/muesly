@@ -186,11 +186,17 @@ Run-report schema 9 also persists the versioned WER scorer, a clean evaluator re
 SHA-256 digest of the exact benchmark executable. The evaluator revision binds the result to the
 Git commit, `Cargo.lock`, `rustc -vV`, release target and Cargo features, and a digest of the
 allowlisted build environment. Report generation therefore requires a clean Git worktree and
-rechecks the revision after transcription. The provider/backend executable is built once, probed,
-and invoked directly for every selected sample; metrics schema 5 must repeat its backend, platform,
-hardware, accelerator, and executable identity exactly. When scoring, source/toolchain inputs, or
-tokenization semantics change, rerun every variant: coverage and aggregation reject legacy or
-incompatible reports.
+rechecks the revision after transcription. Git, Cargo, and rustc command launchers are resolved
+from sanitized absolute command-search paths, and each launcher's canonical path and bytes are
+attested around its invocation. Full `rustc -vV` output binds the selected Rust toolchain identity;
+when rustup provides the launcher, this attests the rustup shim rather than claiming the selected
+compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC_WRAPPER` and
+`RUSTC_WORKSPACE_WRAPPER`) must be unset or empty, and highest-precedence Cargo CLI configuration
+forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
+provider/backend executable is built once, probed, and invoked directly for every selected sample;
+metrics schema 5 must repeat its backend, platform, hardware, accelerator, and executable identity
+exactly. When scoring, source/toolchain inputs, or tokenization semantics change, rerun every
+variant: coverage and aggregation reject legacy or incompatible reports.
 
 Model preparation completes before measurement, and the exact provider/model artifact set is
 fingerprinted before the first sample and after the last. A report is refused if the model bytes

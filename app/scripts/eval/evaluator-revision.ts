@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +16,7 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'ALL_PROXY',
 	'BINDGEN_EXTRA_CLANG_ARGS',
 	'BLAS_INCLUDE_DIRS',
+	'CARGO',
 	'CARGO_BUILD_RUSTFLAGS',
 	'CARGO_BUILD_TARGET',
 	'CARGO_ENCODED_RUSTFLAGS',
@@ -160,6 +161,9 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const GIT_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
 const TARGET_TRIPLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const CARGO_FEATURE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.+:/-]*$/;
+const RUSTC_WRAPPER_ENVIRONMENT_NAMES = Object.freeze(['RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER']);
+export const BENCHMARK_RUSTC_WRAPPER_ERROR =
+	'measured benchmark builds require RUSTC_WRAPPER and RUSTC_WORKSPACE_WRAPPER to be unset or empty';
 const EVALUATOR_REVISION_FIELDS = Object.freeze([
 	'schema_version',
 	'protocol_id',
@@ -295,7 +299,25 @@ function selectedBuildEnvironmentNames(buildEnv, targetTriple, hostTriple) {
 	return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
+export function assertBenchmarkRustcWrappersDisabled(
+	buildEnv,
+	{ platform = process.platform } = {},
+) {
+	if (buildEnv === null || typeof buildEnv !== 'object' || Array.isArray(buildEnv)) {
+		throw new Error('buildEnv must be an environment map');
+	}
+	for (const name of RUSTC_WRAPPER_ENVIRONMENT_NAMES) {
+		const value = commandEnvironmentValue(buildEnv, name, { platform });
+		if (value === undefined) continue;
+		if (typeof value !== 'string') {
+			throw new Error(`buildEnv.${name} must be a string when set`);
+		}
+		if (value.length > 0) throw new Error(BENCHMARK_RUSTC_WRAPPER_ERROR);
+	}
+}
+
 export function evaluatorBuildEnvironment(buildEnv, targetTriple, hostTriple) {
+	assertBenchmarkRustcWrappersDisabled(buildEnv);
 	if (
 		typeof targetTriple !== 'string' ||
 		!TARGET_TRIPLE_PATTERN.test(targetTriple) ||
@@ -313,7 +335,7 @@ export function evaluatorBuildEnvironment(buildEnv, targetTriple, hostTriple) {
 		}
 		environment[name] = value;
 	}
-	return environment;
+	return sanitizeAttestedCommandEnvironment(environment);
 }
 
 function buildEnvironmentSha256(buildEnv, targetTriple, hostTriple) {
@@ -412,19 +434,33 @@ function sameFileSnapshot(left, right) {
 		left.dev === right.dev &&
 		left.ino === right.ino &&
 		left.mode === right.mode &&
+		left.nlink === right.nlink &&
 		left.size === right.size &&
 		left.mtimeNs === right.mtimeNs &&
 		left.ctimeNs === right.ctimeNs
 	);
 }
 
-function sha256RegularFile(filePath, label) {
+function frozenFileSnapshot(status) {
+	return Object.freeze({
+		dev: status.dev,
+		ino: status.ino,
+		mode: status.mode,
+		nlink: status.nlink,
+		size: status.size,
+		mtimeNs: status.mtimeNs,
+		ctimeNs: status.ctimeNs,
+	});
+}
+
+function attestRegularFile(filePath, label, { requireExecutable = false } = {}) {
 	let descriptor;
 	try {
 		const pathBefore = fs.lstatSync(filePath, { bigint: true });
 		if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
 			throw new Error(`${label} must be a regular file`);
 		}
+		if (requireExecutable) fs.accessSync(filePath, fs.constants.X_OK);
 		const noFollow = fs.constants.O_NOFOLLOW ?? 0;
 		descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
 		const descriptorBefore = fs.fstatSync(descriptor, { bigint: true });
@@ -445,14 +481,19 @@ function sha256RegularFile(filePath, label) {
 		if (
 			!descriptorAfter.isFile() ||
 			!pathAfter.isFile() ||
+			pathAfter.isSymbolicLink() ||
 			!sameFileSnapshot(descriptorBefore, descriptorAfter) ||
 			!sameFileSnapshot(descriptorAfter, pathAfter)
 		) {
 			throw new Error(`${label} changed while it was being hashed`);
 		}
+		if (requireExecutable) fs.accessSync(filePath, fs.constants.X_OK);
 		const digest = hash.digest('hex');
 		if (!SHA256_PATTERN.test(digest)) throw new Error(`failed to hash ${label}`);
-		return digest;
+		return Object.freeze({
+			sha256: digest,
+			snapshot: frozenFileSnapshot(descriptorAfter),
+		});
 	} catch (error) {
 		if (error instanceof Error && error.message.startsWith(label)) throw error;
 		throw new Error(`unable to read ${label}`);
@@ -461,16 +502,112 @@ function sha256RegularFile(filePath, label) {
 	}
 }
 
-function commandOutput(command, args, options, failureMessage) {
+function sha256RegularFile(filePath, label) {
+	return attestRegularFile(filePath, label).sha256;
+}
+
+function commandChangedError(command) {
+	return new Error(`${command.label} changed while it was being executed`);
+}
+
+export function assertAttestedCommand(command) {
+	if (
+		command === null ||
+		typeof command !== 'object' ||
+		typeof command.argv0 !== 'string' ||
+		typeof command.executablePath !== 'string' ||
+		typeof command.label !== 'string' ||
+		typeof command.sha256 !== 'string' ||
+		command.snapshot === null ||
+		typeof command.snapshot !== 'object' ||
+		command.argv0Snapshot === null ||
+		typeof command.argv0Snapshot !== 'object'
+	) {
+		throw new Error('attested command identity is invalid');
+	}
 	try {
-		return execFileSync(command.executablePath, args, {
+		const argv0Before = fs.lstatSync(command.argv0, { bigint: true });
+		const canonicalPath = fs.realpathSync(command.argv0);
+		const argv0After = fs.lstatSync(command.argv0, { bigint: true });
+		if (
+			canonicalPath !== command.executablePath ||
+			!sameFileSnapshot(command.argv0Snapshot, argv0Before) ||
+			!sameFileSnapshot(argv0Before, argv0After)
+		) {
+			throw commandChangedError(command);
+		}
+		const current = attestRegularFile(command.executablePath, command.label, {
+			requireExecutable: true,
+		});
+		if (
+			current.sha256 !== command.sha256 ||
+			!sameFileSnapshot(current.snapshot, command.snapshot)
+		) {
+			throw commandChangedError(command);
+		}
+		return command;
+	} catch (error) {
+		if (error instanceof Error && error.message === commandChangedError(command).message) {
+			throw error;
+		}
+		throw commandChangedError(command);
+	}
+}
+
+function invokeAttestedCommand(command, invoke) {
+	assertAttestedCommand(command);
+	let result;
+	let invocationError;
+	try {
+		result = invoke();
+	} catch (error) {
+		invocationError = error;
+	}
+	assertAttestedCommand(command);
+	if (invocationError !== undefined) throw invocationError;
+	return result;
+}
+
+export function execAttestedCommandSync(
+	command,
+	args,
+	options,
+	{ execFileSyncImpl = execFileSync } = {},
+) {
+	return invokeAttestedCommand(command, () =>
+		execFileSyncImpl(command.executablePath, args, {
 			...options,
 			argv0: command.argv0,
+		}),
+	);
+}
+
+export function spawnAttestedCommandSync(
+	command,
+	args,
+	options,
+	{ spawnSyncImpl = spawnSync } = {},
+) {
+	return invokeAttestedCommand(command, () =>
+		spawnSyncImpl(command.executablePath, args, {
+			...options,
+			argv0: command.argv0,
+		}),
+	);
+}
+
+function commandOutput(command, args, options, failureMessage) {
+	try {
+		return execAttestedCommandSync(command, args, {
+			...options,
 			encoding: 'utf8',
 			maxBuffer: 64 * 1024 * 1024,
 			stdio: ['ignore', 'pipe', 'pipe'],
 		});
-	} catch {
+	} catch (error) {
+		if (error instanceof Error && error.message === commandChangedError(command).message) {
+			throw error;
+		}
 		throw new Error(failureMessage);
 	}
 }
@@ -490,45 +627,143 @@ function strictCommandEnvironment(buildEnv, names, fixed = {}) {
 		}
 		environment[name] = value;
 	}
-	return { ...environment, ...fixed };
+	return sanitizeAttestedCommandEnvironment({ ...environment, ...fixed });
 }
 
-function commandEnvironmentValue(environment, name) {
-	if (process.platform !== 'win32') return environmentValue(environment, name);
-	const key = Object.keys(environment)
-		.sort()
-		.find((candidate) => candidate.toUpperCase() === name.toUpperCase());
-	return key === undefined ? undefined : environment[key];
+function commandPathApi(platform) {
+	return platform === 'win32' ? path.win32 : path.posix;
 }
 
-function fullyQualifiedAbsolutePath(value) {
-	if (!path.isAbsolute(value)) return false;
-	if (process.platform !== 'win32') return true;
+function commandPathDelimiter(platform) {
+	return platform === 'win32' ? ';' : ':';
+}
+
+function commandEnvironmentValue(environment, name, { platform = process.platform } = {}) {
+	if (platform !== 'win32') return environmentValue(environment, name);
+	const keys = Object.keys(environment)
+		.filter((candidate) => candidate.toUpperCase() === name.toUpperCase())
+		.sort();
+	if (keys.length === 0) return undefined;
+	const values = new Set(keys.map((key) => environment[key]));
+	if (values.size !== 1) {
+		throw new Error(`attested command environment has conflicting ${name} entries`);
+	}
+	return environment[keys[0]];
+}
+
+function fullyQualifiedAbsolutePath(value, platform = process.platform) {
+	const pathApi = commandPathApi(platform);
+	if (!pathApi.isAbsolute(value)) return false;
+	if (platform !== 'win32') return true;
 	return /^[A-Za-z]:[\\/]/.test(value) || /^(?:\\\\|\/\/)/.test(value);
 }
 
-function unquoteSearchPathEntry(value) {
-	if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-		return value.slice(1, -1);
+function unquoteSearchPathEntry(value, label) {
+	const startsQuoted = value.startsWith('"');
+	const endsQuoted = value.endsWith('"');
+	if (startsQuoted !== endsQuoted || (!startsQuoted && value.includes('"'))) {
+		throw new Error(`attested command environment has malformed ${label}`);
 	}
-	return value;
+	const unquoted = startsQuoted ? value.slice(1, -1) : value;
+	if (unquoted.includes('"')) {
+		throw new Error(`attested command environment has malformed ${label}`);
+	}
+	return unquoted;
 }
 
-function windowsExecutableSuffixes(executable, environment) {
-	if (path.extname(executable).length > 0) return [''];
-	const pathExt = commandEnvironmentValue(environment, 'PATHEXT');
+function absoluteCommandSearchDirectories(environment, { platform = process.platform } = {}) {
+	const searchPath = commandEnvironmentValue(environment, 'PATH', { platform });
+	if (typeof searchPath !== 'string') return [];
+	const delimiter = commandPathDelimiter(platform);
+	return searchPath
+		.split(delimiter)
+		.map((entry) => unquoteSearchPathEntry(entry, 'PATH entry'))
+		.filter((entry) => fullyQualifiedAbsolutePath(entry, platform));
+}
+
+export function sanitizeAttestedCommandEnvironment(
+	environment,
+	{ platform = process.platform } = {},
+) {
+	if (environment === null || typeof environment !== 'object' || Array.isArray(environment)) {
+		throw new Error('command environment must be an environment map');
+	}
+	const sanitized = { ...environment };
+	const searchPath = commandEnvironmentValue(environment, 'PATH', { platform });
+	if (searchPath !== undefined) {
+		if (typeof searchPath !== 'string') {
+			throw new Error('attested command environment PATH must be a string');
+		}
+		const directories = absoluteCommandSearchDirectories(environment, { platform });
+		if (directories.length === 0) {
+			throw new Error('attested command environment has no absolute PATH entries');
+		}
+		if (platform === 'win32') {
+			for (const key of Object.keys(sanitized)) {
+				if (key.toUpperCase() === 'PATH') delete sanitized[key];
+			}
+		}
+		sanitized.PATH = directories.join(commandPathDelimiter(platform));
+	}
+	if (platform === 'win32') {
+		const pathExt = commandEnvironmentValue(environment, 'PATHEXT', { platform });
+		if (pathExt !== undefined && typeof pathExt !== 'string') {
+			throw new Error('attested command environment PATHEXT must be a string');
+		}
+	}
+	return sanitized;
+}
+
+function windowsExecutableSuffixes(executable, environment, { platform = process.platform } = {}) {
+	const extension = path.win32.extname(executable).toUpperCase();
+	if (extension.length > 0) return extension === '.EXE' || extension === '.COM' ? [''] : [];
+	const pathExt = commandEnvironmentValue(environment, 'PATHEXT', { platform });
 	if (typeof pathExt !== 'string') return [];
 	const suffixes = [];
 	const seen = new Set();
-	for (const rawSuffix of pathExt.split(path.delimiter)) {
+	for (const rawSuffix of pathExt.split(commandPathDelimiter(platform))) {
 		const suffix = rawSuffix.trim();
-		if (!/^\.[A-Za-z0-9._+-]+$/.test(suffix)) continue;
 		const identity = suffix.toUpperCase();
+		if (identity !== '.EXE' && identity !== '.COM') continue;
 		if (seen.has(identity)) continue;
 		seen.add(identity);
 		suffixes.push(suffix);
 	}
 	return suffixes;
+}
+
+export function attestedCommandCandidates(
+	executable,
+	environment,
+	{ platform = process.platform } = {},
+) {
+	if (
+		typeof executable !== 'string' ||
+		executable.length === 0 ||
+		executable.includes('\0') ||
+		environment === null ||
+		typeof environment !== 'object' ||
+		Array.isArray(environment)
+	) {
+		throw new Error('invalid attested command lookup');
+	}
+	const pathApi = commandPathApi(platform);
+	const hasPathSeparator =
+		platform === 'win32' ? /[\\/]/.test(executable) : executable.includes('/');
+	let baseCandidates;
+	if (fullyQualifiedAbsolutePath(executable, platform)) {
+		baseCandidates = [executable];
+	} else {
+		if (hasPathSeparator) throw new Error('attested command lookup contains a relative path');
+		baseCandidates = absoluteCommandSearchDirectories(environment, { platform }).map((directory) =>
+			pathApi.join(directory, executable),
+		);
+	}
+	const suffixes =
+		platform === 'win32' ? windowsExecutableSuffixes(executable, environment, { platform }) : [''];
+	return baseCandidates.flatMap((baseCandidate) =>
+		suffixes.map((suffix) => `${baseCandidate}${suffix}`),
+	);
 }
 
 /**
@@ -539,54 +774,54 @@ function windowsExecutableSuffixes(executable, environment) {
  * (notably rustup's rustc proxy). Windows' implicit current-directory lookup
  * and POSIX empty/relative PATH entries therefore cannot interpose.
  */
-export function resolveAttestedCommand(executable, environment, label = 'command') {
-	if (
-		typeof executable !== 'string' ||
-		executable.length === 0 ||
-		executable.includes('\0') ||
-		environment === null ||
-		typeof environment !== 'object' ||
-		Array.isArray(environment)
-	) {
+export function resolveAttestedCommand(
+	executable,
+	environment,
+	label = 'command',
+	{ platform = process.platform } = {},
+) {
+	let candidates;
+	try {
+		candidates = attestedCommandCandidates(executable, environment, { platform });
+	} catch {
 		throw new Error(`unable to resolve ${label} from the attested command environment`);
 	}
-
-	const hasPathSeparator =
-		process.platform === 'win32' ? /[\\/]/.test(executable) : executable.includes('/');
-	let baseCandidates;
-	if (fullyQualifiedAbsolutePath(executable)) {
-		baseCandidates = [executable];
-	} else {
-		if (hasPathSeparator) {
-			throw new Error(`unable to resolve ${label} from the attested command environment`);
-		}
-		const searchPath = commandEnvironmentValue(environment, 'PATH');
-		if (typeof searchPath !== 'string') {
-			throw new Error(`unable to resolve ${label} from the attested command environment`);
-		}
-		baseCandidates = searchPath
-			.split(path.delimiter)
-			.map(unquoteSearchPathEntry)
-			.filter(fullyQualifiedAbsolutePath)
-			.map((directory) => path.join(directory, executable));
-	}
-
-	const suffixes =
-		process.platform === 'win32' ? windowsExecutableSuffixes(executable, environment) : [''];
-	for (const baseCandidate of baseCandidates) {
-		for (const suffix of suffixes) {
-			try {
-				const canonicalPath = fs.realpathSync(`${baseCandidate}${suffix}`);
-				const status = fs.statSync(canonicalPath);
-				if (!fullyQualifiedAbsolutePath(canonicalPath) || !status.isFile()) continue;
-				fs.accessSync(canonicalPath, fs.constants.X_OK);
-				return Object.freeze({
-					argv0: `${baseCandidate}${suffix}`,
-					executablePath: canonicalPath,
-				});
-			} catch {
-				// Keep searching only the attested absolute candidates.
+	for (const candidate of candidates) {
+		let argv0Before;
+		let canonicalPath;
+		try {
+			argv0Before = fs.lstatSync(candidate, { bigint: true });
+			if (!argv0Before.isFile() && !argv0Before.isSymbolicLink()) continue;
+			canonicalPath = fs.realpathSync(candidate);
+			const status = fs.statSync(canonicalPath);
+			if (!fullyQualifiedAbsolutePath(canonicalPath, platform) || !status.isFile()) {
+				continue;
 			}
+			fs.accessSync(canonicalPath, fs.constants.X_OK);
+		} catch {
+			continue;
+		}
+		try {
+			const attestation = attestRegularFile(canonicalPath, label, {
+				requireExecutable: true,
+			});
+			const argv0After = fs.lstatSync(candidate, { bigint: true });
+			if (
+				!sameFileSnapshot(argv0Before, argv0After) ||
+				fs.realpathSync(candidate) !== canonicalPath
+			) {
+				throw new Error(`${label} changed while it was being resolved`);
+			}
+			return Object.freeze({
+				argv0: candidate,
+				argv0Snapshot: frozenFileSnapshot(argv0After),
+				executablePath: canonicalPath,
+				label,
+				sha256: attestation.sha256,
+				snapshot: attestation.snapshot,
+			});
+		} catch {
+			throw new Error(`${label} changed while it was being resolved`);
 		}
 	}
 	throw new Error(`unable to resolve ${label} from the attested command environment`);
@@ -608,8 +843,8 @@ function gitCommandEnvironment(buildEnv) {
 }
 
 function rustcCommandEnvironment(buildEnv) {
-	// Cargo-only inputs such as RUSTC_WRAPPER and RUSTFLAGS remain attested as
-	// build inputs, but cannot interpose on the compiler identity probe.
+	// Compiler wrappers are rejected before this probe. Cargo-only inputs such
+	// as RUSTFLAGS remain attested as build inputs but cannot alter this command.
 	return strictCommandEnvironment(buildEnv, RUSTC_PROBE_ENVIRONMENT_NAMES, {
 		LANG: 'C',
 		LC_ALL: 'C',
@@ -702,7 +937,18 @@ function requireTrackedCargoLock(gitExecutable, repositoryRoot, environment) {
 	);
 }
 
-function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
+export function attestedRustcVersion(
+	repositoryRoot,
+	{ buildEnv = process.env, rustcExecutable } = {},
+) {
+	assertBenchmarkRustcWrappersDisabled(buildEnv);
+	let canonicalRoot;
+	try {
+		canonicalRoot = fs.realpathSync(repositoryRoot);
+		if (!fs.statSync(canonicalRoot).isDirectory()) throw new Error();
+	} catch {
+		throw new Error('repositoryRoot must be a readable directory');
+	}
 	const executable = rustcExecutable ?? environmentValue(buildEnv, 'RUSTC') ?? 'rustc';
 	if (typeof executable !== 'string' || executable.length === 0) {
 		throw new Error('rustcExecutable must be a non-empty string');
@@ -716,10 +962,14 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 	const output = commandOutput(
 		resolvedExecutable,
 		['-vV'],
-		{ cwd: repositoryRoot, env: commandEnvironment },
+		{ cwd: canonicalRoot, env: commandEnvironment },
 		'unable to execute rustc -vV for evaluator provenance',
 	);
-	return normalizeRustcVersion(output);
+	return Object.freeze({
+		...normalizeRustcVersion(output),
+		command: resolvedExecutable,
+		environment: Object.freeze({ ...commandEnvironment }),
+	});
 }
 
 /**
@@ -740,6 +990,7 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	if (typeof gitExecutable !== 'string' || gitExecutable.length === 0) {
 		throw new Error('gitExecutable must be a non-empty string');
 	}
+	assertBenchmarkRustcWrappersDisabled(buildEnv);
 
 	const gitEnvironment = gitCommandEnvironment(buildEnv);
 	const resolvedGitExecutable = resolveAttestedCommand(
@@ -758,7 +1009,10 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	const cargoLockPath = path.join(canonicalRoot, 'Cargo.lock');
 	const cargoLockSha256 = sha256RegularFile(cargoLockPath, 'Cargo.lock');
 	const normalizedFeatures = normalizeCargoFeatures(cargoFeatures);
-	const { rustcVv, hostTriple } = rustcVersion(canonicalRoot, buildEnv, rustcExecutable);
+	const { rustcVv, hostTriple } = attestedRustcVersion(canonicalRoot, {
+		buildEnv,
+		rustcExecutable,
+	});
 	const selectedTarget =
 		targetTriple ?? environmentValue(buildEnv, 'CARGO_BUILD_TARGET') ?? hostTriple;
 	if (typeof selectedTarget !== 'string' || !TARGET_TRIPLE_PATTERN.test(selectedTarget)) {

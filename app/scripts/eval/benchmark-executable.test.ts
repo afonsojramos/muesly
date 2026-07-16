@@ -7,6 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { createPrivateArtifactSnapshotDirectory } from './artifact-snapshot.ts';
+import { BENCHMARK_RUSTC_WRAPPER_ERROR } from './evaluator-revision.ts';
 import {
 	assertBenchmarkPlatform,
 	benchmarkDefinitionForReportedBackend,
@@ -176,6 +177,16 @@ test('maps only explicitly supported Rust targets and backend platforms', () => 
 test('builds once and resolves the exact regular Cargo example executable', (t) => {
 	const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-build-'));
 	t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+	const commandDirectory = path.join(repositoryRoot, 'commands');
+	const cargoExecutable = path.join(commandDirectory, 'cargo-test');
+	const rustcExecutable = path.join(commandDirectory, 'rustc-test');
+	fs.mkdirSync(commandDirectory);
+	fs.writeFileSync(cargoExecutable, 'cargo', { mode: 0o700 });
+	fs.writeFileSync(rustcExecutable, 'rustc', { mode: 0o700 });
+	const hostileDirectory = path.join(repositoryRoot, 'hostile-current-directory');
+	fs.mkdirSync(hostileDirectory);
+	fs.writeFileSync(path.join(hostileDirectory, 'cargo-test'), 'hostile cargo', { mode: 0o700 });
+	fs.writeFileSync(path.join(hostileDirectory, 'rustc-test'), 'hostile rustc', { mode: 0o700 });
 	const executablePath = path.join(
 		repositoryRoot,
 		'target',
@@ -186,29 +197,54 @@ test('builds once and resolves the exact regular Cargo example executable', (t) 
 	fs.mkdirSync(path.dirname(executablePath), { recursive: true });
 	fs.writeFileSync(executablePath, 'binary', { mode: 0o700 });
 	let invocation;
-	const built = buildBenchmarkExecutable(repositoryRoot, {
-		provider: 'whisper',
-		backend: 'metal',
-		buildEnv: { TEST_ENV: '1' },
-		spawnSyncImpl: (command, args, options) => {
-			invocation = { command, args, options };
-			return {
-				status: 0,
-				stdout: `${JSON.stringify({
-					reason: 'compiler-artifact',
-					target: { name: 'transcribe-fixture', kind: ['example'] },
-					executable: executablePath,
-				})}\n`,
-			};
-		},
-	});
+	const originalDirectory = process.cwd();
+	let built;
+	try {
+		process.chdir(hostileDirectory);
+		built = buildBenchmarkExecutable(repositoryRoot, {
+			provider: 'whisper',
+			backend: 'metal',
+			buildEnv: {
+				CARGO: 'cargo-test',
+				PATH: ['.', '', commandDirectory, 'relative-bin'].join(path.delimiter),
+				TEST_ENV: '1',
+			},
+			rustcExecutable: 'rustc-test',
+			spawnSyncImpl: (command, args, options) => {
+				invocation = { command, args, options };
+				return {
+					status: 0,
+					stdout: `${JSON.stringify({
+						reason: 'compiler-artifact',
+						target: { name: 'transcribe-fixture', kind: ['example'] },
+						executable: executablePath,
+					})}\n`,
+				};
+			},
+		});
+	} finally {
+		process.chdir(originalDirectory);
+	}
 
 	assert.deepEqual(built, {
 		cargoFeatures: ['metal'],
 		executablePath: fs.realpathSync(executablePath),
 	});
-	assert.equal(invocation.command, 'cargo');
-	assert.deepEqual(invocation.options.env, { TEST_ENV: '1' });
+	assert.equal(invocation.command, fs.realpathSync(cargoExecutable));
+	assert.equal(invocation.options.argv0, cargoExecutable);
+	assert.deepEqual(invocation.options.env, {
+		CARGO: cargoExecutable,
+		PATH: commandDirectory,
+		RUSTC: rustcExecutable,
+		TEST_ENV: '1',
+	});
+	assert.deepEqual(invocation.args.slice(0, 5), [
+		'build',
+		'--config',
+		'build.rustc-wrapper=""',
+		'--config',
+		'build.rustc-workspace-wrapper=""',
+	]);
 	assert(invocation.args.includes('--message-format=json-render-diagnostics'));
 	assert.deepEqual(
 		invocation.args.slice(
@@ -216,6 +252,148 @@ test('builds once and resolves the exact regular Cargo example executable', (t) 
 			invocation.args.indexOf('--features') + 2,
 		),
 		['--features', 'metal'],
+	);
+});
+
+test('rejects Cargo or rustc replacement during a benchmark build', async (t) => {
+	await t.test('Cargo replacement', () => {
+		const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-cargo-swap-'));
+		t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+		const cargoExecutable = path.join(repositoryRoot, 'cargo');
+		const rustcExecutable = path.join(repositoryRoot, 'rustc');
+		fs.writeFileSync(cargoExecutable, 'cargo', { mode: 0o700 });
+		fs.writeFileSync(rustcExecutable, 'rustc', { mode: 0o700 });
+
+		assert.throws(
+			() =>
+				buildBenchmarkExecutable(repositoryRoot, {
+					provider: 'whisper',
+					backend: 'cpu',
+					buildEnv: { PATH: repositoryRoot },
+					spawnSyncImpl: () => {
+						fs.rmSync(cargoExecutable);
+						fs.writeFileSync(cargoExecutable, 'replacement cargo', { mode: 0o700 });
+						return { status: 1, stdout: '' };
+					},
+				}),
+			/Cargo executable changed while it was being executed/,
+		);
+	});
+
+	await t.test('rustc replacement', () => {
+		const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-rustc-swap-'));
+		t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+		const cargoExecutable = path.join(repositoryRoot, 'cargo');
+		const rustcExecutable = path.join(repositoryRoot, 'rustc');
+		fs.writeFileSync(cargoExecutable, 'cargo', { mode: 0o700 });
+		fs.writeFileSync(rustcExecutable, 'rustc', { mode: 0o700 });
+
+		assert.throws(
+			() =>
+				buildBenchmarkExecutable(repositoryRoot, {
+					provider: 'whisper',
+					backend: 'cpu',
+					buildEnv: { PATH: repositoryRoot },
+					spawnSyncImpl: () => {
+						fs.rmSync(rustcExecutable);
+						fs.writeFileSync(rustcExecutable, 'replacement rustc', { mode: 0o700 });
+						return { status: 1, stdout: '' };
+					},
+				}),
+			/rustc executable changed while it was being executed/,
+		);
+	});
+});
+
+test('rejects compiler wrappers before Cargo can start', () => {
+	for (const name of ['RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER']) {
+		let cargoStarts = 0;
+		assert.throws(
+			() =>
+				buildBenchmarkExecutable('/benchmark-must-not-be-opened', {
+					provider: 'whisper',
+					backend: 'cpu',
+					buildEnv: { [name]: '/private/compiler-wrapper' },
+					spawnSyncImpl: () => {
+						cargoStarts += 1;
+						return { status: 1, stdout: '' };
+					},
+				}),
+			(error) => {
+				assert.equal(error.message, BENCHMARK_RUSTC_WRAPPER_ERROR);
+				return true;
+			},
+		);
+		assert.equal(cargoStarts, 0);
+	}
+});
+
+test('overrides compiler wrapper traps from parent and Cargo home configuration', (t) => {
+	if (process.platform === 'win32') {
+		return t.skip('the adversarial wrapper fixture uses a POSIX executable script');
+	}
+
+	const parentDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-cargo-config-wrapper-'));
+	t.after(() => fs.rmSync(parentDirectory, { recursive: true, force: true }));
+	const repositoryRoot = path.join(parentDirectory, 'repository');
+	const cargoHome = path.join(parentDirectory, 'cargo-home');
+	const parentWrapperPath = path.join(parentDirectory, 'parent-compiler-wrapper');
+	const cargoHomeWrapperPath = path.join(parentDirectory, 'cargo-home-compiler-wrapper');
+	const markerPaths = [`${parentWrapperPath}.started`, `${cargoHomeWrapperPath}.started`];
+	fs.mkdirSync(path.join(parentDirectory, '.cargo'), { recursive: true });
+	fs.mkdirSync(cargoHome, { recursive: true });
+	fs.mkdirSync(path.join(repositoryRoot, 'examples'), { recursive: true });
+	for (const wrapperPath of [parentWrapperPath, cargoHomeWrapperPath]) {
+		fs.writeFileSync(wrapperPath, '#!/bin/sh\nprintf invoked > \"$0.started\"\nexec \"$@\"\n', {
+			mode: 0o700,
+		});
+	}
+	fs.writeFileSync(
+		path.join(parentDirectory, '.cargo', 'config.toml'),
+		`[build]\nrustc-wrapper = ${JSON.stringify(parentWrapperPath)}\n`,
+	);
+	fs.writeFileSync(
+		path.join(cargoHome, 'config.toml'),
+		`[build]\nrustc-workspace-wrapper = ${JSON.stringify(cargoHomeWrapperPath)}\n`,
+	);
+	fs.writeFileSync(
+		path.join(repositoryRoot, 'Cargo.toml'),
+		'[package]\nname = "muesly"\nversion = "0.0.0"\nedition = "2024"\n',
+	);
+	fs.writeFileSync(
+		path.join(repositoryRoot, 'examples', 'transcribe-fixture.rs'),
+		'fn main() {}\n',
+	);
+
+	const buildEnv = { ...process.env, CARGO_HOME: cargoHome };
+	delete buildEnv.CARGO_TARGET_DIR;
+	delete buildEnv.RUSTC_WRAPPER;
+	delete buildEnv.RUSTC_WORKSPACE_WRAPPER;
+	const trapped = spawnSync(buildEnv.CARGO ?? 'cargo', ['check', '--quiet'], {
+		cwd: repositoryRoot,
+		env: buildEnv,
+		encoding: 'utf8',
+	});
+	assert.equal(trapped.status, 0);
+	for (const markerPath of markerPaths) {
+		assert.equal(fs.readFileSync(markerPath, 'utf8'), 'invoked');
+		fs.rmSync(markerPath);
+	}
+	fs.rmSync(path.join(repositoryRoot, 'target'), { recursive: true, force: true });
+
+	const built = buildBenchmarkExecutable(repositoryRoot, {
+		provider: 'whisper',
+		backend: 'cpu',
+		buildEnv,
+	});
+	for (const markerPath of markerPaths) {
+		assert.equal(fs.existsSync(markerPath), false);
+	}
+	assert.equal(
+		built.executablePath,
+		fs.realpathSync(
+			path.join(repositoryRoot, 'target', 'release', 'examples', 'transcribe-fixture'),
+		),
 	);
 });
 

@@ -4,6 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { copyAttestedFileSnapshot } from './artifact-snapshot.ts';
+import {
+	assertAttestedCommand,
+	assertBenchmarkRustcWrappersDisabled,
+	resolveAttestedCommand,
+	sanitizeAttestedCommandEnvironment,
+	spawnAttestedCommandSync,
+} from './evaluator-revision.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -672,13 +679,32 @@ export function buildBenchmarkExecutable(
 		provider,
 		backend,
 		buildEnv = process.env,
-		cargoExecutable = 'cargo',
+		cargoExecutable,
+		rustcExecutable,
 		spawnSyncImpl = spawnSync,
 	} = {},
 ) {
+	assertBenchmarkRustcWrappersDisabled(buildEnv);
+	const commandEnvironment = sanitizeAttestedCommandEnvironment(buildEnv);
+	const resolvedCargo = resolveAttestedCommand(
+		cargoExecutable ?? commandEnvironment.CARGO ?? 'cargo',
+		commandEnvironment,
+		'Cargo executable',
+	);
+	const resolvedRustc = resolveAttestedCommand(
+		rustcExecutable ?? commandEnvironment.RUSTC ?? 'rustc',
+		commandEnvironment,
+		'rustc executable',
+	);
+	commandEnvironment.CARGO = resolvedCargo.argv0;
+	commandEnvironment.RUSTC = resolvedRustc.argv0;
 	const cargoFeatures = cargoFeaturesForBenchmark(provider, backend);
 	const args = [
 		'build',
+		'--config',
+		'build.rustc-wrapper=""',
+		'--config',
+		'build.rustc-workspace-wrapper=""',
 		'--release',
 		'-p',
 		'muesly',
@@ -689,13 +715,24 @@ export function buildBenchmarkExecutable(
 		'--message-format=json-render-diagnostics',
 		'--color=never',
 	];
-	const build = spawnSyncImpl(cargoExecutable, args, {
-		cwd: repositoryRoot,
-		env: buildEnv,
-		encoding: 'utf8',
-		stdio: ['ignore', 'pipe', 'inherit'],
-		maxBuffer: 64 * 1024 * 1024,
-	});
+	assertAttestedCommand(resolvedRustc);
+	let build;
+	try {
+		build = spawnAttestedCommandSync(
+			resolvedCargo,
+			args,
+			{
+				cwd: repositoryRoot,
+				env: commandEnvironment,
+				encoding: 'utf8',
+				stdio: ['ignore', 'pipe', 'inherit'],
+				maxBuffer: 64 * 1024 * 1024,
+			},
+			{ spawnSyncImpl },
+		);
+	} finally {
+		assertAttestedCommand(resolvedRustc);
+	}
 	if (build.error || build.status !== 0) {
 		throw new Error(
 			`failed to build transcribe-fixture for ${provider}/${backend} (exit ${

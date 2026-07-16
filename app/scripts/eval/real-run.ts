@@ -20,7 +20,7 @@
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -41,7 +41,11 @@ import {
 } from './benchmark-executable.ts';
 import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
-import { evaluatorBuildEnvironment, evaluatorRevision } from './evaluator-revision.ts';
+import {
+	attestedRustcVersion,
+	evaluatorBuildEnvironment,
+	evaluatorRevision,
+} from './evaluator-revision.ts';
 import {
 	modelArtifactSha256,
 	resolveModelsDirectory,
@@ -96,25 +100,20 @@ if (fixtures.length === 0) {
 // Building the muesly crate requires the Tauri sidecar binaries to exist; stub
 // them like CI's rust-check does when absent (the example never invokes them).
 const binariesDir = path.join(repoRoot, 'app/src-tauri/binaries');
-let rustcHostTriple = null;
+let rustcHostTriple;
 try {
-	const hostLines = execFileSync('rustc', ['-vV'], { encoding: 'utf8' })
-		.split('\n')
-		.filter((line) => line.startsWith('host: '))
-		.map((line) => line.slice('host: '.length).trim());
-	if (hostLines.length === 1) {
-		rustcHostTriple = hostLines[0];
-		fs.mkdirSync(binariesDir, { recursive: true });
-		for (const bin of ['llama-helper', 'diarization-helper']) {
-			const p = path.join(binariesDir, `${bin}-${rustcHostTriple}`);
-			if (!fs.existsSync(p)) {
-				fs.writeFileSync(p, '', { mode: 0o755 });
-				console.error(`stubbed missing sidecar: ${path.relative(repoRoot, p)}`);
-			}
+	rustcHostTriple = attestedRustcVersion(repoRoot, { buildEnv: process.env }).hostTriple;
+	fs.mkdirSync(binariesDir, { recursive: true });
+	for (const bin of ['llama-helper', 'diarization-helper']) {
+		const p = path.join(binariesDir, `${bin}-${rustcHostTriple}`);
+		if (!fs.existsSync(p)) {
+			fs.writeFileSync(p, '', { mode: 0o755 });
+			console.error(`stubbed missing sidecar: ${path.relative(repoRoot, p)}`);
 		}
 	}
-} catch {
-	// The benchmark setup below emits one stable provenance error.
+} catch (error) {
+	console.error(error.message);
+	process.exit(1);
 }
 
 console.error(
@@ -127,10 +126,6 @@ let benchmarkEnvironment = benchmarkRuntimeEnvironment(process.env, {
 	forceWhisperCpu: forcesWhisperCpu(provider, backend),
 	requireWhisperAcceleration: requiresWhisperGpu(provider, backend),
 });
-if (!rustcHostTriple) {
-	console.error('rustc -vV did not report exactly one host target triple');
-	process.exit(1);
-}
 const buildTargetTriple = process.env.CARGO_BUILD_TARGET || rustcHostTriple;
 let buildEnvironment;
 try {

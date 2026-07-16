@@ -146,6 +146,14 @@ each checkpoint's exact name, identity, and content digest.
   revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
   target triple, exact Cargo features, and a digest of the allowlisted build environment. The
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
+  Git, Cargo, and rustc command launchers are resolved only through absolute entries in the
+  recorded command environment; relative/current-directory entries are removed, Windows
+  shell-script shims are refused, and each launcher's canonical path and bytes are rechecked
+  around every invocation. Full `rustc -vV` output binds the selected Rust toolchain identity;
+  when rustup provides the launcher, this attests the rustup shim rather than claiming the
+  selected compiler's internal binary bytes. `RUSTC_WRAPPER` and `RUSTC_WORKSPACE_WRAPPER` must
+  be unset or empty, and highest-precedence Cargo CLI configuration forces both wrapper settings
+  empty so parent or `CARGO_HOME` configuration cannot interpose on measured builds.
 - BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).
   Set `whisper_language` in the manifest when an explicit mapping is needed; unsupported
   Whisper codes fail before inference.

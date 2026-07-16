@@ -7,10 +7,16 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+	BENCHMARK_RUSTC_WRAPPER_ERROR,
 	EVALUATOR_REVISION_PROTOCOL_ID,
+	attestedCommandCandidates,
+	attestedRustcVersion,
 	evaluatorBuildEnvironment,
 	evaluatorRevision,
 	evaluatorRevisionSha256,
+	execAttestedCommandSync,
+	resolveAttestedCommand,
+	sanitizeAttestedCommandEnvironment,
 	validateEvaluatorRevision,
 } from './evaluator-revision.ts';
 
@@ -143,7 +149,7 @@ function setAmbientEnvironment(t, values) {
 	});
 }
 
-function createRustcEnvironmentProbe(t) {
+function createRustcEnvironmentProbe(t, { invocationMarker = null } = {}) {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-rustc-environment-probe-'));
 	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 	const sourcePath = path.join(directory, 'probe.rs');
@@ -156,6 +162,7 @@ function createRustcEnvironmentProbe(t) {
 		`use std::{env, ffi::OsStr, process};
 
 fn main() {
+${invocationMarker === null ? '' : `    std::fs::write(${JSON.stringify(invocationMarker)}, b"started").unwrap();\n`}
     let hostile = ${JSON.stringify(HOSTILE_RUSTC_ENVIRONMENT_NAMES)};
     if hostile.iter().any(|name| env::var_os(name).is_some()) {
         process::exit(91);
@@ -243,30 +250,148 @@ test('runs rustc provenance with only attested discovery state', (t) => {
 	const baselineOptions = deterministicOptions({
 		buildEnv: {
 			RUSTC_BOOTSTRAP: '1',
-			RUSTC_WORKSPACE_WRAPPER: '/private/workspace-wrapper',
-			RUSTC_WRAPPER: '/private/rustc-wrapper',
 		},
 		rustcExecutable,
 	});
 	const baseline = evaluatorRevision(repositoryRoot, baselineOptions);
-	const changedWrapper = evaluatorRevision(
-		repositoryRoot,
-		deterministicOptions({
-			buildEnv: {
-				RUSTC_BOOTSTRAP: '1',
-				RUSTC_WORKSPACE_WRAPPER: '/private/workspace-wrapper',
-				RUSTC_WRAPPER: '/private/other-rustc-wrapper',
-			},
-			rustcExecutable,
-		}),
-	);
-	assert.notEqual(changedWrapper.sha256, baseline.sha256);
 
 	setAmbientEnvironment(
 		t,
 		Object.fromEntries(HOSTILE_RUSTC_ENVIRONMENT_NAMES.map((name) => [name, ''])),
 	);
 	assert.deepEqual(evaluatorRevision(repositoryRoot, baselineOptions), baseline);
+});
+
+test('rejects compiler wrappers before evaluator context or rustc can start', (t) => {
+	const repositoryRoot = createRepository(t);
+	const invocationMarker = path.join(repositoryRoot, 'ignored', 'rustc-started');
+	const rustcExecutable = createRustcEnvironmentProbe(t, { invocationMarker });
+	const safePath = safeCommandSearchPath();
+	for (const name of ['RUSTC_WRAPPER', 'RUSTC_WORKSPACE_WRAPPER']) {
+		const buildEnv = {
+			...commandSearchEnvironment(safePath),
+			[name]: '/private/compiler-wrapper',
+		};
+		assert.throws(
+			() =>
+				evaluatorBuildEnvironment(buildEnv, 'x86_64-unknown-linux-gnu', 'x86_64-unknown-linux-gnu'),
+			(error) => {
+				assert.equal(error.message, BENCHMARK_RUSTC_WRAPPER_ERROR);
+				return true;
+			},
+		);
+		assert.throws(
+			() => attestedRustcVersion(repositoryRoot, { buildEnv, rustcExecutable }),
+			(error) => {
+				assert.equal(error.message, BENCHMARK_RUSTC_WRAPPER_ERROR);
+				return true;
+			},
+		);
+		assert.throws(
+			() => evaluatorRevision('/evaluator-must-not-be-opened', { buildEnv }),
+			(error) => {
+				assert.equal(error.message, BENCHMARK_RUSTC_WRAPPER_ERROR);
+				return true;
+			},
+		);
+		assert.equal(fs.existsSync(invocationMarker), false);
+	}
+
+	const emptyWrappers = evaluatorBuildEnvironment(
+		{
+			...commandSearchEnvironment(safePath),
+			RUSTC_WORKSPACE_WRAPPER: '',
+			RUSTC_WRAPPER: '',
+		},
+		'x86_64-unknown-linux-gnu',
+		'x86_64-unknown-linux-gnu',
+	);
+	assert.equal(emptyWrappers.RUSTC_WORKSPACE_WRAPPER, '');
+	assert.equal(emptyWrappers.RUSTC_WRAPPER, '');
+});
+
+test('preserves an absolute rustc shim argv0 while attesting its canonical executable', (t) => {
+	if (process.platform === 'win32') {
+		return t.skip('symbolic-link command shims are Unix-specific');
+	}
+	const repositoryRoot = createRepository(t);
+	const rustcExecutable = createRustcEnvironmentProbe(t);
+	const rustcShim = `${rustcExecutable}-shim`;
+	fs.symlinkSync(rustcExecutable, rustcShim);
+	t.after(() => fs.rmSync(rustcShim, { force: true }));
+
+	const identity = attestedRustcVersion(repositoryRoot, {
+		buildEnv: commandSearchEnvironment(safeCommandSearchPath()),
+		rustcExecutable: rustcShim,
+	});
+
+	assert.equal(identity.hostTriple, 'x86_64-unknown-linux-gnu');
+	assert.equal(identity.command.argv0, rustcShim);
+	assert.equal(identity.command.executablePath, fs.realpathSync(rustcExecutable));
+	assert.match(identity.command.sha256, /^[a-f0-9]{64}$/);
+});
+
+test('rejects a command replaced during an attested invocation', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-command-swap-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const executablePath = path.join(directory, 'cargo');
+	fs.writeFileSync(executablePath, 'original command', { mode: 0o755 });
+	const command = resolveAttestedCommand(executablePath, {}, 'Cargo executable');
+
+	assert.throws(
+		() =>
+			execAttestedCommandSync(
+				command,
+				['--version'],
+				{},
+				{
+					execFileSyncImpl: () => {
+						fs.rmSync(executablePath);
+						fs.writeFileSync(executablePath, 'replacement command', { mode: 0o755 });
+						return '';
+					},
+				},
+			),
+		/Cargo executable changed while it was being executed/,
+	);
+});
+
+test('sanitizes command PATH entries and restricts Windows automatic executables', () => {
+	const windowsEnvironment = {
+		PATH: '"C:\\Program Files\\Rust\\bin";.;relative;;D:\\tools',
+		PATHEXT: '.CMD;.EXE;.BAT;.COM;.PS1',
+	};
+	assert.deepEqual(sanitizeAttestedCommandEnvironment(windowsEnvironment, { platform: 'win32' }), {
+		PATH: 'C:\\Program Files\\Rust\\bin;D:\\tools',
+		PATHEXT: windowsEnvironment.PATHEXT,
+	});
+	assert.deepEqual(attestedCommandCandidates('rustc', windowsEnvironment, { platform: 'win32' }), [
+		'C:\\Program Files\\Rust\\bin\\rustc.EXE',
+		'C:\\Program Files\\Rust\\bin\\rustc.COM',
+		'D:\\tools\\rustc.EXE',
+		'D:\\tools\\rustc.COM',
+	]);
+	assert.deepEqual(
+		attestedCommandCandidates('rustc.cmd', windowsEnvironment, { platform: 'win32' }),
+		[],
+	);
+	assert.throws(
+		() =>
+			attestedCommandCandidates(
+				'rustc',
+				{ ...windowsEnvironment, Path: 'E:\\hostile' },
+				{ platform: 'win32' },
+			),
+		/conflicting PATH entries/,
+	);
+	assert.throws(
+		() =>
+			sanitizeAttestedCommandEnvironment(
+				{ ...windowsEnvironment, PATH: '"C:\\unterminated;D:\\tools' },
+				{ platform: 'win32' },
+			),
+		/malformed PATH entry/,
+	);
 });
 
 test('ignores current-directory command shadows and relative or empty PATH entries', (t) => {
@@ -321,7 +446,7 @@ test('fails closed when PATH has no absolute command directory', (t) => {
 					buildEnv: commandSearchEnvironment(searchPath),
 				}),
 			),
-		/unable to resolve Git executable from the attested command environment/,
+		/(?:unable to resolve Git executable|no absolute PATH entries)/,
 	);
 });
 
@@ -393,12 +518,14 @@ test('Cargo features and allowlisted build inputs deterministically change the d
 });
 
 test('sanitizes Cargo build inputs to the same attested environment surface', () => {
+	const safePath = process.platform === 'win32' ? 'C:\\Windows\\System32' : '/usr/bin';
+	const unsafePath = ['.', '', 'relative-bin', safePath].join(path.delimiter);
 	const environment = evaluatorBuildEnvironment(
 		{
 			BLAS_INCLUDE_DIRS: '/opt/blas/include',
 			CMAKE_GENERATOR: 'Ninja',
 			GGML_METAL_EMBED_LIBRARY: '1',
-			PATH: '/usr/bin',
+			PATH: unsafePath,
 			WHISPER_DONT_GENERATE_BINDINGS: '1',
 			WHISPER_PRIVATE_TOGGLE: 'enabled',
 			UNRELATED_PRIVATE_VALUE: 'must not reach Cargo',
@@ -410,7 +537,7 @@ test('sanitizes Cargo build inputs to the same attested environment surface', ()
 		BLAS_INCLUDE_DIRS: '/opt/blas/include',
 		CMAKE_GENERATOR: 'Ninja',
 		GGML_METAL_EMBED_LIBRARY: '1',
-		PATH: '/usr/bin',
+		PATH: safePath,
 		WHISPER_DONT_GENERATE_BINDINGS: '1',
 		WHISPER_PRIVATE_TOGGLE: 'enabled',
 	});
