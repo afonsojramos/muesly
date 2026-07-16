@@ -315,6 +315,48 @@ test('blocks intake on a non-regular withdrawal marker', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
+test('does not reclaim a durable withdrawal intent for new intake', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const sessionDirectory = path.join(corpusDirectory, options.sessionId);
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	const promotedAudio = path.join(sessionDirectory, `${options.sampleId}.wav`);
+	const promotedReference = path.join(sessionDirectory, `${options.sampleId}.txt`);
+	fs.copyFileSync(options.audio, promotedAudio);
+	fs.copyFileSync(options.reference, promotedReference);
+	fs.writeFileSync(
+		options.manifestPath,
+		JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local-only participant-consented multilingual meeting corpus.',
+			distribution: 'local',
+			samples: [],
+		}),
+	);
+	const lockPath = path.join(corpusDirectory, '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: options.manifestPath,
+			operation: 'withdrawal',
+			session_id: options.sessionId,
+			orphan_cleanup: true,
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	assert.throws(() => intakeConsentedSample(options), /corpus withdrawal.*is pending/);
+	assert(fs.existsSync(lockPath));
+	assert(fs.existsSync(promotedAudio));
+	assert(fs.existsSync(promotedReference));
+	assert.deepEqual(JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')).samples, []);
+});
+
 test('reclaims interrupted intake files whether staged or already promoted', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');

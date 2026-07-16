@@ -199,10 +199,32 @@ export function hasPendingWithdrawal(localCorpusRoot) {
 		.some((entry) => /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name));
 }
 
-function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
+function canResumeWithdrawal(owner, manifestPath, ownerMetadata) {
+	return (
+		owner.operation === 'withdrawal' &&
+		ownerMetadata.operation === 'withdrawal' &&
+		owner.session_id === ownerMetadata.sessionId &&
+		typeof owner.manifest_path === 'string' &&
+		path.resolve(owner.manifest_path) === path.resolve(manifestPath)
+	);
+}
+
+function assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata) {
+	if (owner.operation !== 'withdrawal' || canResumeWithdrawal(owner, manifestPath, ownerMetadata)) {
+		return;
+	}
+	const session = typeof owner.session_id === 'string' ? ` for ${owner.session_id}` : '';
+	throw new Error(`a corpus withdrawal${session} is pending; resume it before continuing`);
+}
+
+function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths, ownerMetadata) {
 	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
 	if (unrecovered.length === 0) return;
-	const abandonedPids = new Set(unrecovered.map((stalePath) => readLockOwner(stalePath).owner.pid));
+	const staleOwners = unrecovered.map((stalePath) => readLockOwner(stalePath).owner);
+	for (const owner of staleOwners) {
+		assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata);
+	}
+	const abandonedPids = new Set(staleOwners.map((owner) => owner.pid));
 	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
 	removeAbandonedResultFiles(manifestPath, abandonedPids);
@@ -256,7 +278,12 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 								name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
 						)
 						.map((name) => path.join(localCorpusRoot, name));
-					recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths);
+					recoverInterruptedIntakes(
+						localCorpusRoot,
+						manifestPath,
+						stalePaths,
+						ownerMetadata,
+					);
 					return prepared.token;
 				} catch (error) {
 					releaseLocalCorpusLock(lockPath, prepared.token);
@@ -273,6 +300,7 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 			if (processIsRunning(observed.owner.pid)) {
 				throw new Error(`another corpus intake is active: ${lockPath}`);
 			}
+			assertNoConflictingWithdrawal(observed.owner, manifestPath, ownerMetadata);
 			const stalePath = `${lockPath}.stale-${observed.key}`;
 			try {
 				fs.renameSync(lockPath, stalePath);

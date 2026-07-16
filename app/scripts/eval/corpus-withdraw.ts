@@ -67,21 +67,34 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 }
 
 function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, sessionId) {
-	const lockEntry = fs.lstatSync(lockPath, { throwIfNoEntry: false });
-	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return null;
-	try {
-		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
-		const matches =
-			(owner.operation === 'intake' ||
-				(owner.operation === 'withdrawal' &&
-					(owner.orphan_cleanup === true || !fs.existsSync(manifestPath)))) &&
-			owner.session_id === sessionId &&
-			typeof owner.manifest_path === 'string' &&
-			path.resolve(owner.manifest_path) === manifestPath;
-		return matches ? owner : null;
-	} catch {
-		return null;
+	const localCorpusRoot = path.dirname(lockPath);
+	const candidates = [
+		lockPath,
+		...fs
+			.readdirSync(localCorpusRoot)
+			.filter(
+				(name) => name.startsWith('.intake.lock.stale-') && !name.endsWith('.recovered'),
+			)
+			.map((name) => path.join(localCorpusRoot, name)),
+	];
+	for (const candidate of candidates) {
+		const lockEntry = fs.lstatSync(candidate, { throwIfNoEntry: false });
+		if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) continue;
+		try {
+			const owner = JSON.parse(fs.readFileSync(path.join(candidate, 'owner.json'), 'utf8'));
+			const matches =
+				(owner.operation === 'intake' ||
+					(owner.operation === 'withdrawal' &&
+						(owner.orphan_cleanup === true || !fs.existsSync(manifestPath)))) &&
+				owner.session_id === sessionId &&
+				typeof owner.manifest_path === 'string' &&
+				path.resolve(owner.manifest_path) === manifestPath;
+			if (matches) return owner;
+		} catch {
+			continue;
+		}
 	}
+	return null;
 }
 
 function validateWithdrawalOptions(options) {
