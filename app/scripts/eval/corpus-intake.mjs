@@ -149,6 +149,7 @@ function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	if (unrecovered.length === 0) return;
 	reconcileCorpusDirectory(localCorpusRoot, referencedCorpusFiles(manifestPath));
 	removeAbandonedManifestFiles(manifestPath);
+	fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
 	for (const stalePath of unrecovered) {
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),
@@ -157,7 +158,7 @@ function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	}
 }
 
-function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
+export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath) {
 	const prepared = prepareIntakeLock(localCorpusRoot);
 	try {
 		for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -185,7 +186,7 @@ function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
 					recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths);
 					return prepared.token;
 				} catch (error) {
-					releaseIntakeLock(lockPath, prepared.token);
+					releaseLocalCorpusLock(lockPath, prepared.token);
 					throw error;
 				}
 			}
@@ -214,7 +215,7 @@ function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
 	}
 }
 
-function releaseIntakeLock(lockPath, token) {
+export function releaseLocalCorpusLock(lockPath, token) {
 	try {
 		const { owner } = readLockOwner(lockPath);
 		if (owner.token !== token || owner.pid !== process.pid) return;
@@ -368,7 +369,7 @@ export function intakeConsentedSample(options) {
 	}
 	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
-	const manifestLockToken = acquireIntakeLock(lockPath, localCorpusRoot, manifestPath);
+	const manifestLockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
 
 	try {
 		const document = readManifest(manifestPath);
@@ -446,7 +447,7 @@ export function intakeConsentedSample(options) {
 			throw error;
 		}
 	} finally {
-		releaseIntakeLock(lockPath, manifestLockToken);
+		releaseLocalCorpusLock(lockPath, manifestLockToken);
 	}
 }
 

@@ -38,6 +38,20 @@ manifest entries, and per-sample reports tied to the opaque session ID. Regenera
 from the remaining source reports. Follow any additional legal retention obligation documented
 by counsel.
 
+Use the confirmed withdrawal command rather than editing the manifest or deleting files by hand:
+
+```bash
+nub run eval:corpus:withdraw \
+  --session-id session-opaque-001 \
+  --confirm-withdrawal
+```
+
+The command removes every sample for the opaque session, atomically replaces the manifest, deletes
+the session directory, and removes all derived results because their corpus fingerprint is stale.
+It refuses to delete files outside the expected session directory. The external consent record is
+not deleted automatically: retain or delete it according to the withdrawal and legal-retention
+policy approved by counsel.
+
 ## Local intake
 
 1. Keep the affirmative consent record in the gitignored `consent-records/` directory or an
