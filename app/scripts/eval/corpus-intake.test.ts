@@ -7,13 +7,16 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+	acquireLocalCorpusLock,
 	abandonedResultPids,
 	intakeConsentedSample,
 	localCalendarDate,
 	parseIntakeArgs,
+	releaseLocalCorpusLock,
 	wavDurationSeconds,
 } from './corpus-intake.ts';
-import { validateCorpusDocument } from './corpus.ts';
+import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
+import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
 import { processOwnsState } from './process-identity.ts';
 
 function writeWav(filePath, durationSeconds = 2) {
@@ -362,6 +365,100 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	);
 	assert.throws(() => intakeConsentedSample(options), /another corpus intake is active/);
 	assert(!fs.existsSync(options.manifestPath));
+});
+
+test('reclaims a provably dead benchmark before starting a supported corpus mutation', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const benchmarkLockPath = path.join(corpusDirectory, '.benchmark.lock');
+	const mutationLockPath = path.join(corpusDirectory, '.intake.lock');
+	fs.mkdirSync(benchmarkLockPath, { recursive: true, mode: 0o700 });
+	fs.writeFileSync(options.manifestPath, '{}\n', { mode: 0o600 });
+	fs.writeFileSync(
+		path.join(benchmarkLockPath, 'owner.json'),
+		`${JSON.stringify({
+			schema_version: 1,
+			pid: 999_999_999,
+			process_identity: 'dead-benchmark-process',
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: canonicalManifestPath(options.manifestPath),
+			created_at: '2026-07-16T00:00:00.000Z',
+		})}\n`,
+		{ mode: 0o600 },
+	);
+
+	const mutationToken = acquireLocalCorpusLock(
+		mutationLockPath,
+		corpusDirectory,
+		options.manifestPath,
+		{
+			operation: 'withdrawal',
+			sessionId: 'session-withdraw',
+		},
+		{
+			benchmarkAccessOptions: {
+				isAlive: () => false,
+			},
+		},
+	);
+	try {
+		assert.equal(fs.existsSync(benchmarkLockPath), false);
+		assert.equal(
+			fs.readdirSync(corpusDirectory).filter((name) => name.startsWith('.benchmark.lock.stale-'))
+				.length,
+			1,
+		);
+	} finally {
+		releaseLocalCorpusLock(mutationLockPath, mutationToken);
+		fs.rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('authorized benchmark writers retry a transient rejected-contender lock', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-benchmark-writer-lock-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const mutationLockPath = path.join(corpusDirectory, '.intake.lock');
+	fs.writeFileSync(manifestPath, '{}\n', { mode: 0o600 });
+	fs.mkdirSync(corpusDirectory, { mode: 0o700 });
+	const benchmark = acquireCorpusBenchmarkLock(manifestPath);
+	const contenderToken = acquireLocalCorpusLock(mutationLockPath, corpusDirectory, manifestPath, {
+		operation: 'benchmark-start',
+	});
+	let contenderReleased = false;
+	let waits = 0;
+	let writerToken;
+	try {
+		assert.throws(
+			() => acquireCorpusBenchmarkLock(manifestPath),
+			/another corpus benchmark is active/,
+		);
+		writerToken = acquireLocalCorpusLock(
+			mutationLockPath,
+			corpusDirectory,
+			manifestPath,
+			{
+				operation: 'result-write',
+				benchmarkToken: benchmark.token,
+			},
+			{
+				benchmarkContentionAttempts: 2,
+				benchmarkContentionDelayMs: 0,
+				waitForRetry: () => {
+					waits += 1;
+					releaseLocalCorpusLock(mutationLockPath, contenderToken);
+					contenderReleased = true;
+				},
+			},
+		);
+		assert.equal(waits, 1);
+		assert.equal(fs.existsSync(mutationLockPath), true);
+	} finally {
+		if (writerToken) releaseLocalCorpusLock(mutationLockPath, writerToken);
+		if (!contenderReleased) releaseLocalCorpusLock(mutationLockPath, contenderToken);
+		assert.equal(releaseCorpusBenchmarkLock(benchmark.lockPath, benchmark.token), true);
+		fs.rmSync(directory, { recursive: true, force: true });
+	}
 });
 
 test('distinguishes a reused live PID only with a cross-process identity', () => {

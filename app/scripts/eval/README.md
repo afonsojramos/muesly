@@ -99,6 +99,10 @@ hardware identities. `--variant provider/model/backend` limits execution to a re
 quality threshold is checkpointed for diagnosis and makes the command exit non-zero; interruption
 keeps completed checkpoints and exits with status 130. `--require-complete` always certifies the
 full target matrix and therefore cannot be combined with `--variant`.
+Supported corpus mutations reclaim only provably dead campaign locks, preserving private stale
+evidence and failing closed when process identity is uncertain. Owner checkpoint writes retry brief
+rejected-contender lock handoffs, while final verification compares each checkpoint's exact name,
+identity, and content digest.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce

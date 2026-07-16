@@ -104,6 +104,46 @@ test('recovers a provably dead owner and preserves private evidence', (t) => {
 	assert.equal(releaseCorpusBenchmarkLock(acquired.lockPath, acquired.token), true);
 });
 
+test('lets corpus mutations reclaim a provably dead benchmark owner', (t) => {
+	const current = fixture(t);
+	writeOwnerLock(current.lockPath, current.manifestPath, {
+		pid: 999_999_999,
+		processIdentity: 'dead-benchmark-process',
+	});
+
+	assert.doesNotThrow(() =>
+		assertCorpusBenchmarkAccess(current.manifestPath, null, {
+			isAlive: () => false,
+		}),
+	);
+	assert.equal(fs.existsSync(current.lockPath), false);
+	const staleEntries = fs
+		.readdirSync(current.localCorpusRoot)
+		.filter((name) => name.startsWith(`.benchmark.lock.stale-${FIRST_TOKEN}-`));
+	assert.equal(staleEntries.length, 1);
+	assert.equal(
+		ownerAt(path.join(current.localCorpusRoot, staleEntries[0])).process_identity,
+		'dead-benchmark-process',
+	);
+});
+
+test('fails closed when mutation access cannot disprove benchmark ownership', (t) => {
+	const current = fixture(t);
+	writeOwnerLock(current.lockPath, current.manifestPath, {
+		processIdentity: 'possibly-still-running',
+	});
+
+	assert.throws(
+		() =>
+			assertCorpusBenchmarkAccess(current.manifestPath, null, {
+				isAlive: () => true,
+				identityForPid: () => null,
+			}),
+		/a corpus benchmark is active/,
+	);
+	assert.equal(ownerAt(current.lockPath).process_identity, 'possibly-still-running');
+});
+
 test('reclaims a reused PID only when its process identity is provably different', (t) => {
 	const current = fixture(t);
 	writeOwnerLock(current.lockPath, current.manifestPath, {

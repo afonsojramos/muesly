@@ -728,6 +728,23 @@ function assertSameIdentities(initial, current) {
   }
 }
 
+function assertSameCompletedCheckpoints(expected, current) {
+  if (expected.size !== current.size) {
+    throw new Error("benchmark checkpoints changed during final verification");
+  }
+  for (const [taskId, expectedCheckpoint] of expected) {
+    const currentCheckpoint = current.get(taskId);
+    if (
+      !currentCheckpoint ||
+      currentCheckpoint.name !== expectedCheckpoint.name ||
+      currentCheckpoint.sha256 !== expectedCheckpoint.sha256 ||
+      identityKey(currentCheckpoint.identity) !== identityKey(expectedCheckpoint.identity)
+    ) {
+      throw new Error("benchmark checkpoints changed during final verification");
+    }
+  }
+}
+
 function assertInputsCurrent({
   manifestPath,
   expectedCorpus,
@@ -1036,12 +1053,7 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
         tasks,
       );
       const verifiedCompleted = currentCompletions(tasks, finalRecordsByTask, initialIdentities);
-      if (
-        verifiedCompleted.size !== completed.size ||
-        [...completed.keys()].some((taskId) => !verifiedCompleted.has(taskId))
-      ) {
-        throw new Error("benchmark checkpoints changed during final verification");
-      }
+      assertSameCompletedCheckpoints(completed, verifiedCompleted);
       const pendingTasks = tasks.length - verifiedCompleted.size;
       if (options.requireComplete && pendingTasks > 0) {
         throw incompleteError(`benchmark campaign is incomplete: ${pendingTasks} task(s) pending`);

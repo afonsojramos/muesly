@@ -203,14 +203,24 @@ function contentionAfterRename(error, lockPath) {
 	return ['ENOENT', 'EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code);
 }
 
+function benchmarkOwnerIsCurrent(owner, lockPath, options = {}) {
+	const isAlive = options.isAlive ?? processIsAlive;
+	const identityForPid = options.identityForPid ?? processIdentity;
+	try {
+		return processOwnsState(owner, { isAlive, identityForPid });
+	} catch {
+		throw new Error(
+			`a corpus benchmark may still be active; ownership could not be verified: ${lockPath}`,
+		);
+	}
+}
+
 export function acquireCorpusBenchmarkLock(manifestPath, options = {}) {
 	const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
 	const localCorpusRoot = path.join(path.dirname(canonicalManifest), 'local-corpus');
 	ensurePrivateDirectory(localCorpusRoot, 'local corpus root');
 	const lockPath = path.join(localCorpusRoot, '.benchmark.lock');
 	const prepared = prepareBenchmarkLock(localCorpusRoot, canonicalManifest, options);
-	const isAlive = options.isAlive ?? processIsAlive;
-	const identityForPid = options.identityForPid ?? processIdentity;
 	try {
 		for (let attempt = 0; attempt < 20; attempt += 1) {
 			if (!entryAt(lockPath)) {
@@ -265,7 +275,7 @@ export function acquireCorpusBenchmarkLock(manifestPath, options = {}) {
 			}
 			let stillOwned;
 			try {
-				stillOwned = processOwnsState(observedOwner, { isAlive, identityForPid });
+				stillOwned = benchmarkOwnerIsCurrent(observedOwner, lockPath, options);
 			} catch {
 				throw new Error(
 					`another corpus benchmark may still be active; ownership could not be verified: ${lockPath}`,
@@ -294,29 +304,47 @@ function releaseMatches(owner, token, identity) {
 	return identity !== null && owner.process_identity === identity;
 }
 
-export function assertCorpusBenchmarkAccess(manifestPath, token = null) {
+export function assertCorpusBenchmarkAccess(manifestPath, token = null, options = {}) {
 	const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
 	const lockPath = path.join(path.dirname(canonicalManifest), 'local-corpus', '.benchmark.lock');
-	const lockEntry = entryAt(lockPath);
-	if (!lockEntry) {
-		if (token !== null && token !== undefined) {
+	const hasToken = token !== null && token !== undefined;
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		const lockEntry = entryAt(lockPath);
+		if (!lockEntry) {
+			if (hasToken) {
+				throw new Error('the owned corpus benchmark lock is no longer available');
+			}
+			return;
+		}
+		let owner;
+		try {
+			owner = readBenchmarkLockOwner(lockPath);
+		} catch (error) {
+			if (!entryAt(lockPath)) continue;
+			throw new Error(
+				`a corpus benchmark is active or left an invalid or unreadable lock: ${lockPath}; ${error.message}`,
+			);
+		}
+		if (owner.manifest_path !== canonicalManifest) {
+			throw new Error(`the corpus benchmark lock is bound to another manifest: ${lockPath}`);
+		}
+		const stillOwned = benchmarkOwnerIsCurrent(owner, lockPath, options);
+		if (stillOwned) {
+			if (hasToken && owner.token === token) return;
+			throw new Error(`a corpus benchmark is active: ${lockPath}`);
+		}
+		try {
+			preserveStaleLock(lockPath, owner);
+		} catch (error) {
+			if (!entryAt(lockPath) && error.code === 'ENOENT') continue;
+			throw new Error(`failed to preserve stale benchmark lock: ${lockPath}; ${error.message}`);
+		}
+		if (hasToken) {
 			throw new Error('the owned corpus benchmark lock is no longer available');
 		}
 		return;
 	}
-	let owner;
-	try {
-		owner = readBenchmarkLockOwner(lockPath);
-	} catch (error) {
-		throw new Error(
-			`a corpus benchmark is active or left an invalid or unreadable lock: ${lockPath}; ${error.message}`,
-		);
-	}
-	if (owner.manifest_path !== canonicalManifest) {
-		throw new Error(`the corpus benchmark lock is bound to another manifest: ${lockPath}`);
-	}
-	if (token !== null && token !== undefined && owner.token === token) return;
-	throw new Error(`a corpus benchmark is active: ${lockPath}`);
+	throw new Error(`could not verify corpus benchmark access: ${lockPath}`);
 }
 
 export function releaseCorpusBenchmarkLock(lockPath, token, options = {}) {

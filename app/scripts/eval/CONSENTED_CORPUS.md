@@ -167,6 +167,10 @@ revision, model artifact, benchmark executable, backend, accelerator, and hardwa
 failures remain checkpointed and make the command exit non-zero. `--require-complete` also rejects
 an empty or underfilled corpus and requires one compatible hardware cohort across the full target
 matrix.
+After a crash, a supported corpus mutation reclaims only a provably dead campaign owner and
+preserves the old lock as private evidence; uncertain process identity still fails closed. Campaign
+checkpoint writes tolerate brief rejected-contender lock handoffs, and final verification requires
+the exact checkpoint names, identities, and content digests observed by the campaign.
 Use repeatable `--variant provider/model/backend` options for a subset and
 `--accelerator backend=stable-device-id` where the selected backend requires an explicit GPU
 identity. A subset cannot be combined with `--require-complete`, which always certifies the full

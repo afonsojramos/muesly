@@ -29,6 +29,10 @@ const REQUIRED_OPTIONS = [
 	'noiseCondition',
 	'speakers',
 ];
+const DEFAULT_LOCAL_LOCK_ATTEMPTS = 10;
+const BENCHMARK_WRITER_LOCK_ATTEMPTS = 100;
+const BENCHMARK_WRITER_RETRY_DELAY_MS = 10;
+const LOCAL_LOCK_RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(4));
 
 function ensureFile(filePath, label) {
 	if (!fs.statSync(filePath, { throwIfNoEntry: false })?.isFile()) {
@@ -295,10 +299,41 @@ function stageOrReuseFile(sourcePath, targetPath, stagedPath, label) {
 	return { workingPath: stagedPath, staged: true };
 }
 
-export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, ownerMetadata) {
+function localLockRetryOptions(ownerMetadata, options) {
+	const hasBenchmarkToken =
+		ownerMetadata.benchmarkToken !== null && ownerMetadata.benchmarkToken !== undefined;
+	const attempts = hasBenchmarkToken
+		? (options.benchmarkContentionAttempts ?? BENCHMARK_WRITER_LOCK_ATTEMPTS)
+		: DEFAULT_LOCAL_LOCK_ATTEMPTS;
+	if (!Number.isSafeInteger(attempts) || attempts < 1) {
+		throw new Error('local corpus lock attempts must be a positive safe integer');
+	}
+	const delayMs = options.benchmarkContentionDelayMs ?? BENCHMARK_WRITER_RETRY_DELAY_MS;
+	if (!Number.isSafeInteger(delayMs) || delayMs < 0) {
+		throw new Error('local corpus lock retry delay must be a non-negative safe integer');
+	}
+	const waitForRetry =
+		options.waitForRetry ??
+		((milliseconds) => {
+			Atomics.wait(LOCAL_LOCK_RETRY_SIGNAL, 0, 0, milliseconds);
+		});
+	if (typeof waitForRetry !== 'function') {
+		throw new Error('local corpus lock retry waiter must be a function');
+	}
+	return { attempts, delayMs, hasBenchmarkToken, waitForRetry };
+}
+
+export function acquireLocalCorpusLock(
+	lockPath,
+	localCorpusRoot,
+	manifestPath,
+	ownerMetadata,
+	options = {},
+) {
+	const retry = localLockRetryOptions(ownerMetadata, options);
 	const prepared = prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata);
 	try {
-		for (let attempt = 0; attempt < 10; attempt += 1) {
+		for (let attempt = 0; attempt < retry.attempts; attempt += 1) {
 			let installed = false;
 			try {
 				fs.renameSync(prepared.pendingPath, lockPath);
@@ -315,7 +350,11 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 				try {
 					assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata);
 					if (ownerMetadata.operation !== 'benchmark-start') {
-						assertCorpusBenchmarkAccess(manifestPath, ownerMetadata.benchmarkToken ?? null);
+						assertCorpusBenchmarkAccess(
+							manifestPath,
+							ownerMetadata.benchmarkToken ?? null,
+							options.benchmarkAccessOptions,
+						);
 					}
 					const stalePaths = fs
 						.readdirSync(localCorpusRoot)
@@ -335,9 +374,19 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 			try {
 				observed = readLockOwner(lockPath);
 			} catch {
+				if (!fs.existsSync(lockPath)) continue;
 				throw new Error(`another corpus intake is active or left an unreadable lock: ${lockPath}`);
 			}
 			if (processOwnsState(observed.owner)) {
+				if (retry.hasBenchmarkToken && attempt + 1 < retry.attempts) {
+					assertCorpusBenchmarkAccess(
+						manifestPath,
+						ownerMetadata.benchmarkToken,
+						options.benchmarkAccessOptions,
+					);
+					retry.waitForRetry(retry.delayMs);
+					continue;
+				}
 				throw new Error(`another corpus intake is active: ${lockPath}`);
 			}
 			assertNoConflictingWithdrawal(observed.owner, manifestPath, ownerMetadata);

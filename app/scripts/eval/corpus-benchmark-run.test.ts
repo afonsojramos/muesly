@@ -14,7 +14,10 @@ import {
   runCorpusBenchmarkCampaign,
   signalBenchmarkProcessTree,
 } from "./corpus-benchmark-run.ts";
-import { isCorpusBenchmarkCheckpointName } from "./corpus-benchmark-checkpoints.ts";
+import {
+  discoverCorpusBenchmarkCheckpoints,
+  isCorpusBenchmarkCheckpointName,
+} from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
 import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
@@ -474,6 +477,37 @@ test("rechecks corpus state after final evaluator and artifact inspection", asyn
     ),
     /corpus changed while the benchmark campaign was running/,
   );
+  assert.equal(fs.existsSync(current.lockPath), false);
+});
+
+test("rejects a schema-valid checkpoint replacement during final verification", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  let discoveries = 0;
+  let replaced = false;
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        discoverCheckpoints: (resultsDirectory) => {
+          discoveries += 1;
+          if (discoveries === 2) {
+            const checkpointName = fs
+              .readdirSync(resultsDirectory)
+              .find(isCorpusBenchmarkCheckpointName);
+            assert(checkpointName);
+            const checkpointPath = path.join(resultsDirectory, checkpointName);
+            const report = JSON.parse(fs.readFileSync(checkpointPath, "utf8"));
+            report.completed_at = "2026-07-16T00:02:00.000Z";
+            fs.writeFileSync(checkpointPath, `${JSON.stringify(report)}\n`, { mode: 0o600 });
+            replaced = true;
+          }
+          return discoverCorpusBenchmarkCheckpoints(resultsDirectory);
+        },
+      }),
+    ),
+    /benchmark checkpoints changed during final verification/,
+  );
+  assert.equal(replaced, true);
   assert.equal(fs.existsSync(current.lockPath), false);
 });
 
