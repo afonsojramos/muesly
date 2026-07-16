@@ -323,6 +323,24 @@ function localLockRetryOptions(ownerMetadata, options) {
 	return { attempts, delayMs, hasBenchmarkToken, waitForRetry };
 }
 
+function assertLocalLockBenchmarkAccess(manifestPath, benchmarkToken, ownerMetadata, options) {
+	try {
+		assertCorpusBenchmarkAccess(manifestPath, benchmarkToken, options.benchmarkAccessOptions);
+	} catch (error) {
+		if (
+			ownerMetadata.operation === 'benchmark-start' &&
+			error instanceof Error &&
+			error.message.startsWith('a corpus benchmark ')
+		) {
+			throw new Error(
+				`another corpus benchmark ${error.message.slice('a corpus benchmark '.length)}`,
+				{ cause: error },
+			);
+		}
+		throw error;
+	}
+}
+
 export function acquireLocalCorpusLock(
 	lockPath,
 	localCorpusRoot,
@@ -331,6 +349,9 @@ export function acquireLocalCorpusLock(
 	options = {},
 ) {
 	const retry = localLockRetryOptions(ownerMetadata, options);
+	const benchmarkToken = ownerMetadata.benchmarkToken ?? null;
+	assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata);
+	assertLocalLockBenchmarkAccess(manifestPath, benchmarkToken, ownerMetadata, options);
 	const prepared = prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata);
 	try {
 		for (let attempt = 0; attempt < retry.attempts; attempt += 1) {
@@ -349,13 +370,7 @@ export function acquireLocalCorpusLock(
 			if (installed) {
 				try {
 					assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata);
-					if (ownerMetadata.operation !== 'benchmark-start') {
-						assertCorpusBenchmarkAccess(
-							manifestPath,
-							ownerMetadata.benchmarkToken ?? null,
-							options.benchmarkAccessOptions,
-						);
-					}
+					assertLocalLockBenchmarkAccess(manifestPath, benchmarkToken, ownerMetadata, options);
 					const stalePaths = fs
 						.readdirSync(localCorpusRoot)
 						.filter(
@@ -379,11 +394,7 @@ export function acquireLocalCorpusLock(
 			}
 			if (processOwnsState(observed.owner)) {
 				if (retry.hasBenchmarkToken && attempt + 1 < retry.attempts) {
-					assertCorpusBenchmarkAccess(
-						manifestPath,
-						ownerMetadata.benchmarkToken,
-						options.benchmarkAccessOptions,
-					);
+					assertLocalLockBenchmarkAccess(manifestPath, benchmarkToken, ownerMetadata, options);
 					retry.waitForRetry(retry.delayMs);
 					continue;
 				}
