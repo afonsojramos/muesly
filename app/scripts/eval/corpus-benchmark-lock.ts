@@ -50,22 +50,63 @@ function writePrivateOwner(ownerPath, owner) {
 	fs.chmodSync(ownerPath, PRIVATE_FILE_MODE);
 }
 
+function statusMetadata(status) {
+	return {
+		dev: status.dev.toString(),
+		ino: status.ino.toString(),
+		mode: status.mode.toString(),
+		nlink: status.nlink.toString(),
+		size: status.size.toString(),
+		mtimeNs: status.mtimeNs.toString(),
+		ctimeNs: status.ctimeNs.toString(),
+	};
+}
+
+function sameEntryMetadata(left, right) {
+	return Object.keys(left).every((field) => left[field] === right[field]);
+}
+
 function readRegularFileNoFollow(filePath) {
-	const entry = fs.lstatSync(filePath);
-	if (!entry.isFile() || entry.isSymbolicLink()) {
+	const entryBefore = fs.lstatSync(filePath, { bigint: true });
+	if (!entryBefore.isFile() || entryBefore.isSymbolicLink()) {
 		throw new Error(`benchmark lock owner must be a regular file: ${filePath}`);
+	}
+	if (entryBefore.nlink !== 1n) {
+		throw new Error(`benchmark lock owner must not be hard linked: ${filePath}`);
+	}
+	if (process.platform !== 'win32' && Number(entryBefore.mode & 0o777n) !== PRIVATE_FILE_MODE) {
+		throw new Error(`benchmark lock owner must have private 0600 permissions: ${filePath}`);
 	}
 	const noFollow = fs.constants.O_NOFOLLOW ?? 0;
 	const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
 	try {
-		const status = fs.fstatSync(descriptor);
-		if (!status.isFile()) {
-			throw new Error(`benchmark lock owner must be a regular file: ${filePath}`);
+		const openedBefore = fs.fstatSync(descriptor, { bigint: true });
+		if (
+			!openedBefore.isFile() ||
+			openedBefore.nlink !== 1n ||
+			!sameEntryMetadata(statusMetadata(entryBefore), statusMetadata(openedBefore))
+		) {
+			throw new Error(`benchmark lock owner changed while it was opened: ${filePath}`);
 		}
-		if (status.size > MAX_OWNER_BYTES) {
+		if (openedBefore.size > BigInt(MAX_OWNER_BYTES)) {
 			throw new Error(`benchmark lock owner is too large: ${filePath}`);
 		}
-		return fs.readFileSync(descriptor, 'utf8');
+		const contents = fs.readFileSync(descriptor, 'utf8');
+		const openedAfter = fs.fstatSync(descriptor, { bigint: true });
+		const entryAfter = fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
+		if (
+			!entryAfter?.isFile() ||
+			entryAfter.isSymbolicLink() ||
+			entryAfter.nlink !== 1n ||
+			!sameEntryMetadata(statusMetadata(openedBefore), statusMetadata(openedAfter)) ||
+			!sameEntryMetadata(statusMetadata(openedAfter), statusMetadata(entryAfter))
+		) {
+			throw new Error(`benchmark lock owner changed while it was read: ${filePath}`);
+		}
+		return {
+			contents,
+			metadata: statusMetadata(openedAfter),
+		};
 	} finally {
 		fs.closeSync(descriptor);
 	}
@@ -112,20 +153,27 @@ function validateOwner(owner, ownerPath) {
 	return owner;
 }
 
-function readBenchmarkLockOwner(lockPath) {
+function readBenchmarkLockOwnerSnapshot(lockPath) {
 	const lockEntry = fs.lstatSync(lockPath);
 	if (!lockEntry.isDirectory() || lockEntry.isSymbolicLink()) {
 		throw new Error(`benchmark lock must be a regular directory: ${lockPath}`);
 	}
 	const ownerPath = path.join(lockPath, 'owner.json');
-	const contents = readRegularFileNoFollow(ownerPath);
+	const snapshot = readRegularFileNoFollow(ownerPath);
 	let owner;
 	try {
-		owner = JSON.parse(contents);
+		owner = JSON.parse(snapshot.contents);
 	} catch {
 		throw new Error(`benchmark lock owner is not valid JSON: ${ownerPath}`);
 	}
-	return validateOwner(owner, ownerPath);
+	return {
+		metadata: snapshot.metadata,
+		owner: validateOwner(owner, ownerPath),
+	};
+}
+
+function readBenchmarkLockOwner(lockPath) {
+	return readBenchmarkLockOwnerSnapshot(lockPath).owner;
 }
 
 function sameOwner(left, right) {
@@ -138,6 +186,34 @@ function sameOwner(left, right) {
 	);
 }
 
+function stableEntryMetadata(filePath, expectedType) {
+	const status = fs.lstatSync(filePath, { bigint: true });
+	const validType =
+		expectedType === 'directory'
+			? status.isDirectory() && !status.isSymbolicLink()
+			: status.isFile() && !status.isSymbolicLink();
+	if (!validType) {
+		throw new Error(`benchmark lock ${expectedType} identity is invalid: ${filePath}`);
+	}
+	return statusMetadata(status);
+}
+
+function readBenchmarkLockState(lockPath) {
+	const lockBefore = stableEntryMetadata(lockPath, 'directory');
+	const snapshot = readBenchmarkLockOwnerSnapshot(lockPath);
+	const lockAfter = stableEntryMetadata(lockPath, 'directory');
+	if (!sameEntryMetadata(lockBefore, lockAfter)) {
+		throw new Error(`benchmark lock changed while ownership was inspected: ${lockPath}`);
+	}
+	return {
+		owner: snapshot.owner,
+		lockIdentity: {
+			lock: lockAfter,
+			owner: snapshot.metadata,
+		},
+	};
+}
+
 function currentProcessIdentity(options) {
 	if (Object.hasOwn(options, 'currentIdentity')) {
 		const identity = options.currentIdentity;
@@ -147,6 +223,60 @@ function currentProcessIdentity(options) {
 		return identity;
 	}
 	return processIdentity(process.pid);
+}
+
+/**
+ * Verifies that the exact current process still owns the benchmark lock.
+ *
+ * Unlike assertCorpusBenchmarkAccess(), possession of a token is not enough:
+ * the owner PID and recorded process identity must also match this process.
+ * The returned filesystem identity lets long-lived in-process leases reject a
+ * released and recreated lock even if its owner document was copied verbatim.
+ */
+export function assertOwnedCorpusBenchmarkLock(manifestPath, token, options = {}) {
+	const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
+	const lockPath = path.join(path.dirname(canonicalManifest), 'local-corpus', '.benchmark.lock');
+	if (typeof token !== 'string' || !UUID_PATTERN.test(token)) {
+		throw new Error('the current process does not own the corpus benchmark lock');
+	}
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (!entryAt(lockPath)) {
+			throw new Error('the owned corpus benchmark lock is no longer available');
+		}
+		let state;
+		try {
+			state = readBenchmarkLockState(lockPath);
+		} catch (error) {
+			if (!entryAt(lockPath)) continue;
+			throw new Error(
+				`the owned corpus benchmark lock is invalid or unreadable: ${lockPath}; ${error.message}`,
+			);
+		}
+		const { owner } = state;
+		if (owner.manifest_path !== canonicalManifest) {
+			throw new Error(`the corpus benchmark lock is bound to another manifest: ${lockPath}`);
+		}
+		const identity = currentProcessIdentity(options);
+		if (
+			owner.pid !== process.pid ||
+			owner.token !== token ||
+			typeof owner.process_identity !== 'string' ||
+			identity === null ||
+			owner.process_identity !== identity
+		) {
+			throw new Error('the current process does not own the corpus benchmark lock');
+		}
+		return {
+			lockPath,
+			manifestPath: canonicalManifest,
+			token,
+			pid: owner.pid,
+			processIdentity: owner.process_identity ?? null,
+			createdAt: owner.created_at,
+			lockIdentity: state.lockIdentity,
+		};
+	}
+	throw new Error(`could not verify owned corpus benchmark access: ${lockPath}`);
 }
 
 function prepareBenchmarkLock(localCorpusRoot, canonicalManifest, options) {

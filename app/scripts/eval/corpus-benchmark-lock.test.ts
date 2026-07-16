@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
 	acquireCorpusBenchmarkLock,
 	assertCorpusBenchmarkAccess,
+	assertOwnedCorpusBenchmarkLock,
 	releaseCorpusBenchmarkLock,
 } from './corpus-benchmark-lock.ts';
 import { canonicalManifestPath } from './corpus.ts';
@@ -81,6 +82,146 @@ test('serializes low-level benchmark lock ownership', (t) => {
 	assert.equal(releaseCorpusBenchmarkLock(first.lockPath, first.token), true);
 	const second = acquireCorpusBenchmarkLock(current.manifestPath);
 	assert.equal(releaseCorpusBenchmarkLock(second.lockPath, second.token), true);
+});
+
+test('attests exact current-process ownership for long-lived leases', (t) => {
+	const current = fixture(t);
+	const acquired = acquireCorpusBenchmarkLock(current.manifestPath, {
+		currentIdentity: 'benchmark-process',
+	});
+	const owned = assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+		currentIdentity: 'benchmark-process',
+	});
+	assert.equal(owned.pid, process.pid);
+	assert.equal(owned.processIdentity, 'benchmark-process');
+	assert.equal(owned.lockPath, acquired.lockPath);
+	assert.equal(owned.manifestPath, acquired.manifestPath);
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, FIRST_TOKEN, {
+				currentIdentity: 'benchmark-process',
+			}),
+		/does not own the corpus benchmark lock/,
+	);
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+				currentIdentity: 'different-process',
+			}),
+		/does not own the corpus benchmark lock/,
+	);
+	assert.equal(
+		releaseCorpusBenchmarkLock(acquired.lockPath, acquired.token, {
+			currentIdentity: 'benchmark-process',
+		}),
+		true,
+	);
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+				currentIdentity: 'benchmark-process',
+			}),
+		/owned corpus benchmark lock is no longer available/,
+	);
+});
+
+test('requires a recorded and currently verifiable process identity for lease ownership', (t) => {
+	const current = fixture(t);
+	writeOwnerLock(current.lockPath, current.manifestPath);
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, FIRST_TOKEN, {
+				currentIdentity: null,
+			}),
+		/does not own the corpus benchmark lock/,
+	);
+	fs.rmSync(current.lockPath, { recursive: true, force: true });
+
+	writeOwnerLock(current.lockPath, current.manifestPath, {
+		processIdentity: 'benchmark-process',
+	});
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, FIRST_TOKEN, {
+				currentIdentity: null,
+			}),
+		/does not own the corpus benchmark lock/,
+	);
+	assert.throws(
+		() =>
+			assertOwnedCorpusBenchmarkLock(current.manifestPath, FIRST_TOKEN, {
+				currentIdentity: 'different-process',
+			}),
+		/does not own the corpus benchmark lock/,
+	);
+});
+
+test('binds lease ownership to one private opened owner inode', async (t) => {
+	await t.test('hard-linked owner', (t) => {
+		const current = fixture(t);
+		const acquired = acquireCorpusBenchmarkLock(current.manifestPath, {
+			currentIdentity: 'benchmark-process',
+		});
+		const ownerPath = path.join(acquired.lockPath, 'owner.json');
+		fs.linkSync(ownerPath, path.join(acquired.lockPath, 'owner-alias.json'));
+		assert.throws(
+			() =>
+				assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+					currentIdentity: 'benchmark-process',
+				}),
+			/must not be hard linked/,
+		);
+	});
+
+	await t.test('permissive owner mode', (t) => {
+		if (process.platform === 'win32') {
+			return t.skip('POSIX permission modes are not enforceable on Windows');
+		}
+		const current = fixture(t);
+		const acquired = acquireCorpusBenchmarkLock(current.manifestPath, {
+			currentIdentity: 'benchmark-process',
+		});
+		fs.chmodSync(path.join(acquired.lockPath, 'owner.json'), 0o644);
+		assert.throws(
+			() =>
+				assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+					currentIdentity: 'benchmark-process',
+				}),
+			/private 0600 permissions/,
+		);
+	});
+
+	await t.test('transient owner path replacement', (t) => {
+		const current = fixture(t);
+		const acquired = acquireCorpusBenchmarkLock(current.manifestPath, {
+			currentIdentity: 'benchmark-process',
+		});
+		const ownerPath = path.join(acquired.lockPath, 'owner.json');
+		const displacedPath = path.join(acquired.lockPath, 'owner-original.json');
+		const replacementPath = path.join(acquired.lockPath, 'owner-replacement.json');
+		const contents = fs.readFileSync(ownerPath);
+		const originalOpenSync = fs.openSync;
+		let swapped = false;
+		t.mock.method(fs, 'openSync', (filePath, ...args) => {
+			if (!swapped && filePath === ownerPath) {
+				swapped = true;
+				fs.renameSync(ownerPath, displacedPath);
+				fs.writeFileSync(ownerPath, contents, { mode: 0o600 });
+				const descriptor = originalOpenSync(ownerPath, ...args);
+				fs.renameSync(ownerPath, replacementPath);
+				fs.renameSync(displacedPath, ownerPath);
+				return descriptor;
+			}
+			return originalOpenSync(filePath, ...args);
+		});
+		assert.throws(
+			() =>
+				assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
+					currentIdentity: 'benchmark-process',
+				}),
+			/owner changed while it was opened/,
+		);
+	});
 });
 
 test('recovers a provably dead owner and preserves private evidence', (t) => {
@@ -261,6 +402,7 @@ test('fails closed for symlink, non-directory, and malformed locks', async (t) =
 		fs.writeFileSync(
 			path.join(current.lockPath, 'owner.json'),
 			JSON.stringify({ schema_version: 1, pid: process.pid }),
+			{ mode: 0o600 },
 		);
 		assert.throws(
 			() =>
