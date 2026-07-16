@@ -313,6 +313,12 @@ function validateLocalParticipantFile(
 
 function validateLocalParticipantCustody(sample, manifestPath, checkFiles, errors) {
 	if (sample.provenance?.basis !== 'participant-consent') return;
+	if (!/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id ?? '')) {
+		errors.push(
+			`sample '${sample.id ?? '?'}'.session_id is required for local participant recordings`,
+		);
+		return;
+	}
 	validateLocalParticipantFile(
 		sample,
 		'audio_path',

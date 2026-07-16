@@ -242,6 +242,27 @@ test('requires local participant files to remain in their opaque session directo
 	);
 });
 
+test('requires non-meeting participant recordings to use managed session custody too', () => {
+	const { directory, document } = fixture();
+	const sample = document.samples[0];
+	sample.scenario = 'dictation';
+	sample.speakers = 1;
+	delete sample.session_id;
+	sample.audio_path = 'outside.wav';
+	sample.reference_path = 'outside.txt';
+	fs.writeFileSync(path.join(directory, 'outside.wav'), 'audio');
+	fs.writeFileSync(path.join(directory, 'outside.txt'), 'hello');
+
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(
+		errors.some((error) =>
+			error.includes('session_id is required for local participant recordings'),
+		),
+	);
+});
+
 test('rejects symlinked and hard-linked participant files in managed sessions', () => {
 	for (const aliasType of ['symbolic', 'hard']) {
 		const { directory, document } = fixture();

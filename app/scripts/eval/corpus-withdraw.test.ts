@@ -1106,6 +1106,37 @@ test('withdraws consent even when an unrelated retained sample file is missing',
 	assert(!fs.existsSync(missingReference));
 });
 
+test('withdraws consent even when an unrelated retained sample violates current custody rules', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	const retained = document.samples.find((sample) => sample.session_id === 'session-keep');
+	const legacyAudio = path.join(directory, 'legacy-retained.wav');
+	const legacyReference = path.join(directory, 'legacy-retained.txt');
+	fs.renameSync(path.resolve(directory, retained.audio_path), legacyAudio);
+	fs.renameSync(path.resolve(directory, retained.reference_path), legacyReference);
+	retained.audio_path = path.basename(legacyAudio);
+	retained.reference_path = path.basename(legacyReference);
+	fs.writeFileSync(manifestPath, JSON.stringify(document));
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert(
+		validateCorpusDocument(remaining, { manifestPath }).some((error) =>
+			error.includes('must be local-corpus/session-keep/es-clean-003'),
+		),
+	);
+	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
+	assert(fs.existsSync(legacyAudio));
+	assert(fs.existsSync(legacyReference));
+});
+
 test('refuses to delete files outside the opaque session directory', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
