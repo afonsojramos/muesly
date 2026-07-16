@@ -7,6 +7,12 @@ import test from 'node:test';
 
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
 import {
+	discoverCorpusBenchmarkCheckpoints,
+	readCorpusBenchmarkCheckpoint,
+} from './corpus-benchmark-checkpoints.ts';
+import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
+import { validateRunReport } from './report.ts';
+import {
 	assertLeasedCorpusSampleUnchanged,
 	createCorpusResultLease,
 	writeCorpusBoundFiles,
@@ -14,9 +20,92 @@ import {
 	writeLeasedCorpusBoundJson,
 } from './corpus-result.ts';
 import { corpusFingerprint, loadCorpus } from './corpus.ts';
+import { WER_SCORER_ID } from './wer.ts';
 
 function sha256(value) {
 	return createHash('sha256').update(value).digest('hex');
+}
+
+function schemaValidCheckpointReport(current) {
+	const benchmarkExecutableSha256 = 'b'.repeat(64);
+	const runtimeEnvironmentSha256 = '5'.repeat(64);
+	const evaluatorRevision = {
+		schema_version: 1,
+		protocol_id: 'muesly-real-run-v1',
+		git_commit: '1'.repeat(40),
+		cargo_lock_sha256: '2'.repeat(64),
+		rustc_vv: [
+			'rustc 1.88.0 (6b00bc388 2025-06-23)',
+			'binary: rustc',
+			`commit-hash: ${'3'.repeat(40)}`,
+			'commit-date: 2025-06-23',
+			'host: aarch64-apple-darwin',
+			'release: 1.88.0',
+			'LLVM version: 20.1.5',
+		].join('\n'),
+		build_profile: 'release',
+		target_triple: 'aarch64-apple-darwin',
+		cargo_features: ['metal'],
+		build_env_sha256: '4'.repeat(64),
+	};
+	const report = {
+		schema_version: 9,
+		corpus_id: current.corpus.corpus_id,
+		corpus_fingerprint: current.corpus.corpus_fingerprint,
+		started_at: '2026-07-16T10:00:00.000Z',
+		completed_at: '2026-07-16T10:01:00.000Z',
+		wer_scorer: WER_SCORER_ID,
+		evaluator_revision: evaluatorRevision,
+		evaluator_revision_sha256: evaluatorRevisionSha256(evaluatorRevision),
+		benchmark_executable_sha256: benchmarkExecutableSha256,
+		provider: 'whisper',
+		model: 'large-v3-turbo-q5_0',
+		model_artifact_sha256: 'c'.repeat(64),
+		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
+		passed: true,
+		results: [
+			{
+				sample_id: current.sampleId,
+				language: 'en-US',
+				noise_condition: 'clean',
+				scenario: 'meeting',
+				speakers: 2,
+				provenance_basis: 'participant-consent',
+				passed: true,
+				reference_words: 20,
+				word_errors: 1,
+				wer_percent: 5,
+				hallucinated_words: null,
+				metrics: {
+					schema_version: 6,
+					provider: 'whisper',
+					model: 'large-v3-turbo-q5_0',
+					backend: 'metal',
+					operating_system: 'macos',
+					architecture: 'aarch64',
+					hardware_profile:
+						'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;' +
+						`runtime_env_sha256=${runtimeEnvironmentSha256}`,
+					accelerator: 'Apple M4 Pro integrated GPU',
+					benchmark_executable_sha256: benchmarkExecutableSha256,
+					audio_sha256: sha256(current.audio),
+					audio_duration_seconds: 12.5,
+					decode_seconds: 0.1,
+					vad_seconds: 0.2,
+					model_download_seconds: 0,
+					model_load_seconds: 1,
+					inference_seconds: 2,
+					inference_rtf: 0.16,
+					measured_total_seconds: 3.3,
+					baseline_rss_mb: 100,
+					peak_rss_mb: 500,
+					peak_rss_delta_mb: 400,
+				},
+			},
+		],
+	};
+	assert.deepEqual(validateRunReport(report), []);
+	return report;
 }
 
 function localManifest() {
@@ -1006,13 +1095,16 @@ test('preserves the exact published pair when final lease validation fails', (t)
 		.readdirSync(resultsDirectory)
 		.find((name) => name.startsWith(`${path.basename(outputPath)}.tmp-`));
 	assert(retainedPair);
-	assert.equal(
-		fs.readFileSync(path.join(resultsDirectory, retainedPair), 'utf8'),
-		expectedContents,
-	);
+	const retainedPairPath = path.join(resultsDirectory, retainedPair);
+	assert.equal(fs.readFileSync(retainedPairPath, 'utf8'), expectedContents);
 	const quarantined = quarantinedEntries(resultsDirectory);
 	assert.equal(quarantined.length, 2);
 	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));
+	const retained = [outputPath, retainedPairPath, ...quarantined].map((entryPath) =>
+		fs.statSync(entryPath),
+	);
+	assert(retained.every((entry) => entry.ino === retained[0].ino));
+	assert(retained.every((entry) => entry.nlink === 4));
 });
 
 test('preserves an attacker replacement swapped while failed output is linked into quarantine', (t) => {
@@ -1063,9 +1155,13 @@ test('preserves an attacker replacement swapped while failed output is linked in
 test('preserves a replacement swapped after failed-output quarantine inspection', (t) => {
 	const current = leasedCorpusFixture(t);
 	const resultsDirectory = path.join(current.directory, 'results');
-	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
+	const outputPath = path.join(
+		resultsDirectory,
+		`run-whisper-metal-${'1'.repeat(16)}-${'2'.repeat(16)}.run.json`,
+	);
 	const displacedOutput = path.join(current.directory, 'writer-output-displaced.json');
-	const expectedContents = `${JSON.stringify({ complete: true }, null, 2)}\n`;
+	const report = schemaValidCheckpointReport(current);
+	const expectedContents = `${JSON.stringify(report, null, 2)}\n`;
 	const originalLinkSync = fs.linkSync;
 	const originalRealpathSync = fs.realpathSync;
 	let changed = false;
@@ -1088,7 +1184,64 @@ test('preserves a replacement swapped after failed-output quarantine inspection'
 		) {
 			swapped = true;
 			fs.renameSync(outputPath, displacedOutput);
-			fs.writeFileSync(outputPath, 'attacker replacement\n', { mode: 0o600 });
+			fs.writeFileSync(outputPath, expectedContents, { mode: 0o600 });
+		}
+		return result;
+	});
+	assert.throws(
+		() =>
+			writeLeasedCorpusBoundJson({
+				lease: current.lease,
+				outputPath,
+				value: report,
+			}),
+		/leased corpus manifest changed/,
+	);
+	assert(swapped);
+	assert.equal(fs.readFileSync(outputPath, 'utf8'), expectedContents);
+	assert.equal(fs.statSync(outputPath).nlink, 1);
+	assert.deepEqual(validateRunReport(JSON.parse(fs.readFileSync(outputPath, 'utf8'))), []);
+	assert.equal(fs.readFileSync(displacedOutput, 'utf8'), expectedContents);
+	const quarantined = quarantinedEntries(resultsDirectory);
+	assert.equal(quarantined.length, 2);
+	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));
+	assert.throws(
+		() => readCorpusBenchmarkCheckpoint(outputPath),
+		/failed leased-output quarantine evidence/,
+	);
+	assert.throws(
+		() => discoverCorpusBenchmarkCheckpoints(resultsDirectory),
+		/failed leased-output quarantine evidence/,
+	);
+});
+
+test('requires the source hard link to remain after quarantine linking', (t) => {
+	const current = leasedCorpusFixture(t);
+	const resultsDirectory = path.join(current.directory, 'results');
+	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
+	const expectedContents = `${JSON.stringify({ complete: true }, null, 2)}\n`;
+	const originalLinkSync = fs.linkSync;
+	const originalRealpathSync = fs.realpathSync;
+	let changed = false;
+	let unlinked = false;
+	t.mock.method(fs, 'linkSync', (sourcePath, destinationPath) => {
+		const result = originalLinkSync(sourcePath, destinationPath);
+		if (!changed && destinationPath === outputPath) {
+			changed = true;
+			fs.appendFileSync(current.manifestPath, ' ');
+		}
+		return result;
+	});
+	t.mock.method(fs, 'realpathSync', (filePath, ...args) => {
+		const result = originalRealpathSync(filePath, ...args);
+		if (
+			!unlinked &&
+			typeof filePath === 'string' &&
+			filePath.includes('.lease-quarantine-') &&
+			path.basename(filePath) === 'entry'
+		) {
+			unlinked = true;
+			fs.unlinkSync(outputPath);
 		}
 		return result;
 	});
@@ -1099,11 +1252,10 @@ test('preserves a replacement swapped after failed-output quarantine inspection'
 				outputPath,
 				value: { complete: true },
 			}),
-		/leased corpus manifest changed/,
+		/validation and quarantine|unexpected hard-link count/,
 	);
-	assert(swapped);
-	assert.equal(fs.readFileSync(outputPath, 'utf8'), 'attacker replacement\n');
-	assert.equal(fs.readFileSync(displacedOutput, 'utf8'), expectedContents);
+	assert(unlinked);
+	assert(!fs.existsSync(outputPath));
 	const quarantined = quarantinedEntries(resultsDirectory);
 	assert.equal(quarantined.length, 2);
 	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));

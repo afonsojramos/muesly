@@ -154,6 +154,30 @@ test('accepts an exact retained managed checkpoint hard-link pair', (t) => {
 	assert.equal(fs.statSync(checkpoint.pairPath).ino, fs.statSync(checkpoint.checkpointPath).ino);
 });
 
+test('rejects exact leased-output quarantine evidence but ignores unrelated lookalikes', (t) => {
+	const current = fixture(t);
+	const checkpoint = writeCheckpoint(current.resultsDirectory);
+	fs.writeFileSync(
+		path.join(current.resultsDirectory, '.lease-quarantine-not-owned'),
+		'unrelated\n',
+	);
+	assert.equal(discoverCorpusBenchmarkCheckpoints(current.resultsDirectory).length, 1);
+
+	const quarantineDirectory = path.join(
+		current.resultsDirectory,
+		`.lease-quarantine-${process.pid}-${randomUUID()}`,
+	);
+	fs.mkdirSync(quarantineDirectory);
+	assert.throws(
+		() => readCorpusBenchmarkCheckpoint(checkpoint.checkpointPath),
+		/failed leased-output quarantine evidence/,
+	);
+	assert.throws(
+		() => discoverCorpusBenchmarkCheckpoints(current.resultsDirectory),
+		/failed leased-output quarantine evidence/,
+	);
+});
+
 test('rejects managed checkpoint pairs with extra aliases or pair replacement', async (t) => {
 	await t.test('extra alias', (t) => {
 		const current = fixture(t);
@@ -162,6 +186,21 @@ test('rejects managed checkpoint pairs with extra aliases or pair replacement', 
 		assert.throws(
 			() => discoverCorpusBenchmarkCheckpoints(current.resultsDirectory),
 			/regular single-link file or a valid managed-pair file/,
+		);
+	});
+
+	await t.test('unmatched managed sibling beside a single-link checkpoint', (t) => {
+		const current = fixture(t);
+		const checkpoint = writeCheckpoint(current.resultsDirectory);
+		const unmatchedPairPath = `${checkpoint.checkpointPath}.tmp-${process.pid}-${randomUUID()}`;
+		fs.writeFileSync(unmatchedPairPath, checkpoint.contents, { mode: 0o600 });
+		assert.throws(
+			() => readCorpusBenchmarkCheckpoint(checkpoint.checkpointPath),
+			/unmatched managed hard-link sibling/,
+		);
+		assert.throws(
+			() => discoverCorpusBenchmarkCheckpoints(current.resultsDirectory),
+			/unmatched managed hard-link sibling/,
 		);
 	});
 

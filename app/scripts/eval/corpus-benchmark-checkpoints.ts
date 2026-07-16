@@ -11,6 +11,8 @@ const ATTEMPT_FILENAME_PATTERN =
 	/^\.benchmark-attempt-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/;
 const MANAGED_PAIR_SUFFIX_PATTERN =
 	/^([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
+const LEASE_QUARANTINE_DIRECTORY_PATTERN =
+	/^\.lease-quarantine-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
 
 function lexicalCompare(left, right) {
@@ -95,6 +97,29 @@ function assertCheckpointName(name) {
 	}
 }
 
+function hasSafePositivePid(match) {
+	if (!match) return false;
+	const pid = Number(match[1]);
+	return Number.isSafeInteger(pid) && pid > 0;
+}
+
+function isLeaseQuarantineEvidenceName(name) {
+	return hasSafePositivePid(name.match(LEASE_QUARANTINE_DIRECTORY_PATTERN));
+}
+
+function readManagedResultsEntries(results) {
+	assertResultsDirectoryBound(results);
+	const names = fs.readdirSync(results.path);
+	assertResultsDirectoryBound(results);
+	const quarantineEvidence = names.find(isLeaseQuarantineEvidenceName);
+	if (quarantineEvidence) {
+		throw new Error(
+			`benchmark results contain failed leased-output quarantine evidence: ${quarantineEvidence}`,
+		);
+	}
+	return names;
+}
+
 function openRegularFileNoFollow(filePath, label, options = {}) {
 	const allowedLinks = new Set(options.allowedLinks ?? [1n]);
 	const initial = entryAt(filePath);
@@ -129,11 +154,7 @@ function isManagedCheckpointPairName(name, checkpointName) {
 	return MANAGED_PAIR_SUFFIX_PATTERN.test(name.slice(`${checkpointName}.tmp-`.length));
 }
 
-function openManagedCheckpointPair(results, checkpointName, checkpointStatus) {
-	assertResultsDirectoryBound(results);
-	const candidates = fs
-		.readdirSync(results.path)
-		.filter((name) => isManagedCheckpointPairName(name, checkpointName));
+function openManagedCheckpointPair(results, checkpointName, checkpointStatus, candidates) {
 	assertResultsDirectoryBound(results);
 	if (candidates.length !== 1) {
 		throw new Error(
@@ -182,14 +203,16 @@ export function isCorpusBenchmarkCheckpointName(name) {
 export function isCorpusBenchmarkAttemptName(name) {
 	if (typeof name !== 'string') return false;
 	const match = name.match(ATTEMPT_FILENAME_PATTERN);
-	if (!match) return false;
-	const pid = Number(match[1]);
-	return Number.isSafeInteger(pid) && pid > 0;
+	return hasSafePositivePid(match);
 }
 
 function readCheckpointFromResults(results, name, options = {}) {
 	assertCheckpointName(name);
 	assertResultsDirectoryBound(results);
+	const directoryNames = options.directoryNames ?? readManagedResultsEntries(results);
+	const managedPairCandidates = directoryNames.filter((entryName) =>
+		isManagedCheckpointPairName(entryName, name),
+	);
 	const resolvedPath = path.join(results.path, name);
 	const maximumBytes = validateMaximumBytes(
 		options.maximumBytes ?? MAX_CORPUS_BENCHMARK_CHECKPOINT_BYTES,
@@ -205,7 +228,11 @@ function readCheckpointFromResults(results, name, options = {}) {
 	let finalPairDescriptorStatus;
 	try {
 		if (opened.nlink === 2n) {
-			managedPair = openManagedCheckpointPair(results, name, opened);
+			managedPair = openManagedCheckpointPair(results, name, opened, managedPairCandidates);
+		} else if (managedPairCandidates.length !== 0) {
+			throw new Error(
+				`corpus benchmark checkpoint has an unmatched managed hard-link sibling: ${name}`,
+			);
 		}
 		if (opened.size > BigInt(maximumBytes)) {
 			throw new Error(`corpus benchmark checkpoint is too large: ${resolvedPath}`);
@@ -288,8 +315,7 @@ export function discoverCorpusBenchmarkCheckpoints(resultsDirectory, options = {
 	const results = openResultsDirectory(resultsDirectory, { allowMissing: true });
 	if (!results) return [];
 	try {
-		const names = fs.readdirSync(results.path).sort(lexicalCompare);
-		assertResultsDirectoryBound(results);
+		const names = readManagedResultsEntries(results).sort(lexicalCompare);
 		const seen = new Set();
 		const checkpoints = [];
 		for (const name of names) {
@@ -301,6 +327,7 @@ export function discoverCorpusBenchmarkCheckpoints(resultsDirectory, options = {
 			assertCheckpointName(name);
 			checkpoints.push(
 				readCheckpointFromResults(results, name, {
+					directoryNames: names,
 					maximumBytes: options.maximumBytes,
 					onAfterRead: options.onAfterRead,
 				}),
