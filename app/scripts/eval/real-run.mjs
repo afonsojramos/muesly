@@ -149,6 +149,7 @@ for (const sample of fixtures) {
 	const exampleArgs = [
 		'run',
 		'-q',
+		'--release',
 		'-p',
 		'muesly',
 		'--no-default-features',

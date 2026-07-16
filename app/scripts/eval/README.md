@@ -92,7 +92,7 @@ Cross-engine spot check (2026-07-16, checked-in fixture, production VAD/filter p
 WER (one substitution) and emitted nothing for the silence fixture. This single clean
 English clip is a regression check, not a general accuracy ranking.
 
-- **First-run costs:** compiles the Rust workspace, downloads FFmpeg during the
+- **First-run costs:** compiles the Rust workspace in the release profile, downloads FFmpeg during the
   build, and fetches the `tiny` model (~75 MB) into the gitignored dev models
   dir. Later runs reuse everything. Missing Tauri sidecar binaries are stubbed
   automatically (same approach as CI's rust-check).
