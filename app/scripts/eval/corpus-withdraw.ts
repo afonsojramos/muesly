@@ -67,17 +67,17 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 
 function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, sessionId) {
 	const lockEntry = fs.lstatSync(lockPath, { throwIfNoEntry: false });
-	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return false;
+	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return null;
 	try {
 		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
-		return (
+		const matches =
 			(owner.operation === 'intake' || owner.operation === 'withdrawal') &&
 			owner.session_id === sessionId &&
 			typeof owner.manifest_path === 'string' &&
-			path.resolve(owner.manifest_path) === manifestPath
-		);
+			path.resolve(owner.manifest_path) === manifestPath;
+		return matches ? owner.operation : null;
 	} catch {
-		return false;
+		return null;
 	}
 }
 
@@ -170,11 +170,12 @@ export function withdrawConsentedSession(options) {
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const manifestExists = fs.existsSync(manifestPath);
-	const allowMissingManifest = interruptedOrphanCleanupTargetsManifest(
+	const interruptedOperation = interruptedOrphanCleanupTargetsManifest(
 		lockPath,
 		manifestPath,
 		options.sessionId,
 	);
+	const allowMissingManifest = interruptedOperation !== null;
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	}
@@ -203,6 +204,13 @@ export function withdrawConsentedSession(options) {
 			}
 			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
 			if (!sessionEntry) {
+				if (!manifestExists && interruptedOperation === 'withdrawal') {
+					return {
+						sessionId: options.sessionId,
+						removedSamples: 0,
+						resumed: true,
+					};
+				}
 				throw new Error(`session is not present in the corpus: ${options.sessionId}`);
 			}
 			if (!sessionEntry.isDirectory() || sessionEntry.isSymbolicLink()) {
