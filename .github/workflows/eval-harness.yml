@@ -28,6 +28,7 @@ jobs:
         run: |
           nub run eval:corpus:validate
           nub run eval:corpus:test
+          nub run eval:real:test
           nub run eval:coverage:test
           nub run eval:report:test
       - name: Word error rate (short fixture)

@@ -1,4 +1,6 @@
 use crate::audio::{GpuType, PerformanceTier};
+use std::ffi::CStr;
+use whisper_rs::whisper_rs_sys as sys;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhisperCompiledBackend {
@@ -95,6 +97,65 @@ pub fn whisper_context_acceleration_for(
     }
 }
 
+/// Prove that whisper.cpp can initialize the requested GPU device before an
+/// evaluation run is allowed to label its measurements as GPU-backed.
+///
+/// whisper.cpp intentionally falls back to its CPU backend when `use_gpu` is
+/// true but no usable GPU backend exists. That behavior is useful in the app,
+/// but would make benchmark provenance dishonest. This preflight mirrors
+/// whisper.cpp's GPU-device selection and performs a real backend
+/// initialization, then immediately frees the temporary backend.
+pub fn verify_gpu_backend_available(gpu_device: i32) -> Result<String, String> {
+    if gpu_device < 0 {
+        return Err(format!(
+            "GPU device index must be non-negative, got {gpu_device}"
+        ));
+    }
+
+    let mut matching_index = 0_i32;
+
+    // SAFETY: the device registry and device handles are owned by ggml. We do
+    // not retain pointers beyond this call, and every successfully initialized
+    // temporary backend is freed before returning.
+    unsafe {
+        for index in 0..sys::ggml_backend_dev_count() {
+            let device = sys::ggml_backend_dev_get(index);
+            if device.is_null() {
+                continue;
+            }
+            let device_type = sys::ggml_backend_dev_type(device);
+            let is_gpu = device_type == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_GPU
+                || device_type == sys::ggml_backend_dev_type_GGML_BACKEND_DEVICE_TYPE_IGPU;
+            if !is_gpu {
+                continue;
+            }
+            if matching_index != gpu_device {
+                matching_index += 1;
+                continue;
+            }
+
+            let name_ptr = sys::ggml_backend_dev_name(device);
+            let name = if name_ptr.is_null() {
+                "unknown GPU".to_string()
+            } else {
+                CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
+            };
+            let backend = sys::ggml_backend_dev_init(device, std::ptr::null());
+            if backend.is_null() {
+                return Err(format!(
+                    "failed to initialize GPU device {gpu_device} ({name})"
+                ));
+            }
+            sys::ggml_backend_free(backend);
+            return Ok(name);
+        }
+    }
+
+    Err(format!(
+        "GPU device {gpu_device} is unavailable (found {matching_index} GPU devices)"
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +232,13 @@ mod tests {
         assert!(!params.use_gpu);
         assert!(!params.flash_attn);
         assert_eq!(params.gpu_device, 0);
+    }
+
+    #[test]
+    fn gpu_backend_preflight_rejects_negative_device_indexes() {
+        assert_eq!(
+            verify_gpu_backend_available(-1).unwrap_err(),
+            "GPU device index must be non-negative, got -1"
+        );
     }
 }

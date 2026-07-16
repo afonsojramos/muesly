@@ -25,6 +25,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { requiresWhisperGpu, supportedBackends } from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
 import { werDetails } from './wer.mjs';
 
@@ -66,7 +67,6 @@ if (!['whisper', 'parakeet'].includes(provider)) {
 	process.exit(2);
 }
 const backend = strFlag(args, '--backend', 'cpu');
-const supportedBackends = ['cpu', 'metal', 'cuda', 'vulkan', 'openblas', 'hipblas'];
 if (!supportedBackends.includes(backend)) {
 	console.error(`--backend requires one of: ${supportedBackends.join(', ')}`);
 	process.exit(2);
@@ -171,7 +171,7 @@ for (const sample of fixtures) {
 			env: {
 				...process.env,
 				MUESLY_WHISPER_REQUIRE_ACCELERATION:
-					provider === 'whisper' && backend !== 'cpu' ? '1' : '0',
+					requiresWhisperGpu(provider, backend) ? '1' : '0',
 			},
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'inherit'],

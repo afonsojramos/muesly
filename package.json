@@ -17,6 +17,7 @@
 		"eval:wer": "nub app/scripts/eval/wer.mjs",
 		"eval:rubric": "nub app/scripts/eval/summary-rubric.mjs",
 		"eval:real": "nub app/scripts/eval/real-run.mjs",
+		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.mjs",
 		"eval:corpus:validate": "nub app/scripts/eval/corpus-validate.mjs",
 		"eval:corpus:test": "nub --node --test app/scripts/eval/corpus.test.mjs",
 		"eval:coverage": "nub app/scripts/eval/coverage.mjs",

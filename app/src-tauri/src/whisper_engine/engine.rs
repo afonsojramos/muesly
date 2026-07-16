@@ -1,6 +1,8 @@
 // Commit name to recover the serial whisper engine processing for smaller meetings [Slower processing but dooes not fail] - "before parallel processing implementation"
 
-use super::acceleration::{WhisperCompiledBackend, whisper_context_acceleration_for};
+use super::acceleration::{
+    WhisperCompiledBackend, verify_gpu_backend_available, whisper_context_acceleration_for,
+};
 use crate::config::WHISPER_MODEL_CATALOG;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
@@ -431,6 +433,22 @@ impl WhisperEngine {
                         "Required {} acceleration is unavailable on this machine",
                         acceleration.compiled_backend.as_str()
                     ));
+                }
+                if require_acceleration {
+                    let gpu_name =
+                        verify_gpu_backend_available(acceleration.gpu_device).map_err(|error| {
+                            anyhow!(
+                                "Required {} acceleration is unavailable: {}",
+                                acceleration.compiled_backend.as_str(),
+                                error
+                            )
+                        })?;
+                    log::info!(
+                        "Verified {} benchmark backend on GPU device {} ({})",
+                        acceleration.compiled_backend.as_str(),
+                        acceleration.gpu_device,
+                        gpu_name
+                    );
                 }
 
                 let context_param = WhisperContextParameters {
