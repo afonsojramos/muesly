@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import {
 	corpusFingerprint,
+	fileSha256,
 	validateCorpusDocument,
 	whisperLanguageForSample,
 } from './corpus.mjs';
@@ -57,6 +58,14 @@ test('accepts an explicitly consented meeting sample', () => {
 		validateCorpusDocument(document, { manifestPath: path.join(directory, 'manifest.json') }),
 		[],
 	);
+});
+
+test('hashes corpus files incrementally across multiple buffer reads', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-hash-'));
+	const filePath = path.join(directory, 'large.wav');
+	const contents = Buffer.alloc(2 * 1024 * 1024 + 137, 0x5a);
+	fs.writeFileSync(filePath, contents);
+	assert.equal(fileSha256(filePath), createHash('sha256').update(contents).digest('hex'));
 });
 
 test('allows an empty local corpus but not an empty repository corpus', () => {

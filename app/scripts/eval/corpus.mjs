@@ -39,8 +39,20 @@ function isObject(value) {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function sha256(filePath) {
-	return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+export function fileSha256(filePath) {
+	const hash = createHash('sha256');
+	const descriptor = fs.openSync(filePath, 'r');
+	const buffer = Buffer.allocUnsafe(1024 * 1024);
+	try {
+		for (;;) {
+			const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
+			if (bytesRead === 0) break;
+			hash.update(buffer.subarray(0, bytesRead));
+		}
+	} finally {
+		fs.closeSync(descriptor);
+	}
+	return hash.digest('hex');
 }
 
 function canonicalize(value) {
@@ -168,7 +180,7 @@ function validateFile(sample, field, hashField, manifestPath, checkFiles, errors
 		errors.push(`${prefix}.${field} must reference a file`);
 		return;
 	}
-	if (/^[a-f0-9]{64}$/.test(sample[hashField] ?? '') && sha256(filePath) !== sample[hashField]) {
+	if (/^[a-f0-9]{64}$/.test(sample[hashField] ?? '') && fileSha256(filePath) !== sample[hashField]) {
 		errors.push(`${prefix}.${hashField} does not match ${sample[field]}`);
 	}
 }

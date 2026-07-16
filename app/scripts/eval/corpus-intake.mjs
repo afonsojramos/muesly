@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { validateCorpusDocument } from './corpus.mjs';
+import { fileSha256, validateCorpusDocument } from './corpus.mjs';
 
 const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
 const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
@@ -25,22 +25,6 @@ function ensureFile(filePath, label) {
 	if (!fs.statSync(filePath, { throwIfNoEntry: false })?.isFile()) {
 		throw new Error(`${label} does not exist or is not a file: ${filePath}`);
 	}
-}
-
-function hashFile(filePath) {
-	const hash = createHash('sha256');
-	const descriptor = fs.openSync(filePath, 'r');
-	const buffer = Buffer.allocUnsafe(1024 * 1024);
-	try {
-		for (;;) {
-			const bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null);
-			if (bytesRead === 0) break;
-			hash.update(buffer.subarray(0, bytesRead));
-		}
-	} finally {
-		fs.closeSync(descriptor);
-	}
-	return hash.digest('hex');
 }
 
 export function localCalendarDate(date = new Date()) {
@@ -410,9 +394,9 @@ export function intakeConsentedSample(options) {
 				id: options.sampleId,
 				session_id: options.sessionId,
 				audio_path: relativeManifestPath(manifestPath, audioTarget),
-				audio_sha256: hashFile(stagedAudio),
+				audio_sha256: fileSha256(stagedAudio),
 				reference_path: relativeManifestPath(manifestPath, referenceTarget),
-				reference_sha256: hashFile(stagedReference),
+				reference_sha256: fileSha256(stagedReference),
 				language: options.language,
 				scenario: 'meeting',
 				noise_condition: options.noiseCondition,
