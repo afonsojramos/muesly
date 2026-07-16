@@ -54,13 +54,28 @@ policy approved by counsel.
 
 ## Local intake
 
-1. Keep the affirmative consent record in the gitignored `consent-records/` directory or an
-   encrypted records system. Never put names, emails, meeting titles, customer names, or consent
-   files in the manifest.
-2. Produce a verbatim UTF-8 reference in the spoken language and export the matching audio as
+1. Prepare the next underfilled collection cell:
+
+```bash
+MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
+  nub run eval:corpus:prepare
+```
+
+The command balances collection toward the least-covered language/noise cells, generates
+opaque `session-*`, `consent-*`, and sample IDs, and creates a private gitignored bundle under
+`intake/` plus a consent record in the explicitly selected external encrypted records directory.
+It refuses to put consent records inside the Git repository. It does not create audio, assert
+consent, or count the session toward coverage. Use `--language <code> --noise-condition <slug>`
+to select a specific still-underfilled cell. The equivalent
+`--consent-records-dir /approved/encrypted/path` flag can be used instead of the environment
+variable.
+
+2. Keep the affirmative consent record in the approved encrypted records system. Never put names,
+   emails, meeting titles, customer names, or consent files in the manifest or Git checkout.
+3. Produce a verbatim UTF-8 reference in the spoken language and export the matching audio as
    RIFF/WAVE. Remove an entire sensitive audio interval and its matching reference rather than
    retaining secrets or scoring a redacted transcript against unredacted speech.
-3. Import the files. The explicit affirmation is mandatory; it means every audible participant
+4. Import the files. The explicit affirmation is mandatory; it means every audible participant
    consented to `asr-benchmarking` before recording. Use one opaque session ID for every clip
    from the same meeting—coverage counts distinct sessions, not files.
 
@@ -91,7 +106,7 @@ Intake accepts only the five target languages and four defined noise conditions 
 silently fall outside the matrix. After validating the imported copy, dispose of the source files
 according to the approved retention policy.
 
-4. Validate independently:
+5. Validate independently:
 
 ```bash
 nub run eval:corpus:validate app/scripts/eval/corpus-local.json

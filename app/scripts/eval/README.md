@@ -15,6 +15,7 @@ app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
   corpus-targets.json  # private meeting-corpus coverage floor
   corpus.ts            # manifest validation and language normalization
+  corpus-prepare.ts    # scaffold the next private consented collection session
   corpus-intake.ts     # consent-gated, atomic local corpus intake
   corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
   coverage.ts          # coverage gate across language/noise/model/backend cells
@@ -50,6 +51,18 @@ every sample in a validated corpus manifest and gates the results. The default
 manifest is `corpus-manifest.json`; use `--manifest <path>` for a local
 participant-consented corpus. Every checked-in WAV must have a manifest entry.
 The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTED_CORPUS.md).
+
+Prepare the next underfilled language/noise cell before recruiting or recording:
+
+```bash
+MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
+  nub run eval:corpus:prepare
+```
+
+This creates a gitignored, private-permission session folder, an opaque consent record in the
+explicitly selected external encrypted records directory, a blank reference transcript, and an
+exact intake command. It refuses repository-local consent storage, never creates fake audio, and
+never marks consent as granted.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce
@@ -127,14 +140,14 @@ English clip is a regression check, not a general accuracy ranking.
 
 Fixtures:
 
-| File | Role |
-|------|------|
-| `sample-*.txt` | Single-utterance smoke |
-| `meeting-golden-ref.txt` | Multi-utterance sprint-planning reference |
-| `meeting-golden-hyp.txt` | Clean hypothesis (expect ~0% WER) |
-| `meeting-golden-hyp-noisy.txt` | ASR-like errors (non-zero WER) |
-| `real-speech.wav` + `real-speech-ref.txt` | Audio + golden for the real-engine run |
-| `silence.wav` + empty `silence-ref.txt` | Near-silence audio for the hallucination check |
+| File                                      | Role                                           |
+| ----------------------------------------- | ---------------------------------------------- |
+| `sample-*.txt`                            | Single-utterance smoke                         |
+| `meeting-golden-ref.txt`                  | Multi-utterance sprint-planning reference      |
+| `meeting-golden-hyp.txt`                  | Clean hypothesis (expect ~0% WER)              |
+| `meeting-golden-hyp-noisy.txt`            | ASR-like errors (non-zero WER)                 |
+| `real-speech.wav` + `real-speech-ref.txt` | Audio + golden for the real-engine run         |
+| `silence.wav` + empty `silence-ref.txt`   | Near-silence audio for the hallucination check |
 
 Add more fixtures under `fixtures/` as real meetings are curated.
 

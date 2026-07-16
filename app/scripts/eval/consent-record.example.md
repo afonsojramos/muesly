@@ -8,6 +8,7 @@ participants, and employment relationships involved.
 - Meeting/session ID: `session-...` (opaque; no title, customer, or participant names)
 - Recording date:
 - Languages:
+- Benchmark condition: `clean` / `office` / `remote-call` / `overlapping-speech`
 - Participants who affirmatively consented:
 - Retention review/deletion date:
 - Withdrawal contact and procedure:
