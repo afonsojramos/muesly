@@ -55,7 +55,7 @@ muesly is a single, self-contained Tauri 2 desktop app:
 - **Storage:** local SQLite via sqlx
 - **No backend service, no Docker, no Python.** Everything runs in one process.
 
-See [docs/architecture.md](docs/architecture.md) for details, [docs/building.md](docs/building.md) to build from source, and [docs/gpu-acceleration.md](docs/gpu-acceleration.md) for hardware acceleration.
+See [docs/architecture.md](docs/architecture.md) for details, [docs/building.md](docs/building.md) to build from source, [docs/gpu-acceleration.md](docs/gpu-acceleration.md) for hardware acceleration, and [docs/transcription-models.md](docs/transcription-models.md) for the model-catalog rationale.
 
 ## Contributing
 
