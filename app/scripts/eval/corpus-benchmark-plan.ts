@@ -781,11 +781,11 @@ function validateCheckpointShape(report, errors) {
 			finiteNonNegative(result.metrics.audio_duration_seconds) &&
 			result.metrics.audio_duration_seconds > 0 &&
 			finiteNonNegative(result.metrics.inference_audio_seconds) &&
-			result.metrics.inference_audio_seconds >
-				result.metrics.audio_duration_seconds + MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
+			result.metrics.inference_audio_seconds - result.metrics.audio_duration_seconds >
+				MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
 			!approximatelyEqual(
-				result.metrics.inference_audio_seconds,
-				result.metrics.audio_duration_seconds,
+				result.metrics.inference_audio_seconds - result.metrics.audio_duration_seconds,
+				MAX_INFERENCE_AUDIO_OVERRUN_SECONDS,
 			)
 		) {
 			errors.push(

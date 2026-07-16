@@ -261,9 +261,12 @@ export function validateBenchmarkMetrics(metrics, label = 'metrics') {
 		finiteNumber(metrics.audio_duration_seconds) &&
 		metrics.audio_duration_seconds > 0 &&
 		finiteNumber(metrics.inference_audio_seconds) &&
-		metrics.inference_audio_seconds >
-			metrics.audio_duration_seconds + MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
-		!approximatelyEqual(metrics.inference_audio_seconds, metrics.audio_duration_seconds)
+		metrics.inference_audio_seconds - metrics.audio_duration_seconds >
+			MAX_INFERENCE_AUDIO_OVERRUN_SECONDS &&
+		!approximatelyEqual(
+			metrics.inference_audio_seconds - metrics.audio_duration_seconds,
+			MAX_INFERENCE_AUDIO_OVERRUN_SECONDS,
+		)
 	) {
 		errors.push(`${label}.inference_audio_seconds must not materially exceed source duration`);
 	}

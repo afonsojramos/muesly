@@ -616,6 +616,19 @@ test('validates complete metrics identity, timing arithmetic, and RSS arithmetic
 		/inference_audio_seconds must not materially exceed source duration/,
 	);
 
+	const longSourceOverrun = result({
+		metrics: {
+			audio_duration_seconds: 100_000,
+			inference_rtf: 2 / 100_000,
+			inference_audio_seconds: 100_000.04,
+			model_inference_rtf: 2 / 100_000.04,
+		},
+	}).metrics;
+	assert.match(
+		validateBenchmarkMetrics(longSourceOverrun).join('\n'),
+		/inference_audio_seconds must not materially exceed source duration/,
+	);
+
 	const noModelInput = result({
 		metrics: {
 			inference_seconds: 0,
