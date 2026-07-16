@@ -55,7 +55,7 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
   `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
 - `--provider whisper|parakeet` (default `whisper`) and `--model <name>` A/B engines
   and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
-- `--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
+- `--backend cpu|metal|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
   backend (default `cpu`). Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
@@ -79,7 +79,7 @@ Reports contain micro-averaged WER (total word errors divided by total reference
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 2, name the same corpus, and
+as a five-minute meeting. Inputs must use run-report schema 3, name the same corpus revision, and
 use identical pass thresholds; the aggregator rejects comparisons that would lose that context.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,

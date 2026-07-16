@@ -5,7 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { validateCorpusDocument, whisperLanguageForSample } from './corpus.mjs';
+import {
+	corpusFingerprint,
+	validateCorpusDocument,
+	whisperLanguageForSample,
+} from './corpus.mjs';
 
 function hash(value) {
 	return createHash('sha256').update(value).digest('hex');
@@ -132,4 +136,13 @@ test('normalizes BCP-47 locales and supports explicit Whisper mappings', () => {
 		whisperLanguageForSample({ language: 'cmn-Hans', whisper_language: 'zh' }),
 		'zh',
 	);
+});
+
+test('fingerprints the canonical corpus revision', () => {
+	const { document } = fixture();
+	const reordered = JSON.parse(JSON.stringify(document));
+	reordered.samples[0] = Object.fromEntries(Object.entries(reordered.samples[0]).reverse());
+	assert.equal(corpusFingerprint(document), corpusFingerprint(reordered));
+	reordered.samples[0].noise_condition = 'remote-call';
+	assert.notEqual(corpusFingerprint(document), corpusFingerprint(reordered));
 });

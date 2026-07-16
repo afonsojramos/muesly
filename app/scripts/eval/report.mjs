@@ -28,8 +28,11 @@ export function validateRunReport(report, label = 'report') {
 	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	if (report.schema_version !== 2) errors.push(`${label}.schema_version must be 2`);
+	if (report.schema_version !== 3) errors.push(`${label}.schema_version must be 3`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
+	if (!/^[a-f0-9]{64}$/.test(report.corpus_fingerprint ?? '')) {
+		errors.push(`${label}.corpus_fingerprint must be a lowercase SHA-256 digest`);
+	}
 	requireString(report.provider, `${label}.provider`, errors);
 	requireString(report.model, `${label}.model`, errors);
 	if (report.thresholds === null || typeof report.thresholds !== 'object' || Array.isArray(report.thresholds)) {
@@ -144,16 +147,21 @@ export function aggregateRunReports(reports) {
 	if (!Array.isArray(reports) || reports.length === 0) throw new Error('at least one run report is required');
 	const records = [];
 	let corpusId;
+	let corpusFingerprint;
 	let thresholds;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
 		if (corpusId === undefined) {
 			corpusId = report.corpus_id;
+			corpusFingerprint = report.corpus_fingerprint;
 		} else if (report.corpus_id !== corpusId) {
 			throw new Error(
 				`cannot aggregate different corpora: '${corpusId}' and '${report.corpus_id}'`,
 			);
+		}
+		if (report.corpus_fingerprint !== corpusFingerprint) {
+			throw new Error('cannot aggregate reports from different corpus revisions');
 		}
 		if (thresholds === undefined) {
 			thresholds = { ...report.thresholds };
@@ -185,6 +193,7 @@ export function aggregateRunReports(reports) {
 		schema_version: 1,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
+		corpus_fingerprint: corpusFingerprint,
 		thresholds,
 		source_report_count: reports.length,
 		sample_result_count: records.length,
@@ -207,6 +216,8 @@ export function renderMarkdown(report) {
 		`Generated ${report.generated_at} from ${report.source_report_count} run report(s) and ${report.sample_result_count} sample result(s).`,
 		'',
 		`Corpus: \`${report.corpus_id}\``,
+		'',
+		`Corpus fingerprint: \`${report.corpus_fingerprint}\``,
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',

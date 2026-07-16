@@ -13,7 +13,7 @@
 		{
 			"provider": "whisper",
 			"model": "large-v3-turbo-q5_0",
-			"backend": "coreml-metal"
+			"backend": "metal"
 		},
 		{
 			"provider": "parakeet",

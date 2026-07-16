@@ -43,6 +43,20 @@ function sha256(filePath) {
 	return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function canonicalize(value) {
+	if (Array.isArray(value)) return value.map(canonicalize);
+	if (!isObject(value)) return value;
+	return Object.fromEntries(
+		Object.keys(value)
+			.sort()
+			.map((key) => [key, canonicalize(value[key])]),
+	);
+}
+
+export function corpusFingerprint(document) {
+	return createHash('sha256').update(JSON.stringify(canonicalize(document))).digest('hex');
+}
+
 function resolveSamplePath(manifestPath, value) {
 	return path.resolve(path.dirname(manifestPath), value);
 }
@@ -250,6 +264,7 @@ export function loadCorpus(manifestPath, options = {}) {
 	}
 	return {
 		...document,
+		corpus_fingerprint: corpusFingerprint(document),
 		manifest_path: absolutePath,
 		samples: document.samples.map((sample) => ({
 			...sample,

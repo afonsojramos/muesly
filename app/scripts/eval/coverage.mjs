@@ -145,6 +145,11 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 				`report corpus '${report.corpus_id}' does not match manifest corpus '${corpus.corpus_id}'`,
 			);
 		}
+		if (report.corpus_fingerprint !== corpus.corpus_fingerprint) {
+			throw new Error(
+				`report corpus fingerprint does not match the current manifest revision`,
+			);
+		}
 		for (const result of report.results) {
 			const sample = samplesById.get(result.sample_id);
 			if (!sample) throw new Error(`report sample '${result.sample_id}' is absent from the corpus manifest`);

@@ -14,7 +14,7 @@
  * Usage: node real-run.mjs [--max-wer <pct>] [--max-hallucinated-words <n>]
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
- *                          [--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas]
+ *                          [--backend cpu|metal|cuda|vulkan|openblas|hipblas]
  *                          [--output <path>] [--fixture <id-or-audio-base>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
@@ -66,7 +66,7 @@ if (!['whisper', 'parakeet'].includes(provider)) {
 	process.exit(2);
 }
 const backend = strFlag(args, '--backend', 'cpu');
-const supportedBackends = ['cpu', 'metal', 'coreml', 'cuda', 'vulkan', 'openblas', 'hipblas'];
+const supportedBackends = ['cpu', 'metal', 'cuda', 'vulkan', 'openblas', 'hipblas'];
 if (!supportedBackends.includes(backend)) {
 	console.error(`--backend requires one of: ${supportedBackends.join(', ')}`);
 	process.exit(2);
@@ -168,6 +168,11 @@ for (const sample of fixtures) {
 		exampleArgs,
 		{
 			cwd: repoRoot,
+			env: {
+				...process.env,
+				MUESLY_WHISPER_REQUIRE_ACCELERATION:
+					provider === 'whisper' && backend !== 'cpu' ? '1' : '0',
+			},
 			encoding: 'utf8',
 			stdio: ['ignore', 'pipe', 'inherit'],
 			maxBuffer: 16 * 1024 * 1024,
@@ -232,8 +237,9 @@ for (const sample of fixtures) {
 
 if (outputPath) {
 	const report = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: corpus.corpus_id,
+		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,
 		completed_at: new Date().toISOString(),
 		provider,

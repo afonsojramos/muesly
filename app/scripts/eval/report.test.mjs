@@ -26,8 +26,9 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'consented-meetings-v1',
+		corpus_fingerprint: 'a'.repeat(64),
 		provider: 'whisper',
 		model: 'large-v3-turbo-q5_0',
 		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
@@ -106,9 +107,15 @@ test('rejects mixed corpora and incompatible pass thresholds', () => {
 	assert.throws(() => aggregateRunReports([first, otherThreshold]), /different pass thresholds/);
 });
 
-test('rejects legacy reports after the weighted-WER schema change', () => {
-	const legacy = { ...report([result()]), schema_version: 1 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 2']);
+test('rejects legacy reports after corpus revision binding', () => {
+	const legacy = { ...report([result()]), schema_version: 2 };
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 3']);
+});
+
+test('rejects aggregation across corpus revisions', () => {
+	const first = report([result()]);
+	const stale = { ...report([result()]), corpus_fingerprint: 'b'.repeat(64) };
+	assert.throws(() => aggregateRunReports([first, stale]), /different corpus revisions/);
 });
 
 test('rejects fractional hallucination thresholds', () => {

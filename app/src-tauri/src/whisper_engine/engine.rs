@@ -417,12 +417,20 @@ impl WhisperEngine {
                     hardware_profile.gpu_type,
                     hardware_profile.performance_tier,
                 );
+                let require_acceleration =
+                    std::env::var("MUESLY_WHISPER_REQUIRE_ACCELERATION").as_deref() == Ok("1");
                 if std::env::var("MUESLY_WHISPER_FORCE_CPU").as_deref() == Ok("1") {
                     log::warn!(
                         "MUESLY_WHISPER_FORCE_CPU=1: bypassing {} GPU context allocation",
                         acceleration.compiled_backend.as_str()
                     );
                     acceleration = acceleration.forced_cpu();
+                }
+                if require_acceleration && !acceleration.use_gpu {
+                    return Err(anyhow!(
+                        "Required {} acceleration is unavailable on this machine",
+                        acceleration.compiled_backend.as_str()
+                    ));
                 }
 
                 let context_param = WhisperContextParameters {
@@ -448,7 +456,7 @@ impl WhisperEngine {
                 // back to CPU once instead of leaving the user with no usable model.
                 let ctx = match WhisperContext::new_with_params(&model_path, context_param) {
                     Ok(ctx) => ctx,
-                    Err(e) if acceleration.use_gpu => {
+                    Err(e) if acceleration.use_gpu && !require_acceleration => {
                         log::warn!(
                             "Failed to load model {} with GPU acceleration ({}); retrying on CPU",
                             model_name,
@@ -467,6 +475,14 @@ impl WhisperEngine {
                                 e
                             )
                         })?
+                    }
+                    Err(e) if acceleration.use_gpu => {
+                        return Err(anyhow!(
+                            "Required {} acceleration failed while loading model {}: {}",
+                            acceleration.compiled_backend.as_str(),
+                            model_name,
+                            e
+                        ));
                     }
                     Err(e) => return Err(anyhow!("Failed to load model {}: {}", model_name, e)),
                 };

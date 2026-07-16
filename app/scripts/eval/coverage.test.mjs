@@ -38,8 +38,9 @@ function sample(language, noise, session) {
 
 function runReport(corpus, backend) {
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: corpus.corpus_id,
+		corpus_fingerprint: corpus.corpus_fingerprint,
 		provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
 		model: 'test-model',
 		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
@@ -71,7 +72,7 @@ function completeCorpus() {
 			}
 		}
 	}
-	return { corpus_id: 'test-corpus', samples };
+	return { corpus_id: 'test-corpus', corpus_fingerprint: 'a'.repeat(64), samples };
 }
 
 test('requires distinct sessions for every language and noise cell', () => {
@@ -104,4 +105,10 @@ test('rejects malformed targets and reports for another corpus', () => {
 	const corpus = completeCorpus();
 	const report = { ...runReport(corpus, 'metal'), corpus_id: 'wrong-corpus' };
 	assert.throws(() => evaluateCoverage(corpus, targets, [report]), /does not match/);
+});
+
+test('rejects stale reports after a corpus revision changes', () => {
+	const corpus = completeCorpus();
+	const stale = { ...runReport(corpus, 'metal'), corpus_fingerprint: 'b'.repeat(64) };
+	assert.throws(() => evaluateCoverage(corpus, targets, [stale]), /fingerprint does not match/);
 });

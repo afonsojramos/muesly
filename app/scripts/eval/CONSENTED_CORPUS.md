@@ -9,7 +9,7 @@ meeting transcription requires real meeting speech. The initial target deliberat
 three distinct consented sessions in every combination of five languages (`en`, `es`, `pt`,
 `fr`, `de`) and four conditions (`clean`, `office`, `remote-call`, `overlapping-speech`):
 60 distinct-session cell observations. Each is then measured with the shipped Parakeet artifact and
-the same Whisper artifact on CPU and CoreML/Metal, producing 180 required measurement cells.
+the same Whisper artifact on CPU and Metal, producing 180 required measurement cells.
 This floor exposes large product failures; it is not statistically representative of every
 accent, demographic, device, or acoustic environment.
 
@@ -82,8 +82,8 @@ nub run eval:real --manifest app/scripts/eval/corpus-local.json \
   --output app/scripts/eval/results/whisper-cpu.json
 
 nub run eval:real --manifest app/scripts/eval/corpus-local.json \
-  --provider whisper --model large-v3-turbo-q5_0 --backend coreml \
-  --output app/scripts/eval/results/whisper-coreml.json
+  --provider whisper --model large-v3-turbo-q5_0 --backend metal \
+  --output app/scripts/eval/results/whisper-metal.json
 
 nub run eval:real --manifest app/scripts/eval/corpus-local.json \
   --provider parakeet --model parakeet-tdt-0.6b-v3-int8 --backend cpu \
@@ -96,12 +96,12 @@ distinct sessions. The command fails with `--require-complete` while any cell is
 ```bash
 nub run eval:coverage --manifest app/scripts/eval/corpus-local.json \
   --report app/scripts/eval/results/whisper-cpu.json \
-  --report app/scripts/eval/results/whisper-coreml.json \
+  --report app/scripts/eval/results/whisper-metal.json \
   --report app/scripts/eval/results/parakeet-onnx-cpu.json \
   --json app/scripts/eval/results/coverage.json --require-complete
 
 nub run eval:report app/scripts/eval/results/whisper-cpu.json \
-  app/scripts/eval/results/whisper-coreml.json \
+  app/scripts/eval/results/whisper-metal.json \
   app/scripts/eval/results/parakeet-onnx-cpu.json \
   --json app/scripts/eval/results/aggregate.json \
   --markdown app/scripts/eval/results/aggregate.md
