@@ -213,6 +213,48 @@ function finishWithdrawal(localCorpusRoot, manifestPath, sessionId, markerPath, 
 	fs.rmSync(markerPath, { force: true });
 }
 
+function withdrawPreparedWithoutCorpusRoot(manifestPath, localCorpusRoot, sessionId) {
+	try {
+		fs.mkdirSync(localCorpusRoot, { mode: 0o700 });
+	} catch (error) {
+		if (error.code !== 'EEXIST') throw error;
+	}
+	const localCorpusEntry = fs.lstatSync(localCorpusRoot);
+	if (!localCorpusEntry.isDirectory() || localCorpusEntry.isSymbolicLink()) {
+		throw new Error(`local corpus path must be a regular directory: ${localCorpusRoot}`);
+	}
+	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
+		operation: 'withdrawal',
+		sessionId,
+	});
+	try {
+		if (fs.existsSync(manifestPath)) {
+			const document = readLocalManifest(manifestPath);
+			if (document.samples.some((sample) => sample.session_id === sessionId)) {
+				throw new Error(
+					`cannot withdraw ${sessionId}: manifest still contains the session but the local corpus directory is missing`,
+				);
+			}
+		}
+		if (retirePreparedBundleForWithdrawal(manifestPath, sessionId)) {
+			return {
+				sessionId,
+				removedSamples: 0,
+				resumed: false,
+			};
+		}
+		throw new Error(`local corpus directory does not exist: ${localCorpusRoot}`);
+	} finally {
+		releaseLocalCorpusLock(lockPath, lockToken);
+		try {
+			fs.rmdirSync(localCorpusRoot);
+		} catch (error) {
+			if (!['ENOENT', 'ENOTEMPTY'].includes(error.code)) throw error;
+		}
+	}
+}
+
 export function withdrawConsentedSession(options) {
 	validateWithdrawalOptions(options);
 	const manifestPath = canonicalManifestPath(options.manifestPath, { allowMissing: true });
@@ -225,22 +267,11 @@ export function withdrawConsentedSession(options) {
 		throw new Error(`local corpus path must be a regular directory: ${localCorpusRoot}`);
 	}
 	if (!localCorpusEntry) {
-		if (fs.existsSync(manifestPath)) {
-			const document = readLocalManifest(manifestPath);
-			if (document.samples.some((sample) => sample.session_id === options.sessionId)) {
-				throw new Error(
-					`cannot withdraw ${options.sessionId}: manifest still contains the session but the local corpus directory is missing`,
-				);
-			}
-		}
-		if (retirePreparedBundleForWithdrawal(manifestPath, options.sessionId)) {
-			return {
-				sessionId: options.sessionId,
-				removedSamples: 0,
-				resumed: false,
-			};
-		}
-		throw new Error(`local corpus directory does not exist: ${localCorpusRoot}`);
+		return withdrawPreparedWithoutCorpusRoot(
+			manifestPath,
+			localCorpusRoot,
+			options.sessionId,
+		);
 	}
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');

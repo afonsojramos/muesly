@@ -263,7 +263,15 @@ function withCorpusPlanningLock(manifestPath, timeoutMs = 30_000, callback) {
 	if (existingRoot?.isSymbolicLink() || (existingRoot && !existingRoot.isDirectory())) {
 		throw new Error(`local corpus root must be a regular directory: ${localCorpusRoot}`);
 	}
-	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
+	try {
+		fs.mkdirSync(localCorpusRoot, { mode: 0o700 });
+	} catch (error) {
+		if (error.code !== 'EEXIST') throw error;
+	}
+	const installedRoot = fs.lstatSync(localCorpusRoot);
+	if (!installedRoot.isDirectory() || installedRoot.isSymbolicLink()) {
+		throw new Error(`local corpus root must be a regular directory: ${localCorpusRoot}`);
+	}
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
 	const deadline = Date.now() + timeoutMs;
 	let lockToken;

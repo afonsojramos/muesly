@@ -257,6 +257,46 @@ test('withdraws a prepared session before corpus intake', () => {
 	assert(!fs.existsSync(manifestPath));
 });
 
+test('holds the corpus mutation lock while retiring a prepared-only session', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-lock-'));
+	const canonicalDirectory = fs.realpathSync(directory);
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const preparedBundle = path.join(canonicalDirectory, 'intake', 'session-prepared');
+	const localCorpusRoot = path.join(canonicalDirectory, 'local-corpus');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 1,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
+	const rmSync = fs.rmSync;
+	let observedLock = false;
+	fs.rmSync = (target, ...args) => {
+		if (target === preparedBundle) {
+			observedLock = fs.existsSync(path.join(localCorpusRoot, '.intake.lock'));
+		}
+		return rmSync(target, ...args);
+	};
+	try {
+		withdrawConsentedSession({
+			manifestPath,
+			sessionId: 'session-prepared',
+			confirmWithdrawal: true,
+		});
+	} finally {
+		fs.rmSync = rmSync;
+	}
+
+	assert.equal(observedLock, true);
+	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(localCorpusRoot));
+});
+
 test('does not report prepared withdrawal while the manifest still contains the session', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
