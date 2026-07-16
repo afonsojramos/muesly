@@ -44,6 +44,7 @@ struct EvalMetrics {
     backend: String,
     operating_system: &'static str,
     architecture: &'static str,
+    hardware_profile: String,
     audio_duration_seconds: f64,
     decode_seconds: f64,
     vad_seconds: f64,
@@ -147,6 +148,21 @@ fn compiled_backend(provider: &str) -> String {
 
 fn megabytes(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
+}
+
+fn hardware_profile() -> String {
+    let system = System::new_all();
+    let cpu_model = system
+        .cpus()
+        .first()
+        .map(|cpu| cpu.brand().trim())
+        .filter(|brand| !brand.is_empty())
+        .unwrap_or("unknown");
+    format!(
+        "cpu={cpu_model};logical_cpus={};memory_bytes={}",
+        system.cpus().len(),
+        system.total_memory()
+    )
 }
 
 fn fail(msg: String) -> ! {
@@ -484,12 +500,13 @@ async fn main() {
     if let Some(metrics_path) = metrics_path {
         let memory = memory_observation.expect("metrics run starts a memory sampler");
         let metrics = EvalMetrics {
-            schema_version: 1,
+            schema_version: 2,
             provider: provider.clone(),
             model: model_name.clone(),
             backend: compiled_backend(&provider),
             operating_system: std::env::consts::OS,
             architecture: std::env::consts::ARCH,
+            hardware_profile: hardware_profile(),
             audio_duration_seconds: decoded.duration_seconds,
             decode_seconds,
             vad_seconds,

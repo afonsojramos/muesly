@@ -39,7 +39,7 @@ function sample(language, noise, session) {
 
 function runReport(corpus, backend) {
 	return {
-		schema_version: 4,
+		schema_version: 5,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		provider: backend === 'onnx-cpu' ? 'parakeet' : 'whisper',
@@ -58,6 +58,7 @@ function runReport(corpus, backend) {
 				backend,
 				operating_system: 'macos',
 				architecture: 'aarch64',
+				hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
 				inference_seconds: 1,
 				inference_rtf: 0.1,
 				peak_rss_mb: 100,
