@@ -147,7 +147,10 @@ function reconcileCorpusDirectory(directory, referencedFiles, isRoot = true) {
 export function hasPendingWithdrawal(localCorpusRoot) {
 	return fs
 		.readdirSync(localCorpusRoot, { withFileTypes: true })
-		.some((entry) => /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name));
+		.some(
+			(entry) =>
+				entry.isFile() && /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name),
+		);
 }
 
 function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {

@@ -119,3 +119,16 @@ test('does not reclaim an interrupted withdrawal to write against its old manife
 	);
 	assert(!fs.existsSync(outputPath));
 });
+
+test('ignores directories that merely resemble withdrawal markers', () => {
+	const { directory, document, manifestPath } = localManifest();
+	fs.mkdirSync(path.join(directory, 'local-corpus', '.withdrawal-session-fake.json'));
+	const outputPath = path.join(directory, 'results', 'run.json');
+	writeCorpusBoundJson({
+		manifestPath,
+		expectedFingerprint: corpusFingerprint(document),
+		outputPath,
+		value: { corpus_fingerprint: corpusFingerprint(document) },
+	});
+	assert(fs.existsSync(outputPath));
+});
