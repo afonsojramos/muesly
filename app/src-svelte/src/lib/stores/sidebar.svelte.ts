@@ -74,7 +74,10 @@ class SidebarStore {
 	searchResults = $state<TranscriptSearchResult[]>([]);
 	isSearching = $state<boolean>(false);
 
-	readonly activeSummaryPolls = new SvelteMap<string, ReturnType<typeof setInterval>>();
+	readonly activeSummaryPolls = new SvelteMap<
+		string,
+		{ interval: ReturnType<typeof setInterval>; onUpdate: (result: SummaryPollResult) => void }
+	>();
 
 	get sidebarItems(): SidebarItem[] {
 		return [
@@ -263,7 +266,11 @@ class SidebarStore {
 		onUpdate: (result: SummaryPollResult) => void,
 	): void => {
 		const existing = this.activeSummaryPolls.get(meetingId);
-		if (existing) clearInterval(existing);
+		if (existing) clearInterval(existing.interval);
+
+		// Held in the map so a navigation can detach the view's callback (and a
+		// revisit re-attach one) while the poll itself keeps running.
+		const entry = { interval: undefined as unknown as ReturnType<typeof setInterval>, onUpdate };
 
 		let pollCount = 0;
 		backgroundTasks.begin('summary', meetingId, 'Generating summary');
@@ -276,7 +283,7 @@ class SidebarStore {
 				clearInterval(interval);
 				this.activeSummaryPolls.delete(meetingId);
 				backgroundTasks.finish('summary', meetingId, 'error', 'Timed out after 15 minutes');
-				onUpdate({
+				entry.onUpdate({
 					status: 'error',
 					error:
 						'Summary generation timed out after 15 minutes. Please try again or check your model configuration.',
@@ -286,7 +293,7 @@ class SidebarStore {
 
 			try {
 				const result = (await invoke('api_get_summary', { meetingId })) as SummaryPollResult;
-				onUpdate(result);
+				entry.onUpdate(result);
 
 				const terminal =
 					result.status === 'completed' ||
@@ -307,7 +314,7 @@ class SidebarStore {
 					}
 				}
 			} catch (error) {
-				onUpdate({
+				entry.onUpdate({
 					status: 'error',
 					error: error instanceof Error ? error.message : 'Unknown error',
 				});
@@ -322,21 +329,43 @@ class SidebarStore {
 			}
 		};
 		interval = setInterval(() => void poll(), POLL_INTERVAL_MS);
+		entry.interval = interval;
 
-		this.activeSummaryPolls.set(meetingId, interval);
+		this.activeSummaryPolls.set(meetingId, entry);
 		// Check once right away so a summary that's already done shows immediately
 		// instead of after a full poll interval.
 		void poll();
 		console.log(`[SidebarStore] Started polling for ${meetingId}, process ${processId}`);
 	};
 
+	/** Cancel flows only: kills the poll AND its background task entry. A view
+	 *  that merely navigates away must use `detachSummaryUpdates` instead. */
 	stopSummaryPolling = (meetingId: string): void => {
-		const interval = this.activeSummaryPolls.get(meetingId);
-		if (interval) {
-			clearInterval(interval);
+		const entry = this.activeSummaryPolls.get(meetingId);
+		if (entry) {
+			clearInterval(entry.interval);
 			this.activeSummaryPolls.delete(meetingId);
 			backgroundTasks.dismiss(`summary:${meetingId}`);
 		}
+	};
+
+	/** Stop routing poll updates into a view that is going away. The poll and
+	 *  its background task stay alive until the generation is terminal. */
+	detachSummaryUpdates = (meetingId: string): void => {
+		const entry = this.activeSummaryPolls.get(meetingId);
+		if (entry) entry.onUpdate = () => {};
+	};
+
+	/** Re-attach a fresh view's callback to an in-flight generation. Returns
+	 *  whether a poll was actually resumed. */
+	reattachSummaryUpdates = (
+		meetingId: string,
+		onUpdate: (result: SummaryPollResult) => void,
+	): boolean => {
+		const entry = this.activeSummaryPolls.get(meetingId);
+		if (!entry) return false;
+		entry.onUpdate = onUpdate;
+		return true;
 	};
 
 	/**
@@ -367,8 +396,8 @@ class SidebarStore {
 	};
 
 	#cleanup(): void {
-		for (const interval of this.activeSummaryPolls.values()) {
-			clearInterval(interval);
+		for (const entry of this.activeSummaryPolls.values()) {
+			clearInterval(entry.interval);
 		}
 		this.activeSummaryPolls.clear();
 	}

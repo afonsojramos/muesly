@@ -344,11 +344,13 @@
 		}
 	});
 
-	// Stop polling when leaving a meeting.
+	// Leaving a meeting must NOT kill an in-flight generation's poll or its
+	// background-task entry (the work continues backend-side); only the view's
+	// update callback is detached. Revisiting re-attaches (use-summary-generation).
 	$effect(() => {
 		const id = meetingId;
 		return () => {
-			if (id) sidebar.stopSummaryPolling(id);
+			if (id) sidebar.detachSummaryUpdates(id);
 		};
 	});
 

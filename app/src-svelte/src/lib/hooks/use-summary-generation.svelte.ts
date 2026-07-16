@@ -118,6 +118,40 @@ export function useSummaryGeneration(options: UseSummaryGenerationOptions): UseS
 	let summaryStatus = $state<SummaryStatus>('idle');
 	let summaryError = $state<string | null>(null);
 	let originalTranscript = '';
+
+	// A generation started on a previous visit may still be running (its poll
+	// and background task survive navigation with the view callback detached).
+	// Re-attach a minimal terminal handler so this view tracks it live; the
+	// richer regeneration-specific handling only matters to the session that
+	// started the run.
+	{
+		const meetingId = getMeeting()?.id;
+		if (meetingId) {
+			const resumed = sidebar.reattachSummaryUpdates(meetingId, (result) => {
+				if (result.status === 'completed') {
+					void (async () => {
+						try {
+							const existing = (await invoke('api_get_summary', { meetingId })) as {
+								data?: Summary | null;
+							};
+							if (existing?.data) setAiSummary(existing.data);
+							summaryStatus = 'completed';
+							summaryError = null;
+						} catch (error) {
+							console.error('Failed to load summary after resumed generation:', error);
+							summaryStatus = 'idle';
+						}
+					})();
+				} else if (result.status === 'error' || result.status === 'failed') {
+					summaryStatus = 'error';
+					summaryError = result.error ?? 'Summary generation failed';
+				} else if (result.status === 'cancelled') {
+					summaryStatus = 'idle';
+				}
+			});
+			if (resumed) summaryStatus = 'summarizing';
+		}
+	}
 	// Remembered so Regenerate can reuse the user's steering instead of dropping it.
 	let lastCustomPrompt = '';
 	let phaseUnlisten: UnlistenFn | null = null;
