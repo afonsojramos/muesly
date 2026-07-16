@@ -179,6 +179,33 @@ test('target-scoped Cargo and compiler inputs change the evaluator digest', (t) 
 	assert.notEqual(changedCompiler.sha256, baseline.sha256);
 });
 
+test('target-scoped settings for unrelated targets do not change the evaluator digest', (t) => {
+	const repositoryRoot = createRepository(t);
+	const baseline = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=x86-64',
+			},
+		}),
+	);
+	const unrelatedTarget = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=x86-64',
+				CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: '-C target-cpu=native',
+				CC_aarch64_unknown_linux_gnu: 'zig cc',
+				PKG_CONFIG_PATH_aarch64_unknown_linux_gnu: '/private/arm/pkgconfig',
+			},
+		}),
+	);
+
+	assert.equal(unrelatedTarget.sha256, baseline.sha256);
+});
+
 test('refuses tracked unstaged evaluator changes without exposing their path or content', (t) => {
 	const repositoryRoot = createRepository(t);
 	fs.appendFileSync(path.join(repositoryRoot, 'tracked.txt'), 'private transcript fragment\n');

@@ -45,12 +45,14 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'HIP_PATH',
 	'IPHONEOS_DEPLOYMENT_TARGET',
 	'LDFLAGS',
+	'LD',
 	'LIBCLANG_PATH',
 	'MACOSX_DEPLOYMENT_TARGET',
 	'OPENSSL_DIR',
 	'OPENSSL_INCLUDE_DIR',
 	'OPENSSL_LIB_DIR',
 	'OPENSSL_STATIC',
+	'NM',
 	'PKG_CONFIG_ALL_DYNAMIC',
 	'PKG_CONFIG_ALL_STATIC',
 	'PKG_CONFIG_ALLOW_CROSS',
@@ -65,18 +67,36 @@ export const EVALUATOR_BUILD_ENV_ALLOWLIST = Object.freeze([
 	'RUSTC_WORKSPACE_WRAPPER',
 	'RUSTFLAGS',
 	'RUSTUP_TOOLCHAIN',
+	'RANLIB',
 	'SDKROOT',
 	'SOURCE_DATE_EPOCH',
+	'STRIP',
 	'VCPKG_ROOT',
 	'VULKAN_SDK',
 ]);
 
-const EVALUATOR_TARGET_BUILD_ENV_PATTERNS = Object.freeze([
-	/^CARGO_TARGET_[A-Z0-9_]+$/,
-	/^(?:AR|CC|CFLAGS|CPPFLAGS|CXX|CXXFLAGS|LDFLAGS)_.+$/,
-	/^(?:HOST|TARGET)_(?:AR|CC|CFLAGS|CPPFLAGS|CXX|CXXFLAGS|LDFLAGS)$/,
-	/^PKG_CONFIG_[A-Z0-9_]+_.+$/,
-	/^.+_PKG_CONFIG_(?:LIBDIR|PATH|SYSROOT_DIR)$/,
+const TARGET_TOOL_VARIABLES = Object.freeze([
+	'AR',
+	'CC',
+	'CFLAGS',
+	'CPPFLAGS',
+	'CXX',
+	'CXXFLAGS',
+	'LD',
+	'LDFLAGS',
+	'NM',
+	'OBJC',
+	'OBJCFLAGS',
+	'RANLIB',
+	'STRIP',
+]);
+const TARGET_PKG_CONFIG_VARIABLES = Object.freeze([
+	'PKG_CONFIG_ALL_DYNAMIC',
+	'PKG_CONFIG_ALL_STATIC',
+	'PKG_CONFIG_ALLOW_CROSS',
+	'PKG_CONFIG_LIBDIR',
+	'PKG_CONFIG_PATH',
+	'PKG_CONFIG_SYSROOT_DIR',
 ]);
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -173,24 +193,48 @@ function environmentValue(buildEnv, name) {
 	return Object.hasOwn(buildEnv, name) ? buildEnv[name] : undefined;
 }
 
-function selectedBuildEnvironmentNames(...environments) {
-	const names = new Set(EVALUATOR_BUILD_ENV_ALLOWLIST);
-	for (const environment of environments) {
-		if (environment === null || typeof environment !== 'object' || Array.isArray(environment)) {
-			throw new Error('buildEnv must be an environment map');
+function targetEnvironmentNames(targetTriples) {
+	const names = new Set();
+	for (const targetTriple of targetTriples) {
+		const underscored = targetTriple.replaceAll('-', '_').replaceAll('.', '_');
+		for (const variable of TARGET_TOOL_VARIABLES) {
+			names.add(`${variable}_${targetTriple}`);
+			names.add(`${variable}_${underscored}`);
 		}
-		for (const name of Object.keys(environment)) {
-			if (EVALUATOR_TARGET_BUILD_ENV_PATTERNS.some((pattern) => pattern.test(name))) {
-				names.add(name);
-			}
+		for (const variable of TARGET_PKG_CONFIG_VARIABLES) {
+			names.add(`${variable}_${targetTriple}`);
+			names.add(`${variable}_${underscored}`);
+			names.add(`${targetTriple}_${variable}`);
+			names.add(`${underscored}_${variable}`);
+		}
+	}
+	for (const variable of TARGET_TOOL_VARIABLES) {
+		names.add(`HOST_${variable}`);
+		names.add(`TARGET_${variable}`);
+	}
+	return names;
+}
+
+function selectedBuildEnvironmentNames(buildEnv, targetTriple, hostTriple) {
+	if (buildEnv === null || typeof buildEnv !== 'object' || Array.isArray(buildEnv)) {
+		throw new Error('buildEnv must be an environment map');
+	}
+	const names = new Set(EVALUATOR_BUILD_ENV_ALLOWLIST);
+	const targetNames = targetEnvironmentNames(new Set([targetTriple, hostTriple]));
+	const cargoPrefixes = [...new Set([targetTriple, hostTriple])].map(
+		(triple) => `CARGO_TARGET_${triple.replaceAll('-', '_').replaceAll('.', '_').toUpperCase()}_`,
+	);
+	for (const name of Object.keys(buildEnv)) {
+		if (targetNames.has(name) || cargoPrefixes.some((prefix) => name.startsWith(prefix))) {
+			names.add(name);
 		}
 	}
 	return [...names].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
-function buildEnvironmentSha256(buildEnv) {
+function buildEnvironmentSha256(buildEnv, targetTriple, hostTriple) {
 	const variables = {};
-	for (const name of selectedBuildEnvironmentNames(buildEnv)) {
+	for (const name of selectedBuildEnvironmentNames(buildEnv, targetTriple, hostTriple)) {
 		const value = environmentValue(buildEnv, name);
 		if (value !== undefined && typeof value !== 'string') {
 			throw new Error(`buildEnv.${name} must be a string when set`);
@@ -437,7 +481,7 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 		throw new Error('rustcExecutable must be a non-empty string');
 	}
 	const commandEnvironment = { ...process.env };
-	for (const name of selectedBuildEnvironmentNames(process.env, buildEnv)) {
+	for (const name of EVALUATOR_BUILD_ENV_ALLOWLIST) {
 		const value = environmentValue(buildEnv, name);
 		if (value === undefined) {
 			delete commandEnvironment[name];
@@ -480,13 +524,13 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	const cargoLockPath = path.join(canonicalRoot, 'Cargo.lock');
 	const cargoLockSha256 = sha256RegularFile(cargoLockPath, 'Cargo.lock');
 	const normalizedFeatures = normalizeCargoFeatures(cargoFeatures);
-	const buildEnvSha256 = buildEnvironmentSha256(buildEnv);
 	const { rustcVv, hostTriple } = rustcVersion(canonicalRoot, buildEnv, rustcExecutable);
 	const selectedTarget =
 		targetTriple ?? environmentValue(buildEnv, 'CARGO_BUILD_TARGET') ?? hostTriple;
 	if (typeof selectedTarget !== 'string' || !TARGET_TRIPLE_PATTERN.test(selectedTarget)) {
 		throw new Error('targetTriple must be a valid Rust target triple');
 	}
+	const buildEnvSha256 = buildEnvironmentSha256(buildEnv, selectedTarget, hostTriple);
 
 	requireCleanWorktree(gitExecutable, canonicalRoot);
 	const finalCommit = gitOutput(
