@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import path from 'node:path';
 
 import {
 	assertBenchmarkPlatform,
@@ -6,6 +7,7 @@ import {
 	evaluatorPlatformForTargetTriple,
 } from './benchmark-executable.ts';
 import { validateCoverageTargets } from './coverage.ts';
+import { corpusFingerprint, validateCorpusDocument } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 import { validateRunReport } from './report.ts';
 import { WER_SCORER_ID } from './wer.ts';
@@ -340,10 +342,21 @@ function taskIdentity(task) {
 		model: requiredString(task.model, 'task.model'),
 		target_backend: mapping.targetBackend,
 		sample_id: requiredString(task.sample_id, 'task.sample_id'),
+		sample_revision_sha256: requireSha256(
+			task.sample_revision_sha256,
+			'task.sample_revision_sha256',
+		),
 		audio_duration_seconds: positiveFiniteNumber(
 			task.audio_duration_seconds,
 			'task.audio_duration_seconds',
 		),
+		session_id: requiredString(task.session_id, 'task.session_id'),
+		language: requiredString(task.language, 'task.language'),
+		target_language: requiredString(task.target_language, 'task.target_language'),
+		noise_condition: requiredString(task.noise_condition, 'task.noise_condition'),
+		scenario: requiredString(task.scenario, 'task.scenario'),
+		speakers: positiveFiniteNumber(task.speakers, 'task.speakers'),
+		provenance_basis: requiredString(task.provenance_basis, 'task.provenance_basis'),
 		thresholds,
 		accelerator,
 	};
@@ -403,6 +416,35 @@ export function taskReportFilename(task, reportIdentity = null) {
 	return `${prefix}-${baseDigest.slice(0, 16)}-${actualDigest.slice(0, 16)}.run.json`;
 }
 
+function planningCorpusDocument(corpus) {
+	const samples = Array.isArray(corpus.samples)
+		? corpus.samples.map((sample) => {
+				if (!isObject(sample)) return sample;
+				const { audio_file: _audioFile, reference_file: _referenceFile, ...source } = sample;
+				return source;
+			})
+		: corpus.samples;
+	const document = {
+		schema_version: corpus.schema_version,
+		corpus_id: corpus.corpus_id,
+		description: corpus.description,
+		distribution: corpus.distribution,
+		samples,
+	};
+	const manifestPath =
+		typeof corpus.manifest_path === 'string'
+			? path.resolve(corpus.manifest_path)
+			: path.resolve('corpus-local.json');
+	const errors = validateCorpusDocument(document, {
+		manifestPath,
+		checkFiles: false,
+	});
+	if (errors.length > 0) {
+		throw new Error(`invalid planning corpus:\n- ${errors.join('\n- ')}`);
+	}
+	return document;
+}
+
 export function planCorpusBenchmarkTasks({
 	corpus,
 	targets,
@@ -411,9 +453,12 @@ export function planCorpusBenchmarkTasks({
 	evaluatorRevisions,
 }) {
 	if (!isObject(corpus)) throw new Error('corpus must be an object');
-	if (!Array.isArray(corpus.samples)) throw new Error('corpus.samples must be an array');
+	const planningCorpus = planningCorpusDocument(corpus);
 	const corpusId = requiredString(corpus.corpus_id, 'corpus.corpus_id');
-	const corpusFingerprint = requireSha256(corpus.corpus_fingerprint, 'corpus.corpus_fingerprint');
+	const corpusFingerprintValue = requireSha256(
+		corpus.corpus_fingerprint,
+		'corpus.corpus_fingerprint',
+	);
 	const targetErrors = validateCoverageTargets(targets);
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
@@ -427,7 +472,7 @@ export function planCorpusBenchmarkTasks({
 	const languageSet = new Set(languages);
 	const noiseSet = new Set(noiseConditions);
 	const samplesByCell = new Map();
-	for (const sample of corpus.samples) {
+	for (const sample of planningCorpus.samples) {
 		if (
 			!isObject(sample) ||
 			sample.scenario !== 'meeting' ||
@@ -450,6 +495,7 @@ export function planCorpusBenchmarkTasks({
 		samplesByCell.get(cell).push({
 			id: sampleId,
 			session_id: sessionId,
+			sample_revision_sha256: corpusFingerprint(sample),
 			audio_duration_seconds: audioDurationSeconds,
 			language: sample.language,
 			target_language: language,
@@ -526,7 +572,7 @@ export function planCorpusBenchmarkTasks({
 					const task = {
 						variant_index: variantIndex,
 						corpus_id: corpusId,
-						corpus_fingerprint: corpusFingerprint,
+						corpus_fingerprint: corpusFingerprintValue,
 						target_id: targetId,
 						wer_scorer: WER_SCORER_ID,
 						evaluator_revision: copyEvaluatorRevision(evaluator.revision),
@@ -537,6 +583,7 @@ export function planCorpusBenchmarkTasks({
 						real_run_backend: mapping.realRunBackend,
 						accelerator,
 						sample_id: sample.id,
+						sample_revision_sha256: sample.sample_revision_sha256,
 						audio_duration_seconds: sample.audio_duration_seconds,
 						session_id: sample.session_id,
 						language: sample.language,

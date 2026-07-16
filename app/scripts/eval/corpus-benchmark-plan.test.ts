@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
+import { isCorpusBenchmarkCheckpointName } from './corpus-benchmark-checkpoints.ts';
 import {
 	assertTaskCheckpoint,
 	planCorpusBenchmarkTasks,
@@ -21,6 +23,10 @@ const thresholds = {
 	max_hallucinated_words: 2,
 };
 
+function digest(value) {
+	return createHash('sha256').update(value).digest('hex');
+}
+
 function sample({
 	id,
 	session = id,
@@ -30,22 +36,47 @@ function sample({
 	basis = 'participant-consent',
 	speakers = 2,
 	duration = 20,
+	consentedUses = ['asr-benchmarking'],
 }) {
+	const sessionId = `session-${session}`;
+	const provenance =
+		basis === 'participant-consent'
+			? {
+					basis,
+					redistribution: 'local-only',
+					consent_record_id: `consent-${id}`,
+					consent_date: '2026-07-01',
+					consented_uses: consentedUses,
+				}
+			: {
+					basis,
+					redistribution: 'repository',
+					source_url: 'https://example.com/public-audio',
+					license: 'CC0-1.0',
+				};
 	return {
 		id,
-		session_id: `session-${session}`,
+		session_id: sessionId,
+		audio_path: `local-corpus/${sessionId}/${id}.wav`,
+		audio_sha256: digest(`audio:${id}`),
+		reference_path: `local-corpus/${sessionId}/${id}.txt`,
+		reference_sha256: digest(`reference:${id}`),
 		duration_seconds: duration,
 		language,
+		whisper_language: language.split('-')[0].toLowerCase(),
 		noise_condition: noise,
 		scenario,
 		speakers,
-		provenance: { basis },
+		provenance,
 	};
 }
 
 function corpus(samples) {
 	return {
+		schema_version: 2,
 		corpus_id: 'consented-meetings-v1',
+		description: 'Validated local consented meetings.',
+		distribution: 'local',
 		corpus_fingerprint: fingerprint,
 		samples,
 	};
@@ -230,7 +261,7 @@ test('plans only eligible samples in deterministic variant, cell, session, and s
 		sample({ id: 'en-clean-a2', session: 'a' }),
 		sample({ id: 'en-clean-a1', session: 'a' }),
 		sample({ id: 'fr-clean', language: 'fr' }),
-		sample({ id: 'public-en', basis: 'public-domain' }),
+		sample({ id: 'public-en', basis: 'public-domain', scenario: 'reading' }),
 		sample({ id: 'dictation-en', scenario: 'dictation' }),
 	];
 	const options = {
@@ -269,6 +300,76 @@ test('plans only eligible samples in deterministic variant, cell, session, and s
 	assert(tasks.every((task) => !task.report_filename.includes('/')));
 	assert(tasks.every((task) => !task.report_filename.includes(task.sample_id)));
 	assert(tasks.every((task) => task.report_filename.length < 120));
+});
+
+test('requires a fully valid consented corpus before planning', () => {
+	const missingUse = sample({
+		id: 'missing-asr-consent',
+		consentedUses: [],
+	});
+	assert.throws(
+		() =>
+			planCorpusBenchmarkTasks({
+				corpus: corpus([missingUse]),
+				targets: {
+					...targets,
+					languages: ['en'],
+					noise_conditions: ['clean'],
+					benchmark_variants: [
+						{ provider: 'whisper', model: 'whisper-test', backend: 'metal' },
+					],
+				},
+				thresholds,
+				evaluatorRevisions: { metal: evaluatorRevisionEntry('metal') },
+			}),
+		/consented_uses must include asr-benchmarking/,
+	);
+
+	assert.throws(
+		() =>
+			planCorpusBenchmarkTasks({
+				corpus: corpus([
+					sample({ id: 'duplicate-sample', session: 'a' }),
+					sample({ id: 'duplicate-sample', session: 'b' }),
+				]),
+				targets: {
+					...targets,
+					languages: ['en'],
+					noise_conditions: ['clean'],
+					benchmark_variants: [
+						{ provider: 'whisper', model: 'whisper-test', backend: 'metal' },
+					],
+				},
+				thresholds,
+				evaluatorRevisions: { metal: evaluatorRevisionEntry('metal') },
+			}),
+		/sample 'duplicate-sample'\.id is duplicated/,
+	);
+});
+
+test('binds every compared sample attribute into the immutable task identity', () => {
+	const task = plannedTask();
+	const baseline = structuredClone(task);
+	delete baseline.task_id;
+	delete baseline.report_filename;
+	const baselineFilename = taskReportFilename(baseline);
+
+	for (const [field, value] of [
+		['sample_revision_sha256', 'f'.repeat(64)],
+		['session_id', 'session-other'],
+		['language', 'en-GB'],
+		['target_language', 'fr'],
+		['noise_condition', 'office'],
+		['scenario', 'interview'],
+		['speakers', 3],
+		['provenance_basis', 'public-domain'],
+	]) {
+		assert.notEqual(
+			taskReportFilename({ ...baseline, [field]: value }),
+			baselineFilename,
+			field,
+		);
+	}
 });
 
 test('records explicit accelerators and includes auto versus explicit mode in task identity', () => {
@@ -543,10 +644,24 @@ test('plans every supported target/backend revision with exact features', () => 
 				}),
 			},
 		});
-		assert.equal(task.provider, provider);
-		assert.equal(task.target_backend, backend);
-		assert.equal(task.evaluator_revision.target_triple, targetTriple);
-	}
+			assert.equal(task.provider, provider);
+			assert.equal(task.target_backend, backend);
+			assert.equal(task.evaluator_revision.target_triple, targetTriple);
+			assert(
+				isCorpusBenchmarkCheckpointName(
+					taskReportFilename(task, {
+						model_artifact_sha256: artifact,
+						operating_system: 'test-os',
+						architecture: 'test-architecture',
+						hardware_profile:
+							`cpu=Test CPU;logical_cpus=1;memory_bytes=1;runtime_env_sha256=${'d'.repeat(64)}`,
+						accelerator: 'test-accelerator',
+						benchmark_executable_sha256: executable,
+					}),
+				),
+				`${provider}/${backend}`,
+			);
+		}
 });
 
 test('requires explicit accelerator identities when the target cannot derive one', () => {
