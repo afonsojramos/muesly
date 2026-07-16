@@ -211,7 +211,6 @@ function assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata) {
 	if (sessions.size === 0) return;
 	if (
 		ownerMetadata.operation === 'withdrawal' &&
-		sessions.size === 1 &&
 		sessions.has(ownerMetadata.sessionId)
 	) {
 		return;

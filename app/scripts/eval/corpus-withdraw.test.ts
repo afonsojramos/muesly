@@ -447,6 +447,80 @@ test('retires normal withdrawal recovery evidence before deleting its marker', (
 	assert(!fs.existsSync(path.join(localCorpusRoot, 'session-withdraw')));
 });
 
+test('binds marker-only recovery to the exact manifest path', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const markerPath = path.join(localCorpusRoot, '.withdrawal-session-withdraw.json');
+	fs.writeFileSync(
+		markerPath,
+		JSON.stringify({
+			schema_version: 2,
+			session_id: 'session-withdraw',
+			removed_samples: 2,
+			manifest_path: manifestPath,
+			results_quarantine:
+				'.withdrawal-results-session-withdraw-00000000-0000-4000-8000-000000000001',
+			started_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const mistypedManifestPath = path.join(directory, 'corpus-lcoal.json');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath: mistypedManifestPath,
+				sessionId: 'session-withdraw',
+				confirmWithdrawal: true,
+			}),
+		/corpus manifest does not exist/,
+	);
+	assert(fs.existsSync(path.join(localCorpusRoot, 'session-withdraw')));
+	assert(fs.existsSync(markerPath));
+	assert(fs.existsSync(manifestPath));
+});
+
+test('resumes multiple pending withdrawal markers serially', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-multiple-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	fs.mkdirSync(localCorpusRoot);
+	fs.writeFileSync(
+		manifestPath,
+		JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			description: 'Local-only participant-consented multilingual meeting corpus.',
+			distribution: 'local',
+			samples: [],
+		}),
+	);
+	for (const sessionId of ['session-first', 'session-second']) {
+		fs.mkdirSync(path.join(localCorpusRoot, sessionId));
+		fs.writeFileSync(
+			path.join(localCorpusRoot, `.withdrawal-${sessionId}.json`),
+			JSON.stringify({
+				schema_version: 2,
+				session_id: sessionId,
+				removed_samples: 0,
+				manifest_path: manifestPath,
+				results_quarantine: `.withdrawal-results-${sessionId}-00000000-0000-4000-8000-000000000001`,
+				started_at: '2026-07-16T00:00:00Z',
+			}),
+		);
+	}
+
+	for (const sessionId of ['session-first', 'session-second']) {
+		const result = withdrawConsentedSession({
+			manifestPath,
+			sessionId,
+			confirmWithdrawal: true,
+		});
+		assert.equal(result.resumed, true);
+		assert(!fs.existsSync(path.join(localCorpusRoot, sessionId)));
+		assert(!fs.existsSync(path.join(localCorpusRoot, `.withdrawal-${sessionId}.json`)));
+	}
+});
+
 test('completes an orphan withdrawal against an existing manifest after cleanup', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');

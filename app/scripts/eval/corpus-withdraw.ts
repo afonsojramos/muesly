@@ -108,7 +108,7 @@ function validateWithdrawalOptions(options) {
 	}
 }
 
-function readWithdrawalMarker(markerPath, sessionId) {
+function readWithdrawalMarker(markerPath, sessionId, manifestPath) {
 	if (!fs.existsSync(markerPath)) return null;
 	let marker;
 	try {
@@ -124,7 +124,15 @@ function readWithdrawalMarker(markerPath, sessionId) {
 	const quarantineValid =
 		marker.schema_version === 2 &&
 		/^\.withdrawal-results-[a-z0-9-]+-[a-f0-9-]+$/.test(marker.results_quarantine ?? '');
-	if (!commonFieldsValid || (marker.schema_version !== 1 && !quarantineValid)) {
+	const manifestValid =
+		marker.schema_version !== 2 ||
+		marker.manifest_path === undefined ||
+		(typeof marker.manifest_path === 'string' &&
+			path.resolve(marker.manifest_path) === manifestPath);
+	if (
+		!commonFieldsValid ||
+		(marker.schema_version !== 1 && (!quarantineValid || !manifestValid))
+	) {
 		throw new Error(`pending withdrawal record is invalid: ${markerPath}`);
 	}
 	if (marker.schema_version === 1) {
@@ -136,6 +144,22 @@ function readWithdrawalMarker(markerPath, sessionId) {
 		};
 	}
 	return marker;
+}
+
+function markerTargetsManifest(markerPath, sessionId, manifestPath) {
+	const markerEntry = fs.lstatSync(markerPath, { throwIfNoEntry: false });
+	if (!markerEntry?.isFile() || markerEntry.isSymbolicLink()) return false;
+	try {
+		const marker = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+		return (
+			marker.schema_version === 2 &&
+			marker.session_id === sessionId &&
+			typeof marker.manifest_path === 'string' &&
+			path.resolve(marker.manifest_path) === manifestPath
+		);
+	} catch {
+		return false;
+	}
 }
 
 function writeWithdrawalMarker(markerPath, marker) {
@@ -196,7 +220,9 @@ export function withdrawConsentedSession(options) {
 		manifestPath,
 		options.sessionId,
 	);
-	const allowMissingManifest = interruptedOperation !== null || fs.existsSync(markerPath);
+	const allowMissingManifest =
+		interruptedOperation !== null ||
+		markerTargetsManifest(markerPath, options.sessionId, manifestPath);
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	}
@@ -222,7 +248,7 @@ export function withdrawConsentedSession(options) {
 		}
 		const document = readLocalManifest(manifestPath, allowMissingManifest);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
-		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId);
+		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId, manifestPath);
 			const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 			if (withdrawn.length === 0) {
 				if (pendingMarker) {
@@ -260,12 +286,13 @@ export function withdrawConsentedSession(options) {
 				}
 			}
 			markLocalCorpusOrphanCleanup(lockPath, lockToken);
-			const orphanMarker = {
-				schema_version: 2,
-				session_id: options.sessionId,
-				removed_samples: 0,
-				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
-				started_at: new Date().toISOString(),
+				const orphanMarker = {
+					schema_version: 2,
+					session_id: options.sessionId,
+					removed_samples: 0,
+					manifest_path: manifestPath,
+					results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
+					started_at: new Date().toISOString(),
 				};
 				writeWithdrawalMarker(markerPath, orphanMarker);
 				completeRecovery();
@@ -313,12 +340,13 @@ export function withdrawConsentedSession(options) {
 
 		let marker = pendingMarker;
 		if (marker?.schema_version !== 2) {
-			marker = {
-				schema_version: 2,
-				session_id: options.sessionId,
-				removed_samples: withdrawn.length,
-				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
-				started_at: pendingMarker?.started_at ?? new Date().toISOString(),
+				marker = {
+					schema_version: 2,
+					session_id: options.sessionId,
+					removed_samples: withdrawn.length,
+					manifest_path: manifestPath,
+					results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
+					started_at: pendingMarker?.started_at ?? new Date().toISOString(),
 			};
 			writeWithdrawalMarker(markerPath, marker);
 		}
