@@ -191,6 +191,32 @@ test('reclaims interrupted intake files whether staged or already promoted', () 
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });
 
+test('preserves recordings when stale-lock recovery finds an invalid manifest', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const sessionDirectory = path.join(corpusDirectory, 'session-preserve');
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	fs.writeFileSync(
+		path.join(corpusDirectory, '.intake.lock'),
+		JSON.stringify({ schema_version: 1, pid: 999_999_999, created_at: '2026-07-15T00:00:00Z' }),
+	);
+	const onlyCopy = path.join(sessionDirectory, 'only-copy.wav');
+	fs.writeFileSync(onlyCopy, 'only copy of consented audio');
+	fs.writeFileSync(
+		options.manifestPath,
+		JSON.stringify({
+			schema_version: 2,
+			corpus_id: 'consented-meetings-v1',
+			distribution: 'local',
+			samples: {},
+		}),
+	);
+
+	assert.throws(() => intakeConsentedSample(options), /cannot recover with an invalid corpus manifest/);
+	assert(fs.existsSync(onlyCopy));
+	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
+});
+
 test('CLI imports through the documented consent-gated path', () => {
 	const { options } = intakeFixture();
 	const run = spawnSync(

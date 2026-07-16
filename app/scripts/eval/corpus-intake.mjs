@@ -111,7 +111,10 @@ function readLockOwner(lockPath) {
 function referencedCorpusFiles(manifestPath) {
 	if (!fs.existsSync(manifestPath)) return new Set();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	if (!Array.isArray(document.samples)) return new Set();
+	const errors = validateCorpusDocument(document, { manifestPath, checkFiles: false });
+	if (errors.length > 0) {
+		throw new Error(`cannot recover with an invalid corpus manifest:\n- ${errors.join('\n- ')}`);
+	}
 	return new Set(
 		document.samples.flatMap((sample) =>
 			['audio_path', 'reference_path']
@@ -200,7 +203,7 @@ function acquireIntakeLock(lockPath, localCorpusRoot, manifestPath) {
 			try {
 				fs.renameSync(lockPath, stalePath);
 			} catch (error) {
-				if (['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes(error.code)) continue;
+				if (['ENOENT', 'EEXIST', 'ENOTEMPTY', 'ENOTDIR', 'EISDIR'].includes(error.code)) continue;
 				throw error;
 			}
 		}
