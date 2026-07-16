@@ -74,7 +74,8 @@ Reports contain micro-averaged WER (total word errors divided by total reference
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting.
+as a five-minute meeting. Inputs must use run-report schema 2, name the same corpus, and
+use identical pass thresholds; the aggregator rejects comparisons that would lose that context.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.

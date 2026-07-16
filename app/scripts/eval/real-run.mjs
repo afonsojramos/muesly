@@ -210,7 +210,7 @@ for (const sample of fixtures) {
 
 if (outputPath) {
 	const report = {
-		schema_version: 1,
+		schema_version: 2,
 		corpus_id: corpus.corpus_id,
 		started_at: runStartedAt,
 		completed_at: new Date().toISOString(),

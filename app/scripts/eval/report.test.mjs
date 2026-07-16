@@ -26,10 +26,11 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		corpus_id: 'consented-meetings-v1',
 		provider: 'whisper',
 		model: 'large-v3-turbo-q5_0',
+		thresholds: { max_wer_percent: 10, max_hallucinated_words: 2 },
 		results,
 	};
 }
@@ -89,4 +90,21 @@ test('rejects reports that cannot produce trustworthy weighted metrics', () => {
 		'report.results[0].word_errors must be a non-negative integer for WER samples',
 	]);
 	assert.throws(() => aggregateRunReports([malformed]), /invalid benchmark report/);
+});
+
+test('rejects mixed corpora and incompatible pass thresholds', () => {
+	const first = report([result()]);
+	const otherCorpus = { ...report([result()]), corpus_id: 'another-corpus' };
+	assert.throws(() => aggregateRunReports([first, otherCorpus]), /different corpora/);
+
+	const otherThreshold = {
+		...report([result()]),
+		thresholds: { max_wer_percent: 20, max_hallucinated_words: 2 },
+	};
+	assert.throws(() => aggregateRunReports([first, otherThreshold]), /different pass thresholds/);
+});
+
+test('rejects legacy reports after the weighted-WER schema change', () => {
+	const legacy = { ...report([result()]), schema_version: 1 };
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 2']);
 });

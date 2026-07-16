@@ -28,10 +28,19 @@ export function validateRunReport(report, label = 'report') {
 	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	if (report.schema_version !== 1) errors.push(`${label}.schema_version must be 1`);
+	if (report.schema_version !== 2) errors.push(`${label}.schema_version must be 2`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	requireString(report.provider, `${label}.provider`, errors);
 	requireString(report.model, `${label}.model`, errors);
+	if (report.thresholds === null || typeof report.thresholds !== 'object' || Array.isArray(report.thresholds)) {
+		errors.push(`${label}.thresholds must be an object`);
+	} else {
+		for (const field of ['max_wer_percent', 'max_hallucinated_words']) {
+			if (!finiteNumber(report.thresholds[field]) || report.thresholds[field] < 0) {
+				errors.push(`${label}.thresholds.${field} must be a non-negative finite number`);
+			}
+		}
+	}
 	if (!Array.isArray(report.results) || report.results.length === 0) {
 		errors.push(`${label}.results must be a non-empty array`);
 		return errors;
@@ -131,9 +140,26 @@ function summarize(records) {
 export function aggregateRunReports(reports) {
 	if (!Array.isArray(reports) || reports.length === 0) throw new Error('at least one run report is required');
 	const records = [];
+	let corpusId;
+	let thresholds;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
+		if (corpusId === undefined) {
+			corpusId = report.corpus_id;
+		} else if (report.corpus_id !== corpusId) {
+			throw new Error(
+				`cannot aggregate different corpora: '${corpusId}' and '${report.corpus_id}'`,
+			);
+		}
+		if (thresholds === undefined) {
+			thresholds = { ...report.thresholds };
+		} else if (
+			report.thresholds.max_wer_percent !== thresholds.max_wer_percent ||
+			report.thresholds.max_hallucinated_words !== thresholds.max_hallucinated_words
+		) {
+			throw new Error('cannot aggregate reports produced with different pass thresholds');
+		}
 		for (const result of report.results) {
 			records.push({ ...result, provider: report.provider, model: report.model });
 		}
@@ -155,6 +181,8 @@ export function aggregateRunReports(reports) {
 	return {
 		schema_version: 1,
 		generated_at: new Date().toISOString(),
+		corpus_id: corpusId,
+		thresholds,
 		source_report_count: reports.length,
 		sample_result_count: records.length,
 		groups,
