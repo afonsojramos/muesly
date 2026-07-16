@@ -140,6 +140,21 @@ const TARGET_PKG_CONFIG_VARIABLES = Object.freeze([
 	'PKG_CONFIG_PATH',
 	'PKG_CONFIG_SYSROOT_DIR',
 ]);
+const COMMAND_DISCOVERY_ENVIRONMENT_NAMES = Object.freeze([
+	'PATH',
+	'Path',
+	'PATHEXT',
+	'SystemRoot',
+	'WINDIR',
+]);
+const RUSTC_PROBE_ENVIRONMENT_NAMES = Object.freeze([
+	...COMMAND_DISCOVERY_ENVIRONMENT_NAMES,
+	'CARGO_HOME',
+	'HOME',
+	'RUSTUP_HOME',
+	'RUSTUP_TOOLCHAIN',
+	'USERPROFILE',
+]);
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const GIT_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
@@ -459,10 +474,53 @@ function commandOutput(executable, args, options, failureMessage) {
 	}
 }
 
-function gitOutput(gitExecutable, repositoryRoot, args, failureMessage) {
+function strictCommandEnvironment(buildEnv, names, fixed = {}) {
+	if (buildEnv === null || typeof buildEnv !== 'object' || Array.isArray(buildEnv)) {
+		throw new Error('buildEnv must be an environment map');
+	}
+	// Never inherit process.env here. Every copied value is covered by
+	// build_env_sha256; fixed values are part of this evaluator protocol.
+	const environment = {};
+	for (const name of names) {
+		const value = environmentValue(buildEnv, name);
+		if (value === undefined) continue;
+		if (typeof value !== 'string') {
+			throw new Error(`buildEnv.${name} must be a string when set`);
+		}
+		environment[name] = value;
+	}
+	return { ...environment, ...fixed };
+}
+
+function gitCommandEnvironment(buildEnv) {
+	// Repository, worktree, index, config-injection, object-store, and dynamic
+	// loader overrides are intentionally absent.
+	return strictCommandEnvironment(buildEnv, COMMAND_DISCOVERY_ENVIRONMENT_NAMES, {
+		GIT_ATTR_NOSYSTEM: '1',
+		GIT_CONFIG_COUNT: '0',
+		GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null',
+		GIT_CONFIG_NOSYSTEM: '1',
+		GIT_OPTIONAL_LOCKS: '0',
+		GIT_TERMINAL_PROMPT: '0',
+		LANG: 'C',
+		LC_ALL: 'C',
+	});
+}
+
+function rustcCommandEnvironment(buildEnv) {
+	// Cargo-only inputs such as RUSTC_WRAPPER and RUSTFLAGS remain attested as
+	// build inputs, but cannot interpose on the compiler identity probe.
+	return strictCommandEnvironment(buildEnv, RUSTC_PROBE_ENVIRONMENT_NAMES, {
+		LANG: 'C',
+		LC_ALL: 'C',
+	});
+}
+
+function gitOutput(gitExecutable, repositoryRoot, environment, args, failureMessage) {
 	return commandOutput(
 		gitExecutable,
 		[
+			'--no-replace-objects',
 			'-c',
 			'core.fsmonitor=false',
 			'-c',
@@ -472,21 +530,17 @@ function gitOutput(gitExecutable, repositoryRoot, args, failureMessage) {
 			...args,
 		],
 		{
-			env: {
-				...process.env,
-				GIT_OPTIONAL_LOCKS: '0',
-				LANG: 'C',
-				LC_ALL: 'C',
-			},
+			env: environment,
 		},
 		failureMessage,
 	);
 }
 
-function requireCleanWorktree(gitExecutable, repositoryRoot) {
+function requireCleanWorktree(gitExecutable, repositoryRoot, environment) {
 	const status = gitOutput(
 		gitExecutable,
 		repositoryRoot,
+		environment,
 		['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=none'],
 		'unable to inspect evaluator Git worktree state',
 	);
@@ -497,7 +551,7 @@ function requireCleanWorktree(gitExecutable, repositoryRoot) {
 	}
 }
 
-function resolveGitState(repositoryRoot, gitExecutable) {
+function resolveGitState(repositoryRoot, gitExecutable, environment) {
 	let canonicalRoot;
 	try {
 		const stat = fs.statSync(repositoryRoot);
@@ -510,6 +564,7 @@ function resolveGitState(repositoryRoot, gitExecutable) {
 	const topLevel = gitOutput(
 		gitExecutable,
 		canonicalRoot,
+		environment,
 		['rev-parse', '--show-toplevel'],
 		'repositoryRoot is not a Git worktree',
 	).trim();
@@ -526,6 +581,7 @@ function resolveGitState(repositoryRoot, gitExecutable) {
 	const gitCommit = gitOutput(
 		gitExecutable,
 		canonicalRoot,
+		environment,
 		['rev-parse', '--verify', 'HEAD^{commit}'],
 		'unable to resolve evaluator Git HEAD commit',
 	).trim();
@@ -535,10 +591,11 @@ function resolveGitState(repositoryRoot, gitExecutable) {
 	return { canonicalRoot, gitCommit };
 }
 
-function requireTrackedCargoLock(gitExecutable, repositoryRoot) {
+function requireTrackedCargoLock(gitExecutable, repositoryRoot, environment) {
 	gitOutput(
 		gitExecutable,
 		repositoryRoot,
+		environment,
 		['ls-files', '--error-unmatch', '--', 'Cargo.lock'],
 		'evaluator requires a tracked Cargo.lock at the repository root',
 	);
@@ -549,41 +606,10 @@ function rustcVersion(repositoryRoot, buildEnv, rustcExecutable) {
 	if (typeof executable !== 'string' || executable.length === 0) {
 		throw new Error('rustcExecutable must be a non-empty string');
 	}
-	const commandEnvironment = { ...process.env };
-	for (const name of EVALUATOR_BUILD_ENV_ALLOWLIST) {
-		const value = environmentValue(buildEnv, name);
-		if (value === undefined) {
-			delete commandEnvironment[name];
-		} else {
-			commandEnvironment[name] = value;
-		}
-	}
-	// A partial map is useful in tests and API callers. Preserve only the
-	// process-discovery variables needed to execute the selected rustc when the
-	// caller did not provide them; rustc -vV itself remains the authoritative
-	// toolchain identity.
-	for (const name of [
-		'PATH',
-		'Path',
-		'PATHEXT',
-		'HOME',
-		'USERPROFILE',
-		'RUSTUP_HOME',
-		'CARGO_HOME',
-		'SystemRoot',
-		'WINDIR',
-	]) {
-		if (
-			environmentValue(buildEnv, name) === undefined &&
-			typeof process.env[name] === 'string'
-		) {
-			commandEnvironment[name] = process.env[name];
-		}
-	}
 	const output = commandOutput(
 		executable,
 		['-vV'],
-		{ cwd: repositoryRoot, env: commandEnvironment },
+		{ cwd: repositoryRoot, env: rustcCommandEnvironment(buildEnv) },
 		'unable to execute rustc -vV for evaluator provenance',
 	);
 	return normalizeRustcVersion(output);
@@ -608,9 +634,14 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 		throw new Error('gitExecutable must be a non-empty string');
 	}
 
-	const { canonicalRoot, gitCommit } = resolveGitState(repositoryRoot, gitExecutable);
-	requireCleanWorktree(gitExecutable, canonicalRoot);
-	requireTrackedCargoLock(gitExecutable, canonicalRoot);
+	const gitEnvironment = gitCommandEnvironment(buildEnv);
+	const { canonicalRoot, gitCommit } = resolveGitState(
+		repositoryRoot,
+		gitExecutable,
+		gitEnvironment,
+	);
+	requireCleanWorktree(gitExecutable, canonicalRoot, gitEnvironment);
+	requireTrackedCargoLock(gitExecutable, canonicalRoot, gitEnvironment);
 
 	const cargoLockPath = path.join(canonicalRoot, 'Cargo.lock');
 	const cargoLockSha256 = sha256RegularFile(cargoLockPath, 'Cargo.lock');
@@ -623,10 +654,11 @@ export function evaluatorRevision(repositoryRoot, options = {}) {
 	}
 	const buildEnvSha256 = buildEnvironmentSha256(buildEnv, selectedTarget, hostTriple);
 
-	requireCleanWorktree(gitExecutable, canonicalRoot);
+	requireCleanWorktree(gitExecutable, canonicalRoot, gitEnvironment);
 	const finalCommit = gitOutput(
 		gitExecutable,
 		canonicalRoot,
+		gitEnvironment,
 		['rev-parse', '--verify', 'HEAD^{commit}'],
 		'unable to recheck evaluator Git HEAD commit',
 	).trim();

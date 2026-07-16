@@ -14,6 +14,33 @@ import {
 	validateEvaluatorRevision,
 } from './evaluator-revision.ts';
 
+const COMMAND_DISCOVERY_ENVIRONMENT_NAMES = [
+	'PATH',
+	'Path',
+	'PATHEXT',
+	'CARGO_HOME',
+	'HOME',
+	'RUSTUP_HOME',
+	'RUSTUP_TOOLCHAIN',
+	'SystemRoot',
+	'USERPROFILE',
+	'WINDIR',
+];
+const HOSTILE_RUSTC_ENVIRONMENT_NAMES = [
+	'DYLD_INSERT_LIBRARIES',
+	'DYLD_LIBRARY_PATH',
+	'LD_LIBRARY_PATH',
+	'LD_PRELOAD',
+	'NODE_OPTIONS',
+	'PYTHONPATH',
+	'RUSTC_BOOTSTRAP',
+	'RUSTC_FORCE_INCREMENTAL',
+	'RUSTC_LOG',
+	'RUSTC_WORKSPACE_WRAPPER',
+	'RUSTC_WRAPPER',
+	'RUSTFLAGS',
+];
+
 function git(repositoryRoot, args) {
 	return execFileSync('git', ['-C', repositoryRoot, ...args], {
 		encoding: 'utf8',
@@ -36,17 +63,82 @@ function createRepository(t) {
 	return repositoryRoot;
 }
 
+function commandDiscoveryEnvironment() {
+	const environment = {};
+	for (const name of COMMAND_DISCOVERY_ENVIRONMENT_NAMES) {
+		if (typeof process.env[name] === 'string') environment[name] = process.env[name];
+	}
+	return environment;
+}
+
 function deterministicOptions(overrides = {}) {
+	const { buildEnv: buildEnvironmentOverrides = {}, ...optionOverrides } = overrides;
 	return {
 		buildEnv: {
+			...commandDiscoveryEnvironment(),
 			CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
 			POSTHOG_API_KEY: 'private-build-secret',
 			RUSTFLAGS: '-C target-cpu=x86-64',
 			UNRELATED_PRIVATE_VALUE: 'must-not-affect-provenance',
+			...buildEnvironmentOverrides,
 		},
 		cargoFeatures: ['metal', 'audio', 'metal'],
-		...overrides,
+		...optionOverrides,
 	};
+}
+
+function setAmbientEnvironment(t, values) {
+	const previous = new Map();
+	for (const [name, value] of Object.entries(values)) {
+		previous.set(name, process.env[name]);
+		process.env[name] = value;
+	}
+	t.after(() => {
+		for (const [name, value] of previous) {
+			if (value === undefined) {
+				delete process.env[name];
+			} else {
+				process.env[name] = value;
+			}
+		}
+	});
+}
+
+function createRustcEnvironmentProbe(t) {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-rustc-environment-probe-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const sourcePath = path.join(directory, 'probe.rs');
+	const executablePath = path.join(
+		directory,
+		process.platform === 'win32' ? 'rustc-probe.exe' : 'rustc-probe',
+	);
+	fs.writeFileSync(
+		sourcePath,
+		`use std::{env, ffi::OsStr, process};
+
+fn main() {
+    let hostile = ${JSON.stringify(HOSTILE_RUSTC_ENVIRONMENT_NAMES)};
+    if hostile.iter().any(|name| env::var_os(name).is_some()) {
+        process::exit(91);
+    }
+    let args: Vec<_> = env::args_os().skip(1).collect();
+    if args.len() != 1 || args[0] != OsStr::new("-vV") {
+        process::exit(92);
+    }
+    print!("rustc 1.85.0 (aaaaaaaaa 2025-02-17)\\n");
+    print!("binary: rustc\\n");
+    print!("commit-hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n");
+    print!("commit-date: 2025-02-17\\n");
+    print!("host: x86_64-unknown-linux-gnu\\n");
+    print!("release: 1.85.0\\n");
+    print!("LLVM version: 19.1.7\\n");
+}
+`,
+	);
+	execFileSync('rustc', [sourcePath, '-o', executablePath], {
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	return executablePath;
 }
 
 test('returns stable, privacy-safe provenance for a clean evaluator tree', (t) => {
@@ -74,6 +166,68 @@ test('returns stable, privacy-safe provenance for a clean evaluator tree', (t) =
 	assert(!serialized.includes('version = 4'));
 	assert(!serialized.includes('private-build-secret'));
 	assert(!serialized.includes('must-not-affect-provenance'));
+});
+
+test('ignores hostile ambient Git repository, index, config, and object overrides', (t) => {
+	const repositoryRoot = createRepository(t);
+	const attackerRoot = createRepository(t);
+	const hostileConfigPath = path.join(attackerRoot, 'hostile.gitconfig');
+	const hostileIndexPath = path.join(attackerRoot, 'hostile.index');
+	const hostileObjectsPath = path.join(attackerRoot, 'hostile-objects');
+	fs.writeFileSync(hostileConfigPath, '[invalid config\n');
+	fs.mkdirSync(hostileObjectsPath);
+	const options = deterministicOptions();
+	const baseline = evaluatorRevision(repositoryRoot, options);
+
+	setAmbientEnvironment(t, {
+		DYLD_INSERT_LIBRARIES: '',
+		GIT_ALTERNATE_OBJECT_DIRECTORIES: hostileObjectsPath,
+		GIT_COMMON_DIR: path.join(attackerRoot, '.git'),
+		GIT_CONFIG_COUNT: '1',
+		GIT_CONFIG_GLOBAL: hostileConfigPath,
+		GIT_CONFIG_KEY_0: 'core.repositoryformatversion',
+		GIT_CONFIG_SYSTEM: hostileConfigPath,
+		GIT_CONFIG_VALUE_0: '999',
+		GIT_DIR: path.join(attackerRoot, '.git'),
+		GIT_INDEX_FILE: hostileIndexPath,
+		GIT_OBJECT_DIRECTORY: hostileObjectsPath,
+		GIT_WORK_TREE: attackerRoot,
+		LD_PRELOAD: '',
+	});
+
+	assert.deepEqual(evaluatorRevision(repositoryRoot, options), baseline);
+});
+
+test('runs rustc provenance with only attested discovery state', (t) => {
+	const repositoryRoot = createRepository(t);
+	const rustcExecutable = createRustcEnvironmentProbe(t);
+	const baselineOptions = deterministicOptions({
+		buildEnv: {
+			RUSTC_BOOTSTRAP: '1',
+			RUSTC_WORKSPACE_WRAPPER: '/private/workspace-wrapper',
+			RUSTC_WRAPPER: '/private/rustc-wrapper',
+		},
+		rustcExecutable,
+	});
+	const baseline = evaluatorRevision(repositoryRoot, baselineOptions);
+	const changedWrapper = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				RUSTC_BOOTSTRAP: '1',
+				RUSTC_WORKSPACE_WRAPPER: '/private/workspace-wrapper',
+				RUSTC_WRAPPER: '/private/other-rustc-wrapper',
+			},
+			rustcExecutable,
+		}),
+	);
+	assert.notEqual(changedWrapper.sha256, baseline.sha256);
+
+	setAmbientEnvironment(
+		t,
+		Object.fromEntries(HOSTILE_RUSTC_ENVIRONMENT_NAMES.map((name) => [name, ''])),
+	);
+	assert.deepEqual(evaluatorRevision(repositoryRoot, baselineOptions), baseline);
 });
 
 test('validates and hashes persisted evaluator revisions canonically', (t) => {
