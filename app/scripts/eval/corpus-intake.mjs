@@ -144,18 +144,18 @@ function reconcileCorpusDirectory(directory, referencedFiles, isRoot = true) {
 	}
 }
 
+export function hasPendingWithdrawal(localCorpusRoot) {
+	return fs
+		.readdirSync(localCorpusRoot, { withFileTypes: true })
+		.some((entry) => /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name));
+}
+
 function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
 	if (unrecovered.length === 0) return;
 	reconcileCorpusDirectory(localCorpusRoot, referencedCorpusFiles(manifestPath));
 	removeAbandonedManifestFiles(manifestPath);
-	const pendingWithdrawal = fs
-		.readdirSync(localCorpusRoot, { withFileTypes: true })
-		.some(
-			(entry) =>
-				entry.isFile() && /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name),
-		);
-	if (!pendingWithdrawal) {
+	if (!hasPendingWithdrawal(localCorpusRoot)) {
 		fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
 	}
 	for (const stalePath of unrecovered) {

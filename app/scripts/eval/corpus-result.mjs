@@ -2,23 +2,31 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { acquireLocalCorpusLock, releaseLocalCorpusLock } from './corpus-intake.mjs';
+import {
+	acquireLocalCorpusLock,
+	hasPendingWithdrawal,
+	releaseLocalCorpusLock,
+} from './corpus-intake.mjs';
 import { loadCorpus } from './corpus.mjs';
 
 export function writeCorpusBoundJson(options) {
 	const manifestPath = path.resolve(options.manifestPath);
 	const outputPath = path.resolve(options.outputPath);
 	const initialCorpus = loadCorpus(manifestPath);
+	let localCorpusRoot;
 	let lockPath;
 	let lockToken;
 	if (initialCorpus.distribution === 'local') {
-		const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
+		localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
 		lockPath = path.join(localCorpusRoot, '.intake.lock');
 		lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
 	}
 
 	const stagedOutput = `${outputPath}.tmp-${process.pid}-${randomUUID()}`;
 	try {
+		if (localCorpusRoot && hasPendingWithdrawal(localCorpusRoot)) {
+			throw new Error('a corpus withdrawal is pending; refusing to write results until it is resumed');
+		}
 		const currentCorpus = loadCorpus(manifestPath);
 		if (currentCorpus.corpus_fingerprint !== options.expectedFingerprint) {
 			throw new Error('corpus changed while the benchmark was running; refusing to write stale results');

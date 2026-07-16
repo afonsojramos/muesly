@@ -79,3 +79,43 @@ test('does not write while a corpus mutation holds the shared lock', () => {
 	);
 	assert(!fs.existsSync(outputPath));
 });
+
+test('does not reclaim an interrupted withdrawal to write against its old manifest', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const outputPath = path.join(directory, 'results', 'run.json');
+	const quarantine = '.withdrawal-results-session-withdraw-00000000-0000-4000-8000-000000000000';
+	fs.mkdirSync(path.join(localCorpusRoot, quarantine));
+	fs.writeFileSync(
+		path.join(localCorpusRoot, '.withdrawal-session-withdraw.json'),
+		JSON.stringify({
+			schema_version: 2,
+			session_id: 'session-withdraw',
+			removed_samples: 1,
+			results_quarantine: quarantine,
+			started_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	assert.throws(
+		() =>
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpusFingerprint(document),
+				outputPath,
+				value: { corpus_fingerprint: corpusFingerprint(document) },
+			}),
+		/withdrawal is pending/,
+	);
+	assert(!fs.existsSync(outputPath));
+});

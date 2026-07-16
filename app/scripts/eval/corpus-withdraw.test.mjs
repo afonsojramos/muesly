@@ -235,6 +235,7 @@ test('conservatively completes a version 1 post-commit withdrawal marker', () =>
 			schema_version: 1,
 			session_id: 'session-withdraw',
 			removed_samples: 2,
+			results_quarantine: '..',
 			started_at: '2026-07-16T00:00:00Z',
 		}),
 	);
@@ -249,6 +250,7 @@ test('conservatively completes a version 1 post-commit withdrawal marker', () =>
 	});
 	assert.equal(result.resumed, true);
 	assert(fs.existsSync(path.join(resultsDirectory, 'possibly-regenerated.json')));
+	assert(fs.existsSync(directory));
 	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
 	assert(!fs.existsSync(markerPath));
 });

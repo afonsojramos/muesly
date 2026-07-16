@@ -58,6 +58,14 @@ function readWithdrawalMarker(markerPath, sessionId) {
 	if (!commonFieldsValid || (marker.schema_version !== 1 && !quarantineValid)) {
 		throw new Error(`pending withdrawal record is invalid: ${markerPath}`);
 	}
+	if (marker.schema_version === 1) {
+		return {
+			schema_version: 1,
+			session_id: marker.session_id,
+			removed_samples: marker.removed_samples,
+			started_at: marker.started_at,
+		};
+	}
 	return marker;
 }
 
@@ -91,7 +99,7 @@ function quarantineResults(localCorpusRoot, manifestPath, marker) {
 
 function finishWithdrawal(localCorpusRoot, sessionId, markerPath, marker) {
 	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
-	if (marker.results_quarantine) {
+	if (marker.schema_version === 2) {
 		fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
 			recursive: true,
 			force: true,
