@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { TextDecoder } from 'node:util';
 
 import { fileSha256, validateCorpusDocument } from './corpus.ts';
 
@@ -24,6 +25,14 @@ const REQUIRED_OPTIONS = [
 function ensureFile(filePath, label) {
 	if (!fs.statSync(filePath, { throwIfNoEntry: false })?.isFile()) {
 		throw new Error(`${label} does not exist or is not a file: ${filePath}`);
+	}
+}
+
+function readReferenceTranscript(filePath) {
+	try {
+		return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(filePath));
+	} catch {
+		throw new Error('reference transcript must be valid UTF-8');
 	}
 }
 
@@ -373,7 +382,7 @@ export function intakeConsentedSample(options) {
 	if (path.extname(audioSource).toLowerCase() !== '.wav') {
 		throw new Error('audio must be a .wav file so duration can be verified locally');
 	}
-	if (fs.readFileSync(referenceSource, 'utf8').trim().length === 0) {
+	if (readReferenceTranscript(referenceSource).trim().length === 0) {
 		throw new Error('reference transcript must not be empty');
 	}
 

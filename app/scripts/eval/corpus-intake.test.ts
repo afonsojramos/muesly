@@ -80,6 +80,18 @@ test('requires explicit consent affirmation before writing anything', () => {
 	]);
 });
 
+test('rejects malformed UTF-8 references before writing anything', () => {
+	const { directory, options } = intakeFixture();
+	fs.writeFileSync(options.reference, Buffer.from([0xc3, 0x28]));
+
+	assert.throws(() => intakeConsentedSample(options), /reference transcript must be valid UTF-8/);
+	assert.deepEqual(fs.readdirSync(directory).sort(), [
+		'consent-record.md',
+		'source.txt',
+		'source.wav',
+	]);
+});
+
 test('atomically imports a consented sample with verified metadata and private files', () => {
 	const { options } = intakeFixture();
 	const sample = intakeConsentedSample(options);
