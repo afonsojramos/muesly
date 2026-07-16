@@ -28,87 +28,38 @@ import { fileURLToPath } from 'node:url';
 
 import {
 	forcesWhisperCpu,
-	requiresExplicitAccelerator,
 	requiresWhisperGpu,
-	supportedBackends,
 } from './backend.ts';
 import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
+import { parseRealRunArgs } from './real-run-options.ts';
 import { werDetails } from './wer.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
 const defaultManifest = path.join(here, 'corpus-manifest.json');
 
-function numFlag(args, name, fallback) {
-	const idx = args.indexOf(name);
-	if (idx === -1) return fallback;
-	const value = Number(args[idx + 1]);
-	if (!Number.isFinite(value) || value < 0) {
-		console.error(`${name} requires a non-negative number`);
-		process.exit(2);
-	}
-	return value;
-}
-
-function integerFlag(args, name, fallback) {
-	const value = numFlag(args, name, fallback);
-	if (!Number.isInteger(value)) {
-		console.error(`${name} requires a non-negative integer`);
-		process.exit(2);
-	}
-	return value;
-}
-
-function strFlag(args, name, fallback) {
-	const idx = args.indexOf(name);
-	if (idx === -1) return fallback;
-	const value = args[idx + 1];
-	if (typeof value !== 'string' || value.trim().length === 0 || value.startsWith('--')) {
-		console.error(`${name} requires a value`);
-		process.exit(2);
-	}
-	return value;
-}
-
 const args = process.argv.slice(2);
-const maxWerPct = numFlag(args, '--max-wer', 10);
-const maxHallucinatedWords = integerFlag(args, '--max-hallucinated-words', 2);
-const provider = strFlag(args, '--provider', 'whisper');
-if (!['whisper', 'parakeet'].includes(provider)) {
-	console.error('--provider requires whisper or parakeet');
+let options;
+try {
+	options = parseRealRunArgs(args, { defaultManifest });
+} catch (error) {
+	console.error(error.message);
 	process.exit(2);
 }
-const backend = strFlag(args, '--backend', 'cpu');
-if (!supportedBackends.includes(backend)) {
-	console.error(`--backend requires one of: ${supportedBackends.join(', ')}`);
-	process.exit(2);
-}
-if (provider === 'parakeet' && backend !== 'cpu') {
-	console.error("Parakeet currently supports only --backend cpu (reported as 'onnx-cpu')");
-	process.exit(2);
-}
-const accelerator = strFlag(args, '--accelerator', null);
-if (accelerator && /[;\r\n]/.test(accelerator)) {
-	console.error('--accelerator cannot contain semicolons or line breaks');
-	process.exit(2);
-}
-if (requiresExplicitAccelerator(provider, backend) && !accelerator) {
-	console.error(
-		`--backend ${backend} requires --accelerator with a stable accelerator model or device identifier`,
-	);
-	process.exit(2);
-}
-const model = strFlag(
-	args,
-	'--model',
-	provider === 'parakeet' ? 'parakeet-tdt-0.6b-v3-int8' : 'tiny',
-);
-const modelsDir = strFlag(args, '--models-dir', null);
-const onlyFixture = strFlag(args, '--fixture', null);
-const manifestPath = strFlag(args, '--manifest', defaultManifest);
-const outputPath = strFlag(args, '--output', null);
+const {
+	maxWerPct,
+	maxHallucinatedWords,
+	provider,
+	backend,
+	accelerator,
+	model,
+	modelsDir,
+	onlyFixture,
+	manifestPath,
+	outputPath,
+} = options;
 const evalModelsDir = resolveModelsDirectory(modelsDir, repoRoot);
 
 let corpus;

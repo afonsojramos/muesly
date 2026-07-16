@@ -17,7 +17,7 @@
 		"eval:wer": "nub app/scripts/eval/wer.ts",
 		"eval:rubric": "nub app/scripts/eval/summary-rubric.ts",
 		"eval:real": "nub app/scripts/eval/real-run.ts",
-		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.ts",
+		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.ts app/scripts/eval/real-run-options.test.ts",
 		"eval:corpus:intake": "nub app/scripts/eval/corpus-intake.ts",
 		"eval:corpus:prepare": "nub app/scripts/eval/corpus-prepare.ts",
 		"eval:corpus:withdraw": "nub app/scripts/eval/corpus-withdraw.ts",
