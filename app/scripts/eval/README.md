@@ -18,6 +18,7 @@ app/scripts/eval/
   wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
   summary-rubric.mjs  # checklist scoring of a summary markdown file
   real-run.mjs        # real-engine run: cargo example -> WER gate
+  report.mjs          # aggregate run reports by corpus and hardware dimensions
 ```
 
 ## Usage
@@ -61,6 +62,19 @@ participant-consented corpus. Every checked-in WAV must have a manifest entry.
 - BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).
   Set `whisper_language` in the manifest when an explicit mapping is needed; unsupported
   Whisper codes fail before inference.
+
+Aggregate one or more run reports into transcript-free JSON and Markdown summaries:
+
+```bash
+nub run eval:report results/whisper-metal.json results/parakeet-cpu.json \
+  --json results/aggregate.json --markdown results/aggregate.md
+```
+
+Reports contain micro-averaged WER (total word errors divided by total reference words),
+duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
+language, noise condition, hardware backend, provider/model, and the combined
+language/noise/backend matrix. This avoids treating a five-word clip as equally important
+as a five-minute meeting.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.

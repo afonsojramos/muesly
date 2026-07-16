@@ -25,7 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
-import { wer } from './wer.mjs';
+import { werDetails } from './wer.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');
@@ -164,6 +164,8 @@ for (const sample of fixtures) {
 		scenario: sample.scenario,
 		speakers: sample.speakers,
 		provenance_basis: sample.provenance.basis,
+		reference_words: null,
+		word_errors: null,
 		wer_percent: null,
 		hallucinated_words: null,
 		passed: true,
@@ -184,20 +186,20 @@ for (const sample of fixtures) {
 			result.passed = false;
 		}
 	} else {
-		if (hypothesis.length === 0) {
-			console.error(`FAIL: ${sample.id} produced an empty transcript`);
-			failed = true;
-			result.passed = false;
-			runResults.push(result);
-			continue;
-		}
-		const pct = wer(refText, hypothesis) * 100;
+		const details = werDetails(refText, hypothesis);
+		const pct = details.rate * 100;
+		result.reference_words = details.referenceWords;
+		result.word_errors = details.wordErrors;
 		result.wer_percent = pct;
 		console.log(
 			`${sample.id}: WER ${pct.toFixed(2)}% (limit ${maxWerPct}%), ` +
 				`RTF ${metrics.inference_rtf.toFixed(3)}, peak RSS ${metrics.peak_rss_mb.toFixed(1)} MiB`,
 		);
-		if (pct > maxWerPct) {
+		if (hypothesis.length === 0) {
+			console.error(`FAIL: ${sample.id} produced an empty transcript`);
+			failed = true;
+			result.passed = false;
+		} else if (pct > maxWerPct) {
 			console.error(`FAIL: ${sample.id} WER ${pct.toFixed(2)}% exceeds threshold ${maxWerPct}%`);
 			failed = true;
 			result.passed = false;

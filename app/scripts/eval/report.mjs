@@ -1,0 +1,228 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+const DIMENSIONS = [
+	['overall', () => 'all'],
+	['language', (record) => record.language],
+	['noise_condition', (record) => record.noise_condition],
+	['backend', (record) => record.metrics.backend],
+	['provider_model', (record) => `${record.provider}/${record.model}`],
+	[
+		'language_noise_backend',
+		(record) => `${record.language} / ${record.noise_condition} / ${record.metrics.backend}`,
+	],
+];
+
+function finiteNumber(value) {
+	return typeof value === 'number' && Number.isFinite(value);
+}
+
+function requireString(value, field, errors) {
+	if (typeof value !== 'string' || value.length === 0) errors.push(`${field} must be a non-empty string`);
+}
+
+export function validateRunReport(report, label = 'report') {
+	const errors = [];
+	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
+		return [`${label} must be a JSON object`];
+	}
+	if (report.schema_version !== 1) errors.push(`${label}.schema_version must be 1`);
+	requireString(report.corpus_id, `${label}.corpus_id`, errors);
+	requireString(report.provider, `${label}.provider`, errors);
+	requireString(report.model, `${label}.model`, errors);
+	if (!Array.isArray(report.results) || report.results.length === 0) {
+		errors.push(`${label}.results must be a non-empty array`);
+		return errors;
+	}
+	for (const [index, result] of report.results.entries()) {
+		const prefix = `${label}.results[${index}]`;
+		if (result === null || typeof result !== 'object' || Array.isArray(result)) {
+			errors.push(`${prefix} must be an object`);
+			continue;
+		}
+		for (const field of ['sample_id', 'language', 'noise_condition']) {
+			requireString(result[field], `${prefix}.${field}`, errors);
+		}
+		if (typeof result.passed !== 'boolean') errors.push(`${prefix}.passed must be boolean`);
+		if (result.metrics === null || typeof result.metrics !== 'object' || Array.isArray(result.metrics)) {
+			errors.push(`${prefix}.metrics must be an object`);
+			continue;
+		}
+		requireString(result.metrics.backend, `${prefix}.metrics.backend`, errors);
+		for (const field of [
+			'inference_seconds',
+			'inference_rtf',
+			'peak_rss_mb',
+			'audio_duration_seconds',
+		]) {
+			if (!finiteNumber(result.metrics[field]) || result.metrics[field] < 0) {
+				errors.push(`${prefix}.metrics.${field} must be a non-negative finite number`);
+			}
+		}
+		const isWer = result.reference_words !== null || result.word_errors !== null;
+		if (isWer) {
+			if (!Number.isInteger(result.reference_words) || result.reference_words <= 0) {
+				errors.push(`${prefix}.reference_words must be a positive integer for WER samples`);
+			}
+			if (!Number.isInteger(result.word_errors) || result.word_errors < 0) {
+				errors.push(`${prefix}.word_errors must be a non-negative integer for WER samples`);
+			}
+		} else if (!Number.isInteger(result.hallucinated_words) || result.hallucinated_words < 0) {
+			errors.push(`${prefix}.hallucinated_words must be a non-negative integer for non-WER samples`);
+		}
+	}
+	return errors;
+}
+
+function mean(values) {
+	return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function median(values) {
+	const sorted = [...values].sort((a, b) => a - b);
+	const middle = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function summarize(records) {
+	const werRecords = records.filter((record) => record.reference_words !== null);
+	const silenceRecords = records.filter((record) => record.reference_words === null);
+	const referenceWords = werRecords.reduce((sum, record) => sum + record.reference_words, 0);
+	const wordErrors = werRecords.reduce((sum, record) => sum + record.word_errors, 0);
+	const rtfs = records.map((record) => record.metrics.inference_rtf);
+	const peaks = records.map((record) => record.metrics.peak_rss_mb);
+	const audioDurationSeconds = records.reduce(
+		(sum, record) => sum + record.metrics.audio_duration_seconds,
+		0,
+	);
+	const inferenceSeconds = records.reduce(
+		(sum, record) => sum + record.metrics.inference_seconds,
+		0,
+	);
+	return {
+		samples: records.length,
+		passed_samples: records.filter((record) => record.passed).length,
+		pass_rate_percent: (records.filter((record) => record.passed).length / records.length) * 100,
+		audio_duration_seconds: audioDurationSeconds,
+		inference_seconds: inferenceSeconds,
+		wer_samples: werRecords.length,
+		reference_words: referenceWords,
+		word_errors: wordErrors,
+		wer_percent: referenceWords === 0 ? null : (wordErrors / referenceWords) * 100,
+		hallucination_samples: silenceRecords.length,
+		hallucinated_words_total: silenceRecords.reduce(
+			(sum, record) => sum + record.hallucinated_words,
+			0,
+		),
+		hallucinated_words_max:
+			silenceRecords.length === 0 ? null : Math.max(...silenceRecords.map((record) => record.hallucinated_words)),
+		aggregate_inference_rtf:
+			audioDurationSeconds === 0 ? null : inferenceSeconds / audioDurationSeconds,
+		mean_inference_rtf: mean(rtfs),
+		median_inference_rtf: median(rtfs),
+		max_inference_rtf: Math.max(...rtfs),
+		mean_peak_rss_mb: mean(peaks),
+		max_peak_rss_mb: Math.max(...peaks),
+	};
+}
+
+export function aggregateRunReports(reports) {
+	if (!Array.isArray(reports) || reports.length === 0) throw new Error('at least one run report is required');
+	const records = [];
+	for (const [index, report] of reports.entries()) {
+		const errors = validateRunReport(report, `reports[${index}]`);
+		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
+		for (const result of report.results) {
+			records.push({ ...result, provider: report.provider, model: report.model });
+		}
+	}
+
+	const groups = {};
+	for (const [dimension, keyFor] of DIMENSIONS) {
+		const grouped = new Map();
+		for (const record of records) {
+			const key = keyFor(record);
+			if (!grouped.has(key)) grouped.set(key, []);
+			grouped.get(key).push(record);
+		}
+		groups[dimension] = Object.fromEntries(
+			[...grouped.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, values]) => [key, summarize(values)]),
+		);
+	}
+
+	return {
+		schema_version: 1,
+		generated_at: new Date().toISOString(),
+		source_report_count: reports.length,
+		sample_result_count: records.length,
+		groups,
+	};
+}
+
+function display(value, digits = 2) {
+	return value === null ? '—' : value.toFixed(digits);
+}
+
+function escapeCell(value) {
+	return value.replaceAll('|', '\\|');
+}
+
+export function renderMarkdown(report) {
+	const lines = [
+		'# ASR corpus benchmark',
+		'',
+		`Generated ${report.generated_at} from ${report.source_report_count} run report(s) and ${report.sample_result_count} sample result(s).`,
+		'',
+		'WER is micro-averaged from total word errors / total reference words. RTF and memory are measured during local inference.',
+	];
+	for (const [dimension, groups] of Object.entries(report.groups)) {
+		lines.push('', `## ${dimension.replaceAll('_', ' ')}`, '');
+		lines.push('| Group | Samples | Pass rate | WER | Aggregate RTF | P50 RTF | Max peak RSS | Hallucinated words |');
+		lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+		for (const [name, summary] of Object.entries(groups)) {
+			const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
+			lines.push(
+				`| ${escapeCell(name)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+			);
+		}
+	}
+	return `${lines.join('\n')}\n`;
+}
+
+function stringFlag(args, name) {
+	const index = args.indexOf(name);
+	if (index === -1) return null;
+	const value = args[index + 1];
+	if (!value || value.startsWith('--')) throw new Error(`${name} requires a path`);
+	args.splice(index, 2);
+	return value;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	try {
+		const args = process.argv.slice(2);
+		const jsonOutput = stringFlag(args, '--json');
+		const markdownOutput = stringFlag(args, '--markdown');
+		if (args.length === 0) throw new Error('Usage: report.mjs <run.json>... [--json <path>] [--markdown <path>]');
+		const reports = args.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')));
+		const aggregate = aggregateRunReports(reports);
+		if (jsonOutput) {
+			const output = path.resolve(jsonOutput);
+			fs.mkdirSync(path.dirname(output), { recursive: true });
+			fs.writeFileSync(output, `${JSON.stringify(aggregate, null, 2)}\n`);
+		}
+		const markdown = renderMarkdown(aggregate);
+		if (markdownOutput) {
+			const output = path.resolve(markdownOutput);
+			fs.mkdirSync(path.dirname(output), { recursive: true });
+			fs.writeFileSync(output, markdown);
+		} else {
+			process.stdout.write(markdown);
+		}
+	} catch (error) {
+		console.error(error.message);
+		process.exit(2);
+	}
+}

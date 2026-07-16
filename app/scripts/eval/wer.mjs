@@ -30,10 +30,18 @@ function editDistance(a, b) {
 }
 
 export function wer(refText, hypText) {
+  return werDetails(refText, hypText).rate;
+}
+
+export function werDetails(refText, hypText) {
   const ref = tokens(refText);
   const hyp = tokens(hypText);
-  if (ref.length === 0) return hyp.length === 0 ? 0 : 1;
-  return editDistance(ref, hyp) / ref.length;
+  const wordErrors = editDistance(ref, hyp);
+  return {
+    referenceWords: ref.length,
+    wordErrors,
+    rate: ref.length === 0 ? (hyp.length === 0 ? 0 : 1) : wordErrors / ref.length,
+  };
 }
 
 // CLI entry, guarded so importing `wer()` from another module (real-run.mjs)
