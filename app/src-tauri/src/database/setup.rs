@@ -5,6 +5,10 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::manager::DatabaseManager;
 use crate::state::AppState;
 
+fn is_legacy_parakeet_v2(provider: &str, model: &str) -> bool {
+    provider == "parakeet" && model.contains("-v2")
+}
+
 /// Load the persisted transcription language into the in-memory cache that the
 /// transcription hot path reads. Best-effort: a read failure or an unset value
 /// leaves the default ("auto") in place and must never block launch.
@@ -17,16 +21,16 @@ pub async fn load_transcription_language_cache(pool: &SqlitePool) {
     }
 }
 
-/// Retire the former Parakeet default without penalizing weaker machines. Old
-/// installs are migrated once to the hardware-appropriate Whisper model.
-pub async fn migrate_legacy_parakeet_config(pool: &SqlitePool) -> Result<(), String> {
+/// Retire the English-only Parakeet v2 artifact. V3 remains a supported manual
+/// choice and must never be silently replaced on the next launch.
+pub async fn migrate_legacy_parakeet_v2_config(pool: &SqlitePool) -> Result<(), String> {
     let current =
         crate::database::repositories::setting::SettingsRepository::get_transcript_config(pool)
             .await
             .map_err(|error| error.to_string())?;
-    if current
+    if !current
         .as_ref()
-        .is_some_and(|config| config.provider != "parakeet")
+        .is_some_and(|config| is_legacy_parakeet_v2(&config.provider, &config.model))
     {
         return Ok(());
     }
@@ -40,6 +44,24 @@ pub async fn migrate_legacy_parakeet_config(pool: &SqlitePool) -> Result<(), Str
     )
     .await
     .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_legacy_parakeet_v2;
+
+    #[test]
+    fn only_parakeet_v2_is_legacy() {
+        assert!(is_legacy_parakeet_v2(
+            "parakeet",
+            "parakeet-tdt-0.6b-v2-int8"
+        ));
+        assert!(!is_legacy_parakeet_v2(
+            "parakeet",
+            "parakeet-tdt-0.6b-v3-int8"
+        ));
+        assert!(!is_legacy_parakeet_v2("localWhisper", "large-v2"));
+    }
 }
 
 /// Initialize database on app startup
@@ -70,7 +92,7 @@ pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), Strin
 
         // Load the persisted transcription language into the in-memory cache before
         // transcription can run.
-        migrate_legacy_parakeet_config(db_manager.pool()).await?;
+        migrate_legacy_parakeet_v2_config(db_manager.pool()).await?;
         load_transcription_language_cache(db_manager.pool()).await;
 
         app.manage(AppState { db_manager });

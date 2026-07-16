@@ -1497,55 +1497,24 @@ impl WhisperEngine {
             *cancel_flag = None;
         }
 
-        // Official ggerganov/whisper.cpp model URLs from Hugging Face
-        let model_url = match model_name {
-            // Standard f16 models
-            "tiny" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-            "base" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
-            "small" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-            "medium" => "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
-            "large-v3-turbo" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"
-            }
-            "large-v3" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin"
-            }
-
-            // Q5_1 quantized models
-            "tiny-q5_1" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny-q5_1.bin"
-            }
-            "base-q5_1" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin"
-            }
-            "small-q5_1" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small-q5_1.bin"
-            }
-
-            // Q5_0 quantized models
-            "medium-q5_0" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q5_0.bin"
-            }
-            "large-v3-turbo-q5_0" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin"
-            }
-            "large-v3-q5_0" => {
-                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-q5_0.bin"
-            }
-
-            _ => return Err(anyhow!("Unsupported model: {}", model_name)),
-        };
+        let filename = WHISPER_MODEL_CATALOG
+            .iter()
+            .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
+        // Official ggerganov/whisper.cpp artifact at a pinned Hugging Face
+        // revision. The independent SHA-256 pin still verifies raw contents.
+        let model_url = format!(
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/{filename}"
+        );
 
         log::info!("Model URL for {}: {}", model_name, model_url);
 
-        // Generate correct filename - all models follow ggml-{model_name}.bin pattern
-        let filename = format!("ggml-{}.bin", model_name);
-        let file_path = self.models_dir.join(&filename);
+        let file_path = self.models_dir.join(filename);
         // Download into a `.part` file and atomically rename on success. A crash or
         // cancellation then leaves a `.part` file that `discover_models` ignores
         // (it only matches `ggml-*.bin`), instead of a truncated file at the real
         // path that could pass the header check and fail at load time.
-        let part_path = self.models_dir.join(format!("{}.part", filename));
+        let part_path = self.models_dir.join(format!("{filename}.part"));
 
         log::info!(
             "Downloading to file path: {} (via {})",
@@ -1578,7 +1547,7 @@ impl WhisperEngine {
         };
 
         // Build the request with an optional Range header for resume.
-        let mut request = client.get(model_url);
+        let mut request = client.get(&model_url);
         if existing_size > 0 {
             request = request.header("Range", format!("bytes={}-", existing_size));
             log::info!(
@@ -1618,7 +1587,7 @@ impl WhisperEngine {
             );
             let _ = fs::remove_file(&part_path).await;
             response = client
-                .get(model_url)
+                .get(&model_url)
                 .send()
                 .await
                 .map_err(|e| anyhow!("Retry failed: {}", e))?;

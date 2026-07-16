@@ -167,7 +167,7 @@ pub async fn import_and_initialize_database(
     // preference; load it into the in-memory cache the transcription hot path
     // reads, otherwise the first session runs at the "auto" default until the
     // frontend reconciles. Best-effort, never blocks.
-    super::setup::migrate_legacy_parakeet_config(db_manager.pool()).await?;
+    super::setup::migrate_legacy_parakeet_v2_config(db_manager.pool()).await?;
     super::setup::load_transcription_language_cache(db_manager.pool()).await;
 
     // Update app state with the new manager

@@ -179,22 +179,25 @@ impl ParakeetEngine {
         // Parakeet model configurations
         // Model name format: parakeet-tdt-0.6b-v{version}-{quantization}
         // Sizes match actual download sizes (encoder + decoder + preprocessor + vocab)
-        let model_configs = [
-            (
-                "parakeet-tdt-0.6b-v3-int8",
-                670,
-                QuantizationType::Int8,
-                "Ultra Fast (v3)",
-                "Real time on M4 Max, latest version with int8 quantization",
-            ),
-            (
+        let mut model_configs = vec![(
+            "parakeet-tdt-0.6b-v3-int8",
+            670,
+            QuantizationType::Int8,
+            "Very Fast (v3)",
+            "INT8 multilingual model for fast CPU transcription",
+        )];
+        // V2 is English-only and no longer downloadable. Keep an installed
+        // copy discoverable so existing users can select or remove it without
+        // making a mutable legacy artifact part of the active catalog.
+        if models_dir.join("parakeet-tdt-0.6b-v2-int8").exists() {
+            model_configs.push((
                 "parakeet-tdt-0.6b-v2-int8",
                 661,
                 QuantizationType::Int8,
-                "Fast (v2)",
-                "Previous version with int8 quantization, good balance of speed and accuracy",
-            ),
-        ];
+                "Legacy (v2)",
+                "Installed English-only legacy model",
+            ));
+        }
 
         // Get active downloads to override status
         let active_downloads = self.active_downloads.read().await;
@@ -620,6 +623,14 @@ impl ParakeetEngine {
     ) -> Result<()> {
         log::info!("Starting download for Parakeet model: {}", model_name);
 
+        if model_name != crate::config::DEFAULT_PARAKEET_MODEL {
+            return Err(anyhow!(
+                "Unsupported Parakeet download '{}'; only {} is in the active catalog",
+                model_name,
+                crate::config::DEFAULT_PARAKEET_MODEL
+            ));
+        }
+
         // Check if download is already in progress for this model
         {
             let active = self.active_downloads.read().await;
@@ -669,13 +680,9 @@ impl ParakeetEngine {
             }
         }
 
-        // HuggingFace base URL for Parakeet models (version-specific)
-        let base_url = if model_name.contains("-v2-") {
-            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v2-onnx/resolve/main"
-        } else {
-            // Default to v3 for v3 models
-            "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main"
-        };
+        // Community ONNX export of NVIDIA's official model. The revision and
+        // every downloaded artifact hash are pinned independently.
+        let base_url = "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/8f23f0c03c8761650bdb5b40aaf3e40d2c15f1ce";
 
         // Determine which files to download based on quantization
         let files_to_download = match model_info.quantization {
