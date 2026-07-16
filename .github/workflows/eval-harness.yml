@@ -22,6 +22,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: jdx/mise-action@v4
+      - name: Corpus manifest and consent policy
+        run: |
+          nub run eval:corpus:validate
+          nub run eval:corpus:test
       - name: Word error rate (short fixture)
         run: |
           nub app/scripts/eval/wer.mjs \

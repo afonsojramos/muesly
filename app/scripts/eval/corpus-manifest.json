@@ -1,0 +1,42 @@
+{
+	"schema_version": 1,
+	"corpus_id": "muesly-asr-smoke-v1",
+	"description": "Public-domain and synthetic smoke fixtures. Participant-consented meeting recordings are added through a separate local manifest.",
+	"samples": [
+		{
+			"id": "en-gettysburg-clean",
+			"audio_path": "fixtures/real-speech.wav",
+			"audio_sha256": "00639b35dd6b478b1fa58857a3251e2d9fb63579554b60ebfb4463de09b09e43",
+			"reference_path": "fixtures/real-speech-ref.txt",
+			"reference_sha256": "fb93fbe146eb418762283de0e2484623212c8d90a1cea7e219b5e7fe6562236d",
+			"language": "en",
+			"scenario": "read-speech",
+			"noise_condition": "clean",
+			"speakers": 1,
+			"duration_seconds": 27,
+			"provenance": {
+				"basis": "public-domain",
+				"source_url": "https://archive.org/details/gettysburg_johng_librivox",
+				"license": "Public Domain",
+				"redistribution": "repository"
+			}
+		},
+		{
+			"id": "und-synthetic-silence",
+			"audio_path": "fixtures/silence.wav",
+			"audio_sha256": "45f7237e3e7e243c636a5f7fa63702cd0091cf42ff2ac7af053d241fb96e7fdb",
+			"reference_path": "fixtures/silence-ref.txt",
+			"reference_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			"language": "und",
+			"scenario": "silence",
+			"noise_condition": "synthetic-silence",
+			"speakers": 0,
+			"duration_seconds": 20,
+			"provenance": {
+				"basis": "synthetic",
+				"generation_method": "Deterministic approximately -60 dBFS noise generated for hallucination testing",
+				"redistribution": "repository"
+			}
+		}
+	]
+}
