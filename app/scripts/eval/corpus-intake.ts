@@ -36,6 +36,26 @@ function isWithinOrEqual(directory, filePath) {
 	);
 }
 
+function isWithinExistingDirectory(directory, filePath) {
+	const directoryStatus = fs.statSync(directory, { throwIfNoEntry: false });
+	if (!directoryStatus?.isDirectory()) return false;
+
+	let current = path.dirname(filePath);
+	for (;;) {
+		const currentStatus = fs.statSync(current, { throwIfNoEntry: false });
+		if (
+			currentStatus?.isDirectory() &&
+			currentStatus.dev === directoryStatus.dev &&
+			currentStatus.ino === directoryStatus.ino
+		) {
+			return true;
+		}
+		const parent = path.dirname(current);
+		if (parent === current) return false;
+		current = parent;
+	}
+}
+
 function readReferenceTranscript(filePath) {
 	try {
 		return new TextDecoder('utf-8', { fatal: true }).decode(fs.readFileSync(filePath));
@@ -384,14 +404,9 @@ export function intakeConsentedSample(options) {
 		throw new Error('audio, reference, and consent record must be three distinct files');
 	}
 	const localCorpusRoot = path.join(path.dirname(manifestPath), 'local-corpus');
-	const existingCorpusRoot = fs.existsSync(localCorpusRoot)
-		? fs.realpathSync(localCorpusRoot)
-		: undefined;
-	const resolvedConsentRecord = fs.realpathSync(consentRecord);
 	if (
 		isWithinOrEqual(localCorpusRoot, consentRecord) ||
-		(existingCorpusRoot !== undefined &&
-			isWithinOrEqual(existingCorpusRoot, resolvedConsentRecord))
+		isWithinExistingDirectory(localCorpusRoot, consentRecord)
 	) {
 		throw new Error('consent record must be stored outside the managed local corpus directory');
 	}
