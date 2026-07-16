@@ -115,7 +115,8 @@ test('requires measurements for every language, noise, and backend cell', () => 
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 2);
+	assert.equal(complete.schema_version, 3);
+	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
 	assert.deepEqual(complete.model_artifacts, {
 		'parakeet/test-model': 'd'.repeat(64),
 		'whisper/test-model': 'c'.repeat(64),

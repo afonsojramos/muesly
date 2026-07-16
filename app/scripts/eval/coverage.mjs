@@ -206,9 +206,10 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	);
 
 	return {
-		schema_version: 2,
+		schema_version: 3,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
+		corpus_fingerprint: corpus.corpus_fingerprint,
 		model_artifacts: Object.fromEntries(
 			[...modelArtifacts.entries()].sort(([a], [b]) => a.localeCompare(b)),
 		),

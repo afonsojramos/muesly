@@ -85,8 +85,8 @@ language/noise/backend matrix. This avoids treating a five-word clip as equally 
 as a five-minute meeting. Inputs must use run-report schema 4, name the same corpus revision, and
 use identical pass thresholds, model bytes, and OS/architecture; the aggregator rejects
 comparisons that would lose that artifact, hardware, or evaluation context.
-Coverage JSON also records the verified model-artifact map so a saved completeness result remains
-bound to the exact evaluated bytes.
+Coverage JSON also records the corpus fingerprint and verified model-artifact map so a saved
+completeness result remains bound to the exact corpus revision and evaluated bytes.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
