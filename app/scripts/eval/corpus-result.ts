@@ -7,7 +7,7 @@ import {
 	hasPendingWithdrawal,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
-import { canonicalFilePath, canonicalManifestPath, loadCorpus } from './corpus.ts';
+import { canonicalManifestPath, canonicalOutputPath, loadCorpus } from './corpus.ts';
 import { processIdentity, processOwnsState } from './process-identity.ts';
 
 const RESULT_TRANSACTION_PATTERN = /^\.result-transaction-(\d+)-([0-9a-f-]{36})\.json$/;
@@ -181,7 +181,7 @@ export function writeCorpusBoundFiles(options) {
 	const manifestPath = canonicalManifestPath(options.manifestPath);
 	const outputs = options.outputs.map((output) => ({
 		contents: output.contents,
-		outputPath: canonicalFilePath(output.outputPath, { allowMissing: true }),
+		outputPath: canonicalOutputPath(output.outputPath),
 	}));
 	if (outputs.length === 0) throw new Error('at least one corpus-bound output is required');
 	if (new Set(outputs.map((output) => output.outputPath)).size !== outputs.length) {

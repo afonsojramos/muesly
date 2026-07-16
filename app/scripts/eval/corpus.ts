@@ -98,27 +98,40 @@ function resolveSamplePath(manifestPath, value) {
 	return path.resolve(path.dirname(manifestPath), value);
 }
 
-export function canonicalFilePath(filePath, options = {}) {
+export function canonicalFilePath(filePath, options = {}, visitedSymlinks = new Set()) {
 	const absolutePath = path.resolve(filePath);
-	if (!options.allowMissing) {
-		return fs.lstatSync(absolutePath, { throwIfNoEntry: false })
-			? fs.realpathSync(absolutePath)
-			: absolutePath;
+	const entry = fs.lstatSync(absolutePath, { throwIfNoEntry: false });
+	if (entry?.isSymbolicLink()) {
+		if (visitedSymlinks.has(absolutePath)) {
+			throw new Error(`symbolic link cycle while resolving path: ${absolutePath}`);
+		}
+		visitedSymlinks.add(absolutePath);
+		const target = fs.readlinkSync(absolutePath);
+		const targetPath = path.isAbsolute(target)
+			? target
+			: path.resolve(path.dirname(absolutePath), target);
+		return canonicalFilePath(targetPath, options, visitedSymlinks);
 	}
-
-	const missingSegments = [];
-	let existingPath = absolutePath;
-	while (!fs.lstatSync(existingPath, { throwIfNoEntry: false })) {
-		const parent = path.dirname(existingPath);
-		if (parent === existingPath) return absolutePath;
-		missingSegments.unshift(path.basename(existingPath));
-		existingPath = parent;
-	}
-	return path.join(fs.realpathSync(existingPath), ...missingSegments);
+	if (entry) return fs.realpathSync(absolutePath);
+	if (!options.allowMissing) return absolutePath;
+	const parent = path.dirname(absolutePath);
+	if (parent === absolutePath) return absolutePath;
+	return path.join(
+		canonicalFilePath(parent, { allowMissing: true }, visitedSymlinks),
+		path.basename(absolutePath),
+	);
 }
 
 export function canonicalManifestPath(manifestPath, options = {}) {
 	return canonicalFilePath(manifestPath, options);
+}
+
+export function canonicalOutputPath(outputPath) {
+	const absolutePath = path.resolve(outputPath);
+	if (fs.lstatSync(absolutePath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+		throw new Error(`result output cannot be a symbolic link: ${absolutePath}`);
+	}
+	return canonicalFilePath(absolutePath, { allowMissing: true });
 }
 
 function requiredString(value, field, errors) {

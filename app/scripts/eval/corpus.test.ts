@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import {
+	canonicalManifestPath,
 	corpusFingerprint,
 	fileSha256,
 	loadCorpus,
@@ -72,6 +73,18 @@ test('loads a manifest through its canonical file identity', () => {
 	assert.equal(corpus.manifest_path, fs.realpathSync(manifestPath));
 	assert.equal(corpus.samples[0].audio_file, fs.realpathSync(path.join(directory, 'audio.wav')));
 	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
+});
+
+test('resolves a dangling manifest symlink to its intended missing target', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-dangling-'));
+	const targetPath = path.join(directory, 'target', 'corpus-local.json');
+	const aliasPath = path.join(directory, 'corpus-alias.json');
+	fs.symlinkSync(targetPath, aliasPath);
+
+	assert.equal(
+		canonicalManifestPath(aliasPath, { allowMissing: true }),
+		fs.realpathSync(directory) + path.sep + 'target' + path.sep + 'corpus-local.json',
+	);
 });
 
 test('hashes corpus files incrementally across multiple buffer reads', () => {

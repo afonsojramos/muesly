@@ -74,6 +74,29 @@ test('binds results to the canonical manifest behind a symlink', () => {
 	assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), { complete: true });
 });
 
+test('rejects result-file symlinks without modifying their targets', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const resultsDirectory = path.join(directory, 'results');
+	const targetPath = path.join(resultsDirectory, 'existing.json');
+	const outputPath = path.join(resultsDirectory, 'run.json');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(targetPath, '{"preserved":true}\n');
+	fs.symlinkSync(targetPath, outputPath);
+
+	assert.throws(
+		() =>
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpusFingerprint(document),
+				outputPath,
+				value: { changed: true },
+			}),
+		/result output cannot be a symbolic link/,
+	);
+	assert.equal(fs.readFileSync(targetPath, 'utf8'), '{"preserved":true}\n');
+	assert(fs.lstatSync(outputPath).isSymbolicLink());
+});
+
 test('writes multiple corpus-bound outputs while holding one revision lock', () => {
 	const { directory, document, manifestPath } = localManifest();
 	const fingerprint = corpusFingerprint(document);

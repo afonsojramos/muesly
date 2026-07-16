@@ -165,6 +165,20 @@ test('updates the canonical manifest when intake is invoked through a symlink', 
 	assert(!fs.existsSync(path.join(aliasDirectory, 'local-corpus')));
 });
 
+test('initializes the target behind a dangling manifest symlink', () => {
+	const { directory, options } = intakeFixture();
+	const canonicalManifest = path.join(directory, 'canonical', 'corpus-local.json');
+	const aliasManifest = path.join(directory, 'corpus-alias.json');
+	fs.symlinkSync(canonicalManifest, aliasManifest);
+	options.manifestPath = aliasManifest;
+
+	intakeConsentedSample(options);
+
+	assert(fs.lstatSync(aliasManifest).isSymbolicLink());
+	assert.equal(JSON.parse(fs.readFileSync(canonicalManifest, 'utf8')).samples.length, 1);
+	assert(fs.existsSync(path.join(directory, 'canonical', 'local-corpus', options.sessionId)));
+});
+
 test('rejects filesystem aliases into the managed corpus tree', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
