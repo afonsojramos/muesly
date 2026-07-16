@@ -1,0 +1,25 @@
+{
+	"schema_version": 1,
+	"target_id": "consented-multilingual-meetings-v1",
+	"description": "Initial coverage floor for evaluating local meeting transcription. This is a product comparison matrix, not a claim of statistical representativeness.",
+	"languages": ["en", "es", "pt", "fr", "de"],
+	"noise_conditions": ["clean", "office", "remote-call", "overlapping-speech"],
+	"benchmark_variants": [
+		{
+			"provider": "whisper",
+			"model": "large-v3-turbo-q5_0",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3-turbo-q5_0",
+			"backend": "coreml-metal"
+		},
+		{
+			"provider": "parakeet",
+			"model": "parakeet-tdt-0.6b-v3-int8",
+			"backend": "onnx-cpu"
+		}
+	],
+	"min_sessions_per_language_noise_cell": 3
+}

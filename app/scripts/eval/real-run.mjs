@@ -14,6 +14,7 @@
  * Usage: node real-run.mjs [--max-wer <pct>] [--max-hallucinated-words <n>]
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
+ *                          [--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas]
  *                          [--output <path>] [--fixture <id-or-audio-base>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
@@ -62,6 +63,16 @@ const maxHallucinatedWords = integerFlag(args, '--max-hallucinated-words', 2);
 const provider = strFlag(args, '--provider', 'whisper');
 if (!['whisper', 'parakeet'].includes(provider)) {
 	console.error('--provider requires whisper or parakeet');
+	process.exit(2);
+}
+const backend = strFlag(args, '--backend', 'cpu');
+const supportedBackends = ['cpu', 'metal', 'coreml', 'cuda', 'vulkan', 'openblas', 'hipblas'];
+if (!supportedBackends.includes(backend)) {
+	console.error(`--backend requires one of: ${supportedBackends.join(', ')}`);
+	process.exit(2);
+}
+if (provider === 'parakeet' && backend !== 'cpu') {
+	console.error("Parakeet currently supports only --backend cpu (reported as 'onnx-cpu')");
 	process.exit(2);
 }
 const model = strFlag(
@@ -134,6 +145,8 @@ for (const sample of fixtures) {
 		'-q',
 		'-p',
 		'muesly',
+		'--no-default-features',
+		...(backend === 'cpu' ? [] : ['--features', backend]),
 		'--example',
 		'transcribe-fixture',
 		'--',

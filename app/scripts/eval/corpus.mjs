@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const CORPUS_SCHEMA_VERSION = 1;
+export const CORPUS_SCHEMA_VERSION = 2;
 
 const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
@@ -10,6 +10,7 @@ const CONSENTED_USES = new Set(['asr-benchmarking']);
 const MANIFEST_FIELDS = new Set(['schema_version', 'corpus_id', 'description', 'distribution', 'samples']);
 const SAMPLE_FIELDS = new Set([
 	'id',
+	'session_id',
 	'audio_path',
 	'audio_sha256',
 	'reference_path',
@@ -104,6 +105,9 @@ function validateProvenance(sample, errors) {
 		if (!isIsoDate(provenance.consent_date)) {
 			errors.push(`${prefix}.consent_date must be a valid YYYY-MM-DD date`);
 		}
+		if (provenance.redistribution !== 'local-only') {
+			errors.push(`${prefix}.redistribution must be local-only for participant recordings`);
+		}
 	} else if (provenance.basis === 'public-domain') {
 		requiredString(provenance.source_url, `${prefix}.source_url`, errors);
 		requiredString(provenance.license, `${prefix}.license`, errors);
@@ -174,6 +178,9 @@ export function validateCorpusDocument(document, options = {}) {
 			if (ids.has(sample.id)) errors.push(`${prefix}.id is duplicated`);
 			ids.add(sample.id);
 		}
+		if (sample.session_id !== undefined && !/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id)) {
+			errors.push(`${prefix}.session_id must be an opaque session-* identifier`);
+		}
 		if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(sample.language ?? '')) {
 			errors.push(`${prefix}.language must be a BCP-47-style language tag`);
 		}
@@ -186,6 +193,14 @@ export function validateCorpusDocument(document, options = {}) {
 		}
 		if (!Number.isInteger(sample.speakers) || sample.speakers < 0) {
 			errors.push(`${prefix}.speakers must be a non-negative integer`);
+		}
+		if (sample.scenario === 'meeting') {
+			if (!/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id ?? '')) {
+				errors.push(`${prefix}.session_id is required for meeting recordings`);
+			}
+			if (!Number.isInteger(sample.speakers) || sample.speakers < 2) {
+				errors.push(`${prefix}.speakers must be at least 2 for meeting recordings`);
+			}
 		}
 		if (typeof sample.duration_seconds !== 'number' || sample.duration_seconds <= 0) {
 			errors.push(`${prefix}.duration_seconds must be positive`);

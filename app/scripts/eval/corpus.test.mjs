@@ -18,12 +18,13 @@ function fixture() {
 	return {
 		directory,
 		document: {
-			schema_version: 1,
+			schema_version: 2,
 			corpus_id: 'test-corpus',
 			distribution: 'local',
 			samples: [
 				{
 					id: 'meeting-en-clean',
+					session_id: 'session-example-001',
 					audio_path: 'audio.wav',
 					audio_sha256: hash('audio'),
 					reference_path: 'reference.txt',
@@ -87,6 +88,19 @@ test('rejects invalid consent dates and local-only entries in repository manifes
 	});
 	assert(errors.some((error) => error.includes('valid YYYY-MM-DD date')));
 	assert(errors.some((error) => error.includes('cannot be local-only in a repository manifest')));
+});
+
+test('requires opaque meeting sessions, multiple speakers, and local-only participant audio', () => {
+	const { directory, document } = fixture();
+	delete document.samples[0].session_id;
+	document.samples[0].speakers = 1;
+	document.samples[0].provenance.redistribution = 'repository';
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('session_id is required')));
+	assert(errors.some((error) => error.includes('speakers must be at least 2')));
+	assert(errors.some((error) => error.includes('must be local-only for participant')));
 });
 
 test('requires every discovered audio fixture to be declared', () => {

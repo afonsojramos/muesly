@@ -26,6 +26,12 @@ meeting_minutes.db
 *.mp4
 # Versioned eval audio fixture (small, license-clean) — see app/scripts/eval/README.md
 !app/scripts/eval/fixtures/*.wav
+# Participant recordings, verbatim references, identity-bearing consent records,
+# and machine-specific benchmark artifacts must never enter the repository.
+app/scripts/eval/local-corpus/
+app/scripts/eval/consent-records/
+app/scripts/eval/corpus-local.json
+app/scripts/eval/results/
 docs/demo.mov
 docs/demo.gif
 
@@ -53,4 +59,3 @@ Thumbs.db
 
 # Scratch / experiments
 /experiments
-

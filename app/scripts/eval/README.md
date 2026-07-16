@@ -13,7 +13,9 @@ Two tiers:
 ```
 app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
+  corpus-targets.json  # private meeting-corpus coverage floor
   corpus.mjs           # manifest validation and language normalization
+  coverage.mjs         # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
   wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
   summary-rubric.mjs  # checklist scoring of a summary markdown file
@@ -45,6 +47,7 @@ Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
 every sample in a validated corpus manifest and gates the results. The default
 manifest is `corpus-manifest.json`; use `--manifest <path>` for a local
 participant-consented corpus. Every checked-in WAV must have a manifest entry.
+The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTED_CORPUS.md).
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce
@@ -52,6 +55,8 @@ participant-consented corpus. Every checked-in WAV must have a manifest entry.
   `silence.wav` is 20 s of deterministic ~-60 dBFS noise for exactly this.
 - `--provider whisper|parakeet` (default `whisper`) and `--model <name>` A/B engines
   and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
+- `--backend cpu|metal|coreml|cuda|vulkan|openblas|hipblas` selects the compiled Whisper
+  backend (default `cpu`). Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
@@ -94,9 +99,8 @@ English clip is a regression check, not a general accuracy ranking.
   is a regression tripwire, not a quality bar. Re-calibrate by running it a few
   times after intentional decode changes and updating the default in
   `real-run.mjs`.
-- **Backend variance:** the example builds with the workspace's default
-  features (Metal/CoreML are hardwired on macOS); small cross-backend drift is
-  absorbed by the threshold.
+- **Backend variance:** backend selection is explicit. Compare the same artifact and corpus
+  across backends; small hardware-dependent drift is absorbed by the threshold.
 - **Fixture provenance:** `real-speech.wav` is a 27 s excerpt (16 kHz mono,
   ~0.9 MB) of the LibriVox recording of Lincoln's Gettysburg Address read by
   John Greenman (archive.org item `gettysburg_johng_librivox`, public domain).

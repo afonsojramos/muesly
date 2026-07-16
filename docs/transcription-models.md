@@ -124,10 +124,12 @@ VAD, engine, and segment-filter path on 2026-07-16:
 | `parakeet-tdt-0.6b-v3-int8` | 1.85% | 0 VAD segments / no text |
 
 This clean English clip is a regression smoke test, not evidence that one
-engine is generally more accurate. The next quality investment should be a
-small consented meeting corpus spanning accents, supported languages, noise,
-overlap, domain terms, and silence. Report WER by language and condition, plus
-real-time factor and peak memory on CPU, Metal, CUDA, and Windows backends.
+engine is generally more accurate. The repository now ships a local-only,
+consent-aware corpus manifest, privacy-preserving intake procedure, coverage
+matrix, real WER/RTF/peak-memory measurement, and transcript-free aggregation.
+The actual participant corpus is intentionally not in Git; completing it requires
+consented recordings across the target languages and noise conditions. See
+`app/scripts/eval/CONSENTED_CORPUS.md`.
 
 ## Alternatives reviewed
 
