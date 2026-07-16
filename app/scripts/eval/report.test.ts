@@ -530,15 +530,24 @@ test('suppresses zero-overlap and three-way comparisons when only a pair shares 
 });
 
 test('unions report shards and compares identical sample sets independent of input order', () => {
-	const first = resultForSample('meeting-first');
+	const first = resultForSample('meeting-first', {
+		metrics: { inference_seconds: 0.1, inference_rtf: 0.005, model_inference_rtf: 0.01 },
+	});
 	const second = resultForSample('meeting-second', {
 		language: 'es',
 		noise_condition: 'office',
+		metrics: { inference_seconds: 0.2, inference_rtf: 0.01, model_inference_rtf: 0.02 },
+	});
+	const third = resultForSample('meeting-third', {
+		language: 'pt',
+		noise_condition: 'remote-call',
+		metrics: { inference_seconds: 0.3, inference_rtf: 0.015, model_inference_rtf: 0.03 },
 	});
 	const inputs = [
 		variantReport([first], { model: 'whisper-test', backend: 'cpu' }),
 		variantReport([second], { model: 'whisper-test', backend: 'cpu' }),
-		variantReport([second, first], { model: 'whisper-test', backend: 'metal' }),
+		variantReport([third], { model: 'whisper-test', backend: 'cpu' }),
+		variantReport([third, second, first], { model: 'whisper-test', backend: 'metal' }),
 	];
 	const aggregate = aggregateRunReports(inputs);
 	assert.equal(aggregate.comparison.status, 'comparable');
@@ -548,12 +557,12 @@ test('unions report shards and compares identical sample sets independent of inp
 			observed_sample_count,
 		})),
 		[
-			{ backend: 'cpu', observed_sample_count: 2 },
-			{ backend: 'metal', observed_sample_count: 2 },
+			{ backend: 'cpu', observed_sample_count: 3 },
+			{ backend: 'metal', observed_sample_count: 3 },
 		],
 	);
 
-	const reordered = aggregateRunReports([inputs[2], inputs[1], inputs[0]]);
+	const reordered = aggregateRunReports([inputs[3], inputs[2], inputs[1], inputs[0]]);
 	aggregate.generated_at = '<generated>';
 	reordered.generated_at = '<generated>';
 	assert.deepEqual(reordered, aggregate);

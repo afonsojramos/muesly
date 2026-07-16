@@ -832,16 +832,19 @@ function groupedSummaries(records, dimensions) {
 }
 
 function summarizeVariant(identity, records) {
+	const orderedRecords = [...records].sort((left, right) =>
+		compareText(left.sample_id, right.sample_id),
+	);
 	return {
 		...identity,
-		observed_sample_count: records.length,
+		observed_sample_count: orderedRecords.length,
 		groups: {
-			overall: summarize(records),
-			language: groupedSummaries(records, [['language', (record) => record.language]]),
-			noise_condition: groupedSummaries(records, [
+			overall: summarize(orderedRecords),
+			language: groupedSummaries(orderedRecords, [['language', (record) => record.language]]),
+			noise_condition: groupedSummaries(orderedRecords, [
 				['noise_condition', (record) => record.noise_condition],
 			]),
-			language_noise: groupedSummaries(records, [
+			language_noise: groupedSummaries(orderedRecords, [
 				['language', (record) => record.language],
 				['noise_condition', (record) => record.noise_condition],
 			]),
