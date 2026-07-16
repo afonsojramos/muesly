@@ -8,6 +8,7 @@ import {
 	acquireLocalCorpusLock,
 	completeLocalCorpusWithdrawalRecovery,
 	markLocalCorpusOrphanCleanup,
+	markLocalCorpusWithdrawalCommitted,
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
 import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
@@ -94,7 +95,9 @@ function interruptedOrphanCleanupTargetsManifest(lockPath, manifestPath, session
 			const matches =
 				(owner.operation === 'intake' ||
 					(owner.operation === 'withdrawal' &&
-						(owner.orphan_cleanup === true || !fs.existsSync(manifestPath)))) &&
+						(owner.orphan_cleanup === true ||
+							owner.withdrawal_committed === true ||
+							!fs.existsSync(manifestPath)))) &&
 				owner.session_id === sessionId &&
 				ownerManifestPath === manifestPath;
 			if (matches) return owner;
@@ -230,6 +233,7 @@ export function withdrawConsentedSession(options) {
 	const orphanCleanup =
 		interruptedOperation?.orphan_cleanup === true ||
 		(!manifestExists && interruptedOperation !== null);
+	const completedWithdrawal = interruptedOperation?.withdrawal_committed === true;
 	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
 		operation: 'withdrawal',
 		sessionId: options.sessionId,
@@ -249,6 +253,7 @@ export function withdrawConsentedSession(options) {
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (withdrawn.length === 0) {
 			if (pendingMarker) {
+				markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 				completeRecovery();
 				finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
 				return {
@@ -259,7 +264,7 @@ export function withdrawConsentedSession(options) {
 			}
 			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
 			if (!sessionEntry) {
-				if (orphanCleanup) {
+				if (orphanCleanup || completedWithdrawal) {
 					completeRecovery();
 					return {
 						sessionId: options.sessionId,
@@ -292,6 +297,7 @@ export function withdrawConsentedSession(options) {
 				started_at: new Date().toISOString(),
 			};
 			writeWithdrawalMarker(markerPath, orphanMarker);
+			markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 			completeRecovery();
 			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, orphanMarker);
 			return {
@@ -350,6 +356,7 @@ export function withdrawConsentedSession(options) {
 		quarantineResults(localCorpusRoot, manifestPath, marker);
 		fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });
 		fs.renameSync(stagedManifest, manifestPath);
+		markLocalCorpusWithdrawalCommitted(lockPath, lockToken);
 		completeRecovery();
 		finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, marker);
 		return {

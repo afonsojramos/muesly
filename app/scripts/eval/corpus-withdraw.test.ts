@@ -277,6 +277,52 @@ test('completes an orphan withdrawal whose cleanup finished before lock release'
 	assert(!fs.existsSync(lockPath));
 });
 
+test('completes a normal withdrawal whose cleanup finished before lock release', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	document.samples = document.samples.filter(
+		(sample) => sample.session_id !== 'session-withdraw',
+	);
+	fs.writeFileSync(manifestPath, `${JSON.stringify(document, null, 2)}\n`);
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	fs.rmSync(path.join(localCorpusRoot, 'session-withdraw'), {
+		recursive: true,
+		force: true,
+	});
+	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 3,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'withdrawal',
+			session_id: 'session-withdraw',
+			withdrawal_committed: true,
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-withdraw',
+		removedSamples: 0,
+		resumed: true,
+	});
+	assert.deepEqual(
+		JSON.parse(fs.readFileSync(manifestPath, 'utf8')).samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
+	assert(!fs.existsSync(lockPath));
+});
+
 test('resumes orphan withdrawal intent after its lock was moved stale', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-orphan-stale-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');

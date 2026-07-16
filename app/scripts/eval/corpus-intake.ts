@@ -371,6 +371,21 @@ export function markLocalCorpusOrphanCleanup(lockPath, token) {
 	}
 }
 
+export function markLocalCorpusWithdrawalCommitted(lockPath, token) {
+	const { owner } = readLockOwner(lockPath);
+	if (owner.token !== token || owner.pid !== process.pid) {
+		throw new Error(`cannot update corpus lock owned by another process: ${lockPath}`);
+	}
+	if (owner.withdrawal_committed === true) return;
+	const stagedOwner = path.join(lockPath, `owner.json.tmp-${process.pid}-${randomUUID()}`);
+	try {
+		writePrivateJson(stagedOwner, { ...owner, withdrawal_committed: true });
+		fs.renameSync(stagedOwner, path.join(lockPath, 'owner.json'));
+	} finally {
+		fs.rmSync(stagedOwner, { force: true });
+	}
+}
+
 export function completeLocalCorpusWithdrawalRecovery(localCorpusRoot, manifestPath, sessionId) {
 	const ownerMetadata = { operation: 'withdrawal', sessionId };
 	for (const name of fs.readdirSync(localCorpusRoot)) {
