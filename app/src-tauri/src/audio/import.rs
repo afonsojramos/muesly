@@ -261,8 +261,23 @@ pub async fn start_import<R: Runtime>(
     // Reset cancellation flag
     IMPORT_CANCELLED.store(false, Ordering::SeqCst);
 
-    let use_parakeet = provider.as_deref() == Some("parakeet");
-    let result = run_import(app.clone(), source_path, title, language, model, provider).await;
+    let selection = super::transcription::resolve_requested_transcription_model(
+        &app,
+        provider.as_deref(),
+        model.as_deref(),
+    )
+    .await
+    .map_err(anyhow::Error::msg)?;
+    let use_parakeet = selection.provider == "parakeet";
+    let result = run_import(
+        app.clone(),
+        source_path,
+        title,
+        language,
+        Some(selection.model),
+        Some(selection.provider),
+    )
+    .await;
 
     // Unload the engine after the batch job (success, failure, or cancellation)
     super::common::unload_engine_after_batch(use_parakeet).await;

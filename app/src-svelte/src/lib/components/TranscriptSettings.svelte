@@ -42,7 +42,10 @@
 		}
 	}
 
-	function handleWhisperSelect(modelName: string, provider?: 'localWhisper' | 'parakeet'): void {
+	function handleWhisperSelect(
+		modelName: string,
+		provider?: 'automatic' | 'localWhisper' | 'parakeet',
+	): void {
 		setTranscriptModelConfig({
 			...transcriptModelConfig,
 			provider: provider ?? 'localWhisper',

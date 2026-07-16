@@ -12,6 +12,7 @@ summary) that consume the transcript.
 ## Live recording
 
 Source: `audio/pipeline.rs`, `audio/transcription/worker.rs`,
+`audio/transcription/engine.rs`, `transcription_models.rs`,
 `whisper_engine/engine.rs`, `audio/recording_commands/mod.rs`,
 `hooks/use-recording-stop.svelte.ts`.
 
@@ -22,8 +23,11 @@ flowchart TD
     SPLIT -->|"recording path: ducking, mixing"| FILE["audio.mp4 in meeting folder"]
     SPLIT -->|"transcription path"| VAD["VAD: speech-only segments<br/>min 250ms, max 15s"]
     VAD --> QUEUE["Chunk queue"] --> WORKER["Serial transcription worker<br/>(NUM_WORKERS = 1)"]
-    WORKER --> PICK{"configured provider"}
-    PICK -->|"localWhisper (default)"| ENGINE["Whisper engine decode<br/>(see 'Inside one decode')"]
+    WORKER --> MODE{"model setting"}
+    MODE -->|"Automatic"| AUTO["At recording start:<br/>hardware tier + downloaded models<br/>→ one stable provider/model"]
+    MODE -->|"manual model"| PICK{"resolved provider"}
+    AUTO --> PICK
+    PICK -->|"localWhisper"| ENGINE["Whisper engine decode<br/>(see 'Inside one decode')"]
     PICK -->|"parakeet (Fastest profile)"| PARA["Parakeet v3 single pass:<br/>no prompts, no confidence,<br/>no language machinery"]
     PARA --> GATES
     ENGINE --> GATES{"Gates: confidence floor 0.3,<br/>hallucination filter,<br/>mic/system crosstalk"}
@@ -34,6 +38,13 @@ flowchart TD
     WORKER -.->|"language lock settles"| REPAIR["Post-lock repair: re-decode<br/>Deciding-phase segments forced to the<br/>stable language, re-emit same sequence_id"]
     REPAIR --> EMIT
 ```
+
+Automatic mode never changes the engine during a recording and never downloads
+a model without asking. It prefers the hardware-tier Whisper recommendation,
+falls back through suitable downloaded Whisper models, then uses downloaded
+Parakeet when no hardware-suitable Whisper model exists. The resolved provider
+and model—not the `automatic` sentinel—are written to meeting metadata and
+analytics.
 
 On stop (`use-recording-stop.svelte.ts`): wait for the queue to drain → flush
 buffer → save meeting to SQLite. Then, without holding the stop UI: an
@@ -58,8 +69,9 @@ flowchart TD
     MENU["Meeting menu → Retranscribe audio"] --> DIALOG["RetranscribeDialog:<br/>language, model,<br/>'Regenerate the AI summary when done'"]
     DIALOG --> CMD["start_retranscription_command"]
     IMPORT["Import audio file"] --> CMD2["import command"]
-    CMD --> DECODE["Decode + resample to 16kHz mono"]
-    CMD2 --> DECODE
+    CMD --> RESOLVE["Resolve Automatic once<br/>or keep explicit model"]
+    CMD2 --> RESOLVE
+    RESOLVE --> DECODE["Decode + resample to 16kHz mono"]
     DECODE --> VAD2["VAD (2s redemption),<br/>split oversized segments"]
     VAD2 --> LOOP["Per-segment engine decode<br/>+ segment filter"]
     LOOP --> REPAIR2["Post-lock repair of<br/>Deciding-phase segments"]

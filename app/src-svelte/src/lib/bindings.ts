@@ -78,6 +78,11 @@ export const commands = {
 	whisperInit: () => typedError<null, string>(__TAURI_INVOKE("whisper_init")),
 	whisperGetAvailableModels: () => typedError<WhisperModelInfo[], string>(__TAURI_INVOKE("whisper_get_available_models")),
 	whisperGetRecommendedModel: () => __TAURI_INVOKE<string>("whisper_get_recommended_model"),
+	/**
+	 *  Resolve automatic mode against downloaded, verified models. This performs
+	 *  discovery only; loading still happens in the engine-specific path below.
+	 */
+	getAutomaticTranscriptionModel: () => typedError<ResolvedTranscriptionModel, string>(__TAURI_INVOKE("get_automatic_transcription_model")),
 	whisperLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_load_model", { modelName })),
 	whisperGetCurrentModel: () => typedError<string | null, string>(__TAURI_INVOKE("whisper_get_current_model")),
 	whisperIsModelLoaded: () => typedError<boolean, string>(__TAURI_INVOKE("whisper_is_model_loaded")),
@@ -1461,6 +1466,12 @@ export type RecordingPreferences = {
 	preferred_mic_device?: string | null,
 	preferred_system_device?: string | null,
 	system_audio_backend?: string | null,
+};
+
+export type ResolvedTranscriptionModel = {
+	provider: string,
+	model: string,
+	reason: string,
 };
 
 /**  Response when retranscription is started */

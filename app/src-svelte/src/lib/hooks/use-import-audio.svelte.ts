@@ -65,7 +65,7 @@ export interface UseImportAudio {
 		title: string,
 		language?: string | null,
 		model?: string | null,
-		provider?: 'whisper' | 'parakeet' | null,
+		provider?: 'automatic' | 'whisper' | 'parakeet' | null,
 	) => Promise<void>;
 	cancelImport: () => Promise<void>;
 	reset: () => void;
@@ -206,7 +206,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 		title: string,
 		language?: string | null,
 		model?: string | null,
-		provider?: 'whisper' | 'parakeet' | null,
+		provider?: 'automatic' | 'whisper' | 'parakeet' | null,
 	): Promise<void> => {
 		isCancelled = false;
 		status = 'processing';
@@ -229,7 +229,7 @@ export function useImportAudio(options: UseImportAudioOptions = {}): UseImportAu
 				title,
 				language: language || null,
 				model: model || null,
-				provider: provider === 'parakeet' ? 'parakeet' : null,
+				provider: provider === 'parakeet' || provider === 'automatic' ? provider : null,
 			});
 		} catch (err) {
 			status = 'error';

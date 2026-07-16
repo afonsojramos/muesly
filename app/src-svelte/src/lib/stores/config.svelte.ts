@@ -112,8 +112,8 @@ class ConfigStore {
 	});
 
 	transcriptModelConfig = $state<TranscriptModelProps>({
-		provider: 'localWhisper',
-		model: 'base-q5_1',
+		provider: 'automatic',
+		model: 'automatic',
 		apiKey: null,
 	});
 
@@ -254,8 +254,8 @@ class ConfigStore {
 			const config = await configService.getTranscriptConfig();
 			if (config) {
 				this.transcriptModelConfig = {
-					provider: 'localWhisper',
-					model: config.model ?? 'base-q5_1',
+					provider: config.provider ?? 'automatic',
+					model: config.model ?? 'automatic',
 					apiKey: config.apiKey ?? null,
 				};
 			}

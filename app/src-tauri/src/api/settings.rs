@@ -211,11 +211,8 @@ pub async fn api_get_transcript_config<R: Runtime>(
         Ok(None) => {
             log_info!("No transcript config found, returning default.");
             Ok(Some(TranscriptConfig {
-                provider: "localWhisper".to_string(),
-                model: crate::config::recommended_whisper_model(
-                    crate::audio::HardwareProfile::detect(),
-                )
-                .to_string(),
+                provider: crate::transcription_models::AUTOMATIC_TRANSCRIPTION_PROVIDER.to_string(),
+                model: crate::transcription_models::AUTOMATIC_TRANSCRIPTION_MODEL.to_string(),
                 api_key: None,
             }))
         }
@@ -241,6 +238,12 @@ pub async fn api_save_transcript_config<R: Runtime>(
         &provider
     );
     let pool = state.db_manager.pool();
+
+    if provider == crate::transcription_models::AUTOMATIC_TRANSCRIPTION_PROVIDER
+        && model != crate::transcription_models::AUTOMATIC_TRANSCRIPTION_MODEL
+    {
+        return Err("Automatic transcription must use the automatic model sentinel".to_string());
+    }
 
     if let Err(e) = SettingsRepository::save_transcript_config(pool, &provider, &model).await {
         log_error!("Failed to save transcript config: {}", e);

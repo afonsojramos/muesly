@@ -568,7 +568,7 @@ impl SettingsRepository {
     ) -> std::result::Result<(), String> {
         let api_key_column = match provider {
             // Local engines are keyless; return early instead of touching a column.
-            "localWhisper" => return Ok(()),
+            "automatic" | "localWhisper" => return Ok(()),
             "parakeet" => return Ok(()),
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
@@ -610,7 +610,7 @@ impl SettingsRepository {
     ) -> std::result::Result<Option<String>, String> {
         let api_key_column = match provider {
             // Local engines are keyless; skip the keychain + column read.
-            "localWhisper" => return Ok(None),
+            "automatic" | "localWhisper" => return Ok(None),
             "parakeet" => return Ok(None),
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",

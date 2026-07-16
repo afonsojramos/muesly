@@ -107,14 +107,17 @@ impl HardwareProfile {
 
     /// Detect available system memory in GB
     fn detect_memory_gb() -> u8 {
-        // Simple memory detection - could be enhanced with system-specific calls
-        match std::env::var("MEMORY_GB") {
-            Ok(mem_str) => mem_str.parse().unwrap_or(8),
-            Err(_) => {
-                // Default estimates based on common configurations
-                8 // Conservative default
-            }
+        if let Ok(mem_str) = std::env::var("MEMORY_GB") {
+            return mem_str.parse().unwrap_or(8);
         }
+
+        let mut system = sysinfo::System::new_all();
+        system.refresh_memory();
+        let bytes = system.total_memory();
+        if bytes == 0 {
+            return 8;
+        }
+        ((bytes / (1024 * 1024 * 1024)).max(1)).min(u8::MAX as u64) as u8
     }
 
     /// Calculate performance tier based on hardware

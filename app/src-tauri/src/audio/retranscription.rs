@@ -162,14 +162,21 @@ pub async fn start_retranscription<R: Runtime>(
     // Reset cancellation flag
     RETRANSCRIPTION_CANCELLED.store(false, Ordering::SeqCst);
 
-    let use_parakeet = provider.as_deref() == Some("parakeet");
+    let selection = super::transcription::resolve_requested_transcription_model(
+        &app,
+        provider.as_deref(),
+        model.as_deref(),
+    )
+    .await
+    .map_err(anyhow::Error::msg)?;
+    let use_parakeet = selection.provider == "parakeet";
     let result = run_retranscription(
         app.clone(),
         meeting_id.clone(),
         meeting_folder_path,
         language,
-        model,
-        provider,
+        Some(selection.model),
+        Some(selection.provider),
     )
     .await;
 

@@ -1020,6 +1020,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         whisper_engine::commands::whisper_init,
         whisper_engine::commands::whisper_get_available_models,
         whisper_engine::commands::whisper_get_recommended_model,
+        audio::transcription::engine::get_automatic_transcription_model,
         whisper_engine::commands::whisper_load_model,
         whisper_engine::commands::whisper_get_current_model,
         whisper_engine::commands::whisper_is_model_loaded,

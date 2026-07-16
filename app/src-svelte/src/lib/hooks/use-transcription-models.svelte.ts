@@ -16,7 +16,7 @@ export interface RawModelInfo {
 }
 
 export interface ModelOption {
-	provider: 'whisper' | 'parakeet';
+	provider: 'automatic' | 'whisper' | 'parakeet';
 	name: string;
 	displayName: string;
 	size_mb: number;
@@ -89,24 +89,33 @@ export function useTranscriptionModels(
 			console.error('Failed to fetch Parakeet models:', err);
 		}
 
-		availableModels = all;
+		availableModels = [
+			{
+				provider: 'automatic',
+				name: 'automatic',
+				displayName: '✨ Automatic: best model for this computer',
+				size_mb: 0,
+			},
+			...all,
+		];
 
 		const config = getConfig();
 		const configuredProvider = config?.provider ?? '';
 		const configuredModel = config?.model ?? '';
 
-		const configuredMatch = all.find(
+		const configuredMatch = availableModels.find(
 			(m) =>
-				m.name === configuredModel &&
-				((configuredProvider === 'localWhisper' && m.provider === 'whisper') ||
-					(configuredProvider === 'parakeet' && m.provider === 'parakeet')),
+				(configuredProvider === 'automatic' && m.provider === 'automatic') ||
+				(m.name === configuredModel &&
+					((configuredProvider === 'localWhisper' && m.provider === 'whisper') ||
+						(configuredProvider === 'parakeet' && m.provider === 'parakeet'))),
 		);
 
 		if (!userSelected) {
 			if (configuredMatch) {
 				selectedModelKey = `${configuredMatch.provider}:${configuredMatch.name}`;
 			} else {
-				const first = all[0];
+				const first = availableModels[0];
 				if (first) {
 					selectedModelKey = `${first.provider}:${first.name}`;
 				}

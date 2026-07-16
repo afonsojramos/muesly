@@ -217,7 +217,12 @@
 				meetingFolderPath,
 				language: languageToSend,
 				model: selectedModelDetails?.name || null,
-				provider: selectedModelDetails?.provider === 'parakeet' ? 'parakeet' : null,
+				provider:
+					selectedModelDetails?.provider === 'parakeet'
+						? 'parakeet'
+						: selectedModelDetails?.provider === 'automatic'
+							? 'automatic'
+							: null,
 			});
 			onStarted?.({ regenerateSummary });
 		} catch (err) {
@@ -258,7 +263,10 @@
 	const modelItems = $derived(
 		models.availableModels.map((model) => ({
 			value: `${model.provider}:${model.name}`,
-			label: `${model.displayName} (${Math.round(model.size_mb)} MB)`,
+			label:
+				model.provider === 'automatic'
+					? model.displayName
+					: `${model.displayName} (${Math.round(model.size_mb)} MB)`,
 		})),
 	);
 	const selectedModelLabel = $derived(

@@ -96,7 +96,10 @@
 	const languageItems = $derived(LANGUAGES.map((l) => ({ label: l.name, value: l.code })));
 	const modelItems = $derived(
 		models.availableModels.map((m) => ({
-			label: `${m.displayName} (${Math.round(m.size_mb)} MB)`,
+			label:
+				m.provider === 'automatic'
+					? m.displayName
+					: `${m.displayName} (${Math.round(m.size_mb)} MB)`,
 			value: `${m.provider}:${m.name}`,
 		})),
 	);

@@ -80,12 +80,119 @@ impl TranscriptionEngine {
 // MODEL VALIDATION AND INITIALIZATION
 // ============================================================================
 
-/// The configured live transcription provider ("localWhisper" unless the
-/// saved config explicitly selects "parakeet").
-async fn configured_provider<R: Runtime>(app: &AppHandle<R>) -> String {
-    match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None).await {
-        Ok(Some(config)) if config.provider == "parakeet" => "parakeet".to_string(),
-        _ => "localWhisper".to_string(),
+/// Resolve automatic mode against downloaded, verified models. This performs
+/// discovery only; loading still happens in the engine-specific path below.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_automatic_transcription_model()
+-> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    let mut whisper_models = Vec::new();
+    if crate::whisper_engine::commands::whisper_init()
+        .await
+        .is_ok()
+    {
+        let engine = {
+            let guard = crate::whisper_engine::commands::WHISPER_ENGINE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            guard.as_ref().cloned()
+        };
+        if let Some(engine) = engine
+            && let Ok(models) = engine.discover_models().await
+        {
+            whisper_models.extend(models.into_iter().filter_map(|model| {
+                matches!(
+                    model.status,
+                    crate::transcription_models::ModelStatus::Available
+                )
+                .then_some(model.name)
+            }));
+        }
+    }
+
+    let mut parakeet_models = Vec::new();
+    if crate::parakeet_engine::commands::parakeet_init()
+        .await
+        .is_ok()
+    {
+        let engine = {
+            let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            guard.as_ref().cloned()
+        };
+        if let Some(engine) = engine
+            && let Ok(models) = engine.discover_models().await
+        {
+            parakeet_models.extend(models.into_iter().filter_map(|model| {
+                matches!(
+                    model.status,
+                    crate::transcription_models::ModelStatus::Available
+                )
+                .then_some(model.name)
+            }));
+        }
+    }
+
+    crate::transcription_models::choose_automatic_transcription_model(
+        crate::audio::HardwareProfile::detect(),
+        &whisper_models,
+        &parakeet_models,
+    )
+}
+
+/// Resolve the saved setting once at an operation boundary. Manual choices are
+/// returned unchanged; automatic choices are derived from current hardware and
+/// downloaded models.
+pub async fn configured_transcription_model<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    let config = crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
+        .await?
+        .ok_or_else(|| "No transcription model is configured".to_string())?;
+
+    if config.provider == crate::transcription_models::AUTOMATIC_TRANSCRIPTION_PROVIDER {
+        let resolved = get_automatic_transcription_model().await?;
+        info!(
+            "✨ Automatic transcription resolved to {}/{}: {}",
+            resolved.provider, resolved.model, resolved.reason
+        );
+        return Ok(resolved);
+    }
+
+    Ok(crate::transcription_models::ResolvedTranscriptionModel {
+        provider: if config.provider == "parakeet" {
+            "parakeet".to_string()
+        } else {
+            "localWhisper".to_string()
+        },
+        model: config.model,
+        reason: "Selected manually".to_string(),
+    })
+}
+
+pub async fn resolve_requested_transcription_model<R: Runtime>(
+    app: &AppHandle<R>,
+    provider: Option<&str>,
+    model: Option<&str>,
+) -> Result<crate::transcription_models::ResolvedTranscriptionModel, String> {
+    match (provider, model) {
+        (Some("automatic"), _) => get_automatic_transcription_model().await,
+        (Some("parakeet"), Some(model)) if !model.is_empty() => {
+            Ok(crate::transcription_models::ResolvedTranscriptionModel {
+                provider: "parakeet".to_string(),
+                model: model.to_string(),
+                reason: "Selected for this operation".to_string(),
+            })
+        }
+        (Some(_), Some(model)) if !model.is_empty() => {
+            Ok(crate::transcription_models::ResolvedTranscriptionModel {
+                provider: "localWhisper".to_string(),
+                model: model.to_string(),
+                reason: "Selected for this operation".to_string(),
+            })
+        }
+        _ => configured_transcription_model(app).await,
     }
 }
 
@@ -94,7 +201,8 @@ async fn configured_provider<R: Runtime>(app: &AppHandle<R>) -> String {
 pub async fn validate_transcription_model_ready<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<(), String> {
-    if configured_provider(app).await == "parakeet" {
+    let selection = configured_transcription_model(app).await?;
+    if selection.provider == "parakeet" {
         info!("🔍 Validating Parakeet model...");
         if let Err(init_error) = crate::parakeet_engine::commands::parakeet_init().await {
             warn!("❌ Failed to initialize Parakeet engine: {}", init_error);
@@ -103,23 +211,12 @@ pub async fn validate_transcription_model_ready<R: Runtime>(
                 init_error
             ));
         }
-        return match crate::parakeet_engine::commands::parakeet_validate_model_ready_with_config(
-            app,
-        )
-        .await
-        {
-            Ok(model_name) => {
-                info!(
-                    "✅ Parakeet model validation successful: {} is ready",
-                    model_name
-                );
-                Ok(())
-            }
-            Err(error) => {
-                warn!("❌ Parakeet model validation failed: {}", error);
-                Err(error)
-            }
-        };
+        get_or_init_parakeet_model(app, &selection.model).await?;
+        info!(
+            "✅ Parakeet model validation successful: {} is ready",
+            selection.model
+        );
+        return Ok(());
     }
 
     info!("🔍 Validating Whisper model...");
@@ -131,34 +228,28 @@ pub async fn validate_transcription_model_ready<R: Runtime>(
         ));
     }
 
-    match crate::whisper_engine::commands::whisper_validate_model_ready_with_config(app).await {
-        Ok(model_name) => {
-            info!(
-                "✅ Whisper model validation successful: {} is ready",
-                model_name
-            );
-            Ok(())
-        }
-        Err(error) => {
-            warn!("❌ Whisper model validation failed: {}", error);
-            Err(error)
-        }
-    }
+    get_or_init_whisper_model(app, &selection.model).await?;
+    info!(
+        "✅ Whisper model validation successful: {} is ready",
+        selection.model
+    );
+    Ok(())
 }
 
 /// Get or initialize the configured live transcription engine.
 pub async fn get_or_init_transcription_engine<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<TranscriptionEngine, String> {
-    if configured_provider(app).await == "parakeet" {
+    let selection = configured_transcription_model(app).await?;
+    if selection.provider == "parakeet" {
         info!("🦜 Initializing Parakeet transcription engine");
         return Ok(TranscriptionEngine::Parakeet(
-            get_or_init_parakeet(app).await?,
+            get_or_init_parakeet_model(app, &selection.model).await?,
         ));
     }
     info!("🎤 Initializing Whisper transcription engine");
     Ok(TranscriptionEngine::Whisper(
-        get_or_init_whisper(app).await?,
+        get_or_init_whisper_model(app, &selection.model).await?,
     ))
 }
 
@@ -166,6 +257,19 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
 /// Validation at recording start already ensured the model is on disk.
 pub async fn get_or_init_parakeet<R: Runtime>(
     app: &AppHandle<R>,
+) -> Result<Arc<crate::parakeet_engine::ParakeetEngine>, String> {
+    let selection = configured_transcription_model(app).await?;
+    let model = if selection.provider == "parakeet" {
+        selection.model
+    } else {
+        crate::config::DEFAULT_PARAKEET_MODEL.to_string()
+    };
+    get_or_init_parakeet_model(app, &model).await
+}
+
+async fn get_or_init_parakeet_model<R: Runtime>(
+    _app: &AppHandle<R>,
+    configured_model: &str,
 ) -> Result<Arc<crate::parakeet_engine::ParakeetEngine>, String> {
     crate::parakeet_engine::commands::parakeet_init().await?;
     let engine = {
@@ -178,13 +282,7 @@ pub async fn get_or_init_parakeet<R: Runtime>(
             .ok_or("Failed to get initialized Parakeet engine")?
     };
 
-    let configured_model =
-        match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None).await {
-            Ok(Some(config)) if config.provider == "parakeet" && !config.model.is_empty() => {
-                config.model
-            }
-            _ => crate::config::DEFAULT_PARAKEET_MODEL.to_string(),
-        };
+    let configured_model = configured_model.to_string();
 
     if engine.is_model_loaded().await
         && engine.get_current_model().await.as_deref() == Some(configured_model.as_str())
@@ -232,6 +330,20 @@ pub async fn get_or_init_parakeet<R: Runtime>(
 pub async fn get_or_init_whisper<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Arc<crate::whisper_engine::WhisperEngine>, String> {
+    let selection = configured_transcription_model(app).await?;
+    let model = if selection.provider == "localWhisper" {
+        selection.model
+    } else {
+        crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
+            .to_string()
+    };
+    get_or_init_whisper_model(app, &model).await
+}
+
+async fn get_or_init_whisper_model<R: Runtime>(
+    _app: &AppHandle<R>,
+    configured_model: &str,
+) -> Result<Arc<crate::whisper_engine::WhisperEngine>, String> {
     // Check if engine already exists and has a model loaded
     let existing_engine = {
         let engine_guard = crate::whisper_engine::commands::WHISPER_ENGINE
@@ -248,57 +360,19 @@ pub async fn get_or_init_whisper<R: Runtime>(
                 .await
                 .unwrap_or_else(|| "unknown".to_string());
 
-            // NEW: Check if loaded model matches saved config
-            let configured_model =
-                match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
-                    .await
-                {
-                    Ok(Some(config)) => {
-                        info!(
-                            "📝 Saved transcript config - provider: {}, model: {}",
-                            config.provider, config.model
-                        );
-                        if config.provider == "localWhisper" && !config.model.is_empty() {
-                            Some(config.model)
-                        } else {
-                            None
-                        }
-                    }
-                    Ok(None) => {
-                        info!("📝 No transcript config found in database");
-                        None
-                    }
-                    Err(e) => {
-                        warn!("⚠️ Failed to get transcript config: {}", e);
-                        None
-                    }
-                };
-
-            // If loaded model matches config, reuse it
-            if let Some(ref expected_model) = configured_model {
-                if current_model == *expected_model {
-                    info!(
-                        "✅ Loaded model '{}' matches saved config, reusing",
-                        current_model
-                    );
-                    return Ok(engine);
-                } else {
-                    info!(
-                        "🔄 Loaded model '{}' doesn't match saved config '{}', reloading correct model...",
-                        current_model, expected_model
-                    );
-                    // Unload the incorrect model
-                    engine.unload_model().await;
-                    info!("📉 Unloaded incorrect model '{}'", current_model);
-                    // Continue to model loading logic below
-                }
-            } else {
-                // No specific config saved, accept currently loaded model
+            if current_model == configured_model {
                 info!(
-                    "✅ No specific model configured, using currently loaded model: '{}'",
+                    "✅ Loaded model '{}' matches the operation selection, reusing",
                     current_model
                 );
                 return Ok(engine);
+            } else {
+                info!(
+                    "🔄 Loaded model '{}' doesn't match operation selection '{}', reloading...",
+                    current_model, configured_model
+                );
+                engine.unload_model().await;
+                info!("📉 Unloaded incorrect model '{}'", current_model);
             }
         } else {
             info!("🔄 Whisper engine exists but no model loaded, will load model from config");
@@ -324,45 +398,7 @@ pub async fn get_or_init_whisper<R: Runtime>(
             .ok_or("Failed to get initialized engine")?
     };
 
-    // Get model configuration from API
-    let model_to_load = match crate::api::api_get_transcript_config(
-        app.clone(),
-        app.clone().state(),
-        None,
-    )
-    .await
-    {
-        Ok(Some(config)) => {
-            info!(
-                "Got transcript config from API - provider: {}, model: {}",
-                config.provider, config.model
-            );
-            if config.provider == "localWhisper" && !config.model.is_empty() {
-                info!("Using model from API config: {}", config.model);
-                config.model
-            } else {
-                warn!(
-                    "Ignoring obsolete transcription provider '{}'; using the recommended Whisper model",
-                    config.provider
-                );
-                crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
-                    .to_string()
-            }
-        }
-        Ok(None) => {
-            info!("No transcript config found; using the recommended Whisper model");
-            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
-                .to_string()
-        }
-        Err(e) => {
-            warn!(
-                "Failed to get transcript config from API: {}; using the recommended Whisper model",
-                e
-            );
-            crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect())
-                .to_string()
-        }
-    };
+    let model_to_load = configured_model.to_string();
 
     info!("Selected model to load: {}", model_to_load);
 

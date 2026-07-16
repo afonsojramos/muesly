@@ -287,10 +287,9 @@ pub async fn start_recording<R: Runtime>(app: AppHandle<R>) -> Result<(), String
 async fn current_transcription_metadata<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Option<crate::audio::recording_saver::TranscriptionMetadata> {
-    let config = crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
+    let config = crate::audio::transcription::configured_transcription_model(app)
         .await
-        .ok()
-        .flatten()?;
+        .ok()?;
     let quality_pass =
         crate::database::repositories::setting::SettingsRepository::get_post_meeting_quality_pass(
             app.state::<crate::state::AppState>().db_manager.pool(),
@@ -1012,12 +1011,11 @@ pub async fn stop_recording<R: Runtime>(
     // Determine which provider was used and unload the appropriate model (with timeout)
     let config = match tokio::time::timeout(
         tokio::time::Duration::from_secs(30), // 30 seconds max for DB operation
-        crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None),
+        crate::audio::transcription::configured_transcription_model(&app),
     )
     .await
     {
-        Ok(Ok(Some(config))) => Some(config.provider),
-        Ok(Ok(None)) => None,
+        Ok(Ok(config)) => Some(config.provider),
         Ok(Err(e)) => {
             warn!("⚠️ Failed to get transcript config: {:?}", e);
             None
@@ -1125,10 +1123,8 @@ pub async fn stop_recording<R: Runtime>(
 
         // Get transcription model info (already loaded above for model unload)
         let transcription_config =
-            match crate::api::api_get_transcript_config(app.clone(), app.clone().state(), None)
-                .await
-            {
-                Ok(Some(config)) => Some((config.provider, config.model)),
+            match crate::audio::transcription::configured_transcription_model(&app).await {
+                Ok(config) => Some((config.provider, config.model)),
                 _ => None,
             };
 

@@ -12,11 +12,12 @@
 		return DISPLAY_NAMES[modelName] ?? `Whisper ${modelName}`;
 	}
 
-	export type TranscriptionProvider = 'localWhisper' | 'parakeet';
+	export type TranscriptionProvider = 'automatic' | 'localWhisper' | 'parakeet';
 
 	/** Providers are inferred from the model name: the two engines' catalogs
 	 *  use disjoint, stable naming. */
 	export function providerForModel(modelName: string): TranscriptionProvider {
+		if (modelName === 'automatic') return 'automatic';
 		return modelName.startsWith('parakeet') ? 'parakeet' : 'localWhisper';
 	}
 </script>
@@ -55,6 +56,7 @@
 
 	/** The fast multilingual alternative surfaced as the "Fastest" profile. */
 	const PARAKEET_MODEL = 'parakeet-tdt-0.6b-v3-int8';
+	type AutomaticResolution = { provider: string; model: string; reason: string };
 
 	let { selectedModel, onModelSelect, class: className = '', autoSave = false }: Props = $props();
 
@@ -62,6 +64,7 @@
 	let loading = $state(true);
 	let error = $state<string | null>(null);
 	let recommendedModel = $state('base-q5_1');
+	let automaticResolution = $state<AutomaticResolution | null>(null);
 	const downloadingModels = new SvelteSet<string>();
 	const progressThrottle = new Map<string, { progress: number; timestamp: number }>();
 
@@ -75,10 +78,10 @@
 	const profileDefinitions = $derived([
 		{
 			modelName: recommendedModel,
-			title: 'Automatic',
+			title: 'Recommended',
 			icon: WandSparkles,
 			tagline: 'Best balance for this computer',
-			recommended: true,
+			recommended: false,
 		},
 		{
 			modelName: fasterModel,
@@ -139,6 +142,12 @@
 			console.error('Failed to save model selection:', err);
 		}
 	}
+
+	const automaticTagline = $derived(
+		automaticResolution
+			? `Currently ${whisperDisplayName(automaticResolution.model)} · ${automaticResolution.reason}`
+			: 'Chooses the best downloaded model when each transcription starts',
+	);
 
 	/** All downloaded models across both engines, Parakeet mapped into the
 	 *  shared ModelInfo card shape. */
@@ -222,11 +231,17 @@
 				await WhisperAPI.deleteCorruptedModel(modelName);
 			}
 			models = await fetchAllModels();
+			automaticResolution = await invoke<AutomaticResolution>(
+				'get_automatic_transcription_model',
+			).catch(() => null);
 			toast.success(`${displayName} deleted`, {
 				description: 'Model removed to free up space',
 				duration: 3000,
 			});
-			if (selectedModel === modelName) onModelSelect?.('');
+			if (selectedModel === modelName) {
+				onModelSelect?.('automatic', 'automatic');
+				if (autoSave) await saveModelSelection('automatic');
+			}
 		} catch (err) {
 			console.error('Failed to delete model:', err);
 			toast.error(`Failed to delete ${displayName}`, {
@@ -247,6 +262,9 @@
 					console.error('Failed to initialize Parakeet:', err);
 				});
 				models = await fetchAllModels();
+				automaticResolution = await invoke<AutomaticResolution>(
+					'get_automatic_transcription_model',
+				).catch(() => null);
 			} catch (err) {
 				console.error('Failed to initialize Whisper:', err);
 				error = err instanceof Error ? err.message : 'Failed to load models';
@@ -279,12 +297,17 @@
 				setModelStatus(modelName, 'Available');
 				downloadingModels.delete(modelName);
 				progressThrottle.delete(modelName);
+				void invoke<NonNullable<typeof automaticResolution>>('get_automatic_transcription_model')
+					.then((resolution) => (automaticResolution = resolution))
+					.catch(() => {});
 				toast.success(`${modelDisplayName(modelName)} ready`, {
 					description: 'Model downloaded and ready to use',
 					duration: 4000,
 				});
-				onModelSelect?.(modelName, providerForModel(modelName));
-				if (autoSave) void saveModelSelection(modelName);
+				if (selectedModel !== 'automatic') {
+					onModelSelect?.(modelName, providerForModel(modelName));
+					if (autoSave) void saveModelSelection(modelName);
+				}
 			};
 			const onError = (event: { payload: { modelName: string; error: string } }) => {
 				const { modelName, error: errMsg } = event.payload;
@@ -358,6 +381,16 @@
 {:else}
 	<div class={cn('flex flex-col gap-3', className)}>
 		<div class="flex flex-col gap-3">
+			<ModelCard
+				title="Automatic"
+				icon={WandSparkles}
+				tagline={automaticTagline}
+				isSelected={selectedModel === 'automatic'}
+				isRecommended={true}
+				status={automaticResolution ? 'available' : 'missing'}
+				onSelect={() => selectModel('automatic')}
+				onDownload={() => downloadModel(recommendedModel)}
+			/>
 			{#each profileCards as { profile, model } (profile.title)}
 				<ModelCard
 					{...whisperCardDisplay(model, profile)}
@@ -399,7 +432,11 @@
 
 		{#if selectedModel}
 			<div in:fly={{ y: -5 }} class="pt-2 text-center text-xs text-muted-foreground">
-				Using {selectedProfile?.title ?? whisperDisplayName(selectedModel)} for transcription
+				{#if selectedModel === 'automatic'}
+					Automatic will choose once when each transcription starts
+				{:else}
+					Using {selectedProfile?.title ?? whisperDisplayName(selectedModel)} for transcription
+				{/if}
 			</div>
 		{/if}
 	</div>

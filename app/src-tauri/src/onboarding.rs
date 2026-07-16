@@ -193,19 +193,19 @@ pub async fn complete_onboarding<R: Runtime>(
     }
     info!("Saved builtin-ai model config: model={}", model);
 
-    // Save the device-appropriate Whisper transcription model.
-    let transcription_model =
-        crate::config::recommended_whisper_model(crate::audio::HardwareProfile::detect());
-    if let Err(e) =
-        SettingsRepository::save_transcript_config(pool, "localWhisper", transcription_model).await
+    // Keep the downloaded recommendation as automatic mode's first choice,
+    // while allowing future sessions to adapt if hardware or installed models change.
+    if let Err(e) = SettingsRepository::save_transcript_config(
+        pool,
+        crate::transcription_models::AUTOMATIC_TRANSCRIPTION_PROVIDER,
+        crate::transcription_models::AUTOMATIC_TRANSCRIPTION_MODEL,
+    )
+    .await
     {
         error!("Failed to save transcription model config: {}", e);
         return Err(format!("Failed to save transcription model config: {}", e));
     }
-    info!(
-        "Saved transcription model config: provider=localWhisper, model={}",
-        transcription_model
-    );
+    info!("Saved transcription model config: provider=automatic, model=automatic");
 
     // Step 2: Only NOW mark onboarding as complete (after DB operations succeed)
     let mut status = load_onboarding_status(&app)
