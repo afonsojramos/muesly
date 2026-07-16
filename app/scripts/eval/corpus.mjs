@@ -6,6 +6,7 @@ export const CORPUS_SCHEMA_VERSION = 1;
 
 const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
+const CONSENTED_USES = new Set(['asr-benchmarking']);
 const MANIFEST_FIELDS = new Set(['schema_version', 'corpus_id', 'description', 'distribution', 'samples']);
 const SAMPLE_FIELDS = new Set([
 	'id',
@@ -89,7 +90,14 @@ function validateProvenance(sample, errors) {
 		if (!/^consent-[a-z0-9][a-z0-9-]*$/.test(provenance.consent_record_id)) {
 			errors.push(`${prefix}.consent_record_id must be an opaque consent-* identifier`);
 		}
-		if (!Array.isArray(provenance.consented_uses) || !provenance.consented_uses.includes('asr-benchmarking')) {
+		if (
+			!Array.isArray(provenance.consented_uses) ||
+			provenance.consented_uses.some(
+				(use) => typeof use !== 'string' || !CONSENTED_USES.has(use),
+			)
+		) {
+			errors.push(`${prefix}.consented_uses may only contain known string values`);
+		} else if (!provenance.consented_uses.includes('asr-benchmarking')) {
 			errors.push(`${prefix}.consented_uses must include asr-benchmarking`);
 		}
 		if (!isIsoDate(provenance.consent_date)) {
@@ -188,8 +196,13 @@ export function validateCorpusDocument(document, options = {}) {
 
 	const declaredAudio = new Set(
 		document.samples
-			.filter(isObject)
-			.map((sample) => resolveSamplePath(manifestPath, sample.audio_path ?? '')),
+			.filter(
+				(sample) =>
+					isObject(sample) &&
+					typeof sample.audio_path === 'string' &&
+					sample.audio_path.trim().length > 0,
+			)
+			.map((sample) => resolveSamplePath(manifestPath, sample.audio_path)),
 	);
 	for (const requiredAudio of requiredAudioFiles.map((file) => path.resolve(file))) {
 		if (!declaredAudio.has(requiredAudio)) {

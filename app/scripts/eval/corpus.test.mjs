@@ -99,3 +99,14 @@ test('requires every discovered audio fixture to be declared', () => {
 	});
 	assert(errors.some((error) => error.includes('audio fixture is missing from the manifest')));
 });
+
+test('rejects nested consent-use data and reports invalid paths without throwing', () => {
+	const { directory, document } = fixture();
+	document.samples[0].provenance.consented_uses.push({ participants: [{ email: 'person@example.com' }] });
+	document.samples[0].audio_path = 42;
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('may only contain known string values')));
+	assert(errors.some((error) => error.includes('audio_path must be a non-empty string')));
+});
