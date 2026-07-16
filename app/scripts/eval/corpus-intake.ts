@@ -193,10 +193,30 @@ function removeAbandonedStagedFiles(directory, isRoot = true) {
 	}
 }
 
+function pendingWithdrawalSessions(localCorpusRoot) {
+	const sessions = new Set();
+	for (const entry of fs.readdirSync(localCorpusRoot, { withFileTypes: true })) {
+		const match = entry.name.match(/^\.withdrawal-(session-[a-z0-9][a-z0-9-]*)\.json$/);
+		if (match) sessions.add(match[1]);
+	}
+	return sessions;
+}
+
 export function hasPendingWithdrawal(localCorpusRoot) {
-	return fs
-		.readdirSync(localCorpusRoot, { withFileTypes: true })
-		.some((entry) => /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name));
+	return pendingWithdrawalSessions(localCorpusRoot).size > 0;
+}
+
+function assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata) {
+	const sessions = pendingWithdrawalSessions(localCorpusRoot);
+	if (sessions.size === 0) return;
+	if (
+		ownerMetadata.operation === 'withdrawal' &&
+		sessions.size === 1 &&
+		sessions.has(ownerMetadata.sessionId)
+	) {
+		return;
+	}
+	throw new Error('a corpus withdrawal is pending; resume it before continuing');
 }
 
 function matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata) {
@@ -278,6 +298,7 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 			}
 			if (installed) {
 				try {
+					assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata);
 					const stalePaths = fs
 						.readdirSync(localCorpusRoot)
 						.filter(

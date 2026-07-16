@@ -376,6 +376,33 @@ test('retains stale-lock evidence until orphan cleanup succeeds', () => {
 	assert(fs.existsSync(recording));
 	assert(!fs.existsSync(`${staleLockPath}.recovered`));
 
+	const unrelatedAudio = path.join(directory, 'unrelated.wav');
+	const unrelatedReference = path.join(directory, 'unrelated.txt');
+	const consentRecord = path.join(directory, 'consent.md');
+	writeWav(unrelatedAudio, 1);
+	fs.writeFileSync(unrelatedReference, 'Unrelated reference.\n');
+	fs.writeFileSync(consentRecord, 'affirmative consent record');
+	assert.throws(
+		() =>
+			intakeConsentedSample({
+				manifestPath,
+				audio: unrelatedAudio,
+				reference: unrelatedReference,
+				sampleId: 'unrelated-clean-001',
+				sessionId: 'session-unrelated',
+				consentRecordId: 'consent-unrelated',
+				consentRecord,
+				consentDate: '2026-07-16',
+				language: 'en',
+				noiseCondition: 'clean',
+				speakers: 2,
+				affirmConsent: true,
+				today: '2026-07-16',
+			}),
+		/corpus withdrawal is pending/,
+	);
+	assert(!fs.existsSync(`${staleLockPath}.recovered`));
+
 	fs.rmSync(markerPath);
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -385,6 +412,39 @@ test('retains stale-lock evidence until orphan cleanup succeeds', () => {
 	assert.equal(result.removedSamples, 0);
 	assert(!fs.existsSync(sessionDirectory));
 	assert(fs.existsSync(`${staleLockPath}.recovered`));
+});
+
+test('retires normal withdrawal recovery evidence before deleting its marker', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const staleLockPath = path.join(
+		localCorpusRoot,
+		'.intake.lock.stale-00000000-0000-4000-8000-000000000001',
+	);
+	fs.mkdirSync(staleLockPath);
+	fs.writeFileSync(
+		path.join(staleLockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'withdrawal',
+			session_id: 'session-withdraw',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	assert(fs.existsSync(`${staleLockPath}.recovered`));
+	assert(!fs.existsSync(path.join(localCorpusRoot, '.withdrawal-session-withdraw.json')));
+	assert(!fs.existsSync(path.join(localCorpusRoot, 'session-withdraw')));
 });
 
 test('completes an orphan withdrawal against an existing manifest after cleanup', () => {

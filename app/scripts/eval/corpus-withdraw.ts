@@ -189,13 +189,14 @@ export function withdrawConsentedSession(options) {
 	}
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
+	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
 	const manifestExists = fs.existsSync(manifestPath);
 	const interruptedOperation = interruptedOrphanCleanupTargetsManifest(
 		lockPath,
 		manifestPath,
 		options.sessionId,
 	);
-	const allowMissingManifest = interruptedOperation !== null;
+	const allowMissingManifest = interruptedOperation !== null || fs.existsSync(markerPath);
 	if (!manifestExists && !allowMissingManifest) {
 		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 	}
@@ -208,11 +209,12 @@ export function withdrawConsentedSession(options) {
 		orphanCleanup,
 	});
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
-	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
-	let withdrawalCompleted = false;
-	const complete = (result) => {
-		withdrawalCompleted = true;
-		return result;
+	const completeRecovery = () => {
+		completeLocalCorpusWithdrawalRecovery(
+			localCorpusRoot,
+			manifestPath,
+			options.sessionId,
+		);
 	};
 	try {
 		if (fs.lstatSync(markerPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
@@ -221,25 +223,27 @@ export function withdrawConsentedSession(options) {
 		const document = readLocalManifest(manifestPath, allowMissingManifest);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
 		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId);
-		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
-		if (withdrawn.length === 0) {
-			if (pendingMarker) {
-				finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
-				return complete({
-					sessionId: options.sessionId,
-					removedSamples: pendingMarker.removed_samples,
-					resumed: true,
-				});
-			}
-			const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
-			if (!sessionEntry) {
-				if (orphanCleanup) {
-					return complete({
+			const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
+			if (withdrawn.length === 0) {
+				if (pendingMarker) {
+					completeRecovery();
+					finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
+					return {
 						sessionId: options.sessionId,
-						removedSamples: 0,
+						removedSamples: pendingMarker.removed_samples,
 						resumed: true,
-					});
+					};
 				}
+				const sessionEntry = fs.lstatSync(sessionDirectory, { throwIfNoEntry: false });
+				if (!sessionEntry) {
+					if (orphanCleanup) {
+						completeRecovery();
+						return {
+							sessionId: options.sessionId,
+							removedSamples: 0,
+							resumed: true,
+						};
+					}
 				throw new Error(`session is not present in the corpus: ${options.sessionId}`);
 			}
 			if (!sessionEntry.isDirectory() || sessionEntry.isSymbolicLink()) {
@@ -262,14 +266,15 @@ export function withdrawConsentedSession(options) {
 				removed_samples: 0,
 				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
 				started_at: new Date().toISOString(),
-			};
-			writeWithdrawalMarker(markerPath, orphanMarker);
-			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, orphanMarker);
-			return complete({
-				sessionId: options.sessionId,
-				removedSamples: 0,
-				resumed: false,
-			});
+				};
+				writeWithdrawalMarker(markerPath, orphanMarker);
+				completeRecovery();
+				finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, orphanMarker);
+				return {
+					sessionId: options.sessionId,
+					removedSamples: 0,
+					resumed: false,
+				};
 		}
 		if (pendingMarker && pendingMarker.removed_samples !== withdrawn.length) {
 			throw new Error(`pending withdrawal sample count changed: ${markerPath}`);
@@ -317,29 +322,20 @@ export function withdrawConsentedSession(options) {
 			};
 			writeWithdrawalMarker(markerPath, marker);
 		}
-		quarantineResults(localCorpusRoot, manifestPath, marker);
-		fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });
-		fs.renameSync(stagedManifest, manifestPath);
-		finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, marker);
-		return complete({
-			sessionId: options.sessionId,
-			removedSamples: withdrawn.length,
-			resumed: false,
-		});
-	} finally {
-		fs.rmSync(stagedManifest, { force: true });
-		try {
-			if (withdrawalCompleted) {
-				completeLocalCorpusWithdrawalRecovery(
-					localCorpusRoot,
-					manifestPath,
-					options.sessionId,
-				);
-			}
+			quarantineResults(localCorpusRoot, manifestPath, marker);
+			fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });
+			fs.renameSync(stagedManifest, manifestPath);
+			completeRecovery();
+			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, marker);
+			return {
+				sessionId: options.sessionId,
+				removedSamples: withdrawn.length,
+				resumed: false,
+			};
 		} finally {
+			fs.rmSync(stagedManifest, { force: true });
 			releaseLocalCorpusLock(lockPath, lockToken);
 		}
-	}
 }
 
 function requiredValue(args, index, option) {
