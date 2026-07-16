@@ -26,6 +26,7 @@ import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
 import { loadCorpus } from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
+import { processIdentity } from "./process-identity.ts";
 import { prepareRealRunSession } from "./real-run-session.ts";
 
 const MODEL_ARTIFACT = "b".repeat(64);
@@ -325,7 +326,7 @@ function options(current, overrides = {}) {
 
 function dependencies(overrides = {}) {
   return {
-    currentProcessIdentity: () => "campaign-test-process",
+    currentProcessIdentity: () => processIdentity(process.pid) ?? "campaign-test-process",
     collectEvaluatorContext: ({ targets }) => ({
       buildEnvironment: {},
       hostTriple: "aarch64-apple-darwin",
