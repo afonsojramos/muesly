@@ -199,10 +199,10 @@ export function hasPendingWithdrawal(localCorpusRoot) {
 		.some((entry) => /^\.withdrawal-session-[a-z0-9][a-z0-9-]*\.json$/.test(entry.name));
 }
 
-function canResumeWithdrawal(owner, manifestPath, ownerMetadata) {
+function matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata) {
 	return (
-		owner.operation === 'withdrawal' &&
 		ownerMetadata.operation === 'withdrawal' &&
+		(owner.operation === 'intake' || owner.operation === 'withdrawal') &&
 		owner.session_id === ownerMetadata.sessionId &&
 		typeof owner.manifest_path === 'string' &&
 		path.resolve(owner.manifest_path) === path.resolve(manifestPath)
@@ -210,7 +210,10 @@ function canResumeWithdrawal(owner, manifestPath, ownerMetadata) {
 }
 
 function assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata) {
-	if (owner.operation !== 'withdrawal' || canResumeWithdrawal(owner, manifestPath, ownerMetadata)) {
+	if (
+		owner.operation !== 'withdrawal' ||
+		matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata)
+	) {
 		return;
 	}
 	const session = typeof owner.session_id === 'string' ? ` for ${owner.session_id}` : '';
@@ -220,15 +223,19 @@ function assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata) {
 function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths, ownerMetadata) {
 	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
 	if (unrecovered.length === 0) return;
-	const staleOwners = unrecovered.map((stalePath) => readLockOwner(stalePath).owner);
-	for (const owner of staleOwners) {
+	const staleEntries = unrecovered.map((stalePath) => ({
+		owner: readLockOwner(stalePath).owner,
+		stalePath,
+	}));
+	for (const { owner } of staleEntries) {
 		assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata);
 	}
-	const abandonedPids = new Set(staleOwners.map((owner) => owner.pid));
+	const abandonedPids = new Set(staleEntries.map(({ owner }) => owner.pid));
 	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
 	removeAbandonedResultFiles(manifestPath, abandonedPids);
-	for (const stalePath of unrecovered) {
+	for (const { owner, stalePath } of staleEntries) {
+		if (matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata)) continue;
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),
 			recovered_by_pid: process.pid,
@@ -338,6 +345,30 @@ export function markLocalCorpusOrphanCleanup(lockPath, token) {
 		fs.renameSync(stagedOwner, path.join(lockPath, 'owner.json'));
 	} finally {
 		fs.rmSync(stagedOwner, { force: true });
+	}
+}
+
+export function completeLocalCorpusWithdrawalRecovery(
+	localCorpusRoot,
+	manifestPath,
+	sessionId,
+) {
+	const ownerMetadata = { operation: 'withdrawal', sessionId };
+	for (const name of fs.readdirSync(localCorpusRoot)) {
+		if (!name.startsWith('.intake.lock.stale-') || name.endsWith('.recovered')) continue;
+		const stalePath = path.join(localCorpusRoot, name);
+		if (fs.existsSync(`${stalePath}.recovered`)) continue;
+		let owner;
+		try {
+			({ owner } = readLockOwner(stalePath));
+		} catch {
+			continue;
+		}
+		if (!matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata)) continue;
+		writePrivateJson(`${stalePath}.recovered`, {
+			recovered_at: new Date().toISOString(),
+			recovered_by_pid: process.pid,
+		});
 	}
 }
 

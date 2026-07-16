@@ -336,6 +336,57 @@ test('does not reuse consumed stale-lock evidence for orphan cleanup', () => {
 	assert(fs.existsSync(sessionDirectory));
 });
 
+test('retains stale-lock evidence until orphan cleanup succeeds', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-retry-stale-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const localCorpusRoot = path.join(directory, 'local-corpus');
+	const sessionDirectory = path.join(localCorpusRoot, 'session-first');
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	const recording = path.join(sessionDirectory, 'only-copy.wav');
+	fs.writeFileSync(recording, 'private promoted audio');
+	const staleLockPath = path.join(
+		localCorpusRoot,
+		'.intake.lock.stale-00000000-0000-4000-8000-000000000001',
+	);
+	fs.mkdirSync(staleLockPath);
+	fs.writeFileSync(
+		path.join(staleLockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			manifest_path: manifestPath,
+			operation: 'intake',
+			session_id: 'session-first',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+	const markerPath = path.join(localCorpusRoot, '.withdrawal-session-first.json');
+	fs.writeFileSync(markerPath, 'invalid');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-first',
+				confirmWithdrawal: true,
+			}),
+		/failed to read pending withdrawal/,
+	);
+	assert(fs.existsSync(recording));
+	assert(!fs.existsSync(`${staleLockPath}.recovered`));
+
+	fs.rmSync(markerPath);
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-first',
+		confirmWithdrawal: true,
+	});
+	assert.equal(result.removedSamples, 0);
+	assert(!fs.existsSync(sessionDirectory));
+	assert(fs.existsSync(`${staleLockPath}.recovered`));
+});
+
 test('completes an orphan withdrawal against an existing manifest after cleanup', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');
