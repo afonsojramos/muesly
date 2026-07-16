@@ -164,11 +164,12 @@ test('refuses to delete a directory shared by a remaining manifest sample', () =
 	assert(fs.existsSync(sharedReference));
 });
 
-test('resumes cleanup after a manifest-committed withdrawal interruption', () => {
+test('resumes cleanup without deleting results regenerated after the manifest commit', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
 	fs.writeFileSync(manifestPath, JSON.stringify(document));
+	const quarantineName = '.withdrawal-results-session-withdraw-00000000-0000-4000-8000-000000000000';
 	const markerPath = path.join(
 		directory,
 		'local-corpus',
@@ -177,15 +178,19 @@ test('resumes cleanup after a manifest-committed withdrawal interruption', () =>
 	fs.writeFileSync(
 		markerPath,
 		JSON.stringify({
-			schema_version: 1,
+			schema_version: 2,
 			session_id: 'session-withdraw',
 			removed_samples: 2,
+			results_quarantine: quarantineName,
 			started_at: '2026-07-16T00:00:00Z',
 		}),
 	);
+	const quarantineDirectory = path.join(directory, 'local-corpus', quarantineName);
+	fs.mkdirSync(quarantineDirectory);
+	fs.writeFileSync(path.join(quarantineDirectory, 'stale.json'), '{}');
 	const resultsDirectory = path.join(directory, 'results');
 	fs.mkdirSync(resultsDirectory);
-	fs.writeFileSync(path.join(resultsDirectory, 'stale.json'), '{}');
+	fs.writeFileSync(path.join(resultsDirectory, 'regenerated.json'), '{}');
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -198,7 +203,8 @@ test('resumes cleanup after a manifest-committed withdrawal interruption', () =>
 		resumed: true,
 	});
 	assert(!fs.existsSync(path.join(directory, 'local-corpus/session-withdraw')));
-	assert(!fs.existsSync(resultsDirectory));
+	assert(fs.existsSync(path.join(resultsDirectory, 'regenerated.json')));
+	assert(!fs.existsSync(quarantineDirectory));
 	assert(!fs.existsSync(markerPath));
 });
 

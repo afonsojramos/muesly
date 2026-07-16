@@ -49,19 +49,41 @@ function readWithdrawalMarker(markerPath, sessionId) {
 		throw new Error(`failed to read pending withdrawal ${markerPath}: ${error.message}`);
 	}
 	if (
-		marker.schema_version !== 1 ||
+		marker.schema_version !== 2 ||
 		marker.session_id !== sessionId ||
 		!Number.isInteger(marker.removed_samples) ||
-		marker.removed_samples < 1
+		marker.removed_samples < 1 ||
+		!/^\.withdrawal-results-[a-z0-9-]+-[a-f0-9-]+$/.test(marker.results_quarantine ?? '')
 	) {
 		throw new Error(`pending withdrawal record is invalid: ${markerPath}`);
 	}
 	return marker;
 }
 
-function finishWithdrawal(localCorpusRoot, manifestPath, sessionId, markerPath) {
+function quarantineResults(localCorpusRoot, manifestPath, marker) {
+	const resultsPath = path.join(path.dirname(manifestPath), 'results');
+	const quarantinePath = path.join(localCorpusRoot, marker.results_quarantine);
+	const quarantineEntry = fs.lstatSync(quarantinePath, { throwIfNoEntry: false });
+	if (quarantineEntry?.isSymbolicLink()) {
+		throw new Error(`withdrawal results quarantine cannot be a symbolic link: ${quarantinePath}`);
+	}
+	if (quarantineEntry) return quarantinePath;
+
+	const resultsEntry = fs.lstatSync(resultsPath, { throwIfNoEntry: false });
+	if (resultsEntry?.isSymbolicLink()) {
+		throw new Error(`results directory cannot be a symbolic link: ${resultsPath}`);
+	}
+	if (resultsEntry) fs.renameSync(resultsPath, quarantinePath);
+	else fs.mkdirSync(quarantinePath);
+	return quarantinePath;
+}
+
+function finishWithdrawal(localCorpusRoot, sessionId, markerPath, marker) {
 	fs.rmSync(path.join(localCorpusRoot, sessionId), { recursive: true, force: true });
-	fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
+	fs.rmSync(path.join(localCorpusRoot, marker.results_quarantine), {
+		recursive: true,
+		force: true,
+	});
 	fs.rmSync(markerPath, { force: true });
 }
 
@@ -87,11 +109,20 @@ export function withdrawConsentedSession(options) {
 		}
 		const document = readLocalManifest(manifestPath);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
+		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId);
 		if (withdrawn.length === 0) {
-			const marker = readWithdrawalMarker(markerPath, options.sessionId);
-			if (!marker) throw new Error(`session is not present in the corpus: ${options.sessionId}`);
-			finishWithdrawal(localCorpusRoot, manifestPath, options.sessionId, markerPath);
-			return { sessionId: options.sessionId, removedSamples: marker.removed_samples, resumed: true };
+			if (!pendingMarker) {
+				throw new Error(`session is not present in the corpus: ${options.sessionId}`);
+			}
+			finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, pendingMarker);
+			return {
+				sessionId: options.sessionId,
+				removedSamples: pendingMarker.removed_samples,
+				resumed: true,
+			};
+		}
+		if (pendingMarker && pendingMarker.removed_samples !== withdrawn.length) {
+			throw new Error(`pending withdrawal sample count changed: ${markerPath}`);
 		}
 
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
@@ -126,19 +157,22 @@ export function withdrawConsentedSession(options) {
 			throw new Error(`withdrawal would leave an invalid corpus:\n- ${errors.join('\n- ')}`);
 		}
 
-		fs.writeFileSync(
-			markerPath,
-			`${JSON.stringify({
-				schema_version: 1,
+		const marker =
+			pendingMarker ??
+			{
+				schema_version: 2,
 				session_id: options.sessionId,
 				removed_samples: withdrawn.length,
+				results_quarantine: `.withdrawal-results-${options.sessionId}-${randomUUID()}`,
 				started_at: new Date().toISOString(),
-			})}\n`,
-			{ mode: 0o600 },
-		);
+			};
+		if (!pendingMarker) {
+			fs.writeFileSync(markerPath, `${JSON.stringify(marker)}\n`, { mode: 0o600 });
+		}
+		quarantineResults(localCorpusRoot, manifestPath, marker);
 		fs.writeFileSync(stagedManifest, `${JSON.stringify(nextDocument, null, 2)}\n`, { mode: 0o600 });
 		fs.renameSync(stagedManifest, manifestPath);
-		finishWithdrawal(localCorpusRoot, manifestPath, options.sessionId, markerPath);
+		finishWithdrawal(localCorpusRoot, options.sessionId, markerPath, marker);
 		return { sessionId: options.sessionId, removedSamples: withdrawn.length, resumed: false };
 	} finally {
 		fs.rmSync(stagedManifest, { force: true });
