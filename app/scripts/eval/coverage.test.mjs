@@ -55,6 +55,8 @@ function runReport(corpus, backend) {
 			hallucinated_words: null,
 			metrics: {
 				backend,
+				operating_system: 'macos',
+				architecture: 'aarch64',
 				inference_seconds: 1,
 				inference_rtf: 0.1,
 				peak_rss_mb: 100,

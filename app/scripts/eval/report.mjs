@@ -66,6 +66,8 @@ export function validateRunReport(report, label = 'report') {
 			continue;
 		}
 		requireString(result.metrics.backend, `${prefix}.metrics.backend`, errors);
+		requireString(result.metrics.operating_system, `${prefix}.metrics.operating_system`, errors);
+		requireString(result.metrics.architecture, `${prefix}.metrics.architecture`, errors);
 		for (const field of [
 			'inference_seconds',
 			'inference_rtf',
@@ -149,6 +151,8 @@ export function aggregateRunReports(reports) {
 	let corpusId;
 	let corpusFingerprint;
 	let thresholds;
+	let operatingSystem;
+	let architecture;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
@@ -172,6 +176,15 @@ export function aggregateRunReports(reports) {
 			throw new Error('cannot aggregate reports produced with different pass thresholds');
 		}
 		for (const result of report.results) {
+			if (operatingSystem === undefined) {
+				operatingSystem = result.metrics.operating_system;
+				architecture = result.metrics.architecture;
+			} else if (
+				result.metrics.operating_system !== operatingSystem ||
+				result.metrics.architecture !== architecture
+			) {
+				throw new Error('cannot aggregate reports from different hardware platforms');
+			}
 			records.push({ ...result, provider: report.provider, model: report.model });
 		}
 	}
@@ -194,6 +207,8 @@ export function aggregateRunReports(reports) {
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
+		operating_system: operatingSystem,
+		architecture,
 		thresholds,
 		source_report_count: reports.length,
 		sample_result_count: records.length,
@@ -218,6 +233,8 @@ export function renderMarkdown(report) {
 		`Corpus: \`${report.corpus_id}\``,
 		'',
 		`Corpus fingerprint: \`${report.corpus_fingerprint}\``,
+		'',
+		`Platform: \`${report.operating_system}/${report.architecture}\``,
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',

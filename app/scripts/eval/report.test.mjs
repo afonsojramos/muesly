@@ -15,6 +15,8 @@ function result(overrides = {}) {
 		hallucinated_words: null,
 		metrics: {
 			backend: 'metal',
+			operating_system: 'macos',
+			architecture: 'aarch64',
 			inference_seconds: 2,
 			inference_rtf: 0.1,
 			peak_rss_mb: 1000,
@@ -49,6 +51,8 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 				wer_percent: 20,
 				metrics: {
 					backend: 'cuda',
+					operating_system: 'macos',
+					architecture: 'aarch64',
 					inference_seconds: 12,
 					inference_rtf: 0.3,
 					peak_rss_mb: 2000,
@@ -65,6 +69,8 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.equal(aggregate.groups.noise_condition.office.samples, 1);
 	assert.equal(aggregate.groups.backend.cuda.samples, 1);
 	assert.equal(aggregate.groups.language_noise_backend['es / office / cuda'].samples, 1);
+	assert.equal(aggregate.operating_system, 'macos');
+	assert.equal(aggregate.architecture, 'aarch64');
 });
 
 test('tracks silence hallucinations separately from WER', () => {
@@ -82,6 +88,7 @@ test('tracks silence hallucinations separately from WER', () => {
 	const markdown = renderMarkdown(aggregate);
 	assert.match(markdown, /language noise backend/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
+	assert.match(markdown, /Platform: `macos\/aarch64`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
 	assert.doesNotMatch(markdown, /—%/);
 });
@@ -105,6 +112,16 @@ test('rejects mixed corpora and incompatible pass thresholds', () => {
 		thresholds: { max_wer_percent: 20, max_hallucinated_words: 2 },
 	};
 	assert.throws(() => aggregateRunReports([first, otherThreshold]), /different pass thresholds/);
+});
+
+test('rejects aggregation across hardware platforms', () => {
+	const first = report([result()]);
+	const otherPlatform = report([
+		result({
+			metrics: { ...result().metrics, operating_system: 'linux', architecture: 'x86_64' },
+		}),
+	]);
+	assert.throws(() => aggregateRunReports([first, otherPlatform]), /different hardware platforms/);
 });
 
 test('rejects legacy reports after corpus revision binding', () => {
