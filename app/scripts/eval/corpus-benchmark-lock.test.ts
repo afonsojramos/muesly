@@ -246,7 +246,17 @@ test('rejects a transient local-corpus ancestor replacement during owner inspect
 			assertOwnedCorpusBenchmarkLock(current.manifestPath, acquired.token, {
 				currentIdentity: 'benchmark-process',
 			}),
-		/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/,
+		(error) => {
+			if (process.platform === 'win32') {
+				assert.equal(error.code, 'EPERM');
+			} else {
+				assert.match(
+					error.message,
+					/benchmark (?:manifest|local corpus) directory changed while benchmark ownership was inspected/,
+				);
+			}
+			return true;
+		},
 	);
 	assert.equal(swapped, true);
 	assert.equal(
