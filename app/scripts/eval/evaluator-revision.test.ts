@@ -216,6 +216,57 @@ test('pkg-config build-kind inputs change the evaluator digest', (t) => {
 	assert.notEqual(changedTarget.sha256, baseline.sha256);
 });
 
+test('pkg-config executable inputs are tracked without inventing targeted static flags', (t) => {
+	const repositoryRoot = createRepository(t);
+	const baseline = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				PKG_CONFIG: '/usr/bin/pkg-config',
+				TARGET_PKG_CONFIG: '/opt/cross/bin/pkg-config',
+			},
+		}),
+	);
+	const changedExecutable = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				PKG_CONFIG: '/usr/bin/pkgconf',
+				TARGET_PKG_CONFIG: '/opt/cross/bin/pkg-config',
+			},
+		}),
+	);
+	const changedTargetExecutable = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				PKG_CONFIG: '/usr/bin/pkg-config',
+				TARGET_PKG_CONFIG: '/opt/other/bin/pkg-config',
+			},
+		}),
+	);
+	const unsupportedTargetedStaticFlags = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				PKG_CONFIG: '/usr/bin/pkg-config',
+				TARGET_PKG_CONFIG: '/opt/cross/bin/pkg-config',
+				HOST_PKG_CONFIG_ALL_STATIC: '1',
+				TARGET_PKG_CONFIG_ALL_DYNAMIC: '1',
+				PKG_CONFIG_ALL_STATIC_x86_64_unknown_linux_gnu: '1',
+			},
+		}),
+	);
+
+	assert.notEqual(changedExecutable.sha256, baseline.sha256);
+	assert.notEqual(changedTargetExecutable.sha256, baseline.sha256);
+	assert.equal(unsupportedTargetedStaticFlags.sha256, baseline.sha256);
+});
+
 test('target-scoped settings for unrelated targets do not change the evaluator digest', (t) => {
 	const repositoryRoot = createRepository(t);
 	const baseline = evaluatorRevision(
