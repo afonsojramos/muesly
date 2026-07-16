@@ -7,12 +7,14 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import {
+	abandonedResultPids,
 	intakeConsentedSample,
 	localCalendarDate,
 	parseIntakeArgs,
 	wavDurationSeconds,
 } from './corpus-intake.ts';
 import { validateCorpusDocument } from './corpus.ts';
+import { processOwnsState } from './process-identity.ts';
 
 function writeWav(filePath, durationSeconds = 2) {
 	const sampleRate = 16_000;
@@ -290,28 +292,30 @@ test('serializes manifest updates with an exclusive local intake lock', () => {
 	assert(!fs.existsSync(options.manifestPath));
 });
 
-test('reclaims a lock whose PID belongs to a different process incarnation', () => {
-	const { directory, options } = intakeFixture();
-	const corpusDirectory = path.join(directory, 'local-corpus');
-	const lockPath = path.join(corpusDirectory, '.intake.lock');
-	fs.mkdirSync(lockPath, { recursive: true });
-	fs.writeFileSync(
-		path.join(lockPath, 'owner.json'),
-		JSON.stringify({
-			schema_version: 3,
-			pid: process.pid,
-			process_identity: 'reused-pid',
-			token: '00000000-0000-4000-8000-000000000001',
-			manifest_path: options.manifestPath,
-			operation: 'intake',
-			created_at: '2026-07-16T00:00:00Z',
+test('distinguishes a reused live PID only with a cross-process identity', () => {
+	const owner = { pid: 1234, process_identity: 'original-process' };
+	assert.equal(
+		processOwnsState(owner, {
+			isAlive: () => true,
+			identityForPid: () => 'reused-process',
 		}),
+		false,
 	);
+	assert.equal(
+		processOwnsState(owner, {
+			isAlive: () => true,
+			identityForPid: () => null,
+		}),
+		true,
+	);
+});
 
-	intakeConsentedSample(options);
-
-	assert.equal(JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')).samples.length, 1);
-	assert(!fs.existsSync(lockPath));
+test('does not PID-clean result files for a reused live process', () => {
+	const owners = [{ pid: 1234 }, { pid: 5678 }];
+	assert.deepEqual(
+		abandonedResultPids(owners, (pid) => pid === 1234),
+		new Set([5678]),
+	);
 });
 
 test('blocks intake until an interrupted withdrawal is resumed', () => {

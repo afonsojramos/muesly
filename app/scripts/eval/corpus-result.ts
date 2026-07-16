@@ -8,7 +8,7 @@ import {
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
 import { loadCorpus } from './corpus.ts';
-import { bootIdentity, processIdentity, processOwnsState } from './process-identity.ts';
+import { processIdentity, processOwnsState } from './process-identity.ts';
 
 const RESULT_TRANSACTION_PATTERN = /^\.result-transaction-(\d+)-([0-9a-f-]{36})\.json$/;
 
@@ -66,6 +66,7 @@ function readTransactionMarker(directory, entry) {
 		transaction.pid !== pid ||
 		transaction.token !== token ||
 		(transaction.schema_version === 2 &&
+			transaction.process_identity !== undefined &&
 			(typeof transaction.process_identity !== 'string' ||
 				transaction.process_identity.length === 0)) ||
 		!['prepared', 'committed'].includes(transaction.state) ||
@@ -138,12 +139,12 @@ function recoverResultTransactions(directory) {
 function promoteOutputSet(stagedOutputs) {
 	const directory = path.dirname(stagedOutputs[0].outputPath);
 	const token = randomUUID();
+	const identity = processIdentity(process.pid);
 	const markerPath = path.join(directory, `.result-transaction-${process.pid}-${token}.json`);
 	const transaction = {
 		schema_version: 2,
 		pid: process.pid,
-		process_identity: processIdentity(process.pid),
-		boot_identity: bootIdentity(),
+		...(identity ? { process_identity: identity } : {}),
 		token,
 		state: 'prepared',
 		outputs: stagedOutputs.map((output) => {

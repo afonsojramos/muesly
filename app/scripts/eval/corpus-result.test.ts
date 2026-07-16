@@ -49,40 +49,6 @@ function interruptedTransaction(directory, state) {
 	return { markerPath, outputs, resultsDirectory };
 }
 
-function reusedPidTransaction(directory) {
-	const resultsDirectory = path.join(directory, 'results');
-	fs.mkdirSync(resultsDirectory);
-	const pid = process.pid;
-	const token = '00000000-0000-4000-8000-000000000020';
-	const outputs = ['aggregate.json', 'aggregate.md'].map((file, index) => ({
-		file,
-		staged_file: `${file}.tmp-${pid}-00000000-0000-4000-8000-00000000002${index}`,
-		backup_file: `${file}.bak-${pid}-${token}`,
-		had_original: true,
-	}));
-	for (const output of outputs) {
-		fs.writeFileSync(path.join(resultsDirectory, output.backup_file), `old ${output.file}\n`);
-		fs.writeFileSync(path.join(resultsDirectory, output.file), `partial ${output.file}\n`);
-		fs.writeFileSync(path.join(resultsDirectory, output.staged_file), `staged ${output.file}\n`);
-	}
-	const markerPath = path.join(
-		resultsDirectory,
-		`.result-transaction-${pid}-${token}.json`,
-	);
-	fs.writeFileSync(
-		markerPath,
-		JSON.stringify({
-			schema_version: 2,
-			pid,
-			process_identity: 'reused-pid',
-			token,
-			state: 'prepared',
-			outputs,
-		}),
-	);
-	return { markerPath, outputs, resultsDirectory };
-}
-
 test('atomically writes results bound to the current local corpus revision', () => {
 	const { directory, document, manifestPath } = localManifest();
 	const outputPath = path.join(directory, 'results', 'run.json');
@@ -164,28 +130,6 @@ test('finishes cleaning an interrupted committed result set before the next writ
 		assert.equal(
 			fs.readFileSync(path.join(transaction.resultsDirectory, output.file), 'utf8'),
 			`new ${output.file}\n`,
-		);
-		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.backup_file)));
-		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.staged_file)));
-	}
-	assert(!fs.existsSync(transaction.markerPath));
-});
-
-test('recovers a result transaction whose PID belongs to a different process incarnation', () => {
-	const { directory, document, manifestPath } = localManifest();
-	const transaction = reusedPidTransaction(directory);
-
-	writeCorpusBoundJson({
-		manifestPath,
-		expectedFingerprint: corpusFingerprint(document),
-		outputPath: path.join(directory, 'results', 'next.json'),
-		value: { complete: true },
-	});
-
-	for (const output of transaction.outputs) {
-		assert.equal(
-			fs.readFileSync(path.join(transaction.resultsDirectory, output.file), 'utf8'),
-			`old ${output.file}\n`,
 		);
 		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.backup_file)));
 		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.staged_file)));

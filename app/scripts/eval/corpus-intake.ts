@@ -6,7 +6,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
 import { fileSha256, validateCorpusDocument } from './corpus.ts';
-import { bootIdentity, processIdentity, processOwnsState } from './process-identity.ts';
+import {
+	processIdentity,
+	processIsAlive,
+	processOwnsState,
+} from './process-identity.ts';
 
 const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
 const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);
@@ -107,7 +111,15 @@ function removeAbandonedManifestFiles(manifestPath) {
 	}
 }
 
-function removeAbandonedResultFiles(manifestPath, abandonedPids) {
+export function abandonedResultPids(abandonedOwners, isAlive = processIsAlive) {
+	return new Set(
+		abandonedOwners.filter((owner) => !isAlive(owner.pid)).map((owner) => owner.pid),
+	);
+}
+
+function removeAbandonedResultFiles(manifestPath, abandonedOwners) {
+	const abandonedPids = abandonedResultPids(abandonedOwners);
+	if (abandonedPids.size === 0) return;
 	const removeFrom = (directory) => {
 		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
 			const entryPath = path.join(directory, entry.name);
@@ -136,14 +148,14 @@ function writePrivateJson(filePath, value) {
 
 function prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata) {
 	const token = randomUUID();
+	const identity = processIdentity(process.pid);
 	const pendingPath = path.join(localCorpusRoot, `.intake.lock.pending-${token}`);
 	fs.mkdirSync(pendingPath, { mode: 0o700 });
 	try {
 		writePrivateJson(path.join(pendingPath, 'owner.json'), {
 			schema_version: 3,
 			pid: process.pid,
-			process_identity: processIdentity(process.pid),
-			boot_identity: bootIdentity(),
+			...(identity ? { process_identity: identity } : {}),
 			token,
 			manifest_path: path.resolve(manifestPath),
 			operation: ownerMetadata.operation,
@@ -243,10 +255,12 @@ function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths, ow
 	for (const { owner } of staleEntries) {
 		assertNoConflictingWithdrawal(owner, manifestPath, ownerMetadata);
 	}
-	const abandonedPids = new Set(staleEntries.map(({ owner }) => owner.pid));
 	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
-	removeAbandonedResultFiles(manifestPath, abandonedPids);
+	removeAbandonedResultFiles(
+		manifestPath,
+		staleEntries.map(({ owner }) => owner),
+	);
 	for (const { owner, stalePath } of staleEntries) {
 		if (matchesWithdrawalRecovery(owner, manifestPath, ownerMetadata)) continue;
 		writePrivateJson(`${stalePath}.recovered`, {
