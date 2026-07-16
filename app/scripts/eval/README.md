@@ -90,6 +90,9 @@ consent storage, never creates fake audio, and never marks consent as granted.
 - BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).
   Set `whisper_language` in the manifest when an explicit mapping is needed; unsupported
   Whisper codes fail before inference.
+- WER uses Unicode-aware NFKC tokenization: meaningful letters and diacritics remain distinct,
+  while compatibility forms, apostrophe variants, and common dash variants are normalized
+  consistently across English, Spanish, Portuguese, French, and German references.
 
 Aggregate one or more run reports into transcript-free JSON and Markdown summaries:
 

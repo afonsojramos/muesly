@@ -15,6 +15,7 @@
 		"seed": "cargo run -q -p muesly --example seed-dev-data",
 		"seed:clear": "cargo run -q -p muesly --example seed-dev-data -- --clear",
 		"eval:wer": "nub app/scripts/eval/wer.ts",
+		"eval:wer:test": "nub --node --test app/scripts/eval/wer.test.ts",
 		"eval:rubric": "nub app/scripts/eval/summary-rubric.ts",
 		"eval:real": "nub app/scripts/eval/real-run.ts",
 		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.ts app/scripts/eval/real-run-options.test.ts",
