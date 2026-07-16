@@ -12,10 +12,10 @@ import {
 	taskReportFilename,
 	validateTaskCheckpoint,
 } from './corpus-benchmark-plan.ts';
+import { corpusFingerprint } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
-const fingerprint = 'a'.repeat(64);
 const artifact = 'b'.repeat(64);
 const executable = 'c'.repeat(64);
 const thresholds = {
@@ -72,13 +72,16 @@ function sample({
 }
 
 function corpus(samples) {
-	return {
+	const document = {
 		schema_version: 2,
 		corpus_id: 'consented-meetings-v1',
 		description: 'Validated local consented meetings.',
 		distribution: 'local',
-		corpus_fingerprint: fingerprint,
 		samples,
+	};
+	return {
+		...document,
+		corpus_fingerprint: corpusFingerprint(document),
 	};
 }
 
@@ -274,7 +277,12 @@ test('plans only eligible samples in deterministic variant, cell, session, and s
 	const tasks = planCorpusBenchmarkTasks(options);
 	const reversedTasks = planCorpusBenchmarkTasks(reversed);
 
-	assert.deepEqual(tasks, reversedTasks);
+	const orderProjection = (planned) =>
+		planned.map(
+			({ corpus_fingerprint, task_id, report_filename, ...task }) => task,
+		);
+	assert.deepEqual(orderProjection(tasks), orderProjection(reversedTasks));
+	assert.notEqual(tasks[0].corpus_fingerprint, reversedTasks[0].corpus_fingerprint);
 	assert.deepEqual(
 		tasks.map((task) => `${task.provider}/${task.target_backend}/${task.sample_id}`),
 		[
@@ -344,6 +352,48 @@ test('requires a fully valid consented corpus before planning', () => {
 				evaluatorRevisions: { metal: evaluatorRevisionEntry('metal') },
 			}),
 		/sample 'duplicate-sample'\.id is duplicated/,
+	);
+
+	const validCorpus = corpus([sample({ id: 'valid-sample' })]);
+	assert.throws(
+		() =>
+			planCorpusBenchmarkTasks({
+				corpus: {
+					...validCorpus,
+					corpus_fingerprint: 'f'.repeat(64),
+				},
+				targets: {
+					...targets,
+					languages: ['en'],
+					noise_conditions: ['clean'],
+					benchmark_variants: [
+						{ provider: 'whisper', model: 'whisper-test', backend: 'metal' },
+					],
+				},
+				thresholds,
+				evaluatorRevisions: { metal: evaluatorRevisionEntry('metal') },
+			}),
+		/corpus_fingerprint does not match/,
+	);
+	assert.throws(
+		() =>
+			planCorpusBenchmarkTasks({
+				corpus: {
+					...validCorpus,
+					forbidden_root_field: 'must not be normalized away',
+				},
+				targets: {
+					...targets,
+					languages: ['en'],
+					noise_conditions: ['clean'],
+					benchmark_variants: [
+						{ provider: 'whisper', model: 'whisper-test', backend: 'metal' },
+					],
+				},
+				thresholds,
+				evaluatorRevisions: { metal: evaluatorRevisionEntry('metal') },
+			}),
+		/corpus\.forbidden_root_field is not an allowed field/,
 	);
 });
 

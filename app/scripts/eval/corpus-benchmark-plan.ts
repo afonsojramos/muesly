@@ -24,6 +24,15 @@ const COMMON_EVALUATOR_REVISION_FIELDS = [
 	'build_env_sha256',
 ];
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const PLANNING_CORPUS_FIELDS = new Set([
+	'schema_version',
+	'corpus_id',
+	'description',
+	'distribution',
+	'samples',
+	'corpus_fingerprint',
+	'manifest_path',
+]);
 const SAFE_REFERENCE_WORDS_PATH = /^checkpoint\.results\[\d+\]\.reference_words$/;
 const CHECKPOINT_FIELDS = new Set([
 	'schema_version',
@@ -417,6 +426,11 @@ export function taskReportFilename(task, reportIdentity = null) {
 }
 
 function planningCorpusDocument(corpus) {
+	for (const field of Object.keys(corpus)) {
+		if (!PLANNING_CORPUS_FIELDS.has(field)) {
+			throw new Error(`corpus.${field} is not an allowed field`);
+		}
+	}
 	const samples = Array.isArray(corpus.samples)
 		? corpus.samples.map((sample) => {
 				if (!isObject(sample)) return sample;
@@ -459,6 +473,9 @@ export function planCorpusBenchmarkTasks({
 		corpus.corpus_fingerprint,
 		'corpus.corpus_fingerprint',
 	);
+	if (corpusFingerprintValue !== corpusFingerprint(planningCorpus)) {
+		throw new Error('corpus.corpus_fingerprint does not match the validated planning corpus');
+	}
 	const targetErrors = validateCoverageTargets(targets);
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
