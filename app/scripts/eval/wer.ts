@@ -22,18 +22,25 @@ export function tokenizeForWer(text) {
 
 /** Levenshtein distance on token arrays. */
 function editDistance(a, b) {
-	const m = a.length;
-	const n = b.length;
-	const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-	for (let i = 0; i <= m; i++) dp[i][0] = i;
-	for (let j = 0; j <= n; j++) dp[0][j] = j;
-	for (let i = 1; i <= m; i++) {
-		for (let j = 1; j <= n; j++) {
-			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-			dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+	const columns = a.length <= b.length ? a : b;
+	const rows = a.length <= b.length ? b : a;
+	let previous = Array.from({ length: columns.length + 1 }, (_, index) => index);
+	let current = Array.from({ length: columns.length + 1 }, () => 0);
+
+	for (let row = 1; row <= rows.length; row++) {
+		current[0] = row;
+		for (let column = 1; column <= columns.length; column++) {
+			const cost = rows[row - 1] === columns[column - 1] ? 0 : 1;
+			current[column] = Math.min(
+				previous[column] + 1,
+				current[column - 1] + 1,
+				previous[column - 1] + cost,
+			);
 		}
+		[previous, current] = [current, previous];
 	}
-	return dp[m][n];
+
+	return previous[columns.length];
 }
 
 export function wer(refText, hypText) {

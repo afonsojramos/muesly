@@ -68,6 +68,19 @@ test('keeps meaningful diacritic and letter differences visible to WER', () => {
 	});
 });
 
+test('preserves insertion and deletion distances when the shorter side changes', () => {
+	assert.deepEqual(werDetails('one two three', 'one three'), {
+		referenceWords: 3,
+		wordErrors: 1,
+		rate: 1 / 3,
+	});
+	assert.deepEqual(werDetails('one three', 'one two three'), {
+		referenceWords: 2,
+		wordErrors: 1,
+		rate: 1 / 2,
+	});
+});
+
 test('preserves empty-reference scoring semantics', () => {
 	assert.deepEqual(werDetails('', ''), {
 		referenceWords: 0,
@@ -78,5 +91,23 @@ test('preserves empty-reference scoring semantics', () => {
 		referenceWords: 0,
 		wordErrors: 1,
 		rate: 1,
+	});
+	assert.deepEqual(werDetails('one two', ''), {
+		referenceWords: 2,
+		wordErrors: 2,
+		rate: 1,
+	});
+});
+
+test('scores long transcripts without allocating the full edit-distance matrix', () => {
+	const referenceWords = 10_000;
+	const hypothesisWords = 10_000;
+	const reference = `${'same '.repeat(referenceWords - 1)}reference`;
+	const hypothesis = `${'same '.repeat(hypothesisWords - 1)}hypothesis`;
+
+	assert.deepEqual(werDetails(reference, hypothesis), {
+		referenceWords,
+		wordErrors: 1,
+		rate: 1 / referenceWords,
 	});
 });
