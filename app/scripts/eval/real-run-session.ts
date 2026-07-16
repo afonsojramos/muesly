@@ -85,29 +85,48 @@ function sanitizeDiagnosticControls(value) {
 	return sanitized;
 }
 
+function addPrivatePathCandidate(candidates, candidate, { windows = false } = {}) {
+	if (candidate.length === 0) return;
+	const variants = windows
+		? [candidate, candidate.replaceAll('\\', '/'), candidate.replaceAll('\\', '\\\\')]
+		: [candidate];
+	for (const variant of variants) {
+		candidates.set(variant, candidates.get(variant) === true || windows);
+	}
+}
+
+function isWindowsPrivatePath(filePath) {
+	return (
+		process.platform === 'win32' || /^[A-Za-z]:[\\/]/.test(filePath) || filePath.startsWith('\\\\')
+	);
+}
+
 function redactPrivateSamplePaths(value, sample) {
 	let diagnostic = String(value ?? '');
-	const candidates = new Set();
+	const candidates = new Map();
 	for (const filePath of [sample.audio_file, sample.reference_file]) {
 		if (typeof filePath !== 'string' || filePath.length === 0) continue;
-		const resolved = path.resolve(filePath);
-		for (const candidate of [filePath, path.normalize(filePath), resolved]) {
-			candidates.add(candidate);
-			if (process.platform === 'win32') candidates.add(candidate.replaceAll('\\', '/'));
+		const windows = isWindowsPrivatePath(filePath);
+		const pathApi = windows ? path.win32 : path;
+		const resolved = pathApi.resolve(filePath);
+		for (const candidate of [filePath, pathApi.normalize(filePath), resolved]) {
+			addPrivatePathCandidate(candidates, candidate, { windows });
 		}
-		candidates.add(path.basename(resolved));
-		const directory = path.dirname(resolved);
-		if (directory !== path.parse(directory).root) candidates.add(directory);
+		addPrivatePathCandidate(candidates, pathApi.basename(resolved), { windows });
+		const directory = pathApi.dirname(resolved);
+		if (directory !== pathApi.parse(directory).root) {
+			addPrivatePathCandidate(candidates, directory, { windows });
+		}
 	}
-	for (const candidate of [...candidates].sort((left, right) => right.length - left.length)) {
-		if (candidate.length === 0) continue;
-		diagnostic =
-			process.platform === 'win32'
-				? diagnostic.replace(
-						new RegExp(escapeRegularExpression(candidate), 'gi'),
-						'<private-corpus-path>',
-					)
-				: diagnostic.split(candidate).join('<private-corpus-path>');
+	for (const [candidate, caseInsensitive] of [...candidates].sort(
+		([left], [right]) => right.length - left.length,
+	)) {
+		diagnostic = caseInsensitive
+			? diagnostic.replace(
+					new RegExp(escapeRegularExpression(candidate), 'gi'),
+					'<private-corpus-path>',
+				)
+			: diagnostic.split(candidate).join('<private-corpus-path>');
 	}
 	return sanitizeDiagnosticControls(diagnostic.replace(/\r\n?/g, '\n')).trim();
 }

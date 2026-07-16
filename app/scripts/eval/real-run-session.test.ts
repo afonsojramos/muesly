@@ -593,6 +593,38 @@ test('captures useful bounded diagnostics without exposing private corpus paths'
 	assert(!failure.message.includes(path.basename(sample.audio_file)));
 });
 
+test('redacts JSON-escaped Windows corpus paths on every host platform', async (t) => {
+	const harness = createHarness(t);
+	t.after(() => harness.session.close());
+	const sample = {
+		...sampleFiles(harness.root, 'escaped-windows-diagnostic'),
+		reference_file: String.raw`C:\Users\Alice\Private Corpus\meeting.txt`,
+		reference_text: 'hello world',
+	};
+	const escapedReferenceFile = JSON.stringify(sample.reference_file);
+	let failure;
+	try {
+		await runRealRunSample(harness.session, sample, {
+			thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+			runProcess() {
+				return {
+					status: 17,
+					signal: null,
+					stdout: '',
+					stderr: `decoder rejected ${escapedReferenceFile}`,
+					pid: process.pid,
+				};
+			},
+		});
+	} catch (error) {
+		failure = error;
+	}
+	assert(failure instanceof Error);
+	assert.match(failure.message, /decoder rejected "<private-corpus-path>"/);
+	assert(!failure.message.includes(String.raw`C:\\Users\\Alice\\Private Corpus`));
+	assert(!failure.message.includes('meeting.txt'));
+});
+
 test('terminates a process that exceeds the private diagnostic output limit', async (t) => {
 	const executableSource = [
 		`#!${process.execPath}`,
