@@ -14,9 +14,12 @@ protection.
    Platform"):
    - User type: **External**.
    - App name, support email, developer email.
-   - **Scopes**: add `https://www.googleapis.com/auth/calendar.events.readonly`
-     plus `openid` and `email`. (events.readonly is *sensitive*, not *restricted*
-     - no CASA, no fee.)
+   - **Scopes**: add
+     `https://www.googleapis.com/auth/calendar.events.readonly` and
+     `https://www.googleapis.com/auth/calendar.calendarlist.readonly`, plus
+     `openid` and `email`. Both Calendar scopes are *sensitive*, not
+     *restricted* (no CASA, no fee). Do not add the broader
+     `https://www.googleapis.com/auth/calendar.readonly` scope.
    - **Test users**: add your own Google account (keeps you in Testing mode).
 3. **Credentials → Create credentials → OAuth client ID → Application type:
    Desktop app** → Create. Copy the **Client ID** and **Client secret**.
@@ -48,12 +51,15 @@ Before moving the consent screen to **In production** (required for real users):
    no human review / no training / no sale, how to disconnect).
 2. **Domain ownership** verified in Google Search Console (same Google account).
 3. An **unlisted demo video** showing the consent grant, the app name on the
-   consent screen, the client id in the address bar, and the scope in use.
+   consent screen, the client id in the address bar, and both Calendar scopes in
+   use: listing subscribed calendars and reading events from a selected calendar.
 4. Submit verification and move to **In production**.
 
-Keep the scope set minimal forever (`openid email calendar.events.readonly`).
-Adding any Gmail/Drive/Photos/Fit/Chat scope moves you into *restricted* territory
-and a recurring CASA security assessment.
+Keep the scope set minimal forever
+(`openid email calendar.events.readonly calendar.calendarlist.readonly`). Adding
+the broader `calendar.readonly` scope is unnecessary; adding any
+Gmail/Drive/Photos/Fit/Chat scope moves you into *restricted* territory and a
+recurring CASA security assessment.
 
 ## How the app uses it
 
