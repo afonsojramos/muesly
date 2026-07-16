@@ -296,7 +296,7 @@ function renderConsentRecord(template, session) {
 
 function renderSessionReadme(session) {
 	const command = [
-		'nub run eval:corpus:intake',
+		`nub ${shellQuote(session.intakeScriptPath)}`,
 		`  --manifest ${shellQuote(session.manifestPath)}`,
 		`  --audio ${shellQuote(session.audioPath)}`,
 		`  --reference ${shellQuote(session.referencePath)}`,
@@ -420,6 +420,9 @@ export function prepareCollectionSession(options) {
 			audioPath,
 			referencePath,
 			consentRecordPath,
+			intakeScriptPath:
+				options.intakeScriptPath ??
+				fileURLToPath(new URL('./corpus-intake.ts', import.meta.url)),
 			collectedSessionsInCell: cell.collected,
 			preparedSessionsInCell: cell.prepared,
 			requiredSessionsInCell: cell.required,

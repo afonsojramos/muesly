@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -240,9 +240,27 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	);
 	assert.match(readme, /Preparing this bundle does not establish consent/);
 	assert.match(readme, /--affirm-all-participants-consented/);
+	assert(readme.includes(`nub '${session.intakeScriptPath}'`));
+	assert.doesNotMatch(readme, /nub run eval:corpus:intake/);
 	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
 	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
 	assert(!fs.existsSync(manifestPath));
+});
+
+test('runs the generated intake entrypoint from an external bundle directory', () => {
+	const current = fixture();
+	const session = prepareCollectionSession(
+		prepareOptions(current, {
+			idFactory: () => '00000000-0000-4000-8000-000000000013',
+		}),
+	);
+	const result = spawnSync('nub', [session.intakeScriptPath], {
+		cwd: path.dirname(session.referencePath),
+		encoding: 'utf8',
+	});
+	assert.equal(result.status, 2);
+	assert.match(result.stderr, /--audio is required/);
+	assert.doesNotMatch(result.stderr, /ERR_NUB_NO_MANIFEST/);
 });
 
 test('allows selecting a specific still-underfilled collection cell', () => {
