@@ -167,7 +167,8 @@ remain checkpointed and make the command exit non-zero. `--require-complete` als
 or underfilled corpus and requires one compatible hardware cohort across the full target matrix.
 Use repeatable `--variant provider/model/backend` options for a subset and
 `--accelerator backend=stable-device-id` where the selected backend requires an explicit GPU
-identity.
+identity. A subset cannot be combined with `--require-complete`, which always certifies the full
+target matrix.
 
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it

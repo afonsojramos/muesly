@@ -243,6 +243,21 @@ test("plans deterministically without executing in safe plan mode", async (t) =>
   assert.deepEqual(progress, ["planned 2 benchmark task(s)"]);
 });
 
+test("requires the complete target matrix instead of certifying a selected variant", async (t) => {
+  const current = fixture(t);
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current, {
+        selectedVariants: ["whisper/whisper-test/cpu"],
+        requireComplete: true,
+      }),
+      dependencies(),
+    ),
+    /--require-complete cannot be combined with --variant/,
+  );
+  assert.equal(fs.existsSync(current.lockPath), false);
+});
+
 test("checkpoints every task privately and resumes only exact completed identities", async (t) => {
   const current = fixture(t);
   const executed = [];
@@ -502,6 +517,48 @@ test("older evaluator checkpoints do not permanently block a new campaign revisi
   assert.equal(
     fs.readdirSync(current.resultsDirectory).filter(isCorpusBenchmarkCheckpointName).length,
     2,
+  );
+});
+
+test("plan mode considers every historical hardware identity without choosing one arbitrarily", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  const firstIdentity = currentIdentity();
+  const secondIdentity = currentIdentity({
+    hardware_profile: `cpu=Other CPU;logical_cpus=8;memory_bytes=17179869184;runtime_env_sha256=${RUNTIME_ENVIRONMENT}`,
+  });
+  const first = await runCorpusBenchmarkCampaign(
+    options(current),
+    dependencies({ inspectVariantIdentity: () => firstIdentity }),
+  );
+  const second = await runCorpusBenchmarkCampaign(
+    options(current),
+    dependencies({
+      inspectVariantIdentity: () => secondIdentity,
+      runTask: ({ task }) =>
+        reportForTask(task, secondIdentity, {
+          result: {
+            passed: false,
+            word_errors: 4,
+            wer_percent: 20,
+          },
+          report: { passed: false },
+        }),
+    }),
+  );
+  assert.equal(first.checkpointNames.length, 1);
+  assert.equal(second.checkpointNames.length, 1);
+
+  const planned = await runCorpusBenchmarkCampaign(
+    options(current, { run: false }),
+    dependencies(),
+  );
+  assert.equal(planned.completedTasks, 1);
+  assert.equal(planned.pendingTasks, 0);
+  assert.equal(planned.failedQualityTasks, 0);
+  assert.equal(planned.checkpointNames.length, 2);
+  assert.deepEqual(
+    new Set(planned.checkpointNames),
+    new Set([...first.checkpointNames, ...second.checkpointNames]),
   );
 });
 

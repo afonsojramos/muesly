@@ -124,6 +124,9 @@ function validateOptions(options) {
   if (typeof options.run !== "boolean" || typeof options.requireComplete !== "boolean") {
     throw new Error("run and requireComplete must be booleans");
   }
+  if (options.requireComplete && options.selectedVariants.length > 0) {
+    throw new Error("--require-complete cannot be combined with --variant");
+  }
   return options;
 }
 
@@ -559,12 +562,23 @@ function identityKey(identity) {
   return JSON.stringify(identity);
 }
 
-function currentCompletions(tasks, recordsByTask, identities, anyIdentity) {
+function historicalCompletions(tasks, recordsByTask) {
+  const completedTaskIds = new Set();
+  const records = [];
+  for (const task of tasks) {
+    const taskRecords = recordsByTask.get(task.task_id) ?? [];
+    if (taskRecords.length > 0) completedTaskIds.add(task.task_id);
+    records.push(...taskRecords);
+  }
+  return { completedTaskIds, records };
+}
+
+function currentCompletions(tasks, recordsByTask, identities) {
   const completed = new Map();
   for (const task of tasks) {
     const records = recordsByTask.get(task.task_id) ?? [];
     const currentIdentity = identities.get(variantKey(task));
-    if (!anyIdentity && currentIdentity) {
+    if (currentIdentity) {
       const currentHardware = JSON.stringify({
         operating_system: currentIdentity.operating_system,
         architecture: currentIdentity.architecture,
@@ -588,10 +602,10 @@ function currentCompletions(tasks, recordsByTask, identities, anyIdentity) {
         }
       }
     }
-    const matching = anyIdentity
-      ? records
-      : records.filter((record) => identityKey(record.identity) === identityKey(currentIdentity));
-    if (matching.length > 1 && !anyIdentity) {
+    const matching = records.filter(
+      (record) => identityKey(record.identity) === identityKey(currentIdentity),
+    );
+    if (matching.length > 1) {
       throw new Error("multiple checkpoints claim the same exact benchmark task identity");
     }
     if (matching.length > 0) completed.set(task.task_id, matching[0]);
@@ -812,7 +826,9 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           repoRoot: repositoryRoot,
         })
       : new Map();
-    const completed = currentCompletions(tasks, recordsByTask, initialIdentities, !options.run);
+    const completed = options.run
+      ? currentCompletions(tasks, recordsByTask, initialIdentities)
+      : null;
     let executedTasks = 0;
 
     if (!options.run) {
@@ -824,23 +840,31 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
         loadCorpusImpl: dependencies.loadCorpus,
         loadTargetsImpl: dependencies.loadTargets,
       });
-      const pendingTasks = tasks.length - completed.size;
+      const historical = historicalCompletions(tasks, recordsByTask);
+      const pendingTasks = tasks.length - historical.completedTaskIds.size;
       if (options.requireComplete && pendingTasks > 0) {
         throw incompleteError(`benchmark campaign is incomplete: ${pendingTasks} task(s) pending`);
       }
-      if (options.requireComplete) requireCompleteCoverage(corpus, targets, completed);
-      const failedQualityTasks = [...completed.values()].filter(
-        (record) => record.report.passed === false,
-      ).length;
+      if (options.requireComplete) {
+        requireCompleteCoverage(
+          corpus,
+          targets,
+          new Map(historical.records.map((record, index) => [index, record])),
+        );
+      }
+      const failedQualityTasks = tasks.filter((task) => {
+        const records = recordsByTask.get(task.task_id) ?? [];
+        return records.length > 0 && records.every((record) => record.report.passed === false);
+      }).length;
       campaignResult = {
         mode: "plan",
         totalTasks: tasks.length,
-        completedTasks: completed.size,
+        completedTasks: historical.completedTaskIds.size,
         executedTasks,
         pendingTasks,
         failedQualityTasks,
         taskIds: tasks.map((task) => task.task_id),
-        checkpointNames: [...completed.values()].map((record) => record.name),
+        checkpointNames: historical.records.map((record) => record.name),
       };
     } else {
       for (const [taskIndex, task] of tasks.entries()) {

@@ -96,7 +96,8 @@ model, evaluator, executable, and hardware identities. `--variant provider/model
 execution to a repeatable subset. Use
 `--accelerator backend=stable-device-id` where an explicit GPU identity is required. A failed
 quality threshold is checkpointed for diagnosis and makes the command exit non-zero; interruption
-keeps completed checkpoints and exits with status 130.
+keeps completed checkpoints and exits with status 130. `--require-complete` always certifies the
+full target matrix and therefore cannot be combined with `--variant`.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce
