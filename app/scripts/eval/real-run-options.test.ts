@@ -69,18 +69,31 @@ test('rejects unknown, duplicate, and positional options', () => {
 	}
 });
 
+test('rejects model names that are not bounded lowercase leaf slugs', () => {
+	for (const model of [
+		'../outside',
+		'..\\outside',
+		'/absolute',
+		'C:\\outside',
+		'two words',
+		'Uppercase',
+		`a${'b'.repeat(128)}`,
+	]) {
+		assert.throws(
+			() => parseRealRunArgs(['--model', model], defaults),
+			/bounded lowercase model slug/,
+		);
+	}
+});
+
 test('validates numeric and backend-specific values', () => {
-	assert.throws(
-		() => parseRealRunArgs(['--max-wer', '-1'], defaults),
-		/non-negative number/,
-	);
+	assert.throws(() => parseRealRunArgs(['--max-wer', '-1'], defaults), /non-negative number/);
 	assert.throws(
 		() => parseRealRunArgs(['--max-hallucinated-words', '1.5'], defaults),
 		/non-negative integer/,
 	);
 	assert.throws(
-		() =>
-			parseRealRunArgs(['--provider', 'parakeet', '--backend', 'metal'], defaults),
+		() => parseRealRunArgs(['--provider', 'parakeet', '--backend', 'metal'], defaults),
 		/Parakeet currently supports only/,
 	);
 	assert.throws(
@@ -109,8 +122,5 @@ test('validates numeric and backend-specific values', () => {
 		() => parseRealRunArgs(['--provider', 'parakeet', '--accelerator', 'CPU'], defaults),
 		/only valid for a Whisper GPU backend/,
 	);
-	assert.equal(
-		parseRealRunArgs(['--backend', 'coreml'], defaults).backend,
-		'coreml',
-	);
+	assert.equal(parseRealRunArgs(['--backend', 'coreml'], defaults).backend, 'coreml');
 });

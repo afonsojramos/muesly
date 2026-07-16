@@ -1,8 +1,5 @@
-import {
-	requiresExplicitAccelerator,
-	requiresWhisperGpu,
-	supportedBackends,
-} from './backend.ts';
+import { requiresExplicitAccelerator, requiresWhisperGpu, supportedBackends } from './backend.ts';
+import { validateBenchmarkModelName } from './model-artifact.ts';
 
 const FLAG_FIELDS = new Map([
 	['--max-wer', 'maxWerPct'],
@@ -35,11 +32,7 @@ function nonNegativeNumber(value, option) {
 
 export function parseRealRunArgs(
 	args,
-	{
-		defaultManifest,
-		platform = process.platform,
-		architecture = process.arch,
-	} = {},
+	{ defaultManifest, platform = process.platform, architecture = process.arch } = {},
 ) {
 	if (!defaultManifest) throw new Error('defaultManifest is required');
 	const parsed = {};
@@ -82,29 +75,25 @@ export function parseRealRunArgs(
 		);
 	}
 	const maxWerPct =
-		parsed.maxWerPct === undefined
-			? 10
-			: nonNegativeNumber(parsed.maxWerPct, '--max-wer');
+		parsed.maxWerPct === undefined ? 10 : nonNegativeNumber(parsed.maxWerPct, '--max-wer');
 	const maxHallucinatedWords =
 		parsed.maxHallucinatedWords === undefined
 			? 2
-			: nonNegativeNumber(
-					parsed.maxHallucinatedWords,
-					'--max-hallucinated-words',
-				);
+			: nonNegativeNumber(parsed.maxHallucinatedWords, '--max-hallucinated-words');
 	if (!Number.isInteger(maxHallucinatedWords)) {
 		throw new Error('--max-hallucinated-words requires a non-negative integer');
 	}
 
+	const model = validateBenchmarkModelName(
+		parsed.model ?? (provider === 'parakeet' ? 'parakeet-tdt-0.6b-v3-int8' : 'tiny'),
+	);
 	return {
 		maxWerPct,
 		maxHallucinatedWords,
 		provider,
 		backend,
 		accelerator,
-		model:
-			parsed.model ??
-			(provider === 'parakeet' ? 'parakeet-tdt-0.6b-v3-int8' : 'tiny'),
+		model,
 		modelsDir: parsed.modelsDir ?? null,
 		onlyFixture: parsed.onlyFixture ?? null,
 		manifestPath: parsed.manifestPath ?? defaultManifest,

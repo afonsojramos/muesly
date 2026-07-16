@@ -9,6 +9,7 @@ import {
 	modelArtifactSha256,
 	resolveModelsDirectory,
 	stageModelArtifactSnapshot,
+	validateBenchmarkModelName,
 } from './model-artifact.ts';
 
 test('resolves relative model directories from the Cargo working directory', () => {
@@ -20,6 +21,28 @@ test('resolves relative model directories from the Cargo working directory', () 
 	);
 	assert.equal(resolveModelsDirectory(absoluteModels, repositoryRoot), absoluteModels);
 	assert.equal(resolveModelsDirectory(null, repositoryRoot), path.join(repositoryRoot, 'models'));
+});
+
+test('rejects model path escapes before creating an artifact snapshot', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-path-escape-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const snapshotRoot = path.join(directory, 'snapshot');
+	for (const model of ['../../escaped', '..\\..\\escaped', '/absolute', 'C:\\absolute']) {
+		assert.throws(() => validateBenchmarkModelName(model), /bounded lowercase model slug/);
+		assert.throws(
+			() =>
+				stageModelArtifactSnapshot(
+					'parakeet',
+					model,
+					path.join(directory, 'models'),
+					'onnx-cpu',
+					snapshotRoot,
+					'a'.repeat(64),
+				),
+			/bounded lowercase model slug/,
+		);
+		assert(!fs.existsSync(snapshotRoot));
+	}
 });
 
 test('fingerprints the exact Whisper model bytes', (t) => {

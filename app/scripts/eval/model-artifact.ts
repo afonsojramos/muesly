@@ -5,6 +5,14 @@ import path from 'node:path';
 import { copyAttestedFileSnapshot } from './artifact-snapshot.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+const BENCHMARK_MODEL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+
+export function validateBenchmarkModelName(model) {
+	if (typeof model !== 'string' || !BENCHMARK_MODEL_NAME_PATTERN.test(model)) {
+		throw new Error('benchmark model name must be a bounded lowercase model slug');
+	}
+	return model;
+}
 
 function entryAt(filePath) {
 	return fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
@@ -299,12 +307,16 @@ export function modelArtifactSha256(provider, model, modelsDirectory, reportedBa
 	if (typeof reportedBackend !== 'string' || reportedBackend.length === 0) {
 		throw new Error('reported benchmark backend is required for model artifact hashing');
 	}
+	const validatedModel = validateBenchmarkModelName(model);
 	if (provider === 'whisper') {
-		return whisperArtifactSha256(path.join(modelsDirectory, `ggml-${model}.bin`), reportedBackend);
+		return whisperArtifactSha256(
+			path.join(modelsDirectory, `ggml-${validatedModel}.bin`),
+			reportedBackend,
+		);
 	}
 	if (provider !== 'parakeet') throw new Error(`unsupported model provider: ${provider}`);
 
-	const modelDirectory = path.join(modelsDirectory, 'parakeet', model);
+	const modelDirectory = path.join(modelsDirectory, 'parakeet', validatedModel);
 	const filenames = parakeetArtifactFilenames(modelDirectory);
 	const manifest = filenames
 		.map((filename) => `${filename}\0${sha256File(path.join(modelDirectory, filename))}`)
@@ -327,6 +339,7 @@ export function stageModelArtifactSnapshot(
 	if (!SHA256_PATTERN.test(expectedSha256)) {
 		throw new Error('expected model artifact SHA-256 is invalid');
 	}
+	const validatedModel = validateBenchmarkModelName(model);
 	if (entryAt(snapshotRoot) !== undefined) {
 		throw new Error('model artifact snapshot destination already exists');
 	}
@@ -335,7 +348,7 @@ export function stageModelArtifactSnapshot(
 		fs.mkdirSync(snapshotRoot, { mode: 0o700 });
 		fs.mkdirSync(snapshotModelsDirectory, { mode: 0o700 });
 		if (provider === 'whisper') {
-			const filename = `ggml-${model}.bin`;
+			const filename = `ggml-${validatedModel}.bin`;
 			copyFileSnapshotImpl(
 				path.join(modelsDirectory, filename),
 				path.join(snapshotModelsDirectory, filename),
@@ -352,8 +365,8 @@ export function stageModelArtifactSnapshot(
 				);
 			}
 		} else if (provider === 'parakeet') {
-			const sourceDirectory = path.join(modelsDirectory, 'parakeet', model);
-			const destinationDirectory = path.join(snapshotModelsDirectory, 'parakeet', model);
+			const sourceDirectory = path.join(modelsDirectory, 'parakeet', validatedModel);
+			const destinationDirectory = path.join(snapshotModelsDirectory, 'parakeet', validatedModel);
 			fs.mkdirSync(destinationDirectory, { recursive: true, mode: 0o700 });
 			for (const filename of parakeetArtifactFilenames(sourceDirectory)) {
 				copyFileSnapshotImpl(
@@ -371,7 +384,7 @@ export function stageModelArtifactSnapshot(
 
 		const snapshotSha256 = modelArtifactSha256(
 			provider,
-			model,
+			validatedModel,
 			snapshotModelsDirectory,
 			reportedBackend,
 		);
