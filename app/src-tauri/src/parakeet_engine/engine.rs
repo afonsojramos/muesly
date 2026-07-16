@@ -526,7 +526,10 @@ impl ParakeetEngine {
         .await
         .map_err(|e| anyhow!("Parakeet transcription task failed: {}", e))??;
 
-        log::debug!("Parakeet transcription result: '{}'", text);
+        log::debug!(
+            "Parakeet transcription completed ({} characters)",
+            text.chars().count()
+        );
         let text = crate::vocabulary::apply_cached_corrections(&text);
         Ok(text)
     }
