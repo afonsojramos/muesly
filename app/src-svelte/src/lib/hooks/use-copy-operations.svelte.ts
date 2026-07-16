@@ -38,7 +38,7 @@ export interface UseCopyOperationsOptions {
 }
 
 export interface UseCopyOperations {
-	handleCopyTranscript: () => Promise<void>;
+	handleCopyTranscript: (options?: { timestamps?: boolean }) => Promise<void>;
 	handleCopySummary: () => Promise<void>;
 }
 
@@ -95,7 +95,8 @@ export function transcriptMarkdownBody(
 export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOperations {
 	const { meeting, getMeetingTitle, getAiSummary, getSummaryMarkdown } = options;
 
-	const handleCopyTranscript = async (): Promise<void> => {
+	const handleCopyTranscript = async (options?: { timestamps?: boolean }): Promise<void> => {
+		const timestamps = options?.timestamps ?? true;
 		const all = await fetchAllTranscripts(meeting.id);
 		if (all.length === 0) {
 			toast.error('No transcripts available to copy');
@@ -106,14 +107,17 @@ export function useCopyOperations(options: UseCopyOperationsOptions): UseCopyOpe
 		const header = `# Transcript of the Meeting: ${meeting.id} - ${title}\n\n`;
 		const date = `## Date: ${new Date(meeting.created_at).toLocaleDateString()}\n\n`;
 		const ctx = await fetchSpeakerContext(meeting.id);
-		const body = transcriptMarkdownBody(all, ctx);
+		const body = transcriptMarkdownBody(all, ctx, { timestamps });
 
 		await navigator.clipboard.writeText(header + date + body);
-		toast.success('Transcript copied to clipboard');
+		toast.success(
+			timestamps ? 'Transcript copied to clipboard' : 'Transcript copied (without timestamps)',
+		);
 
 		const wordCount = all.map((t) => t.text.split(/\s+/).length).reduce((a, b) => a + b, 0);
 		await Analytics.track('copy', {
 			type: 'transcript',
+			timestamps: timestamps ? 'on' : 'off',
 			transcript_length: all.length.toString(),
 			word_count: wordCount.toString(),
 		});

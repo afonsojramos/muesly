@@ -632,7 +632,13 @@
 								<DropdownMenu.Separator />
 								<DropdownMenu.Item onSelect={() => void copyOperations.handleCopyTranscript()}>
 									<CopyIcon />
-									Copy transcript
+									Copy transcript with timestamps
+								</DropdownMenu.Item>
+								<DropdownMenu.Item
+									onSelect={() => void copyOperations.handleCopyTranscript({ timestamps: false })}
+								>
+									<CopyIcon />
+									Copy transcript without timestamps
 								</DropdownMenu.Item>
 								<DropdownMenu.Item
 									disabled={!meeting.folder_path}

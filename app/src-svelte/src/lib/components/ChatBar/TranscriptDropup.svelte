@@ -100,18 +100,31 @@
 		() => segments,
 	);
 
+	// Copy-what-you-see: the panel copy follows the timestamps display
+	// preference, whose toggle sits right next to the button.
 	async function copyTranscript(): Promise<void> {
-		Analytics.trackButtonClick('copy_transcript', 'transcript_dropup');
+		const timestamps = config.showTranscriptTimestamps;
+		Analytics.trackButtonClick('copy_transcript', 'transcript_dropup', {
+			timestamps: timestamps ? 'on' : 'off',
+		});
 		if (live) {
-			liveTranscripts.copyTranscript();
+			liveTranscripts.copyTranscript({ timestamps });
 			return;
 		}
 		// Fetch the naming context at copy time: the reactive `speakers.ctx` may
 		// still be the empty placeholder right after the drop-up opens.
 		const ctx = meetingId ? await fetchSpeakerContext(meetingId) : speakers.ctx;
-		await navigator.clipboard.writeText(transcriptMarkdownBody(savedTranscripts, ctx));
-		toast.success('Transcript copied to clipboard');
+		await navigator.clipboard.writeText(
+			transcriptMarkdownBody(savedTranscripts, ctx, { timestamps }),
+		);
+		toast.success(
+			timestamps ? 'Transcript copied to clipboard' : 'Transcript copied (without timestamps)',
+		);
 	}
+
+	const copyLabel = $derived(
+		config.showTranscriptTimestamps ? 'Copy transcript' : 'Copy transcript (without timestamps)',
+	);
 </script>
 
 <div class="flex h-[min(60vh,30rem)] min-h-64 flex-col overflow-hidden">
@@ -135,12 +148,9 @@
 								{...props}
 								size="sm"
 								class="text-muted-foreground data-[state=on]:text-foreground"
-								aria-label={config.showTranscriptTimestamps
-									? 'Hide timestamps'
-									: 'Show timestamps'}
+								aria-label={config.showTranscriptTimestamps ? 'Hide timestamps' : 'Show timestamps'}
 								bind:pressed={
-									() => config.showTranscriptTimestamps,
-									(v) => config.toggleTranscriptTimestamps(v)
+									() => config.showTranscriptTimestamps, (v) => config.toggleTranscriptTimestamps(v)
 								}
 							>
 								<ClockIcon />
@@ -162,14 +172,14 @@
 								size="icon-sm"
 								class="text-muted-foreground hover:text-foreground"
 								disabled={segments.length === 0}
-								aria-label="Copy transcript"
+								aria-label={copyLabel}
 								onclick={() => void copyTranscript()}
 							>
 								<CopyIcon />
 							</Button>
 						{/snippet}
 					</Tooltip.Trigger>
-					<Tooltip.Content>Copy transcript</Tooltip.Content>
+					<Tooltip.Content>{copyLabel}</Tooltip.Content>
 				</Tooltip.Root>
 			</Tooltip.Provider>
 		</div>
