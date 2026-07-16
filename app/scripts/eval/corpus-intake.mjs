@@ -57,6 +57,26 @@ function removeAbandonedManifestFiles(manifestPath) {
 	}
 }
 
+function removeAbandonedResultFiles(manifestPath) {
+	const removeFrom = (directory) => {
+		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+			const entryPath = path.join(directory, entry.name);
+			if (entry.isSymbolicLink()) continue;
+			if (entry.isDirectory()) {
+				removeFrom(entryPath);
+				continue;
+			}
+			if (entry.isFile() && /\.tmp-\d+-[0-9a-f-]{36}$/.test(entry.name)) {
+				fs.rmSync(entryPath, { force: true });
+			}
+		}
+	};
+	const resultsDirectory = path.join(path.dirname(manifestPath), 'results');
+	const resultsEntry = fs.lstatSync(resultsDirectory, { throwIfNoEntry: false });
+	if (!resultsEntry?.isDirectory() || resultsEntry.isSymbolicLink()) return;
+	removeFrom(resultsDirectory);
+}
+
 function writePrivateJson(filePath, value) {
 	fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
 }
@@ -122,6 +142,7 @@ function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	if (unrecovered.length === 0) return;
 	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
+	removeAbandonedResultFiles(manifestPath);
 	for (const stalePath of unrecovered) {
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),

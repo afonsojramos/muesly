@@ -126,6 +126,11 @@ test('preserves valid reports when reclaiming a dead result-writer lock', () => 
 	fs.mkdirSync(resultsDirectory);
 	const existingReport = path.join(resultsDirectory, 'existing.json');
 	fs.writeFileSync(existingReport, '{"valid":true}\n');
+	const abandonedReport = path.join(
+		resultsDirectory,
+		'existing.json.tmp-999999999-00000000-0000-4000-8000-000000000002',
+	);
+	fs.writeFileSync(abandonedReport, '{"partial":true}\n');
 	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
 	fs.mkdirSync(lockPath);
 	fs.writeFileSync(
@@ -146,6 +151,7 @@ test('preserves valid reports when reclaiming a dead result-writer lock', () => 
 	});
 
 	assert.equal(fs.readFileSync(existingReport, 'utf8'), '{"valid":true}\n');
+	assert(!fs.existsSync(abandonedReport));
 	assert(fs.existsSync(path.join(resultsDirectory, 'new.json')));
 });
 
