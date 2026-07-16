@@ -187,7 +187,9 @@ for (const sample of fixtures) {
 				`RTF ${metrics.inference_rtf.toFixed(3)}, peak RSS ${metrics.peak_rss_mb.toFixed(1)} MiB`,
 		);
 		if (words > maxHallucinatedWords) {
-			console.error(`FAIL: ${sample.id} hallucinated ${words} words: '${hypothesis}'`);
+			console.error(
+				`FAIL: ${sample.id} hallucinated ${words} words (transcript omitted from logs)`,
+			);
 			failed = true;
 			result.passed = false;
 		}

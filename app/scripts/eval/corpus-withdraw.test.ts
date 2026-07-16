@@ -1116,7 +1116,13 @@ test('refuses to delete files outside the opaque session directory', () => {
 		.update(fs.readFileSync(outsideAudio))
 		.digest('hex');
 	fs.writeFileSync(manifestPath, JSON.stringify(document));
-	assert.deepEqual(validateCorpusDocument(document, { manifestPath }), []);
+	assert.deepEqual(
+		validateCorpusDocument(document, {
+			manifestPath,
+			enforceLocalParticipantCustody: false,
+		}),
+		[],
+	);
 	assert.throws(
 		() =>
 			withdrawConsentedSession({
@@ -1145,7 +1151,13 @@ test('refuses to delete a directory shared by a remaining manifest sample', () =
 		.update(fs.readFileSync(sharedReference))
 		.digest('hex');
 	fs.writeFileSync(manifestPath, JSON.stringify(document));
-	assert.deepEqual(validateCorpusDocument(document, { manifestPath }), []);
+	assert.deepEqual(
+		validateCorpusDocument(document, {
+			manifestPath,
+			enforceLocalParticipantCustody: false,
+		}),
+		[],
+	);
 
 	assert.throws(
 		() =>

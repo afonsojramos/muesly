@@ -157,7 +157,14 @@ function isIsoDate(value) {
 	);
 }
 
-function validateProvenance(sample, errors) {
+function localCalendarDate(date = new Date()) {
+	const year = String(date.getFullYear()).padStart(4, '0');
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	const day = String(date.getDate()).padStart(2, '0');
+	return `${year}-${month}-${day}`;
+}
+
+function validateProvenance(sample, errors, today) {
 	const prefix = `sample '${sample.id ?? '?'}'.provenance`;
 	const provenance = sample.provenance;
 	if (!isObject(provenance)) {
@@ -189,8 +196,8 @@ function validateProvenance(sample, errors) {
 		} else if (!provenance.consented_uses.includes('asr-benchmarking')) {
 			errors.push(`${prefix}.consented_uses must include asr-benchmarking`);
 		}
-		if (!isIsoDate(provenance.consent_date)) {
-			errors.push(`${prefix}.consent_date must be a valid YYYY-MM-DD date`);
+		if (!isIsoDate(provenance.consent_date) || provenance.consent_date > today) {
+			errors.push(`${prefix}.consent_date must be a valid, non-future YYYY-MM-DD date`);
 		}
 		if (provenance.redistribution !== 'local-only') {
 			errors.push(`${prefix}.redistribution must be local-only for participant recordings`);
@@ -243,11 +250,94 @@ function validateMeetingReference(sample, manifestPath, checkFiles, errors) {
 	}
 }
 
+function validateLocalParticipantFile(
+	sample,
+	field,
+	extension,
+	manifestPath,
+	checkFiles,
+	errors,
+) {
+	const prefix = `sample '${sample.id ?? '?'}'`;
+	if (
+		typeof sample.id !== 'string' ||
+		typeof sample.session_id !== 'string' ||
+		typeof sample[field] !== 'string'
+	) {
+		return;
+	}
+	const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
+	const manifestDirectory = path.dirname(canonicalManifest);
+	const localCorpusRoot = path.join(manifestDirectory, 'local-corpus');
+	const sessionDirectory = path.join(localCorpusRoot, sample.session_id);
+	const expectedPath = path.join(sessionDirectory, `${sample.id}${extension}`);
+	const declaredPath = path.resolve(manifestDirectory, sample[field]);
+	if (declaredPath !== expectedPath) {
+		errors.push(
+			`${prefix}.${field} must be local-corpus/${sample.session_id}/${sample.id}${extension}`,
+		);
+		return;
+	}
+	if (!checkFiles) return;
+
+	for (const [label, directory] of [
+		['local corpus directory', localCorpusRoot],
+		['session directory', sessionDirectory],
+	]) {
+		const entry = fs.lstatSync(directory, { throwIfNoEntry: false });
+		if (!entry) continue;
+		if (!entry.isDirectory() || entry.isSymbolicLink()) {
+			errors.push(`${prefix}.${field} ${label} must be a regular directory`);
+			return;
+		}
+	}
+	const entry = fs.lstatSync(declaredPath, { throwIfNoEntry: false });
+	if (!entry) return;
+	if (!entry.isFile() || entry.isSymbolicLink()) {
+		errors.push(`${prefix}.${field} must be a regular file, not a symbolic link`);
+		return;
+	}
+	const status = fs.statSync(declaredPath);
+	if (status.nlink !== 1) {
+		errors.push(`${prefix}.${field} must not be a hard-linked file`);
+		return;
+	}
+	try {
+		if (path.dirname(fs.realpathSync(declaredPath)) !== fs.realpathSync(sessionDirectory)) {
+			errors.push(`${prefix}.${field} must remain inside its managed session directory`);
+		}
+	} catch {
+		// validateFile reports missing or inaccessible paths with the field-specific context.
+	}
+}
+
+function validateLocalParticipantCustody(sample, manifestPath, checkFiles, errors) {
+	if (sample.provenance?.basis !== 'participant-consent') return;
+	validateLocalParticipantFile(
+		sample,
+		'audio_path',
+		'.wav',
+		manifestPath,
+		checkFiles,
+		errors,
+	);
+	validateLocalParticipantFile(
+		sample,
+		'reference_path',
+		'.txt',
+		manifestPath,
+		checkFiles,
+		errors,
+	);
+}
+
 export function validateCorpusDocument(document, options = {}) {
 	const {
 		manifestPath = path.resolve('corpus-manifest.json'),
 		checkFiles = true,
 		requiredAudioFiles = [],
+		today = localCalendarDate(),
+		enforceLocalParticipantCustody = true,
 	} = options;
 	const errors = [];
 	if (!isObject(document)) return ['manifest must be a JSON object'];
@@ -315,7 +405,10 @@ export function validateCorpusDocument(document, options = {}) {
 		validateFile(sample, 'audio_path', 'audio_sha256', manifestPath, checkFiles, errors);
 		validateFile(sample, 'reference_path', 'reference_sha256', manifestPath, checkFiles, errors);
 		validateMeetingReference(sample, manifestPath, checkFiles, errors);
-		validateProvenance(sample, errors);
+		validateProvenance(sample, errors, today);
+		if (document.distribution === 'local' && enforceLocalParticipantCustody) {
+			validateLocalParticipantCustody(sample, manifestPath, checkFiles, errors);
+		}
 		if (
 			document.distribution === 'repository' &&
 			sample.provenance?.redistribution === 'local-only'

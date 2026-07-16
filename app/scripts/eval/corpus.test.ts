@@ -20,8 +20,14 @@ function hash(value) {
 
 function fixture() {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-'));
-	fs.writeFileSync(path.join(directory, 'audio.wav'), 'audio');
-	fs.writeFileSync(path.join(directory, 'reference.txt'), 'hello');
+	const sessionDirectory = path.join(
+		directory,
+		'local-corpus',
+		'session-example-001',
+	);
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.wav'), 'audio');
+	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.txt'), 'hello');
 	return {
 		directory,
 		document: {
@@ -32,9 +38,11 @@ function fixture() {
 				{
 					id: 'meeting-en-clean',
 					session_id: 'session-example-001',
-					audio_path: 'audio.wav',
+					audio_path:
+						'local-corpus/session-example-001/meeting-en-clean.wav',
 					audio_sha256: hash('audio'),
-					reference_path: 'reference.txt',
+					reference_path:
+						'local-corpus/session-example-001/meeting-en-clean.txt',
 					reference_sha256: hash('hello'),
 					language: 'en-US',
 					scenario: 'meeting',
@@ -71,7 +79,17 @@ test('loads a manifest through its canonical file identity', () => {
 
 	const corpus = loadCorpus(manifestAlias);
 	assert.equal(corpus.manifest_path, fs.realpathSync(manifestPath));
-	assert.equal(corpus.samples[0].audio_file, fs.realpathSync(path.join(directory, 'audio.wav')));
+	assert.equal(
+		corpus.samples[0].audio_file,
+		fs.realpathSync(
+			path.join(
+				directory,
+				'local-corpus',
+				'session-example-001',
+				'meeting-en-clean.wav',
+			),
+		),
+	);
 	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
 });
 
@@ -112,7 +130,15 @@ test('allows an empty local corpus but not an empty repository corpus', () => {
 
 test('rejects meeting samples without a WER reference', () => {
 	const { directory, document } = fixture();
-	fs.writeFileSync(path.join(directory, 'reference.txt'), '   \n');
+	fs.writeFileSync(
+		path.join(
+			directory,
+			'local-corpus',
+			'session-example-001',
+			'meeting-en-clean.txt',
+		),
+		'   \n',
+	);
 	document.samples[0].reference_sha256 = hash('   \n');
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
@@ -136,7 +162,15 @@ test('rejects meeting audio without participant consent', () => {
 test('rejects identity fields and changed fixture contents', () => {
 	const { directory, document } = fixture();
 	document.samples[0].provenance.participants = [{ email: 'person@example.com' }];
-	fs.writeFileSync(path.join(directory, 'audio.wav'), 'changed');
+	fs.writeFileSync(
+		path.join(
+			directory,
+			'local-corpus',
+			'session-example-001',
+			'meeting-en-clean.wav',
+		),
+		'changed',
+	);
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
@@ -177,8 +211,93 @@ test('rejects invalid consent dates and local-only entries in repository manifes
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
-	assert(errors.some((error) => error.includes('valid YYYY-MM-DD date')));
+	assert(errors.some((error) => error.includes('valid, non-future YYYY-MM-DD date')));
 	assert(errors.some((error) => error.includes('cannot be local-only in a repository manifest')));
+});
+
+test('rejects future consent dates when a local manifest is revalidated', () => {
+	const { directory, document } = fixture();
+	document.samples[0].provenance.consent_date = '2026-07-17';
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+		today: '2026-07-16',
+	});
+	assert(errors.some((error) => error.includes('valid, non-future YYYY-MM-DD date')));
+});
+
+test('requires local participant files to remain in their opaque session directory', () => {
+	const { directory, document } = fixture();
+	const externalAudio = path.join(directory, 'external.wav');
+	fs.writeFileSync(externalAudio, 'audio');
+	document.samples[0].audio_path = 'external.wav';
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(
+		errors.some((error) =>
+			error.includes(
+				'audio_path must be local-corpus/session-example-001/meeting-en-clean.wav',
+			),
+		),
+	);
+});
+
+test('rejects symlinked and hard-linked participant files in managed sessions', () => {
+	for (const aliasType of ['symbolic', 'hard']) {
+		const { directory, document } = fixture();
+		const sessionDirectory = path.join(
+			directory,
+			'local-corpus',
+			'session-example-001',
+		);
+		const audioPath = path.join(sessionDirectory, 'meeting-en-clean.wav');
+		const externalAudio = path.join(directory, `${aliasType}-source.wav`);
+		fs.writeFileSync(externalAudio, 'audio');
+		fs.rmSync(audioPath);
+		if (aliasType === 'symbolic') fs.symlinkSync(externalAudio, audioPath);
+		else fs.linkSync(externalAudio, audioPath);
+
+		const errors = validateCorpusDocument(document, {
+			manifestPath: path.join(directory, 'manifest.json'),
+		});
+		assert(
+			errors.some((error) =>
+				error.includes(aliasType === 'symbolic' ? 'symbolic link' : 'hard-linked'),
+			),
+			aliasType,
+		);
+	}
+});
+
+test('rejects symlinked local corpus and session directories', () => {
+	for (const aliasLevel of ['corpus', 'session']) {
+		const { directory, document } = fixture();
+		const localCorpusRoot = path.join(directory, 'local-corpus');
+		const sessionDirectory = path.join(localCorpusRoot, 'session-example-001');
+		if (aliasLevel === 'corpus') {
+			const externalCorpusRoot = path.join(directory, 'external-corpus');
+			fs.renameSync(localCorpusRoot, externalCorpusRoot);
+			fs.symlinkSync(externalCorpusRoot, localCorpusRoot, 'dir');
+		} else {
+			const externalSession = path.join(directory, 'external-session');
+			fs.renameSync(sessionDirectory, externalSession);
+			fs.symlinkSync(externalSession, sessionDirectory, 'dir');
+		}
+
+		const errors = validateCorpusDocument(document, {
+			manifestPath: path.join(directory, 'manifest.json'),
+		});
+		assert(
+			errors.some((error) =>
+				error.includes(
+					aliasLevel === 'corpus'
+						? 'local corpus directory must be a regular directory'
+						: 'session directory must be a regular directory',
+				),
+			),
+			aliasLevel,
+		);
+	}
 });
 
 test('requires opaque meeting sessions, multiple speakers, and local-only participant audio', () => {

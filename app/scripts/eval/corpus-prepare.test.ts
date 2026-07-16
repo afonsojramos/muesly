@@ -225,8 +225,8 @@ test('plans from an intake commit completed while waiting for the corpus lock', 
 	const current = fixture();
 	const localCorpusRoot = path.join(current.directory, 'local-corpus');
 	const sessionDirectory = path.join(localCorpusRoot, 'session-committed');
-	const audioPath = path.join(sessionDirectory, 'committed.wav');
-	const referencePath = path.join(sessionDirectory, 'committed.txt');
+	const audioPath = path.join(sessionDirectory, 'en-clean-committed.wav');
+	const referencePath = path.join(sessionDirectory, 'en-clean-committed.txt');
 	const audioContents = 'committed private audio';
 	const referenceContents = 'Committed reference.\n';
 	fs.mkdirSync(sessionDirectory, { recursive: true });
@@ -448,13 +448,24 @@ test('rejects incomplete selectors and already-complete cells', () => {
 	);
 	const audioContents = ['audio one', 'audio two'];
 	const referenceContents = ['reference one', 'reference two'];
+	const entries = [
+		sample('en', 'clean', 'session-en-clean-1'),
+		sample('en', 'clean', 'session-en-clean-2'),
+	];
 	for (let index = 0; index < 2; index += 1) {
+		const entry = entries[index];
+		const sessionDirectory = path.join(
+			path.dirname(manifestPath),
+			'local-corpus',
+			entry.session_id,
+		);
+		fs.mkdirSync(sessionDirectory, { recursive: true });
 		fs.writeFileSync(
-			path.join(path.dirname(manifestPath), `audio-${index}.wav`),
+			path.join(sessionDirectory, `${entry.id}.wav`),
 			audioContents[index],
 		);
 		fs.writeFileSync(
-			path.join(path.dirname(manifestPath), `reference-${index}.txt`),
+			path.join(sessionDirectory, `${entry.id}.txt`),
 			referenceContents[index],
 		);
 	}
@@ -465,14 +476,11 @@ test('rejects incomplete selectors and already-complete cells', () => {
 			corpus_id: 'consented-meetings-v1',
 			description: 'Local corpus.',
 			distribution: 'local',
-			samples: [
-				sample('en', 'clean', 'session-en-clean-1'),
-				sample('en', 'clean', 'session-en-clean-2'),
-			].map((entry, index) => ({
+			samples: entries.map((entry, index) => ({
 				...entry,
-				audio_path: `audio-${index}.wav`,
+				audio_path: `local-corpus/${entry.session_id}/${entry.id}.wav`,
 				audio_sha256: hash(audioContents[index]),
-				reference_path: `reference-${index}.txt`,
+				reference_path: `local-corpus/${entry.session_id}/${entry.id}.txt`,
 				reference_sha256: hash(referenceContents[index]),
 				speakers: 2,
 				duration_seconds: 10,
