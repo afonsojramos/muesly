@@ -12,6 +12,7 @@ import {
 	releaseLocalCorpusLock,
 } from './corpus-intake.ts';
 import {
+	preparedBundleIfMatching,
 	preparedBundleForWithdrawal,
 	retirePreparedBundle,
 	retirePreparedBundleIfMatching,
@@ -273,6 +274,9 @@ export function withdrawConsentedSession(options) {
 		}
 		const document = readLocalManifest(manifestPath, allowMissingManifest);
 		const withdrawn = document.samples.filter((sample) => sample.session_id === options.sessionId);
+		if (withdrawn.length > 0) {
+			preparedBundleIfMatching(manifestPath, options.sessionId);
+		}
 		const pendingMarker = readWithdrawalMarker(markerPath, options.sessionId, manifestPath);
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (withdrawn.length === 0) {

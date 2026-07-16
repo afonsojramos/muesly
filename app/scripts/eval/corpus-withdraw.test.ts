@@ -155,6 +155,29 @@ test('withdraws corpus samples without deleting an unrelated prepared bundle', (
 	);
 });
 
+test('refuses corpus withdrawal when matching prepared metadata is malformed', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(path.join(preparedBundle, 'collection-session.json'), '{ invalid');
+	const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
+
+	assert.throws(
+		() =>
+			withdrawConsentedSession({
+				manifestPath,
+				sessionId: 'session-withdraw',
+				confirmWithdrawal: true,
+			}),
+		/failed to read prepared intake metadata/,
+	);
+	assert.equal(fs.readFileSync(manifestPath, 'utf8'), manifestBefore);
+	assert(fs.existsSync(path.join(directory, 'local-corpus', 'session-withdraw')));
+	assert(fs.existsSync(path.join(preparedBundle, 'recording.wav')));
+});
+
 test('requires explicit confirmation and leaves unknown sessions unchanged', () => {
 	const { manifestPath } = corpusFixture();
 	const before = fs.readFileSync(manifestPath, 'utf8');

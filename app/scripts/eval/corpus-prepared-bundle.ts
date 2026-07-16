@@ -3,6 +3,8 @@ import path from 'node:path';
 
 import { canonicalFilePath, canonicalManifestPath } from './corpus.ts';
 
+class PreparedBundleMismatchError extends Error {}
+
 function preparedBundleDirectory(manifestPath, sessionId) {
 	return path.join(path.dirname(manifestPath), 'intake', sessionId);
 }
@@ -44,13 +46,17 @@ function matchingPreparedBundle(manifestPath, sessionId) {
 		throw new Error(`prepared intake metadata has an unsupported schema: ${bundleDirectory}`);
 	}
 	if (metadata.sessionId !== sessionId) {
-		throw new Error(`prepared intake metadata does not match sessionId: ${bundleDirectory}`);
+		throw new PreparedBundleMismatchError(
+			`prepared intake metadata does not match sessionId: ${bundleDirectory}`,
+		);
 	}
 	if (
 		typeof metadata.manifestPath !== 'string' ||
 		canonicalManifestPath(metadata.manifestPath, { allowMissing: true }) !== manifestPath
 	) {
-		throw new Error(`prepared intake metadata does not match manifestPath: ${bundleDirectory}`);
+		throw new PreparedBundleMismatchError(
+			`prepared intake metadata does not match manifestPath: ${bundleDirectory}`,
+		);
 	}
 	return { bundleDirectory, metadata };
 }
@@ -122,12 +128,15 @@ export function retirePreparedBundleForWithdrawal(manifestPath, sessionId) {
 	return retirePreparedBundle(preparedBundleForWithdrawal(manifestPath, sessionId));
 }
 
-export function retirePreparedBundleIfMatching(manifestPath, sessionId) {
-	let bundleDirectory;
+export function preparedBundleIfMatching(manifestPath, sessionId) {
 	try {
-		bundleDirectory = preparedBundleForWithdrawal(manifestPath, sessionId);
-	} catch {
-		return false;
+		return preparedBundleForWithdrawal(manifestPath, sessionId);
+	} catch (error) {
+		if (error instanceof PreparedBundleMismatchError) return null;
+		throw error;
 	}
-	return retirePreparedBundle(bundleDirectory);
+}
+
+export function retirePreparedBundleIfMatching(manifestPath, sessionId) {
+	return retirePreparedBundle(preparedBundleIfMatching(manifestPath, sessionId));
 }
