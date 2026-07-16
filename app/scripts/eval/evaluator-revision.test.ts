@@ -248,7 +248,7 @@ test('pkg-config executable inputs are tracked without inventing targeted static
 			},
 		}),
 	);
-	const unsupportedTargetedStaticFlags = evaluatorRevision(
+	const unsupportedPkgConfigAliases = evaluatorRevision(
 		repositoryRoot,
 		deterministicOptions({
 			buildEnv: {
@@ -258,13 +258,15 @@ test('pkg-config executable inputs are tracked without inventing targeted static
 				HOST_PKG_CONFIG_ALL_STATIC: '1',
 				TARGET_PKG_CONFIG_ALL_DYNAMIC: '1',
 				PKG_CONFIG_ALL_STATIC_x86_64_unknown_linux_gnu: '1',
+				x86_64_unknown_linux_gnu_PKG_CONFIG: '/opt/ignored/bin/pkg-config',
+				x86_64_unknown_linux_gnu_PKG_CONFIG_PATH: '/opt/ignored/lib/pkgconfig',
 			},
 		}),
 	);
 
 	assert.notEqual(changedExecutable.sha256, baseline.sha256);
 	assert.notEqual(changedTargetExecutable.sha256, baseline.sha256);
-	assert.equal(unsupportedTargetedStaticFlags.sha256, baseline.sha256);
+	assert.equal(unsupportedPkgConfigAliases.sha256, baseline.sha256);
 });
 
 test('target-scoped settings for unrelated targets do not change the evaluator digest', (t) => {

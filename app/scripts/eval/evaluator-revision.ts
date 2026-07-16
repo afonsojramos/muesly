@@ -204,8 +204,6 @@ function targetEnvironmentNames(targetTriples) {
 		for (const variable of TARGET_PKG_CONFIG_VARIABLES) {
 			names.add(`${variable}_${targetTriple}`);
 			names.add(`${variable}_${underscored}`);
-			names.add(`${targetTriple}_${variable}`);
-			names.add(`${underscored}_${variable}`);
 		}
 	}
 	for (const variable of TARGET_TOOL_VARIABLES) {
