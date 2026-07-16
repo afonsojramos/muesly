@@ -9,7 +9,7 @@ topic: eval-real-transcription-run
 
 ## Summary
 
-Extend the eval harness from static text fixtures to a real end-to-end run: a checked-in audio fixture is transcribed by the actual Whisper engine on the developer's machine, and the resulting hypothesis is scored with the existing `wer.mjs` against a checked-in golden reference. Dev-machine-only by design; CI keeps its current dry-run.
+Extend the eval harness from static text fixtures to a real end-to-end run: a checked-in audio fixture is transcribed by the actual Whisper engine on the developer's machine, and the resulting hypothesis is scored with the existing `wer.ts` against a checked-in golden reference. Dev-machine-only by design; CI keeps its current dry-run.
 
 ---
 
@@ -37,7 +37,7 @@ The harness today (`app/scripts/eval/`) scores *pre-written* hypothesis text aga
 - **Entry point: a cargo example (`examples/transcribe-fixture.rs`) in the muesly crate**, not a new `[[bin]]` and not an `#[ignore]`d test. An example inherits the library's deps without touching the shipping binary surface, is discoverable (`cargo run -p muesly --example`), and produces plain stdout/file output a script can consume. It composes existing pieces: `decode_audio_file` → whisper format conversion → `WhisperEngine::new_with_models_dir` → transcribe → print text. It must not require a Tauri runtime — if any engine path turns out to demand an `AppHandle`, that discovery routes back here as a plan revision, not a workaround hack.
 - **Model: `tiny` (or `base`) via the engine's existing `download_model`** (HuggingFace URLs, atomic rename), targeted at an explicit models dir under the repo-local dev models location the engine already uses in debug builds. First run downloads (~75 MB); later runs reuse.
 - **Fixture sourcing: public-domain speech (LibriVox/LibriSpeech excerpt) or a self-recorded clip**, 15–30 s, mono 16 kHz WAV, ≤ ~1 MB, with a hand-verified reference transcript. Exact clip selection is execution-time; the licensing constraint (public domain or own recording — nothing merely "free for research") is not.
-- **Orchestration in node (`app/scripts/eval/real-run.mjs`)**, matching the harness's existing zero-dependency style: run the cargo example, capture the hypothesis, invoke the existing `wer.mjs` logic (import its `wer()` export rather than shelling out), print and gate. Root `package.json` gains `eval:real`.
+- **Orchestration with nub (`app/scripts/eval/real-run.ts`)**, matching the harness's existing zero-dependency style: run the cargo example, capture the hypothesis, invoke the existing `wer.ts` logic (import its `wer()` export rather than shelling out), print and gate. Root `package.json` gains `eval:real`.
 - **GPU/CPU variance accepted, absorbed by the threshold only.** Metal/CoreML are hardwired into the macOS target dependency in `Cargo.toml` (not gated behind removable cargo features — features are additive, and examples can't carve them out), so there is no "pin to CPU" build fallback (review finding). If the engine exposes a runtime `use_gpu=false` context knob, that becomes the flakiness escape hatch; otherwise the calibrated threshold (R4) is the whole mitigation, and that is acceptable for a tripwire.
 - **Build preconditions are real and must be handled, not assumed away** (review finding): building the `muesly` crate runs `build.rs`, which downloads an FFmpeg binary (network, tens of MB) and requires the `llama-helper`/`diarization-helper` sidecar binaries to exist — CI stubs them for exactly this reason. The orchestrator must create the same stubs when missing (mirroring `.github/workflows/rust-check.yml`) before invoking cargo, and the README must state the first-run costs (workspace compile + FFmpeg + ~75 MB model).
 
@@ -85,7 +85,7 @@ The harness today (`app/scripts/eval/`) scores *pre-written* hypothesis text aga
 
 ---
 
-### U3. `real-run.mjs` orchestrator + root script + threshold calibration
+### U3. `real-run.ts` orchestrator + root script + threshold calibration
 
 **Goal:** One command runs U2 over U1 and gates WER.
 
@@ -94,19 +94,19 @@ The harness today (`app/scripts/eval/`) scores *pre-written* hypothesis text aga
 **Dependencies:** U1, U2
 
 **Files:**
-- `app/scripts/eval/real-run.mjs` (new)
-- `app/scripts/eval/wer.mjs` (**guard the CLI block**: `wer()` is already exported, but the file runs an unguarded top-level CLI that parses `process.argv` and `process.exit(2)`s on import — importing it as-is kills the orchestrator at import time (review finding). Wrap the CLI in an `import.meta.url === pathToFileURL(process.argv[1]).href` check.)
+- `app/scripts/eval/real-run.ts` (new)
+- `app/scripts/eval/wer.ts` (**guard the CLI block**: `wer()` is already exported, but the file runs an unguarded top-level CLI that parses `process.argv` and `process.exit(2)`s on import — importing it as-is kills the orchestrator at import time (review finding). Wrap the CLI in an `import.meta.url === pathToFileURL(process.argv[1]).href` check.)
 - `package.json` (root: `eval:real` script)
 
 **Approach:** Ensure the sidecar stubs exist (mirror the rust-check workflow's stub step), spawn the cargo example, capture stdout as the hypothesis, compute WER via the imported `wer()`, print `WER: x.xx%`, exit non-zero above threshold. Threshold: run 3× on at least one machine, set the gate at ~2× observed WER (regression tripwire per R4), record the calibration numbers in the README.
 
-**Patterns to follow:** `wer.mjs` CLI structure (zero-dep node, `process.exit(1)` gating).
+**Patterns to follow:** `wer.ts` CLI structure (zero-dependency TypeScript via nub, `process.exit(1)` gating).
 
 **Test scenarios:**
 - Happy path: full run on a dev machine prints WER and exits 0 under threshold.
 - Gate: `--max-wer 0` forces a failing exit on any imperfect hypothesis (proves the gate wires through).
 - Missing fixture / cargo failure → non-zero exit with a clear message, not a zero-WER false pass.
-- Import safety: importing `wer.mjs` from another module does not execute the CLI (no usage print, no exit) — `pnpm eval` still works standalone after the guard.
+- Import safety: importing `wer.ts` from another module does not execute the CLI (no usage print, no exit) — `pnpm eval` still works standalone after the guard.
 
 **Verification:** `pnpm eval:real` works from the repo root given the Rust toolchain and network (the orchestrator stubs missing sidecars itself; first run pays workspace compile + FFmpeg + model download); threshold and calibration notes committed.
 
@@ -124,7 +124,7 @@ The harness today (`app/scripts/eval/`) scores *pre-written* hypothesis text aga
 - `app/scripts/eval/README.md`
 - (verify-only) `.github/workflows/eval-harness.yml` — confirm its path triggers don't start running `eval:real`
 
-**Approach:** Document: what `pnpm eval` (dry-run, CI) vs `pnpm eval:real` (real engine, dev-only) cover, the model/cache location, the calibrated threshold and how to re-calibrate, and the explicit rationale for keeping CI dry-run. The workflow file only runs the existing scripts; adding `real-run.mjs` under `app/scripts/eval/**` will *trigger* the workflow on the PR touching it, but the workflow's steps don't invoke it — verify that stays true.
+**Approach:** Document: what `pnpm eval` (dry-run, CI) vs `pnpm eval:real` (real engine, dev-only) cover, the model/cache location, the calibrated threshold and how to re-calibrate, and the explicit rationale for keeping CI dry-run. The workflow file only runs the existing scripts; adding `real-run.ts` under `app/scripts/eval/**` will *trigger* the workflow on the PR touching it, but the workflow's steps don't invoke it — verify that stays true.
 
 **Test scenarios:** `Test expectation: none — documentation. The CI-boundary claim is verified by reading the workflow steps.`
 

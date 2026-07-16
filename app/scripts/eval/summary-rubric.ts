@@ -17,7 +17,7 @@ export function scoreSummary(markdown, signals = DEFAULT_SIGNALS) {
 
 const path = process.argv[2];
 if (!path) {
-  console.error('Usage: node summary-rubric.mjs <summary.md>');
+  console.error('Usage: nub summary-rubric.ts <summary.md>');
   process.exit(2);
 }
 const md = fs.readFileSync(path, 'utf8');

@@ -7,9 +7,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { intakeConsentedSample } from './corpus-intake.mjs';
-import { withdrawConsentedSession } from './corpus-withdraw.mjs';
-import { validateCorpusDocument } from './corpus.mjs';
+import { intakeConsentedSample } from './corpus-intake.ts';
+import { withdrawConsentedSession } from './corpus-withdraw.ts';
+import { validateCorpusDocument } from './corpus.ts';
 
 function writeWav(filePath, durationSeconds) {
 	const sampleRate = 16_000;

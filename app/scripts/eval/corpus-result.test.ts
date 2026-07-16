@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { writeCorpusBoundFiles, writeCorpusBoundJson } from './corpus-result.mjs';
-import { corpusFingerprint } from './corpus.mjs';
+import { writeCorpusBoundFiles, writeCorpusBoundJson } from './corpus-result.ts';
+import { corpusFingerprint } from './corpus.ts';
 
 function localManifest() {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-result-'));

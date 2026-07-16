@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { fileSha256, validateCorpusDocument } from './corpus.mjs';
+import { fileSha256, validateCorpusDocument } from './corpus.ts';
 
 const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
 const TARGET_NOISE_CONDITIONS = new Set(['clean', 'office', 'remote-call', 'overlapping-speech']);

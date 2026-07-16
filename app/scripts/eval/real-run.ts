@@ -11,7 +11,7 @@
  *   - Empty reference (e.g. silence.wav): hallucination check — the engine
  *     should produce (near-)nothing; gated by --max-hallucinated-words.
  *
- * Usage: node real-run.mjs [--max-wer <pct>] [--max-hallucinated-words <n>]
+ * Usage: nub real-run.ts [--max-wer <pct>] [--max-hallucinated-words <n>]
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
  *                          [--backend cpu|metal|cuda|vulkan|openblas|hipblas]
@@ -31,11 +31,11 @@ import {
 	requiresExplicitAccelerator,
 	requiresWhisperGpu,
 	supportedBackends,
-} from './backend.mjs';
-import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
-import { writeCorpusBoundJson } from './corpus-result.mjs';
-import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
-import { werDetails } from './wer.mjs';
+} from './backend.ts';
+import { loadCorpus, whisperLanguageForSample } from './corpus.ts';
+import { writeCorpusBoundJson } from './corpus-result.ts';
+import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
+import { werDetails } from './wer.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../..');

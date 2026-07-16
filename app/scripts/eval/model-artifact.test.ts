@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
+import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.ts';
 
 test('resolves relative model directories from the Cargo working directory', () => {
 	const repositoryRoot = path.resolve('repo-root');

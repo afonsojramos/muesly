@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { writeCorpusBoundFiles } from './corpus-result.mjs';
-import { loadCorpus } from './corpus.mjs';
+import { writeCorpusBoundFiles } from './corpus-result.ts';
+import { loadCorpus } from './corpus.ts';
 
 const DIMENSIONS = [
 	['overall', () => 'all'],
@@ -321,7 +321,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		const markdownOutput = stringFlag(args, '--markdown');
 		if (args.length === 0) {
 			throw new Error(
-				'Usage: report.mjs <run.json>... [--manifest <path>] [--json <path>] [--markdown <path>]',
+				'Usage: nub report.ts <run.json>... [--manifest <path>] [--json <path>] [--markdown <path>]',
 			);
 		}
 		if ((jsonOutput || markdownOutput) && !manifestPath) {

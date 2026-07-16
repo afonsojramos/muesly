@@ -33,17 +33,17 @@ jobs:
           nub run eval:report:test
       - name: Word error rate (short fixture)
         run: |
-          nub app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.ts \
             app/scripts/eval/fixtures/sample-ref.txt \
             app/scripts/eval/fixtures/sample-hyp.txt \
             --max-wer 0
       - name: Word error rate (multi-utterance golden)
         run: |
-          nub app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.ts \
             app/scripts/eval/fixtures/meeting-golden-ref.txt \
             app/scripts/eval/fixtures/meeting-golden-hyp.txt \
             --max-wer 0
-          nub app/scripts/eval/wer.mjs \
+          nub app/scripts/eval/wer.ts \
             app/scripts/eval/fixtures/meeting-golden-ref.txt \
             app/scripts/eval/fixtures/meeting-golden-hyp-noisy.txt \
             --max-wer 10
@@ -57,4 +57,4 @@ jobs:
           ## Action items
           - Ship the eval harness
           MD
-          nub app/scripts/eval/summary-rubric.mjs /tmp/sample-summary.md
+          nub app/scripts/eval/summary-rubric.ts /tmp/sample-summary.md

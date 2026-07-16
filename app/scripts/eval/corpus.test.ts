@@ -10,7 +10,7 @@ import {
 	fileSha256,
 	validateCorpusDocument,
 	whisperLanguageForSample,
-} from './corpus.mjs';
+} from './corpus.ts';
 
 function hash(value) {
 	return createHash('sha256').update(value).digest('hex');

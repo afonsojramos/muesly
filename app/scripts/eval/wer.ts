@@ -44,7 +44,7 @@ export function werDetails(refText, hypText) {
   };
 }
 
-// CLI entry, guarded so importing `wer()` from another module (real-run.mjs)
+// CLI entry, guarded so importing `wer()` from another module (real-run.ts)
 // never parses that module's argv or exits its process.
 import { pathToFileURL } from 'node:url';
 
@@ -62,7 +62,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const [refPath, hypPath] = args;
   if (!refPath || !hypPath) {
-    console.error('Usage: node wer.mjs <reference.txt> <hypothesis.txt> [--max-wer <pct>]');
+    console.error('Usage: nub wer.ts <reference.txt> <hypothesis.txt> [--max-wer <pct>]');
     process.exit(2);
   }
   const score = wer(fs.readFileSync(refPath, 'utf8'), fs.readFileSync(hypPath, 'utf8'));

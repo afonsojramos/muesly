@@ -6,8 +6,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { corpusFingerprint } from './corpus.mjs';
-import { aggregateRunReports, renderMarkdown, validateRunReport } from './report.mjs';
+import { corpusFingerprint } from './corpus.ts';
+import { aggregateRunReports, renderMarkdown, validateRunReport } from './report.ts';
 
 function result(overrides = {}) {
 	return {
@@ -240,7 +240,7 @@ test('requires a manifest and coordinates aggregate output files with the local 
 	);
 	const jsonPath = path.join(directory, 'results', 'aggregate.json');
 	const markdownPath = path.join(directory, 'results', 'aggregate.md');
-	const scriptPath = fileURLToPath(new URL('./report.mjs', import.meta.url));
+	const scriptPath = fileURLToPath(new URL('./report.ts', import.meta.url));
 
 	const missingManifest = spawnSync(process.execPath, [scriptPath, inputPath, '--json', jsonPath], {
 		encoding: 'utf8',

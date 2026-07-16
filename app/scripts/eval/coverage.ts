@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { writeCorpusBoundJson } from './corpus-result.mjs';
-import { findDuplicateAudioSamples, loadCorpus } from './corpus.mjs';
-import { validateRunReport } from './report.mjs';
+import { writeCorpusBoundJson } from './corpus-result.ts';
+import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
+import { validateRunReport } from './report.ts';
 
 const TARGET_FIELDS = new Set([
 	'schema_version',

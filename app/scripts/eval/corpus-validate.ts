@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadCorpus } from './corpus.mjs';
+import { loadCorpus } from './corpus.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const defaultManifest = path.join(here, 'corpus-manifest.json');

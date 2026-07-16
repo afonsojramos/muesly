@@ -7,8 +7,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
 	acquireLocalCorpusLock,
 	releaseLocalCorpusLock,
-} from './corpus-intake.mjs';
-import { validateCorpusDocument } from './corpus.mjs';
+} from './corpus-intake.ts';
+import { validateCorpusDocument } from './corpus.ts';
 
 function isWithinDirectory(directory, filePath) {
 	const relative = path.relative(directory, filePath);

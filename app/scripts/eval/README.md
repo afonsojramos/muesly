@@ -14,15 +14,15 @@ Two tiers:
 app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
   corpus-targets.json  # private meeting-corpus coverage floor
-  corpus.mjs           # manifest validation and language normalization
-  corpus-intake.mjs    # consent-gated, atomic local corpus intake
-  corpus-withdraw.mjs  # confirmed session withdrawal and result invalidation
-  coverage.mjs         # coverage gate across language/noise/model/backend cells
+  corpus.ts            # manifest validation and language normalization
+  corpus-intake.ts     # consent-gated, atomic local corpus intake
+  corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
+  coverage.ts          # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
-  wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
-  summary-rubric.mjs  # checklist scoring of a summary markdown file
-  real-run.mjs        # real-engine run: cargo example -> WER gate
-  report.mjs          # aggregate run reports by corpus and hardware dimensions
+  wer.ts               # word error rate vs golden (importable `wer()` + CLI)
+  summary-rubric.ts    # checklist scoring of a summary markdown file
+  real-run.ts          # real-engine run: cargo example -> WER gate
+  report.ts            # aggregate run reports by corpus and hardware dimensions
 ```
 
 ## Usage
@@ -33,8 +33,8 @@ nub run eval              # multi-utterance golden (clean + noisy hyp)
 nub run eval:wer app/scripts/eval/fixtures/sample-ref.txt \
   app/scripts/eval/fixtures/sample-hyp.txt
 
-# Or call node directly; --max-wer <pct> makes the run fail above a threshold:
-node app/scripts/eval/wer.mjs \
+# Or call nub directly; --max-wer <pct> makes the run fail above a threshold:
+nub app/scripts/eval/wer.ts \
   app/scripts/eval/fixtures/meeting-golden-ref.txt \
   app/scripts/eval/fixtures/meeting-golden-hyp.txt \
   --max-wer 0
@@ -114,7 +114,7 @@ English clip is a regression check, not a general accuracy ranking.
   Metal): 3 consecutive runs of `tiny` on the fixture scored 0.00% WER, so 10%
   is a regression tripwire, not a quality bar. Re-calibrate by running it a few
   times after intentional decode changes and updating the default in
-  `real-run.mjs`.
+  `real-run.ts`.
 - **Backend variance:** backend selection is explicit. Compare the same artifact and corpus
   across backends; small hardware-dependent drift is absorbed by the threshold.
 - **Fixture provenance:** `real-speech.wav` is a 27 s excerpt (16 kHz mono,

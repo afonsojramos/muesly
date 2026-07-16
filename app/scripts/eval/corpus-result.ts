@@ -6,8 +6,8 @@ import {
 	acquireLocalCorpusLock,
 	hasPendingWithdrawal,
 	releaseLocalCorpusLock,
-} from './corpus-intake.mjs';
-import { loadCorpus } from './corpus.mjs';
+} from './corpus-intake.ts';
+import { loadCorpus } from './corpus.ts';
 
 const RESULT_TRANSACTION_PATTERN = /^\.result-transaction-(\d+)-([0-9a-f-]{36})\.json$/;
 

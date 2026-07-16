@@ -11,7 +11,7 @@ import {
 	requiresExplicitAccelerator,
 	requiresWhisperGpu,
 	supportedBackends,
-} from './backend.mjs';
+} from './backend.ts';
 
 test('requires strict acceleration only for Whisper GPU backends', () => {
 	for (const backend of ['metal', 'cuda', 'vulkan', 'hipblas']) {
@@ -47,7 +47,7 @@ test('requires an explicit accelerator identity unless Apple Silicon identifies 
 });
 
 test('rejects ambiguous GPU benchmarks before starting cargo', () => {
-	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
 	const run = spawnSync(process.execPath, [realRun, '--backend', 'cuda'], { encoding: 'utf8' });
 	assert.equal(run.status, 2);
 	assert.match(run.stderr, /requires --accelerator/);
@@ -55,7 +55,7 @@ test('rejects ambiguous GPU benchmarks before starting cargo', () => {
 });
 
 test('rejects missing output paths before starting a benchmark', () => {
-	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
 	for (const args of [['--output'], ['--output', '--fixture', 'en-gettysburg-clean']]) {
 		const run = spawnSync(process.execPath, [realRun, ...args], { encoding: 'utf8' });
 		assert.equal(run.status, 2);
@@ -65,7 +65,7 @@ test('rejects missing output paths before starting a benchmark', () => {
 });
 
 test('selects fixtures only by unique manifest sample ID', () => {
-	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
 	const run = spawnSync(process.execPath, [realRun, '--fixture', 'real-speech'], {
 		encoding: 'utf8',
 	});
@@ -75,7 +75,7 @@ test('selects fixtures only by unique manifest sample ID', () => {
 });
 
 test('removes temporary metrics after a failed transcription process', () => {
-	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const realRun = fileURLToPath(new URL('./real-run.ts', import.meta.url));
 	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-cleanup-test-'));
 	const isolatedEnvironment = Object.fromEntries(
 		Object.entries(process.env).filter(

@@ -11,8 +11,8 @@ import {
 	localCalendarDate,
 	parseIntakeArgs,
 	wavDurationSeconds,
-} from './corpus-intake.mjs';
-import { validateCorpusDocument } from './corpus.mjs';
+} from './corpus-intake.ts';
+import { validateCorpusDocument } from './corpus.ts';
 
 function writeWav(filePath, durationSeconds = 2) {
 	const sampleRate = 16_000;

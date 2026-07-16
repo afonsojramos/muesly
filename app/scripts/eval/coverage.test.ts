@@ -6,8 +6,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { corpusFingerprint } from './corpus.mjs';
-import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.mjs';
+import { corpusFingerprint } from './corpus.ts';
+import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.ts';
 
 const targets = {
 	schema_version: 1,
@@ -169,7 +169,7 @@ test('writes coverage through the managed local corpus results path', () => {
 	const targetsPath = path.join(directory, 'targets.json');
 	fs.writeFileSync(targetsPath, JSON.stringify(targets));
 	const outputPath = path.join(directory, 'results', 'coverage.json');
-	const scriptPath = fileURLToPath(new URL('./coverage.mjs', import.meta.url));
+	const scriptPath = fileURLToPath(new URL('./coverage.ts', import.meta.url));
 	const run = spawnSync(
 		process.execPath,
 		[
