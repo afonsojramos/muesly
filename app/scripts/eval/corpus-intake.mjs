@@ -57,7 +57,7 @@ function removeAbandonedManifestFiles(manifestPath) {
 	}
 }
 
-function removeAbandonedResultFiles(manifestPath) {
+function removeAbandonedResultFiles(manifestPath, abandonedPids) {
 	const removeFrom = (directory) => {
 		for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
 			const entryPath = path.join(directory, entry.name);
@@ -66,8 +66,11 @@ function removeAbandonedResultFiles(manifestPath) {
 				removeFrom(entryPath);
 				continue;
 			}
-			if (entry.isFile() && /\.tmp-\d+-[0-9a-f-]{36}$/.test(entry.name)) {
-				fs.rmSync(entryPath, { force: true });
+			if (entry.isFile()) {
+				const match = entry.name.match(/\.tmp-(\d+)-[0-9a-f-]{36}$/);
+				if (match && abandonedPids.has(Number(match[1]))) {
+					fs.rmSync(entryPath, { force: true });
+				}
 			}
 		}
 	};
@@ -140,9 +143,10 @@ export function hasPendingWithdrawal(localCorpusRoot) {
 function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
 	if (unrecovered.length === 0) return;
+	const abandonedPids = new Set(unrecovered.map((stalePath) => readLockOwner(stalePath).owner.pid));
 	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
-	removeAbandonedResultFiles(manifestPath);
+	removeAbandonedResultFiles(manifestPath, abandonedPids);
 	for (const stalePath of unrecovered) {
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),
