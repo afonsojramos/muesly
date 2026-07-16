@@ -198,6 +198,8 @@ function sameLockOwnership(left, right) {
 		left.pid === right.pid &&
 		left.processIdentity === right.processIdentity &&
 		left.createdAt === right.createdAt &&
+		sameMetadata(left.lockIdentity.manifestDirectory, right.lockIdentity.manifestDirectory) &&
+		sameMetadata(left.lockIdentity.localCorpus, right.lockIdentity.localCorpus) &&
 		sameMetadata(left.lockIdentity.lock, right.lockIdentity.lock) &&
 		sameMetadata(left.lockIdentity.owner, right.lockIdentity.owner)
 	);
@@ -621,16 +623,80 @@ function leasedResultsDirectoryGuard(directory, identity) {
 		);
 }
 
+function openDirectoryRevisionGuard(directory, label) {
+	const entry = fs.lstatSync(directory, { bigint: true, throwIfNoEntry: false });
+	if (!entry?.isDirectory() || entry.isSymbolicLink()) {
+		throw new Error(`${label} must be a regular directory: ${directory}`);
+	}
+	const descriptor = fs.openSync(
+		directory,
+		fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		if (!opened.isDirectory() || !sameMetadata(fileMetadata(entry), fileMetadata(opened))) {
+			throw new Error(`${label} changed while it was opened: ${directory}`);
+		}
+		return {
+			descriptor,
+			metadata: fileMetadata(opened),
+			path: directory,
+		};
+	} catch (error) {
+		fs.closeSync(descriptor);
+		throw error;
+	}
+}
+
+function assertDirectoryRevisionGuardUnchanged(guard, label) {
+	const opened = fs.fstatSync(guard.descriptor, { bigint: true });
+	const installed = fs.lstatSync(guard.path, { bigint: true, throwIfNoEntry: false });
+	if (
+		!opened.isDirectory() ||
+		!installed?.isDirectory() ||
+		installed.isSymbolicLink() ||
+		!sameMetadata(guard.metadata, fileMetadata(opened)) ||
+		!sameMetadata(fileMetadata(opened), fileMetadata(installed))
+	) {
+		throw new Error(`${label} changed after validation: ${guard.path}`);
+	}
+}
+
 function assertNoLeasedResultTransactions(directory, identity) {
 	const assertDirectory = leasedResultsDirectoryGuard(directory, identity);
 	assertDirectory();
-	const entries = fs.readdirSync(directory, { withFileTypes: true });
-	assertDirectory();
-	const marker = entries.find((entry) => RESULT_TRANSACTION_PATTERN.test(entry.name));
-	if (marker) {
-		throw new Error(
-			`a legacy result transaction requires recovery outside the corpus result lease: ${path.join(directory, marker.name)}`,
+	const parentGuard = openDirectoryRevisionGuard(
+		path.dirname(directory),
+		'leased corpus results parent directory',
+	);
+	let resultsGuard;
+	try {
+		resultsGuard = openDirectoryRevisionGuard(
+			directory,
+			'leased corpus results directory during transaction preflight',
 		);
+		assertDirectory();
+		assertDirectoryRevisionGuardUnchanged(parentGuard, 'leased corpus results parent directory');
+		assertDirectoryRevisionGuardUnchanged(
+			resultsGuard,
+			'leased corpus results directory during transaction preflight',
+		);
+		const entries = fs.readdirSync(directory, { withFileTypes: true });
+		assertDirectoryRevisionGuardUnchanged(
+			resultsGuard,
+			'leased corpus results directory during transaction preflight',
+		);
+		assertDirectoryRevisionGuardUnchanged(parentGuard, 'leased corpus results parent directory');
+		assertDirectory();
+		const marker = entries.find((entry) => RESULT_TRANSACTION_PATTERN.test(entry.name));
+		if (marker) {
+			throw new Error(
+				`a legacy result transaction requires recovery outside the corpus result lease: ${path.join(directory, marker.name)}`,
+			);
+		}
+	} finally {
+		if (resultsGuard) fs.closeSync(resultsGuard.descriptor);
+		fs.closeSync(parentGuard.descriptor);
 	}
 }
 
@@ -777,7 +843,7 @@ function sameCapturedInode(left, right) {
 
 function quarantineLeasedPath(state, filePath, expected, label) {
 	assertBoundResultsDirectory(state);
-	const entry = fs.lstatSync(filePath, { throwIfNoEntry: false });
+	const entry = fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
 	if (!entry) return null;
 
 	const quarantineDirectory = path.join(
@@ -795,12 +861,42 @@ function quarantineLeasedPath(state, filePath, expected, label) {
 	assertBoundResultsDirectory(state);
 
 	const quarantinePath = path.join(quarantineDirectory, 'entry');
+	const source = inspectStableRegularFile(filePath, `${label} source`, hashDescriptor, {
+		allowedLinks: [entry.nlink],
+	});
+	assertPrivateFileMetadata(source.metadata, `${label} source`);
+	const sourceLinks = BigInt(source.metadata.nlink);
 	try {
-		fs.renameSync(filePath, quarantinePath);
+		fs.linkSync(filePath, quarantinePath);
 	} catch (error) {
 		if (error.code === 'ENOENT') return null;
 		throw error;
 	}
+	const linkedSource = inspectStableRegularFile(
+		filePath,
+		`${label} linked source`,
+		hashDescriptor,
+		{
+			allowedLinks: [sourceLinks + 1n],
+		},
+	);
+	const linkedQuarantine = inspectStableRegularFile(
+		quarantinePath,
+		`${label} linked quarantine`,
+		hashDescriptor,
+		{ allowedLinks: [sourceLinks + 1n] },
+	);
+	if (
+		!sameCapturedInode(source.metadata, linkedSource.metadata) ||
+		!sameCapturedInode(linkedSource.metadata, linkedQuarantine.metadata) ||
+		source.value !== linkedSource.value ||
+		linkedSource.value !== linkedQuarantine.value
+	) {
+		throw new Error(
+			`${label} changed while it was linked into quarantine; both paths were preserved`,
+		);
+	}
+	fs.unlinkSync(filePath);
 	assertBoundResultsDirectory(state);
 	assertPrivateDirectoryIdentity(
 		quarantineDirectory,
@@ -812,12 +908,25 @@ function quarantineLeasedPath(state, filePath, expected, label) {
 		quarantinePath,
 		`${label} quarantine`,
 		hashDescriptor,
-		{ allowedLinks: [1n, 2n] },
+		{
+			allowedLinks: [sourceLinks],
+		},
 	);
+	assertPrivateFileMetadata(quarantined.metadata, `${label} quarantine`);
+	if (
+		!sameCapturedInode(source.metadata, quarantined.metadata) ||
+		source.value !== quarantined.value
+	) {
+		throw new Error(`${label} changed while it was quarantined; the evidence was preserved`);
+	}
 	const exactInode = sameCapturedInode(quarantined.metadata, expected.metadata);
+	const exactMetadata = sameMetadata(
+		installedFileIdentity(quarantined.metadata),
+		installedFileIdentity(expected.metadata),
+	);
 	const exactContents =
 		expected.expectedSha256 === undefined || quarantined.value === expected.expectedSha256;
-	if (!exactInode || !exactContents) {
+	if (!exactInode || !exactMetadata || !exactContents) {
 		throw new Error(
 			`${label} was replaced while it was quarantined; the replacement was preserved at ${quarantinePath}`,
 		);

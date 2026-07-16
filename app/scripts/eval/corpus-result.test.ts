@@ -1007,24 +1007,15 @@ test('quarantines the exact published pair when final lease validation fails', (
 	assert(quarantined.every((entryPath) => fs.readFileSync(entryPath, 'utf8') === expectedContents));
 });
 
-test('preserves an attacker replacement swapped into failed-output quarantine', (t) => {
+test('preserves an attacker replacement swapped while failed output is linked into quarantine', (t) => {
 	const current = leasedCorpusFixture(t);
 	const resultsDirectory = path.join(current.directory, 'results');
 	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
 	const displacedOutput = path.join(current.directory, 'writer-output-displaced.json');
 	const originalLinkSync = fs.linkSync;
-	const originalRenameSync = fs.renameSync;
 	let tampered = false;
 	let swapped = false;
 	t.mock.method(fs, 'linkSync', (sourcePath, destinationPath) => {
-		const result = originalLinkSync(sourcePath, destinationPath);
-		if (!tampered && destinationPath === outputPath) {
-			tampered = true;
-			fs.appendFileSync(outputPath, 'tamper');
-		}
-		return result;
-	});
-	t.mock.method(fs, 'renameSync', (sourcePath, destinationPath) => {
 		if (
 			!swapped &&
 			sourcePath === outputPath &&
@@ -1032,10 +1023,15 @@ test('preserves an attacker replacement swapped into failed-output quarantine', 
 			destinationPath.includes('.lease-quarantine-')
 		) {
 			swapped = true;
-			originalRenameSync(outputPath, displacedOutput);
+			fs.renameSync(outputPath, displacedOutput);
 			fs.writeFileSync(outputPath, 'attacker replacement\n', { mode: 0o600 });
 		}
-		return originalRenameSync(sourcePath, destinationPath);
+		const result = originalLinkSync(sourcePath, destinationPath);
+		if (!tampered && destinationPath === outputPath) {
+			tampered = true;
+			fs.appendFileSync(outputPath, 'tamper');
+		}
+		return result;
 	});
 	assert.throws(
 		() =>
@@ -1047,13 +1043,51 @@ test('preserves an attacker replacement swapped into failed-output quarantine', 
 		/validation and quarantine|promotion and cleanup|staged cleanup both failed/,
 	);
 	assert(swapped);
-	assert(!fs.existsSync(outputPath));
+	assert.equal(fs.readFileSync(outputPath, 'utf8'), 'attacker replacement\n');
 	assert(fs.existsSync(displacedOutput));
 	assert(
 		quarantinedEntries(resultsDirectory).some(
 			(entryPath) => fs.readFileSync(entryPath, 'utf8') === 'attacker replacement\n',
 		),
 	);
+});
+
+test('never overwrites evidence planted at a quarantine destination', (t) => {
+	const current = leasedCorpusFixture(t);
+	const resultsDirectory = path.join(current.directory, 'results');
+	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
+	const originalLinkSync = fs.linkSync;
+	let changed = false;
+	let plantedPath = null;
+	t.mock.method(fs, 'linkSync', (sourcePath, destinationPath) => {
+		if (!changed && destinationPath === outputPath) {
+			const result = originalLinkSync(sourcePath, destinationPath);
+			changed = true;
+			fs.appendFileSync(current.manifestPath, ' ');
+			return result;
+		}
+		if (
+			plantedPath === null &&
+			typeof destinationPath === 'string' &&
+			destinationPath.includes('.lease-quarantine-')
+		) {
+			plantedPath = destinationPath;
+			fs.writeFileSync(plantedPath, 'planted quarantine evidence\n', { mode: 0o600 });
+		}
+		return originalLinkSync(sourcePath, destinationPath);
+	});
+	assert.throws(
+		() =>
+			writeLeasedCorpusBoundJson({
+				lease: current.lease,
+				outputPath,
+				value: { complete: true },
+			}),
+		/validation and quarantine|staged cleanup both failed/,
+	);
+	assert(plantedPath);
+	assert.equal(fs.readFileSync(plantedPath, 'utf8'), 'planted quarantine evidence\n');
+	assert(fs.existsSync(outputPath));
 });
 
 test('closes a staged descriptor and preserves its path when initial fstat fails', (t) => {
@@ -1176,6 +1210,33 @@ test('fails closed when a result transaction appears after lease creation', (t) 
 			`new ${output.file}\n`,
 		);
 	}
+	assert(fs.existsSync(transaction.markerPath));
+	assert(!fs.existsSync(outputPath));
+});
+
+test('detects a result transaction marker created during directory scanning', (t) => {
+	const current = leasedCorpusFixture(t);
+	const resultsDirectory = path.join(current.directory, 'results');
+	const outputPath = path.join(resultsDirectory, 'checkpoint.json');
+	const originalReaddirSync = fs.readdirSync;
+	let transaction = null;
+	t.mock.method(fs, 'readdirSync', (directoryPath, ...args) => {
+		const entries = originalReaddirSync(directoryPath, ...args);
+		if (transaction === null && directoryPath === resultsDirectory) {
+			transaction = interruptedTransaction(current.directory, 'prepared');
+		}
+		return entries;
+	});
+	assert.throws(
+		() =>
+			writeLeasedCorpusBoundJson({
+				lease: current.lease,
+				outputPath,
+				value: { recovered: false },
+			}),
+		/results directory during transaction preflight changed after validation/,
+	);
+	assert(transaction);
 	assert(fs.existsSync(transaction.markerPath));
 	assert(!fs.existsSync(outputPath));
 });
