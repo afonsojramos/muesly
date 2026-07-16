@@ -294,6 +294,31 @@ function releaseMatches(owner, token, identity) {
 	return identity !== null && owner.process_identity === identity;
 }
 
+export function assertCorpusBenchmarkAccess(manifestPath, token = null) {
+	const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
+	const lockPath = path.join(path.dirname(canonicalManifest), 'local-corpus', '.benchmark.lock');
+	const lockEntry = entryAt(lockPath);
+	if (!lockEntry) {
+		if (token !== null && token !== undefined) {
+			throw new Error('the owned corpus benchmark lock is no longer available');
+		}
+		return;
+	}
+	let owner;
+	try {
+		owner = readBenchmarkLockOwner(lockPath);
+	} catch (error) {
+		throw new Error(
+			`a corpus benchmark is active or left an invalid or unreadable lock: ${lockPath}; ${error.message}`,
+		);
+	}
+	if (owner.manifest_path !== canonicalManifest) {
+		throw new Error(`the corpus benchmark lock is bound to another manifest: ${lockPath}`);
+	}
+	if (token !== null && token !== undefined && owner.token === token) return;
+	throw new Error(`a corpus benchmark is active: ${lockPath}`);
+}
+
 export function releaseCorpusBenchmarkLock(lockPath, token, options = {}) {
 	let identity;
 	try {

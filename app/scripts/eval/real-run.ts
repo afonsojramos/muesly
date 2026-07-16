@@ -547,6 +547,7 @@ if (outputPath) {
 			expectedFingerprint: corpus.corpus_fingerprint,
 			outputPath: absoluteOutput,
 			value: report,
+			benchmarkLockToken: process.env.MUESLY_CORPUS_BENCHMARK_TOKEN,
 		});
 	} catch (error) {
 		console.error(error.message);

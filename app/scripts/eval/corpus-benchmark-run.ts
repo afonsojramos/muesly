@@ -22,6 +22,7 @@ import {
   readCorpusBenchmarkCheckpoint,
 } from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
+import { acquireLocalCorpusLock, releaseLocalCorpusLock } from "./corpus-intake.ts";
 import { parseCorpusBenchmarkArgs } from "./corpus-benchmark-options.ts";
 import {
   assertTaskCheckpoint,
@@ -31,7 +32,7 @@ import {
   validateTaskCheckpoint,
 } from "./corpus-benchmark-plan.ts";
 import { writeCorpusBoundJson } from "./corpus-result.ts";
-import { canonicalFilePath, loadCorpus } from "./corpus.ts";
+import { canonicalFilePath, canonicalManifestPath, loadCorpus } from "./corpus.ts";
 import { evaluateCoverage, validateCoverageTargets } from "./coverage.ts";
 import { evaluatorBuildEnvironment, evaluatorRevision } from "./evaluator-revision.ts";
 import { modelArtifactSha256, resolveModelsDirectory } from "./model-artifact.ts";
@@ -200,6 +201,28 @@ function loadTargets(targetsPath) {
     targetsPath: loaded.path,
     targetsSha256: loaded.sha256,
   };
+}
+
+function acquireCampaignLock(manifestPath) {
+  const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
+  const localCorpusRoot = path.join(path.dirname(canonicalManifest), "local-corpus");
+  const localCorpusEntry = fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false });
+  if (localCorpusEntry?.isSymbolicLink() || (localCorpusEntry && !localCorpusEntry.isDirectory())) {
+    throw new Error(`local corpus root must be a regular directory: ${localCorpusRoot}`);
+  }
+  fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
+  const mutationLockPath = path.join(localCorpusRoot, ".intake.lock");
+  const mutationToken = acquireLocalCorpusLock(
+    mutationLockPath,
+    localCorpusRoot,
+    canonicalManifest,
+    { operation: "benchmark-start" },
+  );
+  try {
+    return acquireCorpusBenchmarkLock(canonicalManifest);
+  } finally {
+    releaseLocalCorpusLock(mutationLockPath, mutationToken);
+  }
 }
 
 function selectTargets(targets, selectedVariants) {
@@ -404,12 +427,12 @@ function signalBenchmarkProcessTree(child, signalName) {
   }
 }
 
-async function runRealRunCommand(args, { repoRoot, signal }) {
+async function runRealRunCommand(args, { environment = process.env, repoRoot, signal }) {
   throwIfAborted(signal);
   const child = spawn("nub", args, {
     cwd: repoRoot,
     detached: process.platform !== "win32",
-    env: process.env,
+    env: environment,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -461,6 +484,7 @@ async function defaultTaskRunner({
   resultsDirectory,
   repoRoot,
   signal,
+  benchmarkLockToken,
 }) {
   const attemptPath = path.join(
     resultsDirectory,
@@ -490,7 +514,14 @@ async function defaultTaskRunner({
   ];
   if (task.accelerator !== null) args.push("--accelerator", task.accelerator);
   try {
-    const run = await runRealRunCommand(args, { repoRoot, signal });
+    const run = await runRealRunCommand(args, {
+      environment: {
+        ...process.env,
+        MUESLY_CORPUS_BENCHMARK_TOKEN: benchmarkLockToken,
+      },
+      repoRoot,
+      signal,
+    });
     if (!fs.existsSync(attemptPath)) {
       throw new Error(
         `real-run failed before producing a report ` +
@@ -701,6 +732,7 @@ function writeCheckpoint({
   manifestPath,
   resultsDirectory,
   expectedFingerprint,
+  benchmarkLockToken,
 }) {
   assertTaskCheckpoint(report, task, {
     expectedModelArtifactSha256: identity.model_artifact_sha256,
@@ -716,6 +748,7 @@ function writeCheckpoint({
   writeCorpusBoundJson({
     manifestPath,
     expectedFingerprint,
+    benchmarkLockToken,
     outputPath,
     value: report,
   });
@@ -735,7 +768,7 @@ function writeCheckpoint({
 function dependenciesWithDefaults(overrides) {
   validateDependencies(overrides);
   return {
-    acquireLock: acquireCorpusBenchmarkLock,
+    acquireLock: acquireCampaignLock,
     releaseLock: releaseCorpusBenchmarkLock,
     loadCorpus,
     loadTargets,
@@ -897,6 +930,7 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           resultsDirectory,
           repoRoot: repositoryRoot,
           signal: interruption.signal,
+          benchmarkLockToken: lock.token,
         });
         throwIfAborted(interruption.signal);
         assertInputsCurrent({
@@ -915,6 +949,7 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           manifestPath,
           resultsDirectory,
           expectedFingerprint: corpus.corpus_fingerprint,
+          benchmarkLockToken: lock.token,
         });
         completed.set(task.task_id, checkpoint);
         executedTasks += 1;
@@ -946,23 +981,42 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
         repoRoot: repositoryRoot,
       });
       assertSameIdentities(initialIdentities, finalIdentities);
-      const pendingTasks = tasks.length - completed.size;
+      assertInputsCurrent({
+        manifestPath,
+        expectedCorpus: corpus,
+        targetsPath: loadedTargets.targetsPath,
+        expectedTargetsSha256: loadedTargets.targetsSha256,
+        loadCorpusImpl: dependencies.loadCorpus,
+        loadTargetsImpl: dependencies.loadTargets,
+      });
+      const finalRecordsByTask = identifyCheckpoints(
+        dependencies.discoverCheckpoints(resultsDirectory),
+        tasks,
+      );
+      const verifiedCompleted = currentCompletions(tasks, finalRecordsByTask, initialIdentities);
+      if (
+        verifiedCompleted.size !== completed.size ||
+        [...completed.keys()].some((taskId) => !verifiedCompleted.has(taskId))
+      ) {
+        throw new Error("benchmark checkpoints changed during final verification");
+      }
+      const pendingTasks = tasks.length - verifiedCompleted.size;
       if (options.requireComplete && pendingTasks > 0) {
         throw incompleteError(`benchmark campaign is incomplete: ${pendingTasks} task(s) pending`);
       }
-      if (options.requireComplete) requireCompleteCoverage(corpus, targets, completed);
-      const failedQualityTasks = [...completed.values()].filter(
+      if (options.requireComplete) requireCompleteCoverage(corpus, targets, verifiedCompleted);
+      const failedQualityTasks = [...verifiedCompleted.values()].filter(
         (record) => record.report.passed === false,
       ).length;
       campaignResult = {
         mode: "run",
         totalTasks: tasks.length,
-        completedTasks: completed.size,
+        completedTasks: verifiedCompleted.size,
         executedTasks,
         pendingTasks,
         failedQualityTasks,
         taskIds: tasks.map((task) => task.task_id),
-        checkpointNames: [...completed.values()].map((record) => record.name),
+        checkpointNames: [...verifiedCompleted.values()].map((record) => record.name),
       };
     }
   } catch (error) {

@@ -4,7 +4,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
+import {
+	acquireCorpusBenchmarkLock,
+	assertCorpusBenchmarkAccess,
+	releaseCorpusBenchmarkLock,
+} from './corpus-benchmark-lock.ts';
 import { canonicalManifestPath } from './corpus.ts';
 
 const FIRST_TOKEN = '00000000-0000-4000-8000-000000000001';
@@ -52,14 +56,17 @@ function ownerAt(lockPath) {
 	return JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
 }
 
-test('serializes benchmark campaigns without using the intake lock', (t) => {
+test('serializes low-level benchmark lock ownership', (t) => {
 	const current = fixture(t);
 	fs.mkdirSync(current.localCorpusRoot, { mode: 0o700 });
-	fs.writeFileSync(path.join(current.localCorpusRoot, '.withdrawal-session-one.json'), '{}\n');
 
 	const first = acquireCorpusBenchmarkLock(current.manifestPath);
 	assert.equal(first.lockPath, current.lockPath);
-	assert(!fs.existsSync(path.join(current.localCorpusRoot, '.intake.lock')));
+	assert.throws(
+		() => assertCorpusBenchmarkAccess(current.manifestPath),
+		/a corpus benchmark is active/,
+	);
+	assert.doesNotThrow(() => assertCorpusBenchmarkAccess(current.manifestPath, first.token));
 	assert.throws(
 		() => acquireCorpusBenchmarkLock(current.manifestPath),
 		/another corpus benchmark is active/,

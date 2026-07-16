@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
 import { writeCorpusBoundFiles, writeCorpusBoundJson } from './corpus-result.ts';
 import { corpusFingerprint } from './corpus.ts';
 
@@ -73,6 +74,35 @@ test('keeps the managed results directory and report files private', () => {
 	if (process.platform !== 'win32') {
 		assert.equal(fs.statSync(resultsDirectory).mode & 0o777, 0o700);
 		assert.equal(fs.statSync(outputPath).mode & 0o777, 0o600);
+	}
+});
+
+test('allows only the owning benchmark campaign to write while its lock is active', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const outputPath = path.join(directory, 'results', 'run.json');
+	const lock = acquireCorpusBenchmarkLock(manifestPath);
+	try {
+		assert.throws(
+			() =>
+				writeCorpusBoundJson({
+					manifestPath,
+					expectedFingerprint: corpusFingerprint(document),
+					outputPath,
+					value: { complete: false },
+				}),
+			/a corpus benchmark is active/,
+		);
+		writeCorpusBoundJson({
+			manifestPath,
+			expectedFingerprint: corpusFingerprint(document),
+			benchmarkLockToken: lock.token,
+			outputPath,
+			value: { complete: true },
+		});
+		assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, 'utf8')), { complete: true });
+	} finally {
+		assert.equal(releaseCorpusBenchmarkLock(lock.lockPath, lock.token), true);
+		fs.rmSync(directory, { recursive: true, force: true });
 	}
 });
 

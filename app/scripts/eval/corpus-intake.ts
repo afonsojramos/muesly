@@ -5,11 +5,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
+import { assertCorpusBenchmarkAccess } from './corpus-benchmark-lock.ts';
 import { canonicalManifestPath, fileSha256, validateCorpusDocument } from './corpus.ts';
-import {
-	preparedBundleForIntake,
-	retirePreparedBundle,
-} from './corpus-prepared-bundle.ts';
+import { preparedBundleForIntake, retirePreparedBundle } from './corpus-prepared-bundle.ts';
 import { processIdentity, processIsAlive, processOwnsState } from './process-identity.ts';
 
 export const TARGET_LANGUAGES = new Set(['en', 'es', 'pt', 'fr', 'de']);
@@ -316,6 +314,9 @@ export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, 
 			if (installed) {
 				try {
 					assertPendingWithdrawalAllows(localCorpusRoot, ownerMetadata);
+					if (ownerMetadata.operation !== 'benchmark-start') {
+						assertCorpusBenchmarkAccess(manifestPath, ownerMetadata.benchmarkToken ?? null);
+					}
 					const stalePaths = fs
 						.readdirSync(localCorpusRoot)
 						.filter(

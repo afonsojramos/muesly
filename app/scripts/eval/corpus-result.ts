@@ -213,6 +213,7 @@ export function writeCorpusBoundFiles(options) {
 		lockPath = path.join(localCorpusRoot, '.intake.lock');
 		lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
 			operation: 'result-write',
+			benchmarkToken: options.benchmarkLockToken,
 		});
 	}
 
@@ -264,6 +265,7 @@ export function writeCorpusBoundJson(options) {
 	writeCorpusBoundFiles({
 		manifestPath: options.manifestPath,
 		expectedFingerprint: options.expectedFingerprint,
+		benchmarkLockToken: options.benchmarkLockToken,
 		outputs: [
 			{
 				outputPath: options.outputPath,

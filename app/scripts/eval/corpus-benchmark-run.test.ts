@@ -12,6 +12,7 @@ import {
 } from "./corpus-benchmark-run.ts";
 import { isCorpusBenchmarkCheckpointName } from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
+import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
 
 const MODEL_ARTIFACT = "b".repeat(64);
@@ -178,6 +179,7 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
   );
   return {
     directory,
+    localCorpusRoot,
     lockPath: path.join(localCorpusRoot, ".benchmark.lock"),
     manifestPath,
     resultsDirectory: path.join(directory, "results"),
@@ -375,6 +377,82 @@ test("holds exclusive ownership for the full campaign and releases it in finally
     /another corpus benchmark is active/,
   );
   assert.equal(releaseCorpusBenchmarkLock(held.lockPath, held.token), true);
+});
+
+test("coordinates campaign ownership with corpus mutation and pending withdrawal state", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  let mutationWasBlocked = false;
+  await runCorpusBenchmarkCampaign(
+    options(current),
+    dependencies({
+      runTask: ({ task }) => {
+        const mutationLockPath = path.join(current.localCorpusRoot, ".intake.lock");
+        assert.throws(
+          () =>
+            acquireLocalCorpusLock(
+              mutationLockPath,
+              current.localCorpusRoot,
+              current.manifestPath,
+              {
+                operation: "intake",
+                sessionId: "session-other",
+              },
+            ),
+          /a corpus benchmark is active/,
+        );
+        mutationWasBlocked = true;
+        assert.equal(fs.existsSync(mutationLockPath), false);
+        return reportForTask(task);
+      },
+    }),
+  );
+  assert.equal(mutationWasBlocked, true);
+  assert.equal(fs.existsSync(current.lockPath), false);
+
+  fs.writeFileSync(path.join(current.localCorpusRoot, ".withdrawal-session-a.json"), "{}\n", {
+    mode: 0o600,
+  });
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(options(current, { run: false }), dependencies()),
+    /corpus withdrawal is pending/,
+  );
+  assert.equal(fs.existsSync(path.join(current.localCorpusRoot, ".intake.lock")), false);
+  assert.equal(fs.existsSync(current.lockPath), false);
+});
+
+test("rechecks corpus state after final evaluator and artifact inspection", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  let collections = 0;
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        collectEvaluatorContext: ({ targets }) => {
+          collections += 1;
+          if (collections === 2) {
+            const document = JSON.parse(fs.readFileSync(current.manifestPath, "utf8"));
+            document.description = "Changed outside the coordinated corpus commands.";
+            fs.writeFileSync(current.manifestPath, `${JSON.stringify(document)}\n`, {
+              mode: 0o600,
+            });
+          }
+          return {
+            buildEnvironment: {},
+            hostTriple: "aarch64-apple-darwin",
+            revisions: Object.fromEntries(
+              targets.benchmark_variants.map((variant) => [
+                variant.backend,
+                evaluatorEntry(variant.backend),
+              ]),
+            ),
+            targetTriple: "aarch64-apple-darwin",
+          };
+        },
+      }),
+    ),
+    /corpus changed while the benchmark campaign was running/,
+  );
+  assert.equal(fs.existsSync(current.lockPath), false);
 });
 
 test("refuses model or executable identity drift without writing a checkpoint", async (t) => {

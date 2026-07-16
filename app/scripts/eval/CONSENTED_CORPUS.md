@@ -159,12 +159,14 @@ nub run eval:corpus:benchmark \
   --run --require-complete
 ```
 
-The exclusive campaign lock prevents intake or withdrawal during a run. Every completed sample is
-written atomically as a private, transcript-free checkpoint, so an interrupted command can be
-re-run safely. Resume requires the exact corpus sample revision, thresholds, evaluator revision,
-model artifact, benchmark executable, backend, accelerator, and hardware cohort. Quality failures
-remain checkpointed and make the command exit non-zero. `--require-complete` also rejects an empty
-or underfilled corpus and requires one compatible hardware cohort across the full target matrix.
+The campaign coordinates with the corpus mutation lock, refuses to start while a withdrawal is
+pending, and prevents intake, withdrawal, or unrelated result writes during a run. Every completed
+sample is written atomically as a private, transcript-free checkpoint, so an interrupted command
+can be re-run safely. Resume requires the exact corpus sample revision, thresholds, evaluator
+revision, model artifact, benchmark executable, backend, accelerator, and hardware cohort. Quality
+failures remain checkpointed and make the command exit non-zero. `--require-complete` also rejects
+an empty or underfilled corpus and requires one compatible hardware cohort across the full target
+matrix.
 Use repeatable `--variant provider/model/backend` options for a subset and
 `--accelerator backend=stable-device-id` where the selected backend requires an explicit GPU
 identity. A subset cannot be combined with `--require-complete`, which always certifies the full

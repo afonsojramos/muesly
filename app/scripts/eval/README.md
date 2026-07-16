@@ -89,11 +89,12 @@ nub run eval:corpus:benchmark \
   --run --require-complete
 ```
 
-The runner holds exclusive corpus ownership for the campaign, validates the corpus and target
-matrix, builds and probes each selected provider/model/backend, and writes a private atomic
-checkpoint after every sample. Re-running the same command resumes only exact completed task,
-model, evaluator, executable, and hardware identities. `--variant provider/model/backend` limits
-execution to a repeatable subset. Use
+The runner coordinates its benchmark lock with the corpus mutation lock, refuses to start while a
+withdrawal is pending, and blocks intake, withdrawal, or unrelated result writes until the
+campaign releases ownership. It validates the corpus and target matrix, builds and probes each
+selected provider/model/backend, and writes a private atomic checkpoint after every sample.
+Re-running the same command resumes only exact completed task, model, evaluator, executable, and
+hardware identities. `--variant provider/model/backend` limits execution to a repeatable subset. Use
 `--accelerator backend=stable-device-id` where an explicit GPU identity is required. A failed
 quality threshold is checkpointed for diagnosis and makes the command exit non-zero; interruption
 keeps completed checkpoints and exits with status 130. `--require-complete` always certifies the
