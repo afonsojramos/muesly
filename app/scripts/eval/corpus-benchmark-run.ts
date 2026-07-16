@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from "node:child_process";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,9 +19,7 @@ import {
 } from "./benchmark-executable.ts";
 import { createPrivateArtifactSnapshotDirectory } from "./artifact-snapshot.ts";
 import {
-  cleanupCorpusBenchmarkAttempt,
   discoverCorpusBenchmarkCheckpoints,
-  MAX_CORPUS_BENCHMARK_CHECKPOINT_BYTES,
   readCorpusBenchmarkCheckpoint,
 } from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
@@ -34,7 +32,11 @@ import {
   taskReportFilename,
   validateTaskCheckpoint,
 } from "./corpus-benchmark-plan.ts";
-import { writeCorpusBoundJson } from "./corpus-result.ts";
+import {
+  assertLeasedCorpusSampleUnchanged,
+  createCorpusResultLease,
+  writeLeasedCorpusBoundJson,
+} from "./corpus-result.ts";
 import { canonicalFilePath, canonicalManifestPath, loadCorpus } from "./corpus.ts";
 import { evaluateCoverage, validateCoverageTargets } from "./coverage.ts";
 import {
@@ -43,6 +45,8 @@ import {
   evaluatorRevision,
 } from "./evaluator-revision.ts";
 import { modelArtifactSha256, resolveModelsDirectory } from "./model-artifact.ts";
+import { processIdentity } from "./process-identity.ts";
+import { prepareRealRunSession } from "./real-run-session.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, "../../..");
@@ -68,10 +72,13 @@ const OPTION_FIELDS = new Set([
 const DEPENDENCY_FIELDS = new Set([
   "acquireLock",
   "releaseLock",
+  "currentProcessIdentity",
   "loadCorpus",
   "loadTargets",
   "collectEvaluatorContext",
-  "inspectVariantIdentity",
+  "createResultLease",
+  "assertSampleUnchanged",
+  "prepareSession",
   "discoverCheckpoints",
   "runTask",
   "writeCheckpoint",
@@ -213,7 +220,7 @@ function loadTargets(targetsPath) {
   };
 }
 
-function acquireCampaignLock(manifestPath) {
+function acquireCampaignLock(manifestPath, options = {}) {
   const canonicalManifest = canonicalManifestPath(manifestPath, { allowMissing: true });
   const localCorpusRoot = path.join(path.dirname(canonicalManifest), "local-corpus");
   const localCorpusEntry = fs.lstatSync(localCorpusRoot, { throwIfNoEntry: false });
@@ -229,7 +236,7 @@ function acquireCampaignLock(manifestPath) {
     { operation: "benchmark-start" },
   );
   try {
-    return acquireCorpusBenchmarkLock(canonicalManifest);
+    return acquireCorpusBenchmarkLock(canonicalManifest, options);
   } finally {
     releaseLocalCorpusLock(mutationLockPath, mutationToken);
   }
@@ -373,50 +380,6 @@ export function inspectVariantIdentity(
   }
 }
 
-function readAttemptReport(attemptPath) {
-  let descriptor;
-  try {
-    const initial = fs.lstatSync(attemptPath, { bigint: true });
-    if (
-      !initial.isFile() ||
-      initial.isSymbolicLink() ||
-      initial.nlink !== 1n ||
-      initial.size > BigInt(MAX_CORPUS_BENCHMARK_CHECKPOINT_BYTES)
-    ) {
-      throw new Error();
-    }
-    descriptor = fs.openSync(attemptPath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-    const opened = fs.fstatSync(descriptor, { bigint: true });
-    if (!opened.isFile() || opened.nlink !== 1n || !sameFileSnapshot(initial, opened)) {
-      throw new Error();
-    }
-    const contents = fs.readFileSync(descriptor);
-    const finalDescriptor = fs.fstatSync(descriptor, { bigint: true });
-    const finalPath = fs.lstatSync(attemptPath, { bigint: true });
-    if (
-      contents.length > MAX_CORPUS_BENCHMARK_CHECKPOINT_BYTES ||
-      !finalDescriptor.isFile() ||
-      finalDescriptor.nlink !== 1n ||
-      !finalPath.isFile() ||
-      finalPath.isSymbolicLink() ||
-      finalPath.nlink !== 1n ||
-      !sameFileSnapshot(opened, finalDescriptor) ||
-      !sameFileSnapshot(finalDescriptor, finalPath) ||
-      BigInt(contents.length) !== finalDescriptor.size
-    ) {
-      throw new Error();
-    }
-    const decoded = UTF8_DECODER.decode(contents);
-    const report = JSON.parse(decoded);
-    if (!isObject(report)) throw new Error();
-    return report;
-  } catch {
-    throw new Error("real-run did not produce a safe one-sample benchmark report");
-  } finally {
-    if (descriptor !== undefined) fs.closeSync(descriptor);
-  }
-}
-
 function interruptedError(signalName = null) {
   const error = new Error(
     signalName
@@ -431,6 +394,15 @@ function incompleteError(message) {
   const error = new Error(message);
   error.code = "MUESLY_BENCHMARK_INCOMPLETE";
   return error;
+}
+
+function aggregateAfterPrimary(primary, secondary, fallbackMessage) {
+  const aggregate = new AggregateError(
+    [primary, ...secondary],
+    primary instanceof Error ? primary.message : fallbackMessage,
+  );
+  if (typeof primary?.code === "string") aggregate.code = primary.code;
+  return aggregate;
 }
 
 function throwIfAborted(signal) {
@@ -621,76 +593,108 @@ export async function runRealRunCommand(
   }
 }
 
-async function defaultTaskRunner({
-  task,
-  manifestPath,
-  modelsDirectory,
-  resultsDirectory,
-  repoRoot,
-  signal,
-  benchmarkLockToken,
-}) {
-  const attemptPath = path.join(
-    resultsDirectory,
-    `.benchmark-attempt-${process.pid}-${randomUUID()}.json`,
-  );
-  const realRunPath = path.join(here, "real-run.ts");
-  const args = [
-    realRunPath,
-    "--manifest",
-    manifestPath,
-    "--provider",
-    task.provider,
-    "--model",
-    task.model,
-    "--models-dir",
+function defaultPrepareSession({ task, modelsDirectory, repoRoot, evaluatorContext }) {
+  ensureSidecarStubs(repoRoot, evaluatorContext.hostTriple);
+  return prepareRealRunSession({
+    provider: task.provider,
+    model: task.model,
+    backend: task.real_run_backend,
+    accelerator: task.accelerator,
     modelsDirectory,
-    "--backend",
-    task.real_run_backend,
-    "--fixture",
-    task.sample_id,
-    "--max-wer",
-    String(task.thresholds.max_wer_percent),
-    "--max-hallucinated-words",
-    String(task.thresholds.max_hallucinated_words),
-    "--output",
-    attemptPath,
-  ];
-  if (task.accelerator !== null) args.push("--accelerator", task.accelerator);
-  try {
-    const run = await runRealRunCommand(args, {
-      environment: {
-        ...process.env,
-        MUESLY_CORPUS_BENCHMARK_TOKEN: benchmarkLockToken,
+    repoRoot,
+    buildEnvironment: evaluatorContext.buildEnvironment,
+    runtimeEnvironment: process.env,
+    evaluatorRevision: {
+      revision: task.evaluator_revision,
+      sha256: task.evaluator_revision_sha256,
+    },
+  });
+}
+
+async function defaultTaskRunner({ task, sample, session, signal }) {
+  return session.runSample(
+    {
+      ...sample,
+      corpus_id: task.corpus_id,
+      corpus_fingerprint: task.corpus_fingerprint,
+    },
+    {
+      thresholds: {
+        maxWerPercent: task.thresholds.max_wer_percent,
+        maxHallucinatedWords: task.thresholds.max_hallucinated_words,
       },
-      repoRoot,
+      signal,
+    },
+  );
+}
+
+function assertTaskSampleBinding(task, sample) {
+  if (!isObject(sample)) {
+    throw new Error("leased benchmark sample must be an object");
+  }
+  for (const [field, expected] of [
+    ["id", task.sample_id],
+    ["session_id", task.session_id],
+    ["audio_sha256", task.audio_sha256],
+    ["duration_seconds", task.audio_duration_seconds],
+    ["language", task.language],
+    ["noise_condition", task.noise_condition],
+    ["scenario", task.scenario],
+    ["speakers", task.speakers],
+  ]) {
+    if (sample[field] !== expected) {
+      throw new Error(`leased benchmark sample.${field} does not match the planned task`);
+    }
+  }
+  if (sample.provenance?.basis !== task.provenance_basis) {
+    throw new Error("leased benchmark sample provenance does not match the planned task");
+  }
+  if (typeof sample.audio_file !== "string" || typeof sample.reference_text !== "string") {
+    throw new Error("leased benchmark sample must include bound audio and reference contents");
+  }
+  return sample;
+}
+
+async function runLeasedTask({ dependencies, lease, session, signal, task }) {
+  const sample = assertTaskSampleBinding(
+    task,
+    dependencies.assertSampleUnchanged(lease, task.sample_id),
+  );
+  let report;
+  let runError = null;
+  try {
+    report = await dependencies.runTask({
+      task,
+      sample,
+      session,
       signal,
     });
-    if (!fs.existsSync(attemptPath)) {
-      throw new Error(
-        `real-run failed before producing a report ` +
-          `(exit ${run.status ?? run.terminationSignal ?? "signal"})`,
-      );
-    }
-    const report = readAttemptReport(attemptPath);
-    if (
-      (run.status === 0 && report.passed !== true) ||
-      (run.status === 1 && report.passed !== false) ||
-      ![0, 1].includes(run.status)
-    ) {
-      throw new Error(
-        `real-run report status did not match its exit status ` +
-          `(exit ${run.status ?? run.terminationSignal ?? "signal"})`,
-      );
-    }
-    return report;
-  } finally {
-    if (fs.existsSync(attemptPath)) cleanupCorpusBenchmarkAttempt(attemptPath);
+  } catch (error) {
+    runError = error;
   }
+  let validationError = null;
+  try {
+    assertTaskSampleBinding(task, dependencies.assertSampleUnchanged(lease, task.sample_id));
+  } catch (error) {
+    validationError = error;
+  }
+  if (runError !== null && validationError !== null) {
+    throw aggregateAfterPrimary(runError, [validationError], "benchmark task failed");
+  }
+  if (validationError !== null) throw validationError;
+  if (runError !== null) throw runError;
+  return report;
 }
 
 function variantKey(task) {
-  return `${task.provider}\0${task.model}\0${task.target_backend}`;
+  return JSON.stringify([
+    task.provider,
+    task.model,
+    task.real_run_backend,
+    task.target_backend,
+    task.accelerator,
+    task.evaluator_revision_sha256,
+  ]);
 }
 
 function taskFilenamePrefix(task) {
@@ -788,23 +792,95 @@ function currentCompletions(tasks, recordsByTask, identities) {
   return completed;
 }
 
-function inspectCurrentIdentities(tasks, options) {
+function reportIdentityFromSession(session, task) {
+  const sessionIdentity = session?.identity;
+  if (!isObject(sessionIdentity)) {
+    throw new Error("prepared benchmark session must expose an identity");
+  }
+  for (const [field, expected] of [
+    ["provider", task.provider],
+    ["model", task.model],
+    ["requested_backend", task.real_run_backend],
+    ["backend", task.target_backend],
+    ["evaluator_revision_sha256", task.evaluator_revision_sha256],
+  ]) {
+    if (sessionIdentity[field] !== expected) {
+      throw new Error(`prepared benchmark session ${field} does not match the planned task`);
+    }
+  }
+  if (
+    JSON.stringify(sessionIdentity.evaluator_revision) !== JSON.stringify(task.evaluator_revision)
+  ) {
+    throw new Error(
+      "prepared benchmark session evaluator revision does not match the planned task",
+    );
+  }
+  for (const method of ["runSample", "revalidate", "close"]) {
+    if (typeof session[method] !== "function") {
+      throw new Error(`prepared benchmark session.${method} must be a function`);
+    }
+  }
+  const identity = {
+    model_artifact_sha256: sessionIdentity.model_artifact_sha256,
+    operating_system: sessionIdentity.operating_system,
+    architecture: sessionIdentity.architecture,
+    hardware_profile: sessionIdentity.hardware_profile,
+    accelerator: sessionIdentity.accelerator,
+    benchmark_executable_sha256: sessionIdentity.benchmark_executable_sha256,
+  };
+  for (const field of ["model_artifact_sha256", "benchmark_executable_sha256"]) {
+    if (!SHA256_PATTERN.test(identity[field] ?? "")) {
+      throw new Error(`campaign identity.${field} must be a lowercase SHA-256 digest`);
+    }
+  }
+  for (const field of ["operating_system", "architecture", "hardware_profile", "accelerator"]) {
+    requiredString(identity[field], `campaign identity.${field}`);
+  }
+  taskReportFilename(task, identity);
+  return Object.freeze(identity);
+}
+
+function prepareVariantSessions(tasks, options) {
+  const sessions = new Map();
+  const identities = new Map();
+  try {
+    for (const task of tasks) {
+      const key = variantKey(task);
+      if (sessions.has(key)) continue;
+      const session = options.prepareSession({
+        task,
+        repoRoot: options.repoRoot,
+        modelsDirectory: options.modelsDirectory,
+        evaluatorContext: options.evaluatorContext,
+      });
+      const identity = reportIdentityFromSession(session, task);
+      sessions.set(key, session);
+      identities.set(key, identity);
+    }
+    return { identities, sessions };
+  } catch (error) {
+    const closeErrors = [];
+    for (const session of [...sessions.values()].reverse()) {
+      try {
+        session.close();
+      } catch (closeError) {
+        closeErrors.push(closeError);
+      }
+    }
+    if (closeErrors.length > 0) {
+      throw aggregateAfterPrimary(error, closeErrors, "benchmark session preparation failed");
+    }
+    throw error;
+  }
+}
+
+function currentSessionIdentities(tasks, sessions) {
   const identities = new Map();
   for (const task of tasks) {
     const key = variantKey(task);
     if (identities.has(key)) continue;
-    const identity = options.inspectVariantIdentity({
-      task,
-      repoRoot: options.repoRoot,
-      modelsDirectory: options.modelsDirectory,
-      evaluatorContext: options.evaluatorContext,
-    });
-    for (const field of ["model_artifact_sha256", "benchmark_executable_sha256"]) {
-      if (!SHA256_PATTERN.test(identity?.[field] ?? "")) {
-        throw new Error(`campaign identity.${field} must be a lowercase SHA-256 digest`);
-      }
-    }
-    identities.set(key, identity);
+    const session = sessions.get(key);
+    identities.set(key, reportIdentityFromSession(session, task));
   }
   return identities;
 }
@@ -868,6 +944,13 @@ function assertInputsCurrent({
   }
 }
 
+function assertTargetsCurrent({ targetsPath, expectedTargetsSha256, loadTargetsImpl }) {
+  const currentTargets = loadTargetsImpl(targetsPath);
+  if (currentTargets.targetsSha256 !== expectedTargetsSha256) {
+    throw new Error("coverage targets changed while the benchmark campaign was running");
+  }
+}
+
 function requireCompleteCoverage(corpus, targets, completed) {
   const coverage = evaluateCoverage(
     corpus,
@@ -886,15 +969,7 @@ function requireCompleteCoverage(corpus, targets, completed) {
   return coverage;
 }
 
-function writeCheckpoint({
-  task,
-  report,
-  identity,
-  manifestPath,
-  resultsDirectory,
-  expectedFingerprint,
-  benchmarkLockToken,
-}) {
+function writeCheckpoint({ task, report, identity, lease, resultsDirectory }) {
   assertTaskCheckpoint(report, task, {
     expectedModelArtifactSha256: identity.model_artifact_sha256,
   });
@@ -906,10 +981,8 @@ function writeCheckpoint({
   if (fs.lstatSync(outputPath, { throwIfNoEntry: false })) {
     throw new Error("an exact benchmark checkpoint appeared while its task was running");
   }
-  writeCorpusBoundJson({
-    manifestPath,
-    expectedFingerprint,
-    benchmarkLockToken,
+  writeLeasedCorpusBoundJson({
+    lease,
     outputPath,
     value: report,
   });
@@ -931,10 +1004,13 @@ function dependenciesWithDefaults(overrides) {
   return {
     acquireLock: acquireCampaignLock,
     releaseLock: releaseCorpusBenchmarkLock,
+    currentProcessIdentity: () => processIdentity(process.pid),
     loadCorpus,
     loadTargets,
     collectEvaluatorContext,
-    inspectVariantIdentity,
+    createResultLease: createCorpusResultLease,
+    assertSampleUnchanged: assertLeasedCorpusSampleUnchanged,
+    prepareSession: defaultPrepareSession,
     discoverCheckpoints: discoverCorpusBenchmarkCheckpoints,
     runTask: defaultTaskRunner,
     writeCheckpoint,
@@ -970,7 +1046,10 @@ export function formatCorpusBenchmarkSummary(result) {
 export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = {}) {
   validateOptions(options);
   const dependencies = dependenciesWithDefaults(dependencyOverrides);
-  const lock = dependencies.acquireLock(options.manifestPath);
+  const currentProcessIdentity = dependencies.currentProcessIdentity();
+  const lock = dependencies.acquireLock(options.manifestPath, {
+    currentIdentity: currentProcessIdentity,
+  });
   const interruption = new AbortController();
   const interruptWith = (signalName) => {
     if (!interruption.signal.aborted) {
@@ -985,6 +1064,7 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
   }
   let primaryError = null;
   let campaignResult = null;
+  let preparedSessions = new Map();
   try {
     const manifestPath = lock.manifestPath;
     const corpus = dependencies.loadCorpus(manifestPath);
@@ -1009,17 +1089,26 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
     });
     dependencies.onProgress({ type: "planned", total: tasks.length });
     const resultsDirectory = path.join(path.dirname(manifestPath), "results");
+    const lease = options.run
+      ? dependencies.createResultLease({
+          corpus,
+          benchmarkLockToken: lock.token,
+          benchmarkProcessIdentity: lock.processIdentity,
+        })
+      : null;
     const checkpoints = dependencies.discoverCheckpoints(resultsDirectory);
     const recordsByTask = identifyCheckpoints(checkpoints, tasks);
     const modelsDirectory = resolveModelsDirectory(options.modelsDir, repositoryRoot);
-    const initialIdentities = options.run
-      ? inspectCurrentIdentities(tasks, {
+    const prepared = options.run
+      ? prepareVariantSessions(tasks, {
           evaluatorContext,
-          inspectVariantIdentity: dependencies.inspectVariantIdentity,
           modelsDirectory,
+          prepareSession: dependencies.prepareSession,
           repoRoot: repositoryRoot,
         })
-      : new Map();
+      : { identities: new Map(), sessions: new Map() };
+    const initialIdentities = prepared.identities;
+    preparedSessions = prepared.sessions;
     const completed = options.run
       ? currentCompletions(tasks, recordsByTask, initialIdentities)
       : null;
@@ -1068,12 +1157,9 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           dependencies.onProgress({ type: "task-skip", index, total: tasks.length });
           continue;
         }
-        assertInputsCurrent({
-          manifestPath,
-          expectedCorpus: corpus,
+        assertTargetsCurrent({
           targetsPath: loadedTargets.targetsPath,
           expectedTargetsSha256: loadedTargets.targetsSha256,
-          loadCorpusImpl: dependencies.loadCorpus,
           loadTargetsImpl: dependencies.loadTargets,
         });
         dependencies.onProgress({
@@ -1084,22 +1170,18 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           model: task.model,
           backend: task.target_backend,
         });
-        const report = await dependencies.runTask({
+        const session = preparedSessions.get(variantKey(task));
+        const report = await runLeasedTask({
+          dependencies,
+          lease,
+          session,
           task,
-          manifestPath,
-          modelsDirectory,
-          resultsDirectory,
-          repoRoot: repositoryRoot,
           signal: interruption.signal,
-          benchmarkLockToken: lock.token,
         });
         throwIfAborted(interruption.signal);
-        assertInputsCurrent({
-          manifestPath,
-          expectedCorpus: corpus,
+        assertTargetsCurrent({
           targetsPath: loadedTargets.targetsPath,
           expectedTargetsSha256: loadedTargets.targetsSha256,
-          loadCorpusImpl: dependencies.loadCorpus,
           loadTargetsImpl: dependencies.loadTargets,
         });
         const identity = initialIdentities.get(variantKey(task));
@@ -1107,10 +1189,8 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
           task,
           report,
           identity,
-          manifestPath,
+          lease,
           resultsDirectory,
-          expectedFingerprint: corpus.corpus_fingerprint,
-          benchmarkLockToken: lock.token,
         });
         completed.set(task.task_id, checkpoint);
         executedTasks += 1;
@@ -1135,12 +1215,10 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
         targets,
       });
       assertSameEvaluatorContext(evaluatorContext, finalEvaluatorContext);
-      const finalIdentities = inspectCurrentIdentities(tasks, {
-        evaluatorContext: finalEvaluatorContext,
-        inspectVariantIdentity: dependencies.inspectVariantIdentity,
-        modelsDirectory,
-        repoRoot: repositoryRoot,
-      });
+      for (const session of preparedSessions.values()) {
+        await session.revalidate();
+      }
+      const finalIdentities = currentSessionIdentities(tasks, preparedSessions);
       assertSameIdentities(initialIdentities, finalIdentities);
       assertInputsCurrent({
         manifestPath,
@@ -1180,9 +1258,33 @@ export async function runCorpusBenchmarkCampaign(options, dependencyOverrides = 
   }
   process.removeListener("SIGINT", onSigint);
   process.removeListener("SIGTERM", onSigterm);
+  const closeErrors = [];
+  for (const session of [...preparedSessions.values()].reverse()) {
+    try {
+      session.close();
+    } catch (error) {
+      closeErrors.push(error);
+    }
+  }
+  if (closeErrors.length > 0) {
+    primaryError =
+      primaryError === null
+        ? closeErrors.length === 1
+          ? closeErrors[0]
+          : new AggregateError(closeErrors, "failed to close prepared benchmark sessions")
+        : aggregateAfterPrimary(
+            primaryError,
+            closeErrors,
+            "benchmark campaign and session cleanup failed",
+          );
+  }
   let releaseError = null;
   try {
-    if (!dependencies.releaseLock(lock.lockPath, lock.token)) {
+    if (
+      !dependencies.releaseLock(lock.lockPath, lock.token, {
+        currentIdentity: lock.processIdentity,
+      })
+    ) {
       releaseError = new Error("failed to release the corpus benchmark lock");
     }
   } catch (error) {

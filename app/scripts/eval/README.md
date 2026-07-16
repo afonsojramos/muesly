@@ -93,6 +93,10 @@ nub run eval:corpus:benchmark \
   --run --require-complete
 ```
 
+Campaign runs prepare one immutable real-run session per provider/model/backend variant, execute
+each sample in a fresh child process, attest its leased audio/reference before and after inference,
+and checkpoint immediately without a full-corpus reload per sample.
+
 The runner coordinates its benchmark lock with the corpus mutation lock, refuses to start while a
 withdrawal is pending, and blocks intake, withdrawal, or unrelated result writes until the
 campaign releases ownership. It validates the corpus and target matrix, builds and probes each
@@ -201,7 +205,7 @@ retains raw cross-machine counts and the largest compatible count per cell for d
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.
 
-Metrics schema 5 reports source-audio duration, decode, VAD, model-download, model-load, inference,
+Metrics schema 6 reports source-audio duration, decode, VAD, model-download, model-load, inference,
 and measured-total timings; inference RTF is inference seconds divided by source-audio seconds.
 Memory is the evaluator process's host RSS sampled every 10 ms from immediately before model load
 through the end of inference, reported as baseline, peak, and peak-minus-baseline MiB. It is not

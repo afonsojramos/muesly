@@ -193,10 +193,13 @@ when rustup provides the launcher, this attests the rustup shim rather than clai
 compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC_WRAPPER` and
 `RUSTC_WORKSPACE_WRAPPER`) must be unset or empty, and highest-precedence Cargo CLI configuration
 forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
-provider/backend executable is built once, probed, and invoked directly for every selected sample;
+provider/backend executable and model are built, prepared, and privately snapshotted once per
+campaign variant, then the exact snapshot is invoked directly for every selected sample;
 metrics schema 6 must repeat its backend, platform, hardware, accelerator, executable identity,
-and the exact corpus audio SHA-256
-exactly. When scoring, source/toolchain inputs, or tokenization semantics change, rerun every
+and exact corpus audio SHA-256. The campaign captures digest-bound reference text in memory,
+revalidates the selected audio and reference immediately before and after inference, and writes
+each checkpoint through the same manifest/lock lease without reloading every corpus sample.
+When scoring, source/toolchain inputs, or tokenization semantics change, rerun every
 variant: coverage and aggregation reject legacy or incompatible reports.
 
 Model preparation completes before measurement, and the exact provider/model artifact set is

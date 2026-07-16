@@ -21,6 +21,8 @@ import {
 } from "./corpus-benchmark-checkpoints.ts";
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
 import { acquireLocalCorpusLock } from "./corpus-intake.ts";
+import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
+import { loadCorpus } from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
 
 const MODEL_ARTIFACT = "b".repeat(64);
@@ -92,6 +94,30 @@ function currentIdentity(overrides = {}) {
     accelerator: "none",
     benchmark_executable_sha256: EXECUTABLE,
     ...overrides,
+  };
+}
+
+function preparedSession(task, identity = currentIdentity(), hooks = {}) {
+  return {
+    identity: {
+      provider: task.provider,
+      model: task.model,
+      requested_backend: task.real_run_backend,
+      backend: task.target_backend,
+      evaluator_revision: structuredClone(task.evaluator_revision),
+      evaluator_revision_sha256: task.evaluator_revision_sha256,
+      ...identity,
+    },
+    runSample() {
+      throw new Error("the campaign runTask dependency should handle fake sessions");
+    },
+    async revalidate() {
+      await hooks.revalidate?.();
+      return this.identity;
+    },
+    close() {
+      hooks.close?.();
+    },
   };
 }
 
@@ -240,6 +266,7 @@ function options(current, overrides = {}) {
 
 function dependencies(overrides = {}) {
   return {
+    currentProcessIdentity: () => "campaign-test-process",
     collectEvaluatorContext: ({ targets }) => ({
       buildEnvironment: {},
       hostTriple: "aarch64-apple-darwin",
@@ -251,7 +278,7 @@ function dependencies(overrides = {}) {
       ),
       targetTriple: "aarch64-apple-darwin",
     }),
-    inspectVariantIdentity: () => currentIdentity(),
+    prepareSession: ({ task }) => preparedSession(task),
     runTask: ({ task }) => reportForTask(task),
     ...overrides,
   };
@@ -411,6 +438,116 @@ test("checkpoints every task privately and resumes only exact completed identiti
   assert.deepEqual(resumed.checkpointNames, first.checkpointNames);
 });
 
+test("reuses one prepared variant session without reloading the full corpus per sample", async (t) => {
+  const current = fixture(t);
+  let corpusLoads = 0;
+  let sampleChecks = 0;
+  let prepares = 0;
+  let revalidations = 0;
+  let closes = 0;
+  const observedSessions = [];
+  const observedSamples = [];
+  const result = await runCorpusBenchmarkCampaign(
+    options(current),
+    dependencies({
+      loadCorpus(manifestPath) {
+        corpusLoads += 1;
+        return loadCorpus(manifestPath);
+      },
+      assertSampleUnchanged(lease, sampleId) {
+        sampleChecks += 1;
+        return assertLeasedCorpusSampleUnchanged(lease, sampleId);
+      },
+      prepareSession: ({ task }) => {
+        prepares += 1;
+        return preparedSession(task, currentIdentity(), {
+          revalidate: () => {
+            revalidations += 1;
+          },
+          close: () => {
+            closes += 1;
+          },
+        });
+      },
+      runTask: ({ task, sample, session }) => {
+        observedSessions.push(session);
+        observedSamples.push(sample);
+        return reportForTask(task);
+      },
+    }),
+  );
+
+  assert.equal(result.executedTasks, 2);
+  assert.equal(prepares, 1);
+  assert.equal(new Set(observedSessions).size, 1);
+  assert.equal(observedSamples.length, 2);
+  assert(observedSamples.every((sample) => sample.reference_text.startsWith(SECRET_REFERENCE)));
+  assert(
+    observedSamples.every(
+      (sample) => sample.audio_sha256 === sha256(fs.readFileSync(sample.audio_file)),
+    ),
+  );
+  assert.equal(sampleChecks, 4);
+  assert.equal(corpusLoads, 3);
+  assert.equal(revalidations, 1);
+  assert.equal(closes, 1);
+});
+
+test("revalidates leased sample bytes after inference before checkpointing", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        runTask: ({ task, sample }) => {
+          fs.writeFileSync(sample.audio_file, "changed during inference", { mode: 0o600 });
+          return reportForTask(task);
+        },
+      }),
+    ),
+    /leased corpus sample 'sample-a' audio changed after validation/,
+  );
+  assert.equal(
+    fs.existsSync(current.resultsDirectory)
+      ? fs.readdirSync(current.resultsDirectory).filter(isCorpusBenchmarkCheckpointName).length
+      : 0,
+    0,
+  );
+});
+
+test("closes already prepared variants when a later session fails", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  const targets = JSON.parse(fs.readFileSync(current.targetsPath, "utf8"));
+  targets.benchmark_variants.push({
+    provider: "whisper",
+    model: "whisper-test",
+    backend: "metal",
+  });
+  fs.writeFileSync(current.targetsPath, `${JSON.stringify(targets)}\n`);
+  let prepares = 0;
+  let closes = 0;
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        prepareSession: ({ task }) => {
+          prepares += 1;
+          if (prepares === 2) throw new Error("second variant preparation failed");
+          return preparedSession(task, currentIdentity(), {
+            close: () => {
+              closes += 1;
+            },
+          });
+        },
+      }),
+    ),
+    /second variant preparation failed/,
+  );
+  assert.equal(prepares, 2);
+  assert.equal(closes, 1);
+  assert.equal(fs.existsSync(current.lockPath), false);
+});
+
 test("fails closed for invalid or stale task checkpoints", async (t) => {
   const current = fixture(t, { samples: ["sample-a"] });
   const first = await runCorpusBenchmarkCampaign(options(current), dependencies());
@@ -487,6 +624,20 @@ test("holds exclusive ownership for the full campaign and releases it in finally
     /another corpus benchmark is active/,
   );
   assert.equal(releaseCorpusBenchmarkLock(held.lockPath, held.token), true);
+});
+
+test("requires an exact process identity before creating a run lease", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        currentProcessIdentity: () => null,
+      }),
+    ),
+    /verified benchmark process identity is required/,
+  );
+  assert.equal(fs.existsSync(current.lockPath), false);
 });
 
 test("coordinates campaign ownership with corpus mutation and pending withdrawal state", async (t) => {
@@ -659,7 +810,8 @@ test("fails closed when a completed checkpoint drifts on the same hardware cohor
     runCorpusBenchmarkCampaign(
       options(current),
       dependencies({
-        inspectVariantIdentity: () => currentIdentity({ model_artifact_sha256: "f".repeat(64) }),
+        prepareSession: ({ task }) =>
+          preparedSession(task, currentIdentity({ model_artifact_sha256: "f".repeat(64) })),
       }),
     ),
     /model or benchmark executable drifted for the current hardware cohort/,
@@ -747,12 +899,12 @@ test("plan mode considers every historical hardware identity without choosing on
   });
   const first = await runCorpusBenchmarkCampaign(
     options(current),
-    dependencies({ inspectVariantIdentity: () => firstIdentity }),
+    dependencies({ prepareSession: ({ task }) => preparedSession(task, firstIdentity) }),
   );
   const second = await runCorpusBenchmarkCampaign(
     options(current),
     dependencies({
-      inspectVariantIdentity: () => secondIdentity,
+      prepareSession: ({ task }) => preparedSession(task, secondIdentity),
       runTask: ({ task }) =>
         reportForTask(task, secondIdentity, {
           result: {
@@ -950,6 +1102,12 @@ test("SIGINT aborts an active task and releases campaign ownership", async (t) =
     runCorpusBenchmarkCampaign(
       options(current),
       dependencies({
+        prepareSession: ({ task }) =>
+          preparedSession(task, currentIdentity(), {
+            close: () => {
+              throw new Error("session cleanup failed after interruption");
+            },
+          }),
         runTask: async ({ signal }) => {
           process.emit("SIGINT");
           await Promise.resolve();
