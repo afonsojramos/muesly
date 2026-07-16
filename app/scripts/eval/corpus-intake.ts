@@ -142,7 +142,7 @@ function writePrivateJson(filePath, value) {
 	fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`, { mode: 0o600 });
 }
 
-function prepareIntakeLock(localCorpusRoot, manifestPath) {
+function prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata) {
 	const token = randomUUID();
 	const pendingPath = path.join(localCorpusRoot, `.intake.lock.pending-${token}`);
 	fs.mkdirSync(pendingPath, { mode: 0o700 });
@@ -152,6 +152,8 @@ function prepareIntakeLock(localCorpusRoot, manifestPath) {
 			pid: process.pid,
 			token,
 			manifest_path: path.resolve(manifestPath),
+			operation: ownerMetadata.operation,
+			...(ownerMetadata.sessionId ? { session_id: ownerMetadata.sessionId } : {}),
 			created_at: new Date().toISOString(),
 		});
 		return { pendingPath, token };
@@ -228,8 +230,8 @@ function stageOrReuseFile(sourcePath, targetPath, stagedPath, label) {
 	return { workingPath: stagedPath, staged: true };
 }
 
-export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath) {
-	const prepared = prepareIntakeLock(localCorpusRoot, manifestPath);
+export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, ownerMetadata) {
+	const prepared = prepareIntakeLock(localCorpusRoot, manifestPath, ownerMetadata);
 	try {
 		for (let attempt = 0; attempt < 10; attempt += 1) {
 			let installed = false;
@@ -445,7 +447,10 @@ export function intakeConsentedSample(options) {
 	}
 	fs.mkdirSync(localCorpusRoot, { recursive: true, mode: 0o700 });
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
-	const manifestLockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
+	const manifestLockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
+		operation: 'intake',
+		sessionId: options.sessionId,
+	});
 
 	try {
 		if (hasPendingWithdrawal(localCorpusRoot)) {

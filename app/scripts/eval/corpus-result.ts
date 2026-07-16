@@ -214,7 +214,9 @@ export function writeCorpusBoundFiles(options) {
 		resultsRoot = path.join(path.dirname(manifestPath), 'results');
 		for (const output of outputs) validateLocalOutputPath(resultsRoot, output.outputPath);
 		lockPath = path.join(localCorpusRoot, '.intake.lock');
-		lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
+		lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
+			operation: 'result-write',
+		});
 	}
 
 	const stagedOutputs = outputs.map((output) => ({

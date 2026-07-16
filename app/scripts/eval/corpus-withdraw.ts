@@ -65,12 +65,14 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 	return document;
 }
 
-function interruptedIntakeTargetsManifest(lockPath, manifestPath) {
+function interruptedIntakeTargetsManifest(lockPath, manifestPath, sessionId) {
 	const lockEntry = fs.lstatSync(lockPath, { throwIfNoEntry: false });
 	if (!lockEntry?.isDirectory() || lockEntry.isSymbolicLink()) return false;
 	try {
 		const owner = JSON.parse(fs.readFileSync(path.join(lockPath, 'owner.json'), 'utf8'));
 		return (
+			owner.operation === 'intake' &&
+			owner.session_id === sessionId &&
 			typeof owner.manifest_path === 'string' &&
 			path.resolve(owner.manifest_path) === manifestPath
 		);
@@ -167,8 +169,19 @@ export function withdrawConsentedSession(options) {
 	}
 
 	const lockPath = path.join(localCorpusRoot, '.intake.lock');
-	const allowMissingManifest = interruptedIntakeTargetsManifest(lockPath, manifestPath);
-	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath);
+	const manifestExists = fs.existsSync(manifestPath);
+	const allowMissingManifest = interruptedIntakeTargetsManifest(
+		lockPath,
+		manifestPath,
+		options.sessionId,
+	);
+	if (!manifestExists && !allowMissingManifest) {
+		throw new Error(`corpus manifest does not exist: ${manifestPath}`);
+	}
+	const lockToken = acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath, {
+		operation: 'withdrawal',
+		sessionId: options.sessionId,
+	});
 	const stagedManifest = `${manifestPath}.tmp-${process.pid}-${randomUUID()}`;
 	const markerPath = path.join(localCorpusRoot, `.withdrawal-${options.sessionId}.json`);
 	try {
