@@ -48,6 +48,17 @@ function writeCheckpoint(
 	return { checkpointPath, contents };
 }
 
+function writeManagedPairCheckpoint(
+	resultsDirectory,
+	name = checkpointName(),
+	report = { schema_version: 8 },
+) {
+	const checkpoint = writeCheckpoint(resultsDirectory, name, report);
+	const pairPath = `${checkpoint.checkpointPath}.tmp-${process.pid}-${randomUUID()}`;
+	fs.linkSync(checkpoint.checkpointPath, pairPath);
+	return { ...checkpoint, pairPath };
+}
+
 function attemptName(pid = process.pid, uuid = randomUUID()) {
 	return `.benchmark-attempt-${pid}-${uuid}.json`;
 }
@@ -128,6 +139,46 @@ test('discovers valid checkpoints in deterministic order with raw-content digest
 			createHash('sha256').update(second.contents).digest('hex'),
 		],
 	);
+});
+
+test('accepts an exact retained managed checkpoint hard-link pair', (t) => {
+	const current = fixture(t);
+	const checkpoint = writeManagedPairCheckpoint(current.resultsDirectory, checkpointName(), {
+		report: 'managed-pair',
+	});
+	const records = discoverCorpusBenchmarkCheckpoints(current.resultsDirectory);
+	assert.equal(records.length, 1);
+	assert.deepEqual(records[0].report, { report: 'managed-pair' });
+	assert.equal(records[0].sha256, createHash('sha256').update(checkpoint.contents).digest('hex'));
+	assert.equal(fs.statSync(checkpoint.checkpointPath).nlink, 2);
+	assert.equal(fs.statSync(checkpoint.pairPath).ino, fs.statSync(checkpoint.checkpointPath).ino);
+});
+
+test('rejects managed checkpoint pairs with extra aliases or pair replacement', async (t) => {
+	await t.test('extra alias', (t) => {
+		const current = fixture(t);
+		const checkpoint = writeManagedPairCheckpoint(current.resultsDirectory);
+		fs.linkSync(checkpoint.checkpointPath, path.join(current.directory, 'extra-alias.json'));
+		assert.throws(
+			() => discoverCorpusBenchmarkCheckpoints(current.resultsDirectory),
+			/regular single-link file or a valid managed-pair file/,
+		);
+	});
+
+	await t.test('pair replacement during read', (t) => {
+		const current = fixture(t);
+		const checkpoint = writeManagedPairCheckpoint(current.resultsDirectory);
+		assert.throws(
+			() =>
+				readCorpusBenchmarkCheckpoint(checkpoint.checkpointPath, {
+					onAfterRead: () => {
+						fs.renameSync(checkpoint.pairPath, `${checkpoint.pairPath}.displaced`);
+						fs.writeFileSync(checkpoint.pairPath, checkpoint.contents, { mode: 0o600 });
+					},
+				}),
+			/checkpoint changed while it was being read/,
+		);
+	});
 });
 
 test('accepts only final hash-suffixed campaign checkpoint names', () => {

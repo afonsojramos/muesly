@@ -9,6 +9,8 @@ const CHECKPOINT_FILENAME_PATTERN =
 	/^run-(?:whisper-(?:cpu|metal|coreml-metal|cuda|vulkan|hipblas|openblas-cpu)|parakeet-onnx-cpu)-[0-9a-f]{16}-[0-9a-f]{16}\.run\.json$/;
 const ATTEMPT_FILENAME_PATTERN =
 	/^\.benchmark-attempt-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json$/;
+const MANAGED_PAIR_SUFFIX_PATTERN =
+	/^([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: true });
 
 function lexicalCompare(left, right) {
@@ -21,6 +23,10 @@ function entryAt(entryPath) {
 
 function isSingleLinkRegularFile(status) {
 	return status.isFile() && status.nlink === 1n;
+}
+
+function isAllowedLinkRegularFile(status, allowedLinks) {
+	return status.isFile() && allowedLinks.has(status.nlink);
 }
 
 function sameIdentity(left, right) {
@@ -89,10 +95,15 @@ function assertCheckpointName(name) {
 	}
 }
 
-function openRegularFileNoFollow(filePath, label) {
+function openRegularFileNoFollow(filePath, label, options = {}) {
+	const allowedLinks = new Set(options.allowedLinks ?? [1n]);
 	const initial = entryAt(filePath);
-	if (!initial || initial.isSymbolicLink() || !isSingleLinkRegularFile(initial)) {
-		throw new Error(`${label} must be a regular single-link file: ${filePath}`);
+	if (!initial || initial.isSymbolicLink() || !isAllowedLinkRegularFile(initial, allowedLinks)) {
+		const requirement =
+			allowedLinks.size === 1 && allowedLinks.has(1n)
+				? 'a regular single-link file'
+				: 'a regular single-link file or a valid managed-pair file';
+		throw new Error(`${label} must be ${requirement}: ${filePath}`);
 	}
 	let descriptor;
 	try {
@@ -103,7 +114,7 @@ function openRegularFileNoFollow(filePath, label) {
 	let opened;
 	try {
 		opened = fs.fstatSync(descriptor, { bigint: true });
-		if (!isSingleLinkRegularFile(opened) || !sameRevision(initial, opened)) {
+		if (!isAllowedLinkRegularFile(opened, allowedLinks) || !sameRevision(initial, opened)) {
 			throw new Error(`${label} changed before it could be read safely: ${filePath}`);
 		}
 	} catch (error) {
@@ -111,6 +122,35 @@ function openRegularFileNoFollow(filePath, label) {
 		throw error;
 	}
 	return { descriptor, opened };
+}
+
+function isManagedCheckpointPairName(name, checkpointName) {
+	if (!name.startsWith(`${checkpointName}.tmp-`)) return false;
+	return MANAGED_PAIR_SUFFIX_PATTERN.test(name.slice(`${checkpointName}.tmp-`.length));
+}
+
+function openManagedCheckpointPair(results, checkpointName, checkpointStatus) {
+	assertResultsDirectoryBound(results);
+	const candidates = fs
+		.readdirSync(results.path)
+		.filter((name) => isManagedCheckpointPairName(name, checkpointName));
+	assertResultsDirectoryBound(results);
+	if (candidates.length !== 1) {
+		throw new Error(
+			`corpus benchmark checkpoint must be a regular single-link file or have exactly one managed hard-link sibling: ${checkpointName}`,
+		);
+	}
+	const pairPath = path.join(results.path, candidates[0]);
+	const pair = openRegularFileNoFollow(pairPath, 'managed corpus benchmark checkpoint sibling', {
+		allowedLinks: [2n],
+	});
+	if (!sameIdentity(checkpointStatus, pair.opened)) {
+		fs.closeSync(pair.descriptor);
+		throw new Error(
+			`corpus benchmark checkpoint managed sibling does not reference the same file: ${pairPath}`,
+		);
+	}
+	return { ...pair, path: pairPath };
 }
 
 function readBounded(descriptor, maximumBytes) {
@@ -157,10 +197,16 @@ function readCheckpointFromResults(results, name, options = {}) {
 	const { descriptor, opened } = openRegularFileNoFollow(
 		resolvedPath,
 		'corpus benchmark checkpoint',
+		{ allowedLinks: [1n, 2n] },
 	);
+	let managedPair = null;
 	let contents;
 	let finalDescriptorStatus;
+	let finalPairDescriptorStatus;
 	try {
+		if (opened.nlink === 2n) {
+			managedPair = openManagedCheckpointPair(results, name, opened);
+		}
 		if (opened.size > BigInt(maximumBytes)) {
 			throw new Error(`corpus benchmark checkpoint is too large: ${resolvedPath}`);
 		}
@@ -170,17 +216,35 @@ function readCheckpointFromResults(results, name, options = {}) {
 		}
 		options.onAfterRead?.({ path: resolvedPath });
 		finalDescriptorStatus = fs.fstatSync(descriptor, { bigint: true });
+		if (managedPair) {
+			finalPairDescriptorStatus = fs.fstatSync(managedPair.descriptor, { bigint: true });
+		}
 	} finally {
+		if (managedPair) fs.closeSync(managedPair.descriptor);
 		fs.closeSync(descriptor);
 	}
 	const finalPathStatus = entryAt(resolvedPath);
+	const finalPairPathStatus = managedPair ? entryAt(managedPair.path) : null;
+	const expectedLinks = managedPair ? 2n : 1n;
 	if (
 		!finalPathStatus ||
 		finalPathStatus.isSymbolicLink() ||
-		!isSingleLinkRegularFile(finalDescriptorStatus) ||
-		!isSingleLinkRegularFile(finalPathStatus) ||
+		!finalDescriptorStatus?.isFile() ||
+		finalDescriptorStatus.nlink !== expectedLinks ||
+		!finalPathStatus.isFile() ||
+		finalPathStatus.nlink !== expectedLinks ||
 		!sameRevision(opened, finalDescriptorStatus) ||
 		!sameRevision(finalDescriptorStatus, finalPathStatus) ||
+		(managedPair &&
+			(!finalPairPathStatus ||
+				finalPairPathStatus.isSymbolicLink() ||
+				!finalPairDescriptorStatus?.isFile() ||
+				finalPairDescriptorStatus.nlink !== 2n ||
+				!finalPairPathStatus.isFile() ||
+				finalPairPathStatus.nlink !== 2n ||
+				!sameRevision(managedPair.opened, finalPairDescriptorStatus) ||
+				!sameRevision(finalPairDescriptorStatus, finalPairPathStatus) ||
+				!sameIdentity(finalDescriptorStatus, finalPairDescriptorStatus))) ||
 		BigInt(contents.length) !== finalDescriptorStatus.size
 	) {
 		throw new Error(`corpus benchmark checkpoint changed while it was being read: ${resolvedPath}`);
