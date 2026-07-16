@@ -54,22 +54,22 @@ test('selects fixtures only by unique manifest sample ID', () => {
 test('removes temporary metrics after a failed transcription process', () => {
 	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
 	const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-eval-cleanup-test-'));
-	const binDirectory = path.join(temporaryRoot, 'bin');
-	fs.mkdirSync(binDirectory);
-	fs.writeFileSync(path.join(binDirectory, 'cargo'), '#!/bin/sh\nexit 7\n', { mode: 0o755 });
+	const isolatedEnvironment = Object.fromEntries(
+		Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'),
+	);
 	const run = spawnSync(
 		process.execPath,
 		[realRun, '--fixture', 'und-synthetic-silence'],
 		{
 			encoding: 'utf8',
 			env: {
-				...process.env,
-				PATH: `${binDirectory}${path.delimiter}${process.env.PATH}`,
+				...isolatedEnvironment,
+				PATH: temporaryRoot,
 				TMPDIR: temporaryRoot,
 			},
 		},
 	);
-	assert.equal(run.status, 7);
+	assert.equal(run.status, 1);
 	assert.deepEqual(
 		fs.readdirSync(temporaryRoot).filter((entry) => entry.startsWith('muesly-eval-')),
 		[],
