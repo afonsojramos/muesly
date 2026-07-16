@@ -165,7 +165,42 @@ pub fn chunk_text(text: &str, chunk_size_tokens: usize, overlap_tokens: usize) -
     chunks
 }
 
-/// Cleans markdown output from LLM by removing thinking tags and code fences
+/// Prompt-scaffolding tags this module's own prompts wrap content in. Small
+/// models echo them back into their output; a line consisting solely of one of
+/// these tags is never legitimate summary content and is dropped wherever it
+/// appears.
+const SCAFFOLD_TAGS: &[&str] = &[
+    "document",
+    "template",
+    "transcript",
+    "transcript_chunks",
+    "user_context",
+    "user_notes",
+];
+
+/// A line that is exactly an open/close scaffold tag (tolerating stray
+/// backticks glued to it, as in "`<document>").
+fn is_scaffold_line(line: &str) -> bool {
+    let trimmed = line.trim().trim_matches('`').trim();
+    let Some(inner) = trimmed
+        .strip_prefix('<')
+        .and_then(|rest| rest.strip_suffix('>'))
+    else {
+        return false;
+    };
+    let inner = inner.strip_prefix('/').unwrap_or(inner);
+    SCAFFOLD_TAGS.contains(&inner)
+}
+
+/// A line of only one or two backticks: broken fence/wrapper debris. (Three or
+/// more is a real fence delimiter and must be preserved.)
+fn is_backtick_debris(line: &str) -> bool {
+    let trimmed = line.trim();
+    !trimmed.is_empty() && trimmed.len() <= 2 && trimmed.chars().all(|c| c == '`')
+}
+
+/// Cleans markdown output from LLM by removing thinking tags, wrapper code
+/// fences, and echoed prompt scaffolding (`<document>`, `</template>`, ...).
 ///
 /// # Arguments
 /// * `markdown` - Raw markdown output from LLM
@@ -196,7 +231,13 @@ pub fn clean_llm_markdown_output(markdown: &str) -> String {
         }
     }
 
-    trimmed.to_string()
+    // Drop echoed prompt-scaffolding tag lines and backtick debris anywhere in
+    // the body (they are reserved prompt vocabulary, never summary content).
+    let lines: Vec<&str> = trimmed
+        .lines()
+        .filter(|line| !is_scaffold_line(line) && !is_backtick_debris(line))
+        .collect();
+    lines.join("\n").trim().to_string()
 }
 
 /// Extracts meeting name from the first heading in markdown
@@ -1078,6 +1119,26 @@ mod tests {
         let input = "# Clean\n\nNo fences here.";
         let output = clean_llm_markdown_output(input);
         assert_eq!(output, input.trim());
+    }
+
+    #[test]
+    fn clean_llm_strips_echoed_prompt_scaffolding() {
+        // The observed gemma3:1b failure: the normalization pass's <document>
+        // wrapper and the base prompt's </template> echoed into the output,
+        // with a stray backtick glued to the opening tag.
+        let input = "`<document>\n\n**Summary**\n\nA meeting focused on the sprint.\n\n</template>\n</document>";
+        let output = clean_llm_markdown_output(input);
+        assert!(output.starts_with("**Summary**"), "got {output:?}");
+        assert!(!output.contains("<document>"));
+        assert!(!output.contains("</template>"));
+        assert!(!output.contains('`'));
+    }
+
+    #[test]
+    fn clean_llm_keeps_scaffold_words_inside_prose() {
+        // Only whole-line tags are scaffolding; inline mentions are content.
+        let input = "# Notes\n\nThe <template> tag is discussed here.";
+        assert_eq!(clean_llm_markdown_output(input), input);
     }
 
     #[test]
