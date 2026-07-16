@@ -59,6 +59,16 @@ test('accepts an explicitly consented meeting sample', () => {
 	);
 });
 
+test('rejects meeting samples without a WER reference', () => {
+	const { directory, document } = fixture();
+	fs.writeFileSync(path.join(directory, 'reference.txt'), '   \n');
+	document.samples[0].reference_sha256 = hash('   \n');
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('must contain a meeting transcript')));
+});
+
 test('rejects meeting audio without participant consent', () => {
 	const { directory, document } = fixture();
 	document.samples[0].provenance = {

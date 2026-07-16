@@ -55,7 +55,13 @@ function integerFlag(args, name, fallback) {
 
 function strFlag(args, name, fallback) {
 	const idx = args.indexOf(name);
-	return idx === -1 ? fallback : args[idx + 1];
+	if (idx === -1) return fallback;
+	const value = args[idx + 1];
+	if (typeof value !== 'string' || value.trim().length === 0 || value.startsWith('--')) {
+		console.error(`${name} requires a value`);
+		process.exit(2);
+	}
+	return value;
 }
 
 const args = process.argv.slice(2);

@@ -156,6 +156,17 @@ function validateFile(sample, field, hashField, manifestPath, checkFiles, errors
 	}
 }
 
+function validateMeetingReference(sample, manifestPath, checkFiles, errors) {
+	if (sample.scenario !== 'meeting' || !checkFiles || typeof sample.reference_path !== 'string') {
+		return;
+	}
+	const referencePath = resolveSamplePath(manifestPath, sample.reference_path);
+	if (!fs.existsSync(referencePath) || !fs.statSync(referencePath).isFile()) return;
+	if (fs.readFileSync(referencePath, 'utf8').trim().length === 0) {
+		errors.push(`sample '${sample.id ?? '?'}'.reference_path must contain a meeting transcript`);
+	}
+}
+
 export function validateCorpusDocument(document, options = {}) {
 	const {
 		manifestPath = path.resolve('corpus-manifest.json'),
@@ -221,6 +232,7 @@ export function validateCorpusDocument(document, options = {}) {
 		}
 		validateFile(sample, 'audio_path', 'audio_sha256', manifestPath, checkFiles, errors);
 		validateFile(sample, 'reference_path', 'reference_sha256', manifestPath, checkFiles, errors);
+		validateMeetingReference(sample, manifestPath, checkFiles, errors);
 		validateProvenance(sample, errors);
 		if (document.distribution === 'repository' && sample.provenance?.redistribution === 'local-only') {
 			errors.push(`${prefix}.provenance.redistribution cannot be local-only in a repository manifest`);

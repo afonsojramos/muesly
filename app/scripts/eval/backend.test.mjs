@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
 
@@ -24,4 +26,14 @@ test('forces CPU execution for plain and OpenBLAS Whisper runs', () => {
 	assert.equal(forcesWhisperCpu('whisper', 'openblas'), true);
 	assert.equal(forcesWhisperCpu('whisper', 'metal'), false);
 	assert.equal(forcesWhisperCpu('parakeet', 'cpu'), false);
+});
+
+test('rejects missing output paths before starting a benchmark', () => {
+	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	for (const args of [['--output'], ['--output', '--fixture', 'en-gettysburg-clean']]) {
+		const run = spawnSync(process.execPath, [realRun, ...args], { encoding: 'utf8' });
+		assert.equal(run.status, 2);
+		assert.match(run.stderr, /--output requires a value/);
+		assert.doesNotMatch(run.stderr, /running real/);
+	}
 });
