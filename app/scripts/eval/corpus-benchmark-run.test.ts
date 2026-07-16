@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import {
   formatCorpusBenchmarkProgress,
   formatCorpusBenchmarkSummary,
+  inspectVariantIdentity,
   runRealRunCommand,
   runCorpusBenchmarkCampaign,
   signalBenchmarkProcessTree,
@@ -254,6 +255,80 @@ function dependencies(overrides = {}) {
     ...overrides,
   };
 }
+
+test("campaign preflight stages Windows profile-root ORT DLLs before probing", (t) => {
+  const repositoryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "muesly-campaign-preflight-"));
+  t.after(() => fs.rmSync(repositoryRoot, { recursive: true, force: true }));
+  const profileDirectory = path.join(repositoryRoot, "target", "release");
+  const examplesDirectory = path.join(profileDirectory, "examples");
+  const executablePath = path.join(examplesDirectory, "transcribe-fixture.exe");
+  const modelsDirectory = path.join(repositoryRoot, "models");
+  fs.mkdirSync(examplesDirectory, { recursive: true });
+  fs.mkdirSync(modelsDirectory);
+  fs.writeFileSync(executablePath, "exact benchmark executable", { mode: 0o700 });
+  fs.writeFileSync(path.join(profileDirectory, "onnxruntime.dll"), "profile-root ORT runtime");
+  let stagedExecutablePath = null;
+  let privateSnapshotDirectory = null;
+  const assertStagedRuntime = (candidatePath, options) => {
+    stagedExecutablePath ??= candidatePath;
+    assert.equal(candidatePath, stagedExecutablePath);
+    privateSnapshotDirectory ??= path.dirname(path.dirname(candidatePath));
+    assert.notEqual(candidatePath, executablePath);
+    assert.equal(options.platform, "win32");
+    assert.equal(
+      fs.readFileSync(path.join(path.dirname(candidatePath), "onnxruntime.dll"), "utf8"),
+      "profile-root ORT runtime",
+    );
+    assert.match(options.environment.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256, /^[a-f0-9]{64}$/);
+  };
+
+  const identity = inspectVariantIdentity(
+    {
+      task: {
+        accelerator: null,
+        model: "parakeet-test",
+        provider: "parakeet",
+        real_run_backend: "cpu",
+        target_backend: "onnx-cpu",
+      },
+      repoRoot: repositoryRoot,
+      modelsDirectory,
+      evaluatorContext: {
+        buildEnvironment: {},
+        hostTriple: "x86_64-pc-windows-msvc",
+      },
+    },
+    {
+      buildBenchmarkExecutableImpl: () => ({
+        cargoFeatures: [],
+        executablePath,
+      }),
+      modelArtifactSha256Impl: () => MODEL_ARTIFACT,
+      platform: "win32",
+      prepareBenchmarkModelImpl: (candidatePath, options) => {
+        assertStagedRuntime(candidatePath, options);
+      },
+      probeBenchmarkExecutableImpl: (candidatePath, options) => {
+        assertStagedRuntime(candidatePath, options);
+        return {
+          backend: "onnx-cpu",
+          operating_system: "windows",
+          architecture: "x86_64",
+          hardware_profile:
+            `cpu=test;logical_cpus=8;memory_bytes=17179869184;` +
+            `runtime_env_sha256=${options.environment.MUESLY_EVAL_RUNTIME_ENV_SHA256}`,
+          accelerator: "none",
+          benchmark_executable_sha256: sha256("exact benchmark executable"),
+        };
+      },
+    },
+  );
+
+  assert.equal(identity.benchmark_executable_sha256, sha256("exact benchmark executable"));
+  assert.equal(identity.model_artifact_sha256, MODEL_ARTIFACT);
+  assert.notEqual(privateSnapshotDirectory, null);
+  assert.equal(fs.existsSync(privateSnapshotDirectory), false);
+});
 
 test("plans deterministically without executing in safe plan mode", async (t) => {
   const current = fixture(t);

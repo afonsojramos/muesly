@@ -11,10 +11,13 @@ import {
   benchmarkDefinitionForReportedBackend,
   benchmarkExecutableSha256,
   benchmarkRuntimeEnvironment,
+  bindBenchmarkRuntimeDependencies,
   buildBenchmarkExecutable,
   prepareBenchmarkModel,
   probeBenchmarkExecutable,
+  stageBenchmarkExecutableSnapshot,
 } from "./benchmark-executable.ts";
+import { createPrivateArtifactSnapshotDirectory } from "./artifact-snapshot.ts";
 import {
   cleanupCorpusBenchmarkAttempt,
   discoverCorpusBenchmarkCheckpoints,
@@ -299,53 +302,93 @@ function ensureSidecarStubs(repoRoot, hostTriple) {
   }
 }
 
-function inspectVariantIdentity({ task, repoRoot, modelsDirectory, evaluatorContext }) {
+export function inspectVariantIdentity(
+  { task, repoRoot, modelsDirectory, evaluatorContext },
+  {
+    benchmarkExecutableSha256Impl = benchmarkExecutableSha256,
+    bindBenchmarkRuntimeDependenciesImpl = bindBenchmarkRuntimeDependencies,
+    buildBenchmarkExecutableImpl = buildBenchmarkExecutable,
+    createPrivateArtifactSnapshotDirectoryImpl = createPrivateArtifactSnapshotDirectory,
+    modelArtifactSha256Impl = modelArtifactSha256,
+    platform = process.platform,
+    prepareBenchmarkModelImpl = prepareBenchmarkModel,
+    probeBenchmarkExecutableImpl = probeBenchmarkExecutable,
+    stageBenchmarkExecutableSnapshotImpl = stageBenchmarkExecutableSnapshot,
+  } = {},
+) {
   ensureSidecarStubs(repoRoot, evaluatorContext.hostTriple);
-  const runtimeEnvironment = benchmarkRuntimeEnvironment(process.env, {
+  let runtimeEnvironment = benchmarkRuntimeEnvironment(process.env, {
     accelerator: task.accelerator,
     forceWhisperCpu: forcesWhisperCpu(task.provider, task.real_run_backend),
     requireWhisperAcceleration: requiresWhisperGpu(task.provider, task.real_run_backend),
   });
-  const built = buildBenchmarkExecutable(repoRoot, {
+  const built = buildBenchmarkExecutableImpl(repoRoot, {
     provider: task.provider,
     backend: task.real_run_backend,
     buildEnv: evaluatorContext.buildEnvironment,
   });
-  const executableSha256 = benchmarkExecutableSha256(built.executablePath);
-  const probe = probeBenchmarkExecutable(built.executablePath, {
-    provider: task.provider,
-    backend: task.real_run_backend,
-    environment: runtimeEnvironment,
-  });
-  if (
-    probe.backend !== task.target_backend ||
-    probe.benchmark_executable_sha256 !== executableSha256
-  ) {
-    throw new Error("benchmark hardware probe does not match the planned task");
-  }
-  prepareBenchmarkModel(built.executablePath, {
-    provider: task.provider,
-    model: task.model,
-    modelsDirectory,
-    environment: runtimeEnvironment,
-  });
-  const modelArtifactDigest = modelArtifactSha256(
-    task.provider,
-    task.model,
-    modelsDirectory,
-    probe.backend,
+  const executableSha256 = benchmarkExecutableSha256Impl(built.executablePath);
+  const privateSnapshotDirectory = createPrivateArtifactSnapshotDirectoryImpl(
+    path.dirname(built.executablePath),
   );
-  if (benchmarkExecutableSha256(built.executablePath) !== executableSha256) {
-    throw new Error("benchmark executable changed while campaign identity was inspected");
+  try {
+    const executableSnapshot = stageBenchmarkExecutableSnapshotImpl(
+      built.executablePath,
+      path.join(privateSnapshotDirectory, "executable"),
+      executableSha256,
+      { platform },
+    );
+    if (executableSnapshot.sha256 !== executableSha256) {
+      throw new Error("benchmark executable snapshot does not match the built executable");
+    }
+    runtimeEnvironment = bindBenchmarkRuntimeDependenciesImpl(
+      runtimeEnvironment,
+      executableSnapshot.runtimeDependenciesSha256,
+      executableSnapshot.executablePath,
+      { platform },
+    );
+    const probe = probeBenchmarkExecutableImpl(executableSnapshot.executablePath, {
+      provider: task.provider,
+      backend: task.real_run_backend,
+      environment: runtimeEnvironment,
+      platform,
+    });
+    if (
+      probe.backend !== task.target_backend ||
+      probe.benchmark_executable_sha256 !== executableSha256
+    ) {
+      throw new Error("benchmark hardware probe does not match the planned task");
+    }
+    prepareBenchmarkModelImpl(executableSnapshot.executablePath, {
+      provider: task.provider,
+      model: task.model,
+      modelsDirectory,
+      environment: runtimeEnvironment,
+      platform,
+    });
+    const modelArtifactDigest = modelArtifactSha256Impl(
+      task.provider,
+      task.model,
+      modelsDirectory,
+      probe.backend,
+    );
+    if (
+      benchmarkExecutableSha256Impl(built.executablePath) !== executableSha256 ||
+      benchmarkExecutableSha256Impl(executableSnapshot.executablePath) !== executableSha256
+    ) {
+      throw new Error("benchmark executable changed while campaign identity was inspected");
+    }
+    return {
+      model_artifact_sha256: modelArtifactDigest,
+      operating_system: probe.operating_system,
+      architecture: probe.architecture,
+      hardware_profile: probe.hardware_profile,
+      accelerator: probe.accelerator,
+      benchmark_executable_sha256: executableSha256,
+    };
+  } finally {
+    fs.rmSync(privateSnapshotDirectory, { recursive: true, force: true });
   }
-  return {
-    model_artifact_sha256: modelArtifactDigest,
-    operating_system: probe.operating_system,
-    architecture: probe.architecture,
-    hardware_profile: probe.hardware_profile,
-    accelerator: probe.accelerator,
-    benchmark_executable_sha256: executableSha256,
-  };
 }
 
 function readAttemptReport(attemptPath) {

@@ -6,9 +6,15 @@ import { copyAttestedFileSnapshot } from './artifact-snapshot.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const BENCHMARK_MODEL_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+const WINDOWS_RESERVED_MODEL_NAME_PATTERN = /^(?:aux|con|nul|prn|com[1-9]|lpt[1-9])(?:\.|$)/;
 
 export function validateBenchmarkModelName(model) {
-	if (typeof model !== 'string' || !BENCHMARK_MODEL_NAME_PATTERN.test(model)) {
+	if (
+		typeof model !== 'string' ||
+		!BENCHMARK_MODEL_NAME_PATTERN.test(model) ||
+		model.endsWith('.') ||
+		WINDOWS_RESERVED_MODEL_NAME_PATTERN.test(model)
+	) {
 		throw new Error('benchmark model name must be a bounded lowercase model slug');
 	}
 	return model;

@@ -23,11 +23,22 @@ test('resolves relative model directories from the Cargo working directory', () 
 	assert.equal(resolveModelsDirectory(null, repositoryRoot), path.join(repositoryRoot, 'models'));
 });
 
-test('rejects model path escapes before creating an artifact snapshot', (t) => {
+test('rejects non-portable model names before creating an artifact snapshot', (t) => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-path-escape-'));
 	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 	const snapshotRoot = path.join(directory, 'snapshot');
-	for (const model of ['../../escaped', '..\\..\\escaped', '/absolute', 'C:\\absolute']) {
+	for (const model of [
+		'../../escaped',
+		'..\\..\\escaped',
+		'/absolute',
+		'C:\\absolute',
+		'model.',
+		'model..',
+		'con',
+		'nul.model',
+		'com1.onnx',
+		'lpt9.extra',
+	]) {
 		assert.throws(() => validateBenchmarkModelName(model), /bounded lowercase model slug/);
 		assert.throws(
 			() =>
@@ -43,6 +54,29 @@ test('rejects model path escapes before creating an artifact snapshot', (t) => {
 		);
 		assert(!fs.existsSync(snapshotRoot));
 	}
+});
+
+test('accepts every shipped model name and enforces the 128-character bound', () => {
+	for (const model of [
+		'tiny',
+		'base',
+		'small',
+		'medium',
+		'large-v3-turbo',
+		'large-v3',
+		'tiny-q5_1',
+		'base-q5_1',
+		'small-q5_1',
+		'medium-q5_0',
+		'large-v3-turbo-q5_0',
+		'large-v3-q5_0',
+		'parakeet-tdt-0.6b-v2-int8',
+		'parakeet-tdt-0.6b-v3-int8',
+		'a'.repeat(128),
+	]) {
+		assert.equal(validateBenchmarkModelName(model), model);
+	}
+	assert.throws(() => validateBenchmarkModelName('a'.repeat(129)), /bounded lowercase model slug/);
 });
 
 test('fingerprints the exact Whisper model bytes', (t) => {

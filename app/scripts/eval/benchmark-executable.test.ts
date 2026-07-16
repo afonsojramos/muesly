@@ -283,6 +283,92 @@ test('stages the exact executable and rejects a transient swap-copy-restore', (t
 	assert(!fs.existsSync(path.join(directory, 'attacked-snapshot')));
 });
 
+test('stages Windows example DLLs from the Cargo profile root with local precedence', (t) => {
+	const profileDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-windows-runtime-'));
+	t.after(() => fs.rmSync(profileDirectory, { recursive: true, force: true }));
+	const examplesDirectory = path.join(profileDirectory, 'examples');
+	const executablePath = path.join(examplesDirectory, 'transcribe-fixture.exe');
+	const fallbackLibraryPath = path.join(profileDirectory, 'onnxruntime.dll');
+	const preferredLibraryName = 'onnxruntime_providers_shared.dll';
+	const preferredLibraryPath = path.join(examplesDirectory, preferredLibraryName);
+	fs.mkdirSync(examplesDirectory);
+	fs.writeFileSync(executablePath, 'exact benchmark executable', { mode: 0o700 });
+	fs.writeFileSync(fallbackLibraryPath, 'profile-root runtime library');
+	fs.writeFileSync(
+		path.join(profileDirectory, preferredLibraryName),
+		'ignored profile-root library',
+	);
+	fs.writeFileSync(path.join(profileDirectory, 'unrelated.dll'), 'unrelated profile-root library');
+	fs.writeFileSync(preferredLibraryPath, 'preferred example-directory library');
+
+	const executableSha256 = benchmarkExecutableSha256(executablePath);
+	const runtimeDependenciesSha256 = benchmarkRuntimeDependenciesSha256(executablePath, {
+		platform: 'win32',
+	});
+	assert.notEqual(
+		runtimeDependenciesSha256,
+		benchmarkRuntimeDependenciesSha256(executablePath, { platform: 'linux' }),
+	);
+	const snapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(profileDirectory, 'snapshot'),
+		executableSha256,
+		{ platform: 'win32' },
+	);
+	assert.equal(snapshot.runtimeDependenciesSha256, runtimeDependenciesSha256);
+	assert.equal(
+		fs.readFileSync(path.join(path.dirname(snapshot.executablePath), 'onnxruntime.dll'), 'utf8'),
+		'profile-root runtime library',
+	);
+	assert.equal(
+		fs.readFileSync(path.join(path.dirname(snapshot.executablePath), preferredLibraryName), 'utf8'),
+		'preferred example-directory library',
+	);
+	assert(!fs.existsSync(path.join(path.dirname(snapshot.executablePath), 'unrelated.dll')));
+
+	fs.writeFileSync(path.join(profileDirectory, preferredLibraryName), 'later ignored replacement');
+	fs.writeFileSync(path.join(profileDirectory, 'unrelated.dll'), 'later unrelated replacement');
+	assert.equal(
+		benchmarkRuntimeDependenciesSha256(executablePath, { platform: 'win32' }),
+		runtimeDependenciesSha256,
+	);
+});
+
+test('rejects a Windows example DLL set changed while its snapshot is copied', (t) => {
+	const profileDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-windows-runtime-race-'));
+	t.after(() => fs.rmSync(profileDirectory, { recursive: true, force: true }));
+	const examplesDirectory = path.join(profileDirectory, 'examples');
+	const executablePath = path.join(examplesDirectory, 'transcribe-fixture.exe');
+	fs.mkdirSync(examplesDirectory);
+	fs.writeFileSync(executablePath, 'exact benchmark executable', { mode: 0o700 });
+	fs.writeFileSync(path.join(profileDirectory, 'onnxruntime.dll'), 'profile-root runtime library');
+	const snapshotDirectory = path.join(profileDirectory, 'snapshot');
+
+	assert.throws(
+		() =>
+			stageBenchmarkExecutableSnapshot(
+				executablePath,
+				snapshotDirectory,
+				benchmarkExecutableSha256(executablePath),
+				{
+					platform: 'win32',
+					copyFileSnapshotImpl: (sourcePath, destinationPath, options) => {
+						fs.copyFileSync(sourcePath, destinationPath);
+						fs.chmodSync(destinationPath, options.mode);
+						if (sourcePath === executablePath) {
+							fs.writeFileSync(
+								path.join(examplesDirectory, 'onnxruntime.dll'),
+								'late preferred runtime library',
+							);
+						}
+					},
+				},
+			),
+		/runtime library set changed while it was being snapshotted/,
+	);
+	assert(!fs.existsSync(snapshotDirectory));
+});
+
 test('stages runtime-library aliases and rejects transient replacement', (t) => {
 	if (process.platform === 'win32') {
 		return t.skip('runtime-library symlink behavior is Unix-specific');
@@ -657,6 +743,18 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 			),
 		/bound to a different library directory/,
 	);
+	for (const platform of ['darwin', 'linux']) {
+		assert.throws(
+			() =>
+				bindBenchmarkRuntimeDependencies(
+					environment,
+					runtimeDependenciesSha256,
+					'/private/snap:shot/transcribe-fixture',
+					{ platform },
+				),
+			/runtime search-list delimiter/,
+		);
+	}
 });
 
 test('forces macOS @rpath libraries to the attested executable snapshot', (t) => {
@@ -741,6 +839,90 @@ test('forces macOS @rpath libraries to the attested executable snapshot', (t) =>
 	});
 	assert.equal(bound.status, 0, bound.stderr);
 	assert.equal(bound.stdout.trim(), 'attested');
+});
+
+test('rejects macOS snapshot paths that split the loader search list', (t) => {
+	if (process.platform !== 'darwin') {
+		return t.skip('Mach-O @rpath loader behavior is macOS-specific');
+	}
+	const clang = spawnSync('xcrun', ['--find', 'clang'], { encoding: 'utf8' });
+	if (clang.error || clang.status !== 0 || clang.stdout.trim().length === 0) {
+		return t.skip('Xcode clang is required for the macOS loader regression');
+	}
+	const prefixDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-dyld-colon-'));
+	const colonDirectory = `${prefixDirectory}:suffix`;
+	t.after(() => {
+		fs.rmSync(colonDirectory, { recursive: true, force: true });
+		fs.rmSync(prefixDirectory, { recursive: true, force: true });
+	});
+	const originalDirectory = path.join(colonDirectory, 'original');
+	fs.mkdirSync(originalDirectory, { recursive: true });
+	const sourcePath = path.join(prefixDirectory, 'library.c');
+	const probeSourcePath = path.join(prefixDirectory, 'probe.c');
+	const originalLibraryPath = path.join(originalDirectory, 'libchoice.dylib');
+	const hostileLibraryPath = path.join(prefixDirectory, 'libchoice.dylib');
+	const executablePath = path.join(originalDirectory, 'probe');
+	fs.writeFileSync(sourcePath, 'const char *choice(void) { return CHOICE; }\n');
+	fs.writeFileSync(
+		probeSourcePath,
+		'#include <stdio.h>\nconst char *choice(void);\n' +
+			'int main(void) { puts(choice()); return 0; }\n',
+	);
+	const compile = (args) => {
+		const result = spawnSync('xcrun', ['clang', ...args], { encoding: 'utf8' });
+		assert.equal(result.status, 0, result.stderr);
+	};
+	compile([
+		'-dynamiclib',
+		sourcePath,
+		'-DCHOICE="attested"',
+		'-Wl,-install_name,@rpath/libchoice.dylib',
+		'-o',
+		originalLibraryPath,
+	]);
+	compile([
+		'-dynamiclib',
+		sourcePath,
+		'-DCHOICE="hostile"',
+		'-Wl,-install_name,@rpath/libchoice.dylib',
+		'-o',
+		hostileLibraryPath,
+	]);
+	compile([
+		probeSourcePath,
+		'-L',
+		originalDirectory,
+		'-lchoice',
+		'-Wl,-rpath,@executable_path',
+		'-o',
+		executablePath,
+	]);
+	const snapshot = stageBenchmarkExecutableSnapshot(
+		executablePath,
+		path.join(colonDirectory, 'snapshot'),
+		benchmarkExecutableSha256(executablePath),
+		{ platform: 'darwin' },
+	);
+	const unsafeSearchPath = path.dirname(snapshot.executablePath);
+	const unsafe = spawnSync(snapshot.executablePath, [], {
+		encoding: 'utf8',
+		env: attestedRuntimeEnvironment({
+			DYLD_FALLBACK_LIBRARY_PATH: unsafeSearchPath,
+			DYLD_LIBRARY_PATH: unsafeSearchPath,
+		}),
+	});
+	assert.equal(unsafe.status, 0, unsafe.stderr);
+	assert.equal(unsafe.stdout.trim(), 'hostile');
+	assert.throws(
+		() =>
+			bindBenchmarkRuntimeDependencies(
+				attestedRuntimeEnvironment(),
+				snapshot.runtimeDependenciesSha256,
+				snapshot.executablePath,
+				{ platform: 'darwin' },
+			),
+		/runtime search-list delimiter/,
+	);
 });
 
 test('probes the exact built executable and rejects invalid process output', (t) => {
@@ -921,4 +1103,20 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 			}),
 		/changed while model preparation was running/,
 	);
+	let invalidModelSpawned = false;
+	assert.throws(
+		() =>
+			prepareBenchmarkModel(executablePath, {
+				provider: 'parakeet',
+				model: '../../escaped',
+				modelsDirectory: '/private/models',
+				environment: attestedRuntimeEnvironment(),
+				spawnSyncImpl: () => {
+					invalidModelSpawned = true;
+					return { status: 1, stdout: '' };
+				},
+			}),
+		/bounded lowercase model slug/,
+	);
+	assert.equal(invalidModelSpawned, false);
 });

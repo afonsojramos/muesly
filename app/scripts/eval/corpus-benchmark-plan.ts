@@ -9,6 +9,7 @@ import {
 import { validateCoverageTargets } from './coverage.ts';
 import { corpusFingerprint, validateCorpusDocument } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
+import { validateBenchmarkModelName } from './model-artifact.ts';
 import { validateRunReport } from './report.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
@@ -348,7 +349,7 @@ function taskIdentity(task) {
 		evaluator_revision: evaluator.revision,
 		evaluator_revision_sha256: evaluator.sha256,
 		provider: mapping.provider,
-		model: requiredString(task.model, 'task.model'),
+		model: validateBenchmarkModelName(task.model),
 		target_backend: mapping.targetBackend,
 		sample_id: requiredString(task.sample_id, 'task.sample_id'),
 		sample_revision_sha256: requireSha256(
@@ -533,10 +534,7 @@ export function planCorpusBenchmarkTasks({
 			throw new Error(`targets.benchmark_variants[${variantIndex}] must be an object`);
 		}
 		const mapping = resolveBenchmarkBackend(variant.provider, variant.backend);
-		const model = requiredString(
-			variant.model,
-			`targets.benchmark_variants[${variantIndex}].model`,
-		);
+		const model = validateBenchmarkModelName(variant.model);
 		const variantKey = `${mapping.provider}/${model}/${mapping.targetBackend}`;
 		if (variantKeys.has(variantKey)) {
 			throw new Error(`targets.benchmark_variants contains duplicate '${variantKey}'`);

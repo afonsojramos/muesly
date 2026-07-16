@@ -77,6 +77,11 @@ test('rejects model names that are not bounded lowercase leaf slugs', () => {
 		'C:\\outside',
 		'two words',
 		'Uppercase',
+		'model.',
+		'con',
+		'nul.model',
+		'com1.onnx',
+		'lpt9.extra',
 		`a${'b'.repeat(128)}`,
 	]) {
 		assert.throws(

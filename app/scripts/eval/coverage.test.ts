@@ -41,6 +41,19 @@ test('accepts the committed multilingual benchmark target', () => {
 	assert.equal(committed.benchmark_variants.length, 3);
 });
 
+test('requires bounded portable model names in coverage targets', () => {
+	for (const model of ['a'.repeat(129), 'model.', 'con', 'nul.model', 'com1.onnx', 'lpt9.extra']) {
+		const invalidTargets = {
+			...targets,
+			benchmark_variants: [{ provider: 'whisper', model, backend: 'metal' }],
+		};
+		assert.match(
+			validateCoverageTargets(invalidTargets).join('\n'),
+			/bounded portable lowercase model slug/,
+		);
+	}
+});
+
 test('rejects impossible provider and backend target variants', () => {
 	for (const [provider, backend] of [
 		['parakeet', 'cpu'],

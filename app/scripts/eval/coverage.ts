@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { benchmarkDefinitionForReportedBackend } from './benchmark-executable.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
+import { validateBenchmarkModelName } from './model-artifact.ts';
 import {
 	modelArtifactBindingKey,
 	validateRunReport,
@@ -87,12 +88,18 @@ export function validateCoverageTargets(targets) {
 					errors.push(`${prefix}.${field} is not an allowed field`);
 				}
 			}
-			for (const field of ['provider', 'model', 'backend']) {
+			for (const field of ['provider', 'backend']) {
 				if (typeof variant[field] !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(variant[field])) {
 					errors.push(`${prefix}.${field} must be a lowercase model slug`);
 				} else {
 					validSlugs.add(field);
 				}
+			}
+			try {
+				validateBenchmarkModelName(variant.model);
+				validSlugs.add('model');
+			} catch {
+				errors.push(`${prefix}.model must be a bounded portable lowercase model slug`);
 			}
 			if (validSlugs.has('provider') && validSlugs.has('backend')) {
 				try {

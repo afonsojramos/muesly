@@ -422,6 +422,17 @@ test('binds every compared sample attribute into the immutable task identity', (
 	}
 });
 
+test('rejects non-portable model names in direct task identities', () => {
+	const task = plannedTask();
+	for (const model of ['model.', 'con', 'nul.model', 'a'.repeat(129)]) {
+		assert.throws(() => taskReportFilename({ ...task, model }), /bounded lowercase model slug/);
+		assert.match(
+			validateTaskCheckpoint(checkpoint(task), { ...task, model }).join('\n'),
+			/invalid benchmark task: benchmark model name must be a bounded lowercase model slug/,
+		);
+	}
+});
+
 test('records explicit accelerators and includes auto versus explicit mode in task identity', () => {
 	const automatic = plannedTask();
 	const explicit = plannedTask({ accelerators: { metal: 'Apple M4 Pro integrated GPU' } });
