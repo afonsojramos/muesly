@@ -212,6 +212,10 @@ function targetEnvironmentNames(targetTriples) {
 		names.add(`HOST_${variable}`);
 		names.add(`TARGET_${variable}`);
 	}
+	for (const variable of TARGET_PKG_CONFIG_VARIABLES) {
+		names.add(`HOST_${variable}`);
+		names.add(`TARGET_${variable}`);
+	}
 	return names;
 }
 

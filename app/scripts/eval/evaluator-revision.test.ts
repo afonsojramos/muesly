@@ -179,6 +179,43 @@ test('target-scoped Cargo and compiler inputs change the evaluator digest', (t) 
 	assert.notEqual(changedCompiler.sha256, baseline.sha256);
 });
 
+test('pkg-config build-kind inputs change the evaluator digest', (t) => {
+	const repositoryRoot = createRepository(t);
+	const baseline = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				HOST_PKG_CONFIG_PATH: '/opt/native/pkgconfig',
+				TARGET_PKG_CONFIG_LIBDIR: '/opt/target/lib/pkgconfig',
+			},
+		}),
+	);
+	const changedHost = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				HOST_PKG_CONFIG_PATH: '/usr/local/native/pkgconfig',
+				TARGET_PKG_CONFIG_LIBDIR: '/opt/target/lib/pkgconfig',
+			},
+		}),
+	);
+	const changedTarget = evaluatorRevision(
+		repositoryRoot,
+		deterministicOptions({
+			buildEnv: {
+				CARGO_BUILD_TARGET: 'x86_64-unknown-linux-gnu',
+				HOST_PKG_CONFIG_PATH: '/opt/native/pkgconfig',
+				TARGET_PKG_CONFIG_LIBDIR: '/usr/local/target/lib/pkgconfig',
+			},
+		}),
+	);
+
+	assert.notEqual(changedHost.sha256, baseline.sha256);
+	assert.notEqual(changedTarget.sha256, baseline.sha256);
+});
+
 test('target-scoped settings for unrelated targets do not change the evaluator digest', (t) => {
 	const repositoryRoot = createRepository(t);
 	const baseline = evaluatorRevision(
