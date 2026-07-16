@@ -165,10 +165,12 @@ nub run eval:real --manifest app/scripts/eval/corpus-local.json \
   --output app/scripts/eval/results/parakeet-onnx-cpu.json
 ```
 
-Check that every required language/noise/provider/model/backend cell has at least three
-distinct sessions measured on one compatible OS, architecture, machine profile, and backend
-accelerator cohort. Raw counts split across machines remain visible but do not satisfy the floor.
-The command fails with `--require-complete` while any compatible-cohort cell is missing:
+Check that at least one matrix-wide hardware cohort has three distinct sessions in every required
+language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
+profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
+best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
+from different machines or accelerator identities does not satisfy coverage schema 6. The command
+fails with `--require-complete` until the corpus cells and one full-matrix cohort are complete:
 
 ```bash
 nub run eval:coverage --manifest app/scripts/eval/corpus-local.json \

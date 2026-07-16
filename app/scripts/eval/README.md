@@ -115,10 +115,12 @@ reports from one machine can be combined; reports using different accelerators f
 backend cannot.
 Coverage JSON also records the corpus fingerprint and verified model-artifact map so a saved
 completeness result remains bound to the exact corpus revision and evaluated bytes.
-Measurement completeness requires the session floor within one compatible hardware cohort:
-operating system, architecture, machine profile, and the accelerator for that backend must match.
-Coverage schema 5 retains raw cross-machine session counts for diagnostics, but reports the largest
-compatible count per cell and identifies cells whose apparent coverage is split across hardware.
+Measurement completeness requires one compatible hardware cohort to satisfy the session floor
+across the entire requested matrix. The operating system, architecture, and machine profile must
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 6
+retains raw cross-machine counts and the largest compatible count per cell for diagnostics, then
+enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
+different machines or accelerators remains incomplete.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
