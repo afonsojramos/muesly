@@ -243,12 +243,16 @@ export function prepareCollectionSession(options) {
 		options.repositoryIntakeRoot ?? repositoryIntakeRoot,
 		{ allowMissing: true },
 	);
+	const allowedRepositoryManifestPath = path.join(
+		allowedRepositoryIntakeRoot,
+		'corpus-local.json',
+	);
 	if (
 		isWithinOrEqual(protectedRepositoryRoot, manifestPath) &&
-		root !== allowedRepositoryIntakeRoot
+		manifestPath !== allowedRepositoryManifestPath
 	) {
 		throw new Error(
-			`repository-local manifests must be stored in the ignored eval directory: ${allowedRepositoryIntakeRoot}`,
+			`repository-local collection requires the ignored manifest: ${allowedRepositoryManifestPath}`,
 		);
 	}
 	if (isWithinOrEqual(protectedRepositoryRoot, consentRoot)) {

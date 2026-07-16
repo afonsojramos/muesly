@@ -275,20 +275,26 @@ test('requires an explicit external consent records directory', () => {
 	);
 });
 
-test('refuses repository-local manifests outside the ignored eval directory', () => {
+test('refuses repository-local manifests other than the ignored corpus-local filename', () => {
 	const current = fixture();
-	const unignoredManifest = path.join(current.directory, 'app', 'corpus-local.json');
-	assert.throws(
-		() =>
-			prepareCollectionSession(
-				prepareOptions(current, {
-					manifestPath: unignoredManifest,
-					repositoryIntakeRoot: path.join(current.directory, 'app', 'scripts', 'eval'),
-				}),
-			),
-		/repository-local manifests must be stored in the ignored eval directory/,
-	);
-	assert(!fs.existsSync(path.join(path.dirname(unignoredManifest), 'intake')));
+	const evalDirectory = path.join(current.directory, 'app', 'scripts', 'eval');
+	const unignoredManifests = [
+		path.join(current.directory, 'app', 'corpus-local.json'),
+		path.join(evalDirectory, 'team-corpus.json'),
+	];
+	for (const unignoredManifest of unignoredManifests) {
+		assert.throws(
+			() =>
+				prepareCollectionSession(
+					prepareOptions(current, {
+						manifestPath: unignoredManifest,
+						repositoryIntakeRoot: evalDirectory,
+					}),
+				),
+			/repository-local collection requires the ignored manifest/,
+		);
+		assert(!fs.existsSync(path.join(path.dirname(unignoredManifest), 'intake')));
+	}
 	assert.deepEqual(fs.readdirSync(current.consentRecordsDir), []);
 });
 

@@ -69,8 +69,9 @@ consent, or count the session toward coverage. Use `--language <code> --noise-co
 to select a specific still-underfilled cell. The equivalent
 `--consent-records-dir /approved/encrypted/path` flag can be used instead of the environment
 variable.
-Custom manifests outside the Git repository are supported. A repository-local custom manifest must
-remain in `app/scripts/eval/`, where the generated `intake/` directory is explicitly ignored.
+Custom manifests outside the Git repository are supported. Inside the repository, preparation is
+restricted to the explicitly ignored `app/scripts/eval/corpus-local.json` manifest and its
+gitignored sibling `intake/` directory.
 
 2. Keep the affirmative consent record in the approved encrypted records system. Never put names,
    emails, meeting titles, customer names, or consent files in the manifest or Git checkout.
