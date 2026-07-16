@@ -191,6 +191,26 @@ test('reclaims interrupted intake files whether staged or already promoted', () 
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });
 
+test('preserves unrelated untracked media during stale-lock recovery', () => {
+	const { directory, options } = intakeFixture();
+	const corpusDirectory = path.join(directory, 'local-corpus');
+	const unrelatedDirectory = path.join(corpusDirectory, 'session-not-yet-imported');
+	fs.mkdirSync(unrelatedDirectory, { recursive: true });
+	fs.writeFileSync(
+		path.join(corpusDirectory, '.intake.lock'),
+		JSON.stringify({ schema_version: 1, pid: 999_999_999, created_at: '2026-07-15T00:00:00Z' }),
+	);
+	const unrelatedAudio = path.join(unrelatedDirectory, 'only-copy.wav');
+	const unrelatedReference = path.join(unrelatedDirectory, 'only-copy.txt');
+	fs.writeFileSync(unrelatedAudio, 'only copy of consented audio');
+	fs.writeFileSync(unrelatedReference, 'only copy of its reference');
+
+	intakeConsentedSample(options);
+
+	assert(fs.existsSync(unrelatedAudio));
+	assert(fs.existsSync(unrelatedReference));
+});
+
 test('preserves recordings when stale-lock recovery finds an invalid manifest', () => {
 	const { directory, options } = intakeFixture();
 	const corpusDirectory = path.join(directory, 'local-corpus');
@@ -212,7 +232,7 @@ test('preserves recordings when stale-lock recovery finds an invalid manifest', 
 		}),
 	);
 
-	assert.throws(() => intakeConsentedSample(options), /cannot recover with an invalid corpus manifest/);
+	assert.throws(() => intakeConsentedSample(options), /existing corpus manifest is invalid/);
 	assert(fs.existsSync(onlyCopy));
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });

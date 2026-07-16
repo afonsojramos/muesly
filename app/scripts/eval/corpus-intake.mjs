@@ -92,37 +92,17 @@ function readLockOwner(lockPath) {
 	return { owner, key };
 }
 
-function referencedCorpusFiles(manifestPath) {
-	if (!fs.existsSync(manifestPath)) return new Set();
-	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	const errors = validateCorpusDocument(document, { manifestPath, checkFiles: false });
-	if (errors.length > 0) {
-		throw new Error(`cannot recover with an invalid corpus manifest:\n- ${errors.join('\n- ')}`);
-	}
-	return new Set(
-		document.samples.flatMap((sample) =>
-			['audio_path', 'reference_path']
-				.filter((field) => typeof sample[field] === 'string')
-				.map((field) => path.resolve(path.dirname(manifestPath), sample[field])),
-		),
-	);
-}
-
-function reconcileCorpusDirectory(directory, referencedFiles, isRoot = true) {
+function removeAbandonedStagedFiles(directory, isRoot = true) {
 	for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-		if (isRoot && entry.name.startsWith('.intake.lock')) continue;
+		if (isRoot && entry.name.startsWith('.')) continue;
 		const entryPath = path.join(directory, entry.name);
 		if (entry.isSymbolicLink()) continue;
 		if (entry.isDirectory()) {
-			reconcileCorpusDirectory(entryPath, referencedFiles, false);
+			removeAbandonedStagedFiles(entryPath, false);
 			if (fs.readdirSync(entryPath).length === 0) fs.rmdirSync(entryPath);
 			continue;
 		}
 		if (/\.tmp-\d+-[0-9a-f-]+$/.test(entry.name)) {
-			fs.rmSync(entryPath, { force: true });
-			continue;
-		}
-		if (/\.(?:wav|txt)$/i.test(entry.name) && !referencedFiles.has(path.resolve(entryPath))) {
 			fs.rmSync(entryPath, { force: true });
 		}
 	}
@@ -140,17 +120,31 @@ export function hasPendingWithdrawal(localCorpusRoot) {
 function recoverInterruptedIntakes(localCorpusRoot, manifestPath, stalePaths) {
 	const unrecovered = stalePaths.filter((stalePath) => !fs.existsSync(`${stalePath}.recovered`));
 	if (unrecovered.length === 0) return;
-	reconcileCorpusDirectory(localCorpusRoot, referencedCorpusFiles(manifestPath));
+	removeAbandonedStagedFiles(localCorpusRoot);
 	removeAbandonedManifestFiles(manifestPath);
-	if (!hasPendingWithdrawal(localCorpusRoot)) {
-		fs.rmSync(path.join(path.dirname(manifestPath), 'results'), { recursive: true, force: true });
-	}
 	for (const stalePath of unrecovered) {
 		writePrivateJson(`${stalePath}.recovered`, {
 			recovered_at: new Date().toISOString(),
 			recovered_by_pid: process.pid,
 		});
 	}
+}
+
+function stageOrReuseFile(sourcePath, targetPath, stagedPath, label) {
+	const targetEntry = fs.lstatSync(targetPath, { throwIfNoEntry: false });
+	if (targetEntry) {
+		if (!targetEntry.isFile() || targetEntry.isSymbolicLink()) {
+			throw new Error(`intake ${label} target is not a regular file: ${targetPath}`);
+		}
+		if (fileSha256(sourcePath) !== fileSha256(targetPath)) {
+			throw new Error(`intake ${label} target already exists with different contents: ${targetPath}`);
+		}
+		fs.chmodSync(targetPath, 0o600);
+		return { workingPath: targetPath, staged: false };
+	}
+	fs.copyFileSync(sourcePath, stagedPath);
+	fs.chmodSync(stagedPath, 0o600);
+	return { workingPath: stagedPath, staged: true };
 }
 
 export function acquireLocalCorpusLock(lockPath, localCorpusRoot, manifestPath) {
@@ -374,9 +368,6 @@ export function intakeConsentedSample(options) {
 		}
 		const audioTarget = path.join(sessionDirectory, `${options.sampleId}.wav`);
 		const referenceTarget = path.join(sessionDirectory, `${options.sampleId}.txt`);
-		for (const target of [audioTarget, referenceTarget]) {
-			if (fs.existsSync(target)) throw new Error(`intake target already exists: ${target}`);
-		}
 
 		const token = `${process.pid}-${randomUUID()}`;
 		const stagedAudio = `${audioTarget}.tmp-${token}`;
@@ -386,22 +377,25 @@ export function intakeConsentedSample(options) {
 		const promotedFiles = [];
 		fs.mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
 		try {
-			fs.copyFileSync(audioSource, stagedAudio);
-			fs.copyFileSync(referenceSource, stagedReference);
-			fs.chmodSync(stagedAudio, 0o600);
-			fs.chmodSync(stagedReference, 0o600);
+			const preparedAudio = stageOrReuseFile(audioSource, audioTarget, stagedAudio, 'audio');
+			const preparedReference = stageOrReuseFile(
+				referenceSource,
+				referenceTarget,
+				stagedReference,
+				'reference',
+			);
 			const sample = {
 				id: options.sampleId,
 				session_id: options.sessionId,
 				audio_path: relativeManifestPath(manifestPath, audioTarget),
-				audio_sha256: fileSha256(stagedAudio),
+				audio_sha256: fileSha256(preparedAudio.workingPath),
 				reference_path: relativeManifestPath(manifestPath, referenceTarget),
-				reference_sha256: fileSha256(stagedReference),
+				reference_sha256: fileSha256(preparedReference.workingPath),
 				language: options.language,
 				scenario: 'meeting',
 				noise_condition: options.noiseCondition,
 				speakers: options.speakers,
-				duration_seconds: wavDurationSeconds(stagedAudio),
+				duration_seconds: wavDurationSeconds(preparedAudio.workingPath),
 				provenance: {
 					basis: 'participant-consent',
 					consent_record_id: options.consentRecordId,
@@ -421,10 +415,14 @@ export function intakeConsentedSample(options) {
 				);
 			}
 
-			fs.renameSync(stagedAudio, audioTarget);
-			promotedFiles.push(audioTarget);
-			fs.renameSync(stagedReference, referenceTarget);
-			promotedFiles.push(referenceTarget);
+			if (preparedAudio.staged) {
+				fs.renameSync(stagedAudio, audioTarget);
+				promotedFiles.push(audioTarget);
+			}
+			if (preparedReference.staged) {
+				fs.renameSync(stagedReference, referenceTarget);
+				promotedFiles.push(referenceTarget);
+			}
 			const fileErrors = validateCorpusDocument(nextDocument, { manifestPath });
 			if (fileErrors.length > 0) {
 				throw new Error(`intake would create an invalid corpus:\n- ${fileErrors.join('\n- ')}`);

@@ -120,6 +120,35 @@ test('does not reclaim an interrupted withdrawal to write against its old manife
 	assert(!fs.existsSync(outputPath));
 });
 
+test('preserves valid reports when reclaiming a dead result-writer lock', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	const existingReport = path.join(resultsDirectory, 'existing.json');
+	fs.writeFileSync(existingReport, '{"valid":true}\n');
+	const lockPath = path.join(directory, 'local-corpus', '.intake.lock');
+	fs.mkdirSync(lockPath);
+	fs.writeFileSync(
+		path.join(lockPath, 'owner.json'),
+		JSON.stringify({
+			schema_version: 2,
+			pid: 999_999_999,
+			token: '00000000-0000-4000-8000-000000000001',
+			created_at: '2026-07-16T00:00:00Z',
+		}),
+	);
+
+	writeCorpusBoundJson({
+		manifestPath,
+		expectedFingerprint: corpusFingerprint(document),
+		outputPath: path.join(resultsDirectory, 'new.json'),
+		value: { corpus_fingerprint: corpusFingerprint(document) },
+	});
+
+	assert.equal(fs.readFileSync(existingReport, 'utf8'), '{"valid":true}\n');
+	assert(fs.existsSync(path.join(resultsDirectory, 'new.json')));
+});
+
 test('ignores directories that merely resemble withdrawal markers', () => {
 	const { directory, document, manifestPath } = localManifest();
 	fs.mkdirSync(path.join(directory, 'local-corpus', '.withdrawal-session-fake.json'));
