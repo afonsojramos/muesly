@@ -240,6 +240,16 @@ async fn main() {
     if metrics_path.is_some() && (per_segment || dump_dir.is_some()) {
         fail("--metrics-json cannot be combined with --segments or --dump-segments".to_string());
     }
+    if provider == "whisper"
+        && let Some(language) = language.as_deref()
+        && language != "auto"
+        && language != "auto-translate"
+        && whisper_rs::get_lang_id(language).is_none()
+    {
+        fail(format!(
+            "unsupported Whisper language '{language}'; use a supported Whisper code"
+        ));
+    }
 
     let measured_start = Instant::now();
     let decode_start = Instant::now();

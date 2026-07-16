@@ -5,14 +5,16 @@ Two tiers:
 
 - **Dry-run** (`nub run eval`, CI): scores pre-written hypothesis text against golden
   references — proves the scoring scripts, not the engine.
-- **Real run** (`nub run eval:real`, dev machines only): transcribes a checked-in audio
-  fixture with the actual Whisper engine and gates its WER against the golden.
+- **Real run** (`nub run eval:real`, dev machines only): transcribes a validated corpus
+  manifest with a real local ASR engine and records quality and resource metrics.
 
 ## Layout
 
 ```
 app/scripts/eval/
-  fixtures/           # golden transcripts (plain text) + real-speech.wav audio
+  corpus-manifest.json # consent/provenance and grouping metadata for every fixture
+  corpus.mjs           # manifest validation and language normalization
+  fixtures/            # golden transcripts + repository-safe audio
   wer.mjs             # word error rate vs golden (importable `wer()` + CLI)
   summary-rubric.mjs  # checklist scoring of a summary markdown file
   real-run.mjs        # real-engine run: cargo example -> WER gate
@@ -39,8 +41,9 @@ nub run eval:rubric path/to/summary.md
 ## Real run (`nub run eval:real`)
 
 Runs the `transcribe-fixture` cargo example (`app/src-tauri/examples/`) over
-every audio fixture and gates the results. Fixtures are auto-discovered:
-each `fixtures/<base>.wav` with a sibling `fixtures/<base>-ref.txt`.
+every sample in a validated corpus manifest and gates the results. The default
+manifest is `corpus-manifest.json`; use `--manifest <path>` for a local
+participant-consented corpus. Every checked-in WAV must have a manifest entry.
 
 - A non-empty reference is a WER run (gated by `--max-wer`, default 10).
 - An empty reference is a hallucination check: the engine should produce
@@ -50,9 +53,14 @@ each `fixtures/<base>.wav` with a sibling `fixtures/<base>-ref.txt`.
   and artifacts on the same fixtures. Parakeet defaults to `parakeet-tdt-0.6b-v3-int8`.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
+- `--output <path>` writes a transcript-free JSON report containing WER or hallucination
+  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, and backend.
+- `--fixture <sample-id-or-audio-base>` limits the run to one manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
   the post-meeting production pass, so it catches pipeline regressions as well as model ones.
-- `--fixture <base>` limits the run to one fixture.
+- BCP-47 locales are reduced to their primary language for Whisper (`en-US` → `en`).
+  Set `whisper_language` in the manifest when an explicit mapping is needed; unsupported
+  Whisper codes fail before inference.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.
@@ -78,8 +86,9 @@ English clip is a regression check, not a general accuracy ranking.
   ~0.9 MB) of the LibriVox recording of Lincoln's Gettysburg Address read by
   John Greenman (archive.org item `gettysburg_johng_librivox`, public domain).
   The reference is the canonical Bliss-copy text of the excerpt, cross-checked
-  against `tiny` and `base` transcriptions. Additional clips must stay public
-  domain or self-recorded, ≤ ~1 MB, with the reference and calibration updated.
+  against `tiny` and `base` transcriptions. Additional clips require a validated
+  manifest entry; meeting recordings require an opaque consent-record ID and explicit
+  `asr-benchmarking` consent.
 
 Fixtures:
 

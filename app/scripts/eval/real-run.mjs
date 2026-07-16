@@ -24,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadCorpus } from './corpus.mjs';
+import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
 import { wer } from './wer.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -136,7 +136,10 @@ for (const sample of fixtures) {
 		audio,
 		model,
 	];
-	if (sample.language !== 'und') exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', sample.language);
+	const whisperLanguage = provider === 'whisper' ? whisperLanguageForSample(sample) : null;
+	if (whisperLanguage) {
+		exampleArgs.splice(exampleArgs.indexOf('--vad'), 0, '--language', whisperLanguage);
+	}
 	if (modelsDir) exampleArgs.push(modelsDir);
 	const run = spawnSync(
 		'cargo',

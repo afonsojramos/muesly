@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { validateCorpusDocument } from './corpus.mjs';
+import { validateCorpusDocument, whisperLanguageForSample } from './corpus.mjs';
 
 function hash(value) {
 	return createHash('sha256').update(value).digest('hex');
@@ -109,4 +109,13 @@ test('rejects nested consent-use data and reports invalid paths without throwing
 	});
 	assert(errors.some((error) => error.includes('may only contain known string values')));
 	assert(errors.some((error) => error.includes('audio_path must be a non-empty string')));
+});
+
+test('normalizes BCP-47 locales and supports explicit Whisper mappings', () => {
+	assert.equal(whisperLanguageForSample({ language: 'en-US' }), 'en');
+	assert.equal(whisperLanguageForSample({ language: 'und' }), null);
+	assert.equal(
+		whisperLanguageForSample({ language: 'cmn-Hans', whisper_language: 'zh' }),
+		'zh',
+	);
 });

@@ -15,6 +15,7 @@ const SAMPLE_FIELDS = new Set([
 	'reference_path',
 	'reference_sha256',
 	'language',
+	'whisper_language',
 	'scenario',
 	'noise_condition',
 	'speakers',
@@ -176,6 +177,9 @@ export function validateCorpusDocument(document, options = {}) {
 		if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(sample.language ?? '')) {
 			errors.push(`${prefix}.language must be a BCP-47-style language tag`);
 		}
+		if (sample.whisper_language !== undefined && !/^[a-z]{2,3}$/.test(sample.whisper_language)) {
+			errors.push(`${prefix}.whisper_language must be a lowercase Whisper language code`);
+		}
 		requiredString(sample.scenario, `${prefix}.scenario`, errors);
 		if (!/^[a-z0-9][a-z0-9-]*$/.test(sample.noise_condition ?? '')) {
 			errors.push(`${prefix}.noise_condition must be a lowercase slug`);
@@ -210,6 +214,11 @@ export function validateCorpusDocument(document, options = {}) {
 		}
 	}
 	return errors;
+}
+
+export function whisperLanguageForSample(sample) {
+	if (sample.language === 'und') return null;
+	return sample.whisper_language ?? sample.language.split('-')[0].toLowerCase();
 }
 
 export function loadCorpus(manifestPath, options = {}) {
