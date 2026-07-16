@@ -210,5 +210,10 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```
 
+The campaign safety layer currently provides strict option parsing, deterministic task planning,
+an exclusive corpus benchmark lock, and private alias-safe checkpoint discovery. A top-level
+campaign runner is not exposed yet, so continue to run the three explicit `eval:real` commands and
+then the coverage/report gates above.
+
 Do not publish model rankings from this corpus without reviewing session independence,
 participant mix, failure examples, confidence intervals, and the limitations above.

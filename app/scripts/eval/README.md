@@ -19,6 +19,10 @@ app/scripts/eval/
   corpus-intake.ts     # consent-gated, atomic local corpus intake
   corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
   corpus-result.ts     # private, corpus-bound result writes
+  corpus-benchmark-lock.ts        # exclusive local benchmark ownership
+  corpus-benchmark-checkpoints.ts # bounded, alias-safe checkpoint discovery
+  corpus-benchmark-options.ts     # strict campaign-option parsing
+  corpus-benchmark-plan.ts        # deterministic per-sample campaign planning
   evaluator-revision.ts           # clean source/toolchain provenance
   benchmark-executable.ts         # exact build, hardware probe, and binary identity
   model-artifact.ts     # exact evaluated-model artifact fingerprinting
@@ -158,6 +162,11 @@ through the end of inference, reported as baseline, peak, and peak-minus-baselin
 accelerator VRAM. Model preparation happens before the measured sample processes, so
 `model_download_seconds` ordinarily records zero while `model_load_seconds` still measures each
 fresh process's engine/model initialization.
+
+The repository currently includes strict campaign option parsing, deterministic task planning,
+exclusive corpus locking, and private checkpoint discovery/resume primitives. There is not yet a
+top-level campaign runner or `eval:corpus:benchmark` command; use the explicit `eval:real`,
+`eval:coverage`, and `eval:report` commands above until that runner is implemented.
 
 Baseline (2026-07-12, Apple Silicon, Metal, `tiny`): `real-speech` 0.00% WER,
 `silence` 1 hallucinated word. Re-measure after any decode-path change.

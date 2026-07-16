@@ -23,7 +23,7 @@
 		"eval:corpus:prepare": "nub app/scripts/eval/corpus-prepare.ts",
 		"eval:corpus:withdraw": "nub app/scripts/eval/corpus-withdraw.ts",
 		"eval:corpus:validate": "nub app/scripts/eval/corpus-validate.ts",
-		"eval:corpus:test": "nub --node --test app/scripts/eval/corpus.test.ts app/scripts/eval/corpus-intake.test.ts app/scripts/eval/corpus-prepare.test.ts app/scripts/eval/corpus-result.test.ts app/scripts/eval/corpus-withdraw.test.ts app/scripts/eval/corpus-benchmark-lock.test.ts app/scripts/eval/corpus-benchmark-checkpoints.test.ts app/scripts/eval/corpus-benchmark-options.test.ts app/scripts/eval/evaluator-revision.test.ts",
+		"eval:corpus:test": "nub --node --test app/scripts/eval/corpus.test.ts app/scripts/eval/corpus-intake.test.ts app/scripts/eval/corpus-prepare.test.ts app/scripts/eval/corpus-result.test.ts app/scripts/eval/corpus-withdraw.test.ts app/scripts/eval/corpus-benchmark-lock.test.ts app/scripts/eval/corpus-benchmark-checkpoints.test.ts app/scripts/eval/corpus-benchmark-options.test.ts app/scripts/eval/corpus-benchmark-plan.test.ts app/scripts/eval/evaluator-revision.test.ts",
 		"eval:coverage": "nub app/scripts/eval/coverage.ts",
 		"eval:coverage:test": "nub --node --test app/scripts/eval/coverage.test.ts",
 		"eval:report": "nub app/scripts/eval/report.ts",
