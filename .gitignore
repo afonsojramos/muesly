@@ -36,6 +36,16 @@ app/scripts/eval/results/
 docs/demo.mov
 docs/demo.gif
 
+# Documentation
+docs/*
+!docs/architecture.md
+!docs/analytics-events.md
+!docs/building.md
+!docs/google-oauth-setup.md
+!docs/gpu-acceleration.md
+!docs/transcription-flows.md
+!docs/transcription-models.md
+
 # Environment & secrets
 .env
 .env.*
