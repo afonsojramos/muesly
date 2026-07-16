@@ -42,6 +42,15 @@ function numFlag(args, name, fallback) {
 	return value;
 }
 
+function integerFlag(args, name, fallback) {
+	const value = numFlag(args, name, fallback);
+	if (!Number.isInteger(value)) {
+		console.error(`${name} requires a non-negative integer`);
+		process.exit(2);
+	}
+	return value;
+}
+
 function strFlag(args, name, fallback) {
 	const idx = args.indexOf(name);
 	return idx === -1 ? fallback : args[idx + 1];
@@ -49,7 +58,7 @@ function strFlag(args, name, fallback) {
 
 const args = process.argv.slice(2);
 const maxWerPct = numFlag(args, '--max-wer', 10);
-const maxHallucinatedWords = numFlag(args, '--max-hallucinated-words', 2);
+const maxHallucinatedWords = integerFlag(args, '--max-hallucinated-words', 2);
 const provider = strFlag(args, '--provider', 'whisper');
 if (!['whisper', 'parakeet'].includes(provider)) {
 	console.error('--provider requires whisper or parakeet');

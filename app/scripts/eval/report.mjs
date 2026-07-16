@@ -40,6 +40,9 @@ export function validateRunReport(report, label = 'report') {
 				errors.push(`${label}.thresholds.${field} must be a non-negative finite number`);
 			}
 		}
+		if (!Number.isInteger(report.thresholds.max_hallucinated_words)) {
+			errors.push(`${label}.thresholds.max_hallucinated_words must be an integer`);
+		}
 	}
 	if (!Array.isArray(report.results) || report.results.length === 0) {
 		errors.push(`${label}.results must be a non-empty array`);

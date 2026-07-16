@@ -110,3 +110,13 @@ test('rejects legacy reports after the weighted-WER schema change', () => {
 	const legacy = { ...report([result()]), schema_version: 1 };
 	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 2']);
 });
+
+test('rejects fractional hallucination thresholds', () => {
+	const fractional = {
+		...report([result()]),
+		thresholds: { max_wer_percent: 10, max_hallucinated_words: 0.5 },
+	};
+	assert.deepEqual(validateRunReport(fractional), [
+		'report.thresholds.max_hallucinated_words must be an integer',
+	]);
+});
