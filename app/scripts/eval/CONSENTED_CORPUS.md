@@ -77,6 +77,10 @@ participant or customer identity in filenames or metadata.
 
 Run each variant with the same manifest, thresholds, and model artifact:
 
+For CUDA, Vulkan, HIP, or Intel Metal, also pass
+`--accelerator <stable-model-or-device-id>` (for example, the exact GPU model and PCI bus ID).
+Apple Silicon Metal records its integrated accelerator identity automatically.
+
 ```bash
 nub run eval:real --manifest app/scripts/eval/corpus-local.json \
   --provider whisper --model large-v3-turbo-q5_0 --backend cpu \

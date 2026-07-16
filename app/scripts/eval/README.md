@@ -59,11 +59,14 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
   backend (default `cpu`). Parakeet currently uses ONNX Runtime CPU and accepts only `cpu`.
   CPU and OpenBLAS runs explicitly disable GPU execution; GPU runs fail instead of silently
   falling back when the requested backend cannot initialize.
+- `--accelerator <stable-model-or-device-id>` identifies the measured GPU for CUDA,
+  Vulkan, HIP, and Intel Metal runs. Apple Silicon Metal derives its integrated GPU identity
+  from the SoC automatically. Ambiguous GPU runs fail before compilation.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
   another copy into the development directory.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
-  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, machine profile,
-  backend,
+  count, inference RTF, model-load/inference timings, peak RSS, OS, architecture, machine and
+  accelerator profile, backend,
   and a SHA-256 fingerprint of the exact model artifact bytes.
 - `--fixture <sample-id>` limits the run to one uniquely named manifest sample.
 - The real run uses the same long-pause VAD segmentation and segment-quality filter as
@@ -83,9 +86,9 @@ Reports contain micro-averaged WER (total word errors divided by total reference
 duration-weighted inference RTF, peak RSS, and silence hallucinations. They group those metrics by
 language, noise condition, hardware backend, provider/model, and the combined
 language/noise/backend matrix. This avoids treating a five-word clip as equally important
-as a five-minute meeting. Inputs must use run-report schema 5, name the same corpus revision, and
-use identical pass thresholds, model bytes, and OS/architecture; the aggregator rejects
-comparisons that would lose that artifact, machine-profile, or evaluation context.
+as a five-minute meeting. Inputs must use run-report schema 6 with metrics schema 3, name the
+same corpus revision, and use identical pass thresholds, model bytes, and OS/architecture; the
+aggregator rejects comparisons that would lose that artifact, machine-profile, or evaluation context.
 Coverage JSON also records the corpus fingerprint and verified model-artifact map so a saved
 completeness result remains bound to the exact corpus revision and evaluated bytes.
 

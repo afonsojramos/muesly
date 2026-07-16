@@ -14,10 +14,12 @@ function result(overrides = {}) {
 		wer_percent: 10,
 		hallucinated_words: null,
 		metrics: {
+			schema_version: 3,
 			backend: 'metal',
 			operating_system: 'macos',
 			architecture: 'aarch64',
-			hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+			hardware_profile:
+				'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
 			inference_seconds: 2,
 			inference_rtf: 0.1,
 			peak_rss_mb: 1000,
@@ -29,7 +31,7 @@ function result(overrides = {}) {
 
 function report(results) {
 	return {
-		schema_version: 5,
+		schema_version: 6,
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
 		provider: 'whisper',
@@ -52,10 +54,12 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 				word_errors: 18,
 				wer_percent: 20,
 				metrics: {
+					schema_version: 3,
 					backend: 'cuda',
 					operating_system: 'macos',
 					architecture: 'aarch64',
-					hardware_profile: 'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+					hardware_profile:
+						'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
 					inference_seconds: 12,
 					inference_rtf: 0.3,
 					peak_rss_mb: 2000,
@@ -76,7 +80,7 @@ test('micro-averages WER and groups quality, speed, and memory across requested 
 	assert.equal(aggregate.architecture, 'aarch64');
 	assert.equal(
 		aggregate.hardware_profile,
-		'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776',
+		'cpu=Apple M4 Pro;logical_cpus=14;memory_bytes=25769803776;accelerator=Apple M4 Pro integrated GPU',
 	);
 	assert.deepEqual(aggregate.model_artifacts, {
 		'whisper/large-v3-turbo-q5_0': 'c'.repeat(64),
@@ -139,7 +143,8 @@ test('rejects aggregation across hardware profiles', () => {
 		result({
 			metrics: {
 				...result().metrics,
-				hardware_profile: 'cpu=Apple M1;logical_cpus=8;memory_bytes=17179869184',
+				hardware_profile:
+					'cpu=Apple M1;logical_cpus=8;memory_bytes=17179869184;accelerator=Apple M1 integrated GPU',
 			},
 		}),
 	]);
@@ -148,7 +153,7 @@ test('rejects aggregation across hardware profiles', () => {
 
 test('rejects legacy reports after corpus revision binding', () => {
 	const legacy = { ...report([result()]), schema_version: 4 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 5']);
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 6']);
 });
 
 test('rejects aggregation across corpus revisions', () => {

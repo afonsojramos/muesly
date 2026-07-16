@@ -28,7 +28,7 @@ export function validateRunReport(report, label = 'report') {
 	if (report === null || typeof report !== 'object' || Array.isArray(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	if (report.schema_version !== 5) errors.push(`${label}.schema_version must be 5`);
+	if (report.schema_version !== 6) errors.push(`${label}.schema_version must be 6`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	if (!/^[a-f0-9]{64}$/.test(report.corpus_fingerprint ?? '')) {
 		errors.push(`${label}.corpus_fingerprint must be a lowercase SHA-256 digest`);
@@ -68,10 +68,16 @@ export function validateRunReport(report, label = 'report') {
 			errors.push(`${prefix}.metrics must be an object`);
 			continue;
 		}
+		if (result.metrics.schema_version !== 3) {
+			errors.push(`${prefix}.metrics.schema_version must be 3`);
+		}
 		requireString(result.metrics.backend, `${prefix}.metrics.backend`, errors);
 		requireString(result.metrics.operating_system, `${prefix}.metrics.operating_system`, errors);
 		requireString(result.metrics.architecture, `${prefix}.metrics.architecture`, errors);
 		requireString(result.metrics.hardware_profile, `${prefix}.metrics.hardware_profile`, errors);
+		if (!/(?:^|;)accelerator=[^;]+$/.test(result.metrics.hardware_profile ?? '')) {
+			errors.push(`${prefix}.metrics.hardware_profile must include an accelerator identity`);
+		}
 		for (const field of [
 			'inference_seconds',
 			'inference_rtf',

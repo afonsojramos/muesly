@@ -150,7 +150,7 @@ fn megabytes(bytes: u64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
 }
 
-fn hardware_profile() -> String {
+fn hardware_profile(provider: &str) -> String {
     let system = System::new_all();
     let cpu_model = system
         .cpus()
@@ -158,8 +158,29 @@ fn hardware_profile() -> String {
         .map(|cpu| cpu.brand().trim())
         .filter(|brand| !brand.is_empty())
         .unwrap_or("unknown");
+    let backend = compiled_backend(provider);
+    let configured_accelerator = std::env::var("MUESLY_EVAL_ACCELERATOR_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let accelerator = match backend.as_str() {
+        "metal" | "coreml-metal" if cfg!(all(target_os = "macos", target_arch = "aarch64")) => {
+            configured_accelerator.unwrap_or_else(|| format!("{cpu_model} integrated GPU"))
+        }
+        "cuda" | "vulkan" | "hipblas" | "metal" | "coreml-metal" => {
+            configured_accelerator.unwrap_or_else(|| {
+                fail(format!(
+                    "{backend} metrics require MUESLY_EVAL_ACCELERATOR_ID with a stable accelerator model or device identifier"
+                ))
+            })
+        }
+        _ => "none".to_string(),
+    };
+    if accelerator.contains([';', '\n', '\r']) {
+        fail("MUESLY_EVAL_ACCELERATOR_ID cannot contain semicolons or line breaks".to_string());
+    }
     format!(
-        "cpu={cpu_model};logical_cpus={};memory_bytes={}",
+        "cpu={cpu_model};logical_cpus={};memory_bytes={};accelerator={accelerator}",
         system.cpus().len(),
         system.total_memory()
     )
@@ -500,13 +521,13 @@ async fn main() {
     if let Some(metrics_path) = metrics_path {
         let memory = memory_observation.expect("metrics run starts a memory sampler");
         let metrics = EvalMetrics {
-            schema_version: 2,
+            schema_version: 3,
             provider: provider.clone(),
             model: model_name.clone(),
             backend: compiled_backend(&provider),
             operating_system: std::env::consts::OS,
             architecture: std::env::consts::ARCH,
-            hardware_profile: hardware_profile(),
+            hardware_profile: hardware_profile(&provider),
             audio_duration_seconds: decoded.duration_seconds,
             decode_seconds,
             vad_seconds,

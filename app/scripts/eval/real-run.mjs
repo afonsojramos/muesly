@@ -15,6 +15,7 @@
  *                          [--provider whisper|parakeet] [--model <name>]
  *                          [--models-dir <path>] [--manifest <path>]
  *                          [--backend cpu|metal|cuda|vulkan|openblas|hipblas]
+ *                          [--accelerator <stable-model-or-device-id>]
  *                          [--output <path>] [--fixture <sample-id>]
  * Defaults: --max-wer 10 (calibrated: 3 runs of tiny on real-speech scored
  * 0.00%), --max-hallucinated-words 2, Whisper + tiny.
@@ -25,7 +26,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
+import {
+	forcesWhisperCpu,
+	requiresExplicitAccelerator,
+	requiresWhisperGpu,
+	supportedBackends,
+} from './backend.mjs';
 import { loadCorpus, whisperLanguageForSample } from './corpus.mjs';
 import { modelArtifactSha256, resolveModelsDirectory } from './model-artifact.mjs';
 import { werDetails } from './wer.mjs';
@@ -80,6 +86,17 @@ if (!supportedBackends.includes(backend)) {
 }
 if (provider === 'parakeet' && backend !== 'cpu') {
 	console.error("Parakeet currently supports only --backend cpu (reported as 'onnx-cpu')");
+	process.exit(2);
+}
+const accelerator = strFlag(args, '--accelerator', null);
+if (accelerator && /[;\r\n]/.test(accelerator)) {
+	console.error('--accelerator cannot contain semicolons or line breaks');
+	process.exit(2);
+}
+if (requiresExplicitAccelerator(provider, backend) && !accelerator) {
+	console.error(
+		`--backend ${backend} requires --accelerator with a stable accelerator model or device identifier`,
+	);
 	process.exit(2);
 }
 const model = strFlag(
@@ -178,6 +195,7 @@ for (const sample of fixtures) {
 			cwd: repoRoot,
 			env: {
 				...process.env,
+				MUESLY_EVAL_ACCELERATOR_ID: accelerator ?? '',
 				MUESLY_WHISPER_FORCE_CPU: forcesWhisperCpu(provider, backend) ? '1' : '0',
 				MUESLY_WHISPER_REQUIRE_ACCELERATION:
 					requiresWhisperGpu(provider, backend) ? '1' : '0',
@@ -253,7 +271,7 @@ if (outputPath) {
 		process.exit(1);
 	}
 	const report = {
-		schema_version: 5,
+		schema_version: 6,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		started_at: runStartedAt,

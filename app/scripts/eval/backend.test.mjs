@@ -6,7 +6,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { forcesWhisperCpu, requiresWhisperGpu, supportedBackends } from './backend.mjs';
+import {
+	forcesWhisperCpu,
+	requiresExplicitAccelerator,
+	requiresWhisperGpu,
+	supportedBackends,
+} from './backend.mjs';
 
 test('requires strict acceleration only for Whisper GPU backends', () => {
 	for (const backend of ['metal', 'cuda', 'vulkan', 'hipblas']) {
@@ -29,6 +34,24 @@ test('forces CPU execution for plain and OpenBLAS Whisper runs', () => {
 	assert.equal(forcesWhisperCpu('whisper', 'openblas'), true);
 	assert.equal(forcesWhisperCpu('whisper', 'metal'), false);
 	assert.equal(forcesWhisperCpu('parakeet', 'cpu'), false);
+});
+
+test('requires an explicit accelerator identity unless Apple Silicon identifies integrated Metal', () => {
+	assert.equal(requiresExplicitAccelerator('whisper', 'metal', 'darwin', 'arm64'), false);
+	assert.equal(requiresExplicitAccelerator('whisper', 'metal', 'darwin', 'x64'), true);
+	for (const backend of ['cuda', 'vulkan', 'hipblas']) {
+		assert.equal(requiresExplicitAccelerator('whisper', backend, 'linux', 'x64'), true, backend);
+	}
+	assert.equal(requiresExplicitAccelerator('whisper', 'cpu', 'linux', 'x64'), false);
+	assert.equal(requiresExplicitAccelerator('parakeet', 'cpu', 'linux', 'x64'), false);
+});
+
+test('rejects ambiguous GPU benchmarks before starting cargo', () => {
+	const realRun = fileURLToPath(new URL('./real-run.mjs', import.meta.url));
+	const run = spawnSync(process.execPath, [realRun, '--backend', 'cuda'], { encoding: 'utf8' });
+	assert.equal(run.status, 2);
+	assert.match(run.stderr, /requires --accelerator/);
+	assert.doesNotMatch(run.stderr, /running real/);
 });
 
 test('rejects missing output paths before starting a benchmark', () => {
