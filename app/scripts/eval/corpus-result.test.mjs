@@ -22,6 +22,33 @@ function localManifest() {
 	return { directory, document, manifestPath };
 }
 
+function interruptedTransaction(directory, state) {
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	const pid = 999_999_999;
+	const token = '00000000-0000-4000-8000-000000000010';
+	const outputs = ['aggregate.json', 'aggregate.md'].map((file, index) => ({
+		file,
+		staged_file: `${file}.tmp-${pid}-00000000-0000-4000-8000-00000000001${index}`,
+		backup_file: `${file}.bak-${pid}-${token}`,
+		had_original: true,
+	}));
+	for (const output of outputs) {
+		fs.writeFileSync(path.join(resultsDirectory, output.backup_file), `old ${output.file}\n`);
+		fs.writeFileSync(path.join(resultsDirectory, output.file), `new ${output.file}\n`);
+		fs.writeFileSync(path.join(resultsDirectory, output.staged_file), `staged ${output.file}\n`);
+	}
+	const markerPath = path.join(
+		resultsDirectory,
+		`.result-transaction-${pid}-${token}.json`,
+	);
+	fs.writeFileSync(
+		markerPath,
+		JSON.stringify({ schema_version: 1, pid, token, state, outputs }),
+	);
+	return { markerPath, outputs, resultsDirectory };
+}
+
 test('atomically writes results bound to the current local corpus revision', () => {
 	const { directory, document, manifestPath } = localManifest();
 	const outputPath = path.join(directory, 'results', 'run.json');
@@ -52,6 +79,62 @@ test('writes multiple corpus-bound outputs while holding one revision lock', () 
 	assert.equal(fs.readFileSync(jsonPath, 'utf8'), '{"complete":true}\n');
 	assert.equal(fs.readFileSync(markdownPath, 'utf8'), '# Complete\n');
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
+});
+
+test('rolls back an interrupted result-set promotion before the next write', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const transaction = interruptedTransaction(directory, 'prepared');
+	fs.writeFileSync(
+		manifestPath,
+		JSON.stringify({ ...document, description: 'Changed local consented corpus.' }),
+	);
+	assert.throws(
+		() =>
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpusFingerprint(document),
+				outputPath: path.join(directory, 'results', 'next.json'),
+				value: { stale: true },
+			}),
+		/corpus changed/,
+	);
+	for (const output of transaction.outputs) {
+		assert.equal(
+			fs.readFileSync(path.join(transaction.resultsDirectory, output.file), 'utf8'),
+			`old ${output.file}\n`,
+		);
+		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.backup_file)));
+		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.staged_file)));
+	}
+	assert(!fs.existsSync(transaction.markerPath));
+});
+
+test('finishes cleaning an interrupted committed result set before the next write', () => {
+	const { directory, document, manifestPath } = localManifest();
+	const transaction = interruptedTransaction(directory, 'committed');
+	fs.writeFileSync(
+		manifestPath,
+		JSON.stringify({ ...document, description: 'Changed local consented corpus.' }),
+	);
+	assert.throws(
+		() =>
+			writeCorpusBoundJson({
+				manifestPath,
+				expectedFingerprint: corpusFingerprint(document),
+				outputPath: path.join(directory, 'results', 'next.json'),
+				value: { stale: true },
+			}),
+		/corpus changed/,
+	);
+	for (const output of transaction.outputs) {
+		assert.equal(
+			fs.readFileSync(path.join(transaction.resultsDirectory, output.file), 'utf8'),
+			`new ${output.file}\n`,
+		);
+		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.backup_file)));
+		assert(!fs.existsSync(path.join(transaction.resultsDirectory, output.staged_file)));
+	}
+	assert(!fs.existsSync(transaction.markerPath));
 });
 
 test('confines local corpus outputs to direct files in the managed results directory', () => {
