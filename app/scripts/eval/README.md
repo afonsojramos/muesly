@@ -133,9 +133,9 @@ each checkpoint's exact name, identity, and content digest.
 - `--accelerator <stable-model-or-device-id>` identifies the measured GPU for CUDA,
   Vulkan, HIP, and Intel Mac GPU runs. Apple Silicon Metal and Core ML runs derive their
   integrated GPU identity from the SoC automatically. Ambiguous GPU runs fail before compilation.
-- `--models-dir <path>` reuses an existing app model directory instead of downloading
-  another copy into the development directory. Existing canonical-target files must match the
-  product download pins; replace or re-download a mismatched file before benchmarking it.
+- `--models-dir <path>` selects an existing app model directory. Benchmark preparation is
+  deliberately read-only: it never downloads, resumes, repairs, replaces, or deletes model files.
+  Download the model with muesly first; canonical-target files must then match the product pins.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
   count, source-audio and model-input inference RTF, model-load/inference timings, peak RSS, OS,
   architecture, machine profile,
@@ -235,8 +235,8 @@ Memory is the evaluator process's host RSS sampled every 10 ms from immediately 
 through the end of inference, reported as baseline, sampled peak, and peak-minus-baseline MiB. The
 aggregate labels both the absolute sampled host RSS and its increase from the pre-model-load
 baseline; neither is model-only memory, and sampling may miss shorter peaks. It excludes accelerator
-VRAM. Model preparation happens before the measured sample processes, so
-`model_download_seconds` ordinarily records zero while `model_load_seconds` still measures each
+VRAM. Benchmark preparation requires a pre-downloaded model and happens before the measured sample
+processes, so `model_download_seconds` records zero while `model_load_seconds` still measures each
 fresh process's engine/model initialization.
 
 The corpus campaign runner creates one transcript-free checkpoint per sample. Use `eval:report`
@@ -252,10 +252,10 @@ Cross-engine spot check (2026-07-16, checked-in fixture, production VAD/filter p
 WER (one substitution) and emitted nothing for the silence fixture. This single clean
 English clip is a regression check, not a general accuracy ranking.
 
-- **First-run costs:** compiles the Rust workspace in the release profile, downloads FFmpeg during the
-  build, and fetches the `tiny` model (~75 MB) into the gitignored dev models
-  dir. Later runs reuse everything. Missing Tauri sidecar binaries are stubbed
-  automatically (same approach as CI's rust-check).
+- **First-run costs:** compiles the Rust workspace in the release profile and downloads FFmpeg during
+  the build. Download the selected transcription model with muesly before running the benchmark;
+  the harness intentionally never mutates model storage. Later runs reuse the evaluator build.
+  Missing Tauri sidecar binaries are stubbed automatically (same approach as CI's rust-check).
 - **Threshold:** default `--max-wer 10`. Calibration (2026-07-11, Apple Silicon,
   Metal): 3 consecutive runs of `tiny` on the fixture scored 0.00% WER, so 10%
   is a regression tripwire, not a quality bar. Re-calibrate by running it a few

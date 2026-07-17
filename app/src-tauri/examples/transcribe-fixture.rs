@@ -1490,11 +1490,8 @@ async fn prepare_model(
             .iter()
             .find(|model| model.name == model_name)
             .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-        if benchmark_model_needs_download(model_name, &model.status, &model.path)
-            .unwrap_or_else(|error| fail(error))
-        {
-            download_parakeet_model(&engine, model_name).await;
-        }
+        require_available_benchmark_model(model_name, &model.status, &model.path)
+            .unwrap_or_else(|error| fail(error));
         let available = engine
             .discover_models()
             .await
@@ -1527,15 +1524,8 @@ async fn prepare_model(
         .iter()
         .find(|model| model.name == model_name)
         .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-    if benchmark_model_needs_download(model_name, &model.status, &model.path)
-        .unwrap_or_else(|error| fail(error))
-    {
-        let mut partial_path = model.path.as_os_str().to_os_string();
-        partial_path.push(".part");
-        require_absent_benchmark_download_path(Path::new(&partial_path), "partial model download")
-            .unwrap_or_else(|error| fail(error));
-        download_whisper_model(&engine, model_name).await;
-    }
+    require_available_benchmark_model(model_name, &model.status, &model.path)
+        .unwrap_or_else(|error| fail(error));
     let available_model = engine
         .discover_models()
         .await
@@ -1574,11 +1564,11 @@ async fn prepare_model(
     }
 }
 
-fn benchmark_model_needs_download(
+fn require_available_benchmark_model(
     model_name: &str,
     status: &ModelStatus,
     artifact_path: &Path,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     let artifact_exists = match std::fs::symlink_metadata(artifact_path) {
         Ok(_) => true,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -1591,27 +1581,15 @@ fn benchmark_model_needs_download(
     };
 
     match (status, artifact_exists) {
-        (ModelStatus::Available, true) => Ok(false),
-        (ModelStatus::Missing, false) => Ok(true),
+        (ModelStatus::Available, true) => Ok(()),
+        (ModelStatus::Missing, false) => Err(format!(
+            "model '{model_name}' is not downloaded; benchmark preparation is read-only, so download it with muesly before retrying"
+        )),
         (ModelStatus::Available, false) => Err(format!(
             "model '{model_name}' was reported available but its artifact is absent"
         )),
         _ => Err(format!(
-            "model '{model_name}' has an existing or non-missing unusable artifact; refusing to modify it during benchmark preparation"
-        )),
-    }
-}
-
-fn require_absent_benchmark_download_path(path: &Path, label: &str) -> Result<(), String> {
-    match std::fs::symlink_metadata(path) {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Ok(_) => Err(format!(
-            "{label} already exists at '{}'; refusing to modify it during benchmark preparation",
-            path.display()
-        )),
-        Err(error) => Err(format!(
-            "inspect {label} at '{}' failed: {error}",
-            path.display()
+            "model '{model_name}' is not safely available; benchmark preparation is read-only and will not modify it"
         )),
     }
 }
@@ -2133,18 +2111,21 @@ mod tests {
     }
 
     #[test]
-    fn benchmark_preparation_downloads_only_a_genuinely_absent_model() {
+    fn benchmark_preparation_requires_a_preexisting_available_model() {
         let directory = tempfile::tempdir().unwrap();
         let artifact = directory.path().join("model.bin");
-        assert!(benchmark_model_needs_download("model", &ModelStatus::Missing, &artifact).unwrap());
+        assert!(
+            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
+        );
+        assert!(!artifact.exists());
 
         std::fs::write(&artifact, b"preserve me").unwrap();
+        require_available_benchmark_model("model", &ModelStatus::Available, &artifact).unwrap();
         assert!(
-            !benchmark_model_needs_download("model", &ModelStatus::Available, &artifact).unwrap()
+            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
         );
-        assert!(benchmark_model_needs_download("model", &ModelStatus::Missing, &artifact).is_err());
         assert!(
-            benchmark_model_needs_download(
+            require_available_benchmark_model(
                 "model",
                 &ModelStatus::Corrupted {
                     file_size: 1,
@@ -2156,10 +2137,11 @@ mod tests {
         );
         assert_eq!(std::fs::read(&artifact).unwrap(), b"preserve me");
 
+        std::fs::remove_file(&artifact).unwrap();
         let partial = directory.path().join("model.bin.part");
         std::fs::write(&partial, b"partial bytes").unwrap();
         assert!(
-            require_absent_benchmark_download_path(&partial, "partial model download").is_err()
+            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
         );
         assert_eq!(std::fs::read(&partial).unwrap(), b"partial bytes");
 
@@ -2170,7 +2152,7 @@ mod tests {
             let alias = directory.path().join("dangling-model.bin");
             symlink(directory.path().join("missing-target.bin"), &alias).unwrap();
             assert!(
-                benchmark_model_needs_download("model", &ModelStatus::Missing, &alias).is_err()
+                require_available_benchmark_model("model", &ModelStatus::Missing, &alias).is_err()
             );
             assert!(
                 std::fs::symlink_metadata(alias)

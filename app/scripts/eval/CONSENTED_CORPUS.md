@@ -197,9 +197,12 @@ compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC
 forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
 provider/backend executable and model are built, prepared, and privately snapshotted once per
 campaign variant, then the exact snapshot is invoked directly for every selected sample;
+benchmark preparation is read-only and requires each selected model to have been downloaded with
+muesly beforehand—it never downloads, resumes, repairs, replaces, or deletes model artifacts;
 for every committed CPU/Metal Whisper and ONNX-CPU Parakeet target, preparation returns the
 canonical product-pin digest and the runner requires both the source artifact and private snapshot
-to match it. Unknown pins and mismatched bytes fail non-destructively before inference.
+to match it. Missing models, unknown pins, and mismatched bytes fail non-destructively before
+inference.
 metrics schema 7 must repeat its backend, platform, hardware, accelerator, executable identity,
 and exact corpus audio SHA-256. The campaign captures digest-bound reference text in memory,
 revalidates the selected audio and reference immediately before and after inference, and writes

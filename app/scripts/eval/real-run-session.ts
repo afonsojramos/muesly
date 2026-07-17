@@ -1119,7 +1119,7 @@ export async function runRealRunCli(
 	}
 	console.error(
 		`running real ${options.provider} transcription with model '${options.model}' on ` +
-			`${fixtures.length} fixture(s) (first run compiles + downloads the model)...`,
+			`${fixtures.length} fixture(s) (the model must already be downloaded)...`,
 	);
 	const thresholds = Object.freeze({
 		maxWerPercent: options.maxWerPct,
