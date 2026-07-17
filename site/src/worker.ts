@@ -14,6 +14,11 @@ export default {
 			return Response.redirect(url, 308);
 		}
 
+		if (url.pathname === '/sitemap-index.xml') {
+			url.pathname = '/sitemap.xml';
+			return Response.redirect(url, 308);
+		}
+
 		return env.ASSETS.fetch(request);
 	},
 };

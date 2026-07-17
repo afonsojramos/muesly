@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node scripts/copy-legal-docs.mjs && astro dev",
-		"build": "node scripts/copy-legal-docs.mjs && astro build",
+		"build": "node scripts/copy-legal-docs.mjs && astro build && node scripts/create-sitemap-alias.mjs",
 		"preview": "astro preview",
 		"sync": "node scripts/copy-legal-docs.mjs && astro sync",
 		"check": "node scripts/copy-legal-docs.mjs && astro check",
@@ -14,7 +14,7 @@
 		"format:check": "vp fmt . --check",
 		"test": "vitest run",
 		"test:smoke": "nub scripts/smoke-built-site.ts",
-		"deploy": "node scripts/copy-legal-docs.mjs && astro build && wrangler deploy"
+		"deploy": "nub run build && wrangler deploy"
 	},
 	"dependencies": {
 		"@astrojs/sitemap": "^3.7.3",

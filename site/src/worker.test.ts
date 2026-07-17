@@ -28,4 +28,16 @@ describe('site worker', () => {
 		expect(await response.text()).toBe('asset');
 		expect(env.ASSETS.fetch).toHaveBeenCalledWith(request);
 	});
+
+	it("redirects Astro's sitemap index URL to the canonical sitemap URL", async () => {
+		const env = createEnv();
+		const response = await worker.fetch(
+			new Request('https://muesly.ai/sitemap-index.xml?source=legacy'),
+			env,
+		);
+
+		expect(response.status).toBe(308);
+		expect(response.headers.get('location')).toBe('https://muesly.ai/sitemap.xml?source=legacy');
+		expect(env.ASSETS.fetch).not.toHaveBeenCalled();
+	});
 });
