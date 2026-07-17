@@ -29,6 +29,14 @@ app/scripts/eval/
   evaluator-revision.ts           # clean source/toolchain provenance
   benchmark-executable.ts         # exact build, hardware probe, and binary identity
   model-prepare.ts                  # product-path model download + canonical verification
+  public-corpus-sources.json      # immutable source, license, size, and SHA-256 pins
+  public-corpus-selection.json    # deterministic 66-sample construction contract
+  public-corpus-prepare.ts        # safe download, extraction, and audio derivation
+  public-corpus-attest.ts         # hash-bound independent reference review
+  public-corpus-finalize.ts       # reviewed local public-manifest finalization
+  public-corpus-validate.ts       # full reconstruction and provenance validation
+  public-corpus-campaign.ts       # fixed-suite campaign wrapper
+  public-corpus-qualification.ts  # fail-closed policy and retention decisions
   model-artifact.ts     # exact evaluated-model artifact fingerprinting
   coverage.ts          # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
@@ -55,6 +63,123 @@ nub app/scripts/eval/wer.ts \
 
 # Rubric: counts required sections in a summary markdown
 nub run eval:rubric path/to/summary.md
+```
+
+## Reproducible public ASR corpus
+
+The public workflow constructs 66 local-only samples from immutable, explicitly licensed source
+files:
+
+- 60 paired FLEURS samples: five languages, three non-reused clean composites of 120–180 seconds,
+  and four conditions (clean, deterministic 10 dB office noise, remote-call degradation, and 25%
+  overlap). The overlap transform can shorten an output slightly below 120 seconds;
+- three deterministic 180-second natural-meeting excerpts from AMI; and
+- three deterministic 180-second natural remote-call excerpts from Earnings-21.
+
+FLEURS and AMI are CC BY 4.0; Earnings-21 is CC BY-SA 4.0. The committed catalog records the exact
+revision, URL, size, SHA-256, license, attribution, and local-only redistribution policy. Random
+online meetings, podcasts, and videos are not accepted merely because they are publicly reachable.
+FLEURS is read speech and must never be described as natural multilingual meeting evidence.
+The deterministic selection commits the exact FLEURS member order, AMI windows, FFmpeg executable,
+and generated WAV SHA-256 for all 66 samples.
+
+Prepare the ignored workspace from the repository root. Network access is opt-in, every missing
+source is downloaded through a resumable `.part` file, archives are checked for traversal and link
+entries before selective extraction, and the command preserves a 20 GiB free-space reserve after
+accounting for missing sources and generated output:
+
+```bash
+nub run eval:public:prepare -- --download
+```
+
+Preparation writes draft references but does not create `corpus-local.json`. Listen to every exact
+generated WAV and review its reference under [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md).
+Earnings-21's upstream transcript is unaligned context only, so its excerpt references start blank
+and must be transcribed by listening. Two different reviewers must each record an acceptance bound
+to the current audio and reference hashes:
+
+```bash
+nub run eval:public:attest -- \
+  --sample en-fleurs-01-clean-read \
+  --reviewer reviewer-one \
+  --accept-reviewed-reference \
+  --affirm-reference-protocol muesly-meeting-reference-v1
+```
+
+After every sample has two independent acceptances, finalize and revalidate the exact reviewed
+projection. Finalization first replays all 66 derivations from the pinned cache with the approved
+FFmpeg under the shared corpus lock. Every regenerated temporary WAV must byte-match both the
+existing prepared WAV and its committed output hash before `corpus-local.json` can be published:
+
+```bash
+nub run eval:public:finalize -- \
+  --affirm-reference-protocol muesly-meeting-reference-v1
+nub run eval:public:validate
+```
+
+Audio, references, review attestations, the finalized manifest, checkpoints, and reports stay under
+the ignored `app/scripts/eval/public-corpus/` workspace. Finalization fails if a source pin,
+selection, generated file, duration, reference, review hash, or manifest field has drifted.
+Distinct reviewer IDs enforce procedural separation; they are not cryptographic identities, so the
+campaign owner remains responsible for confirming the two reviews came from different people.
+
+Run a fixed public benchmark suite through the provenance-revalidating campaign wrapper. Omitting
+`--run` produces a safe plan; add it only after the required pinned models are present:
+
+```bash
+nub run eval:public:campaign -- \
+  --suite automatic-policy \
+  --models-dir "$HOME/Library/Application Support/com.muesly/models"
+```
+
+- `automatic-policy` measures every reviewed public sample against the primary non-translation
+  tier recommendations, a Turbo CPU comparison, selected higher-capability Whisper fallbacks, and
+  the Parakeet fallback. It intentionally keeps the accepted seven-variant policy matrix: 66
+  samples × 7 variants = 462 tasks.
+- `catalog-audit` runs the remaining shipped Whisper artifacts, including Tiny Q5_1 and other
+  fallback-only models, on a fixed ten-sample CPU slice. Those audit-only artifacts are not primary
+  Automatic tier recommendations and do not expand the policy matrix: 10 samples × 7 variants =
+  70 tasks.
+- `performance` repeats that fixed slice three times against the Automatic-policy matrix: 10
+  samples × 7 variants × 3 repeats = 210 tasks.
+
+`automatic-policy` and `performance` include a Metal target and are therefore macOS-only suites.
+On Apple Silicon their integrated accelerator identity is derived automatically; Intel Mac runs
+must provide a stable `--accelerator metal=<device-id>`. `catalog-audit` is CPU-only and can run on
+every evaluator platform supported by the benchmark harness. A complete suite must be measured on
+one compatible hardware cohort; do not combine CPU results from one machine with Metal results
+from another to claim completion.
+
+Treat model-policy changes as a separate, fail-closed decision step. Automatic-policy and
+performance coverage must both be complete, every input measurement must be task-bound schema 11,
+and all evidence must come from one macOS/arm64 hardware cohort. A candidate is eligible only when
+its performance p95 inference RTF is below 1.0. Among eligible candidates, its automatic-policy
+macro WER must be within 2 percentage points of the best result and its worst language/noise slice
+must be within 5 points of the best worst-slice result. Prefer the smallest qualifying artifact;
+when measured inference speed differs by less than 10%, use lower peak RSS and then download size
+as the deterministic tie-breakers.
+
+The first Apple qualification may change only the non-translation High and Ultra recommendations.
+Low remains Base Q5_1, Medium remains Small Q5_1, and translation selection is a separate phase-two
+decision. Tiny Q5_1 remains fallback/catalog-audit-only. Full-precision artifacts remain supported
+for existing downloads, but become visible as new downloads only when they improve macro WER by at
+least 1 percentage point or a critical language/noise slice by at least 3 points over their
+quantized peer. A qualification report proposes decisions for review; it never edits production
+configuration automatically. Catalog-audit evidence is optional for the tier proposal but required
+to emit full-precision retention decisions.
+
+After producing aggregate and coverage JSON for the completed suites, generate the reviewable
+decision report on standard output:
+
+```bash
+nub run eval:public:qualify -- \
+  --automatic-aggregate app/scripts/eval/public-corpus/results/automatic-policy-aggregate.json \
+  --automatic-coverage app/scripts/eval/public-corpus/results/automatic-policy-coverage.json \
+  --performance-aggregate app/scripts/eval/public-corpus/results/performance-aggregate.json \
+  --performance-coverage app/scripts/eval/public-corpus/results/performance-coverage.json \
+  --catalog-aggregate app/scripts/eval/public-corpus/results/catalog-audit-aggregate.json \
+  --catalog-coverage app/scripts/eval/public-corpus/results/catalog-audit-coverage.json \
+  > app/scripts/eval/public-corpus/results/qualification.json
 ```
 
 ## Real run (`nub run eval:real`)
@@ -181,8 +306,10 @@ each checkpoint's exact name, identity, and content digest.
   identity are bound separately so comparable backends on one machine retain the same profile.
   The prepared provider/model artifact set is SHA-256 fingerprinted before transcription and
   again after the final sample; a report is refused if those bytes changed during the run.
-- Writing a report requires a clean Git worktree. Run/checkpoint schema 10 records the versioned
-  `muesly-meeting-reference-v1` annotation contract and a versioned evaluator
+- Writing a report requires a clean Git worktree. Standalone run schema 10 and campaign checkpoint
+  schema 11 record the versioned `muesly-meeting-reference-v1` annotation contract and a versioned
+  evaluator. Schema 11 also binds the evaluator output to the planned benchmark task digest and
+  repeat before inference, so a cached report cannot be reused for another repetition. Both record a
   revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
   target triple, exact Cargo features, and a digest of the allowlisted build environment. The
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
@@ -211,32 +338,41 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```
 
-Reports contain micro-averaged WER (total word errors divided by total reference words),
-duration-weighted source-audio and model-input inference RTF, sampled evaluator-process host RSS,
-and silence hallucinations. Aggregate schema 9 records the reference protocol and treats provider,
-model, and reported backend as one indivisible variant. Diagnostic summaries retain every observed
-sample but are isolated by exact variant, with overall, language, scenario, noise-condition, and
-language/noise dimensions. The report emits cross-variant tables only when at least two supplied
-variants contain the identical sample-and-repeat measurement identities. Equal counts are not
-enough, and unequal cohorts are not reduced to a post-hoc intersection: missing measurements may
-be failures, so that would introduce survivorship bias. Instead, partial runs retain clearly
+Reports contain micro-averaged WER (total word errors divided by total reference words), macro WER
+(the mean per-sample WER with distinct repeat measurements weighted equally), duration-weighted,
+median, and nearest-rank p95 source-audio and model-input inference RTF, sampled evaluator-process
+host RSS, and silence hallucinations. Aggregate schema 10 records the reference protocol and treats
+provider, model, and reported backend as one indivisible variant. Diagnostic summaries retain every
+observed sample but are isolated by exact variant, with overall, public-dataset, language, scenario,
+noise-condition, and language/noise dimensions. Public samples are reported separately as
+`fleurs`, `ami`, or `earnings21`. The report emits cross-variant tables only when at least two
+supplied variants contain the identical sample-and-repeat measurement identities. Equal counts are
+not enough, and unequal cohorts are not reduced to a post-hoc intersection: missing measurements
+may be failures, so that would introduce survivorship bias. Instead, partial runs retain clearly
 labelled per-variant diagnostics plus observed/common/missing counts.
 
-Comparison rows preserve the full provider/model/backend identity in the variant,
+Comparison rows preserve the full provider/model/backend identity in the variant, dataset/variant,
 language/variant, scenario/variant, noise-condition/variant, and language/noise/variant dimensions.
 The comparison scope covers only supplied variants and does not certify the target matrix; use
-`eval:coverage --require-complete` for that gate. Inputs must use run-report schema 10 with metrics
-schema 7, name the same corpus revision, and use identical pass thresholds and OS/architecture.
+`eval:coverage --require-complete` for that gate. Inputs must use standalone run-report schema 10 or
+campaign run-report schema 11 with metrics schema 7, name the same corpus revision, and use
+identical pass thresholds and OS/architecture.
+Schema 10 may omit `repeat_index` or declare only repeat 1; repeated coverage requires schema 11.
+Coverage and aggregation reject reused campaign task IDs and bind each ID to one exact
+provider/model/backend/sample/repeat measurement. The campaign checkpoint validator remains the
+authority that recomputes each digest against the full immutable plan, including evaluator and
+accelerator context.
 Within each provider/model, all reports must fingerprint identical model bytes; different
 provider/model variants retain their own artifact fingerprints. The aggregator also requires
 matching sample identity, scorer, machine profile, accelerator, evaluator revision, and executable
-context before comparison.
-Schema 10 records the versioned reference protocol and WER scorer
+context before comparison. Aggregate JSON and Markdown retain separate report and measurement
+counts for standalone schema-10 inputs and task-bound schema-11 inputs.
+Run-report schemas 10 and 11 record the versioned reference protocol and WER scorer
 (`muesly-wer-unicode-v1`);
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 9 records both RTF definitions, measurement and distinct-sample counts, the
+Aggregate schema 10 records both RTF definitions, measurement and distinct-sample counts, the
 comparison status, the common evaluator inputs, the full evaluator
 revision, and exact benchmark-executable digest for every backend. Coverage schema 11 similarly
 records the corpus
