@@ -81,7 +81,9 @@ revision, URL, size, SHA-256, license, attribution, and local-only redistributio
 online meetings, podcasts, and videos are not accepted merely because they are publicly reachable.
 FLEURS is read speech and must never be described as natural multilingual meeting evidence.
 The deterministic selection commits the exact FLEURS member order, AMI windows, FFmpeg executable,
-and generated WAV SHA-256 for all 66 samples.
+and generated WAV SHA-256 for all 66 samples. For each Earnings-21 call, it also pins Rev's timed
+Kaldi output as an alignment hypothesis. The hypothesis contributes timestamps only: preparation
+aligns it to Rev's separate public human reference, then slices and renders human-reference tokens.
 
 Prepare the ignored workspace from the repository root. Network access is opt-in, every missing
 source is downloaded through a resumable `.part` file, archives are checked for traversal and link
@@ -94,9 +96,11 @@ nub run eval:public:prepare -- --download
 
 Preparation writes draft references but does not create `corpus-local.json`. Listen to every exact
 generated WAV and review its reference under [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md).
-Earnings-21's upstream transcript is unaligned context only, so its excerpt references start blank
-and must be transcribed by listening. Two different reviewers must each record an acceptance bound
-to the current audio and reference hashes:
+Earnings-21 excerpt drafts are seeded from the aligned public human reference, using exact matched
+tokens at both time boundaries and excluding words that cross either boundary. Reviewers must fix
+any alignment or transcription issue they hear; the automatic hypothesis is never used as reference
+text. Two different reviewers must each record an acceptance bound to the current audio and
+reference hashes:
 
 ```bash
 nub run eval:public:attest -- \
