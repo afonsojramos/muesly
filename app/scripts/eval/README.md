@@ -27,6 +27,7 @@ app/scripts/eval/
   corpus-benchmark-run.ts         # resumable consented-corpus campaign runner
   evaluator-revision.ts           # clean source/toolchain provenance
   benchmark-executable.ts         # exact build, hardware probe, and binary identity
+  model-prepare.ts                  # product-path model download + canonical verification
   model-artifact.ts     # exact evaluated-model artifact fingerprinting
   coverage.ts          # coverage gate across language/noise/model/backend cells
   fixtures/            # golden transcripts + repository-safe audio
@@ -65,6 +66,20 @@ The private intake and withdrawal procedure is in [CONSENTED_CORPUS.md](CONSENTE
 One invocation builds, probes, prepares, and snapshots the selected executable/runtime/model
 artifacts once, then runs each selected sample in a fresh process against those immutable private
 snapshots.
+
+Prepare the pinned model candidates before a benchmark campaign. The model directory must be an
+explicit absolute path outside the repository; downloads are sequential and each artifact is
+verified against the product integrity pin before the next model starts:
+
+```bash
+nub run eval:models:prepare -- \
+  --models-dir "$HOME/Library/Application Support/com.muesly/models" \
+  --set policy
+```
+
+Use `--set catalog-audit` for the legacy/full-precision comparison set or `--set all` for both.
+The command reserves 20 GiB of free space, reuses already verified models, and never writes model
+bytes to the repository.
 
 Prepare the next underfilled language/noise cell before recruiting or recording:
 
