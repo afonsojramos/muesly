@@ -74,6 +74,19 @@ test('committed public source pins and deterministic selection are internally co
 			(artifact) => artifact.revision === 'c05ab6fd8b4b627d123c922a22a39e993dd37635',
 		),
 	);
+	const earningsReferences = catalog.artifacts.filter(
+		(artifact) =>
+			artifact.kind === 'reference' && artifact.id.startsWith('earnings21-'),
+	);
+	const earningsRevision = 'c05ab6fd8b4b627d123c922a22a39e993dd37635';
+	assert.deepEqual(
+		earningsReferences.map((artifact) => [artifact.id, artifact.revision, artifact.url]),
+		['4320211', '4330115', '4341191'].map((sourceId) => [
+			`earnings21-${sourceId}-reference`,
+			earningsRevision,
+			`https://raw.githubusercontent.com/revdotcom/speech-datasets/${earningsRevision}/earnings21/transcripts/nlp_references/${sourceId}.nlp`,
+		]),
+	);
 	const missingAlignmentRevision = structuredClone(catalog);
 	delete missingAlignmentRevision.artifacts.find(
 		(artifact) => artifact.kind === 'alignment-hypothesis',
@@ -113,7 +126,13 @@ test('committed public source pins and deterministic selection are internally co
 					strategy: sample.window.strategy,
 					start_seconds: sample.window.start_seconds,
 					alignment_context_seconds: sample.window.alignment_context_seconds,
+					alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
+					alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
+					alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+					reference_start_token_index: sample.window.expected_reference_start_token_index,
+					reference_end_token_index: sample.window.expected_reference_end_token_index,
 					reference_token_count: sample.window.expected_reference_token_count,
+					reference_seed_sha256: sample.window.expected_reference_seed_sha256,
 				},
 			]),
 		[
@@ -123,7 +142,14 @@ test('committed public source pins and deterministic selection are internally co
 					strategy: 'fixed',
 					start_seconds: 60,
 					alignment_context_seconds: 30,
+					alignment_hypothesis_tokens: 697,
+					alignment_reference_tokens: 681,
+					alignment_edit_distance: 62,
+					reference_start_token_index: 159,
+					reference_end_token_index: 603,
 					reference_token_count: 445,
+					reference_seed_sha256:
+						'20dd94b992cff0bd5cb067de8e6d53fa2028c3c248be19b19ad1fee036069211',
 				},
 			],
 			[
@@ -132,7 +158,14 @@ test('committed public source pins and deterministic selection are internally co
 					strategy: 'fixed',
 					start_seconds: 60,
 					alignment_context_seconds: 30,
+					alignment_hypothesis_tokens: 703,
+					alignment_reference_tokens: 694,
+					alignment_edit_distance: 67,
+					reference_start_token_index: 152,
+					reference_end_token_index: 616,
 					reference_token_count: 465,
+					reference_seed_sha256:
+						'2d599dbc4df2cccce13bb7fd1df69f34d1815803e0ce0a091d7ff3e0c00db776',
 				},
 			],
 			[
@@ -141,7 +174,14 @@ test('committed public source pins and deterministic selection are internally co
 					strategy: 'fixed',
 					start_seconds: 60,
 					alignment_context_seconds: 30,
+					alignment_hypothesis_tokens: 704,
+					alignment_reference_tokens: 695,
+					alignment_edit_distance: 42,
+					reference_start_token_index: 174,
+					reference_end_token_index: 628,
 					reference_token_count: 455,
+					reference_seed_sha256:
+						'68867517f725b954e7d9940b47c2d137b7aa48049374aad15e140980d37f65ea',
 				},
 			],
 		],

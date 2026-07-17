@@ -132,10 +132,11 @@
 		{
 			"id": "earnings21-4320211-reference",
 			"kind": "reference",
-			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4320211.nlp",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/transcripts/nlp_references/4320211.nlp",
 			"cache_path": "earnings21/4320211.nlp",
-			"sha256": "ebfe146c00a7057e55a8b30f78280aa04c707f34d4be77edd05da86a69af613f",
-			"size_bytes": 195513
+			"sha256": "a7d2c1e7362cc6af5317f75c855a9270c8cbbf95e04c1fe3e4834c3848e66ffb",
+			"size_bytes": 195519
 		},
 		{
 			"id": "earnings21-4320211-alignment",
@@ -157,7 +158,8 @@
 		{
 			"id": "earnings21-4330115-reference",
 			"kind": "reference",
-			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4330115.nlp",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/transcripts/nlp_references/4330115.nlp",
 			"cache_path": "earnings21/4330115.nlp",
 			"sha256": "6fc925c7781e73830a3810a9107268986f04ad77eae2ce9450404f8b0a99d49c",
 			"size_bytes": 147534
@@ -182,7 +184,8 @@
 		{
 			"id": "earnings21-4341191-reference",
 			"kind": "reference",
-			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4341191.nlp",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/transcripts/nlp_references/4341191.nlp",
 			"cache_path": "earnings21/4341191.nlp",
 			"sha256": "e494a1306b67355186bf4fff603ceebd0b95114bff11ce4b4ece544c7348de2f",
 			"size_bytes": 319689

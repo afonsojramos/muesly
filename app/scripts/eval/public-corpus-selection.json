@@ -354,11 +354,11 @@
 				"alignment_context_seconds": 30,
 				"expected_alignment_hypothesis_tokens": 697,
 				"expected_alignment_reference_tokens": 681,
-				"expected_alignment_edit_distance": 59,
+				"expected_alignment_edit_distance": 62,
 				"expected_reference_start_token_index": 159,
 				"expected_reference_end_token_index": 603,
 				"expected_reference_token_count": 445,
-				"expected_reference_seed_sha256": "6d394e4b3d5075eba3c868852f439464a14664986439c9723f0a6e949c6f02b2"
+				"expected_reference_seed_sha256": "20dd94b992cff0bd5cb067de8e6d53fa2028c3c248be19b19ad1fee036069211"
 			},
 			"transform_id": "earnings21-aligned-excerpt-v1",
 			"audio_sha256": "c33880ad4658fe198cba73553664fda650efab0f522b8c65c3b1600c9514de44"

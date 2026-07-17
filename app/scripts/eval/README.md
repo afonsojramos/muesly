@@ -84,6 +84,8 @@ The deterministic selection commits the exact FLEURS member order, AMI windows, 
 and generated WAV SHA-256 for all 66 samples. For each Earnings-21 call, it also pins Rev's timed
 Kaldi output as an alignment hypothesis. The hypothesis contributes timestamps only: preparation
 aligns it to Rev's separate public human reference, then slices and renders human-reference tokens.
+Those gold references come from Rev's explicitly licensed `transcripts/nlp_references` tree at the
+same pinned upstream revision as the timing hypotheses, including upstream transcript corrections.
 
 Prepare the ignored workspace from the repository root. Network access is opt-in, every missing
 source is downloaded through a resumable `.part` file, archives are checked for traversal and link
