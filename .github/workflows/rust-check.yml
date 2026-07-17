@@ -5,6 +5,7 @@ on:
     paths:
       - "app/src-tauri/**"
       - "app/scripts/eval/corpus-targets.json"
+      - "app/scripts/eval/public-corpus-targets-automatic-policy.json"
       - "llama-helper/**"
       - "diarization-helper/**"
       - "Cargo.toml"

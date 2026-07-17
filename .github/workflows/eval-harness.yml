@@ -42,6 +42,8 @@ jobs:
         run: |
           nub run eval:corpus:validate
           nub run eval:corpus:test
+          nub run eval:public:test
+          nub run eval:models:test
           nub run eval:wer:test
           nub run eval:real:test
           nub run eval:coverage:test
