@@ -10,13 +10,19 @@ import {
 	validateHardwareProfile,
 } from './benchmark-executable.ts';
 import { writeCorpusBoundFiles } from './corpus-result.ts';
-import { isPublicDatasetId, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import {
+	corpusFingerprint as calculateCorpusFingerprint,
+	isPublicDatasetId,
+	loadCorpus,
+	REFERENCE_PROTOCOL_ID,
+} from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 export const STANDALONE_RUN_REPORT_SCHEMA_VERSION = 10;
 export const CAMPAIGN_RUN_REPORT_SCHEMA_VERSION = 11;
-export const AGGREGATE_REPORT_SCHEMA_VERSION = 10;
+export const AGGREGATE_REPORT_SCHEMA_VERSION = 11;
+export const AGGREGATION_UNIT_POLICY = 'session-id-or-singleton-sample-v1';
 // The VAD flush pads one final 16 kHz processing block, so model input can
 // legitimately exceed decoded source duration by less than one 30 ms block.
 const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
@@ -98,6 +104,16 @@ const NUMERIC_METRICS_FIELDS = [
 	'peak_rss_mb',
 	'peak_rss_delta_mb',
 ];
+const CORPUS_MANIFEST_FIELDS = [
+	'schema_version',
+	'corpus_id',
+	'reference_protocol_id',
+	'description',
+	'distribution',
+	'source_catalog_sha256',
+	'preparation',
+	'samples',
+];
 
 function finiteNumber(value) {
 	return typeof value === 'number' && Number.isFinite(value);
@@ -105,6 +121,65 @@ function finiteNumber(value) {
 
 function isObject(value) {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function corpusManifestProjection(corpus) {
+	return Object.fromEntries(
+		CORPUS_MANIFEST_FIELDS.filter((field) => Object.hasOwn(corpus, field)).map((field) => {
+			if (field !== 'samples' || !Array.isArray(corpus.samples)) return [field, corpus[field]];
+			return [
+				field,
+				corpus.samples.map((sample) => {
+					if (!isObject(sample)) return sample;
+					return Object.fromEntries(
+						Object.entries(sample).filter(
+							([key]) => key !== 'audio_file' && key !== 'reference_file',
+						),
+					);
+				}),
+			];
+		}),
+	);
+}
+
+function aggregationCorpusSamples(corpus) {
+	if (!isObject(corpus)) {
+		throw new Error('a loaded corpus manifest is required for aggregate reporting');
+	}
+	if (!Array.isArray(corpus.samples)) {
+		throw new Error('aggregate corpus.samples must be an array');
+	}
+	if (!SHA256_PATTERN.test(corpus.corpus_fingerprint ?? '')) {
+		throw new Error('aggregate corpus.corpus_fingerprint must be a lowercase SHA-256 digest');
+	}
+	const expectedFingerprint = calculateCorpusFingerprint(corpusManifestProjection(corpus));
+	if (corpus.corpus_fingerprint !== expectedFingerprint) {
+		throw new Error('aggregate corpus fingerprint does not match its manifest contents');
+	}
+	const samples = new Map();
+	for (const [index, sample] of corpus.samples.entries()) {
+		if (!isObject(sample) || typeof sample.id !== 'string' || sample.id.length === 0) {
+			throw new Error(`aggregate corpus.samples[${index}].id must be a non-empty string`);
+		}
+		if (samples.has(sample.id)) {
+			throw new Error(`aggregate corpus sample id '${sample.id}' is duplicated`);
+		}
+		if (
+			sample.session_id !== undefined &&
+			!/^session-[a-z0-9][a-z0-9-]*$/.test(sample.session_id)
+		) {
+			throw new Error(
+				`aggregate corpus sample '${sample.id}'.session_id must be an opaque session-* identifier`,
+			);
+		}
+		if (sample.scenario === 'meeting' && sample.session_id === undefined) {
+			throw new Error(
+				`aggregate corpus sample '${sample.id}'.session_id is required for meeting recordings`,
+			);
+		}
+		samples.set(sample.id, sample);
+	}
+	return samples;
 }
 
 function requireString(value, field, errors) {
@@ -405,7 +480,9 @@ export function validateRunReport(report, label = 'report') {
 	}
 	if (
 		report.repeat_index !== undefined &&
-		(!Number.isSafeInteger(report.repeat_index) || report.repeat_index < 1 || report.repeat_index > 10)
+		(!Number.isSafeInteger(report.repeat_index) ||
+			report.repeat_index < 1 ||
+			report.repeat_index > 10)
 	) {
 		errors.push(`${label}.repeat_index must be a safe integer from 1 through 10`);
 	}
@@ -804,6 +881,112 @@ function nearestRankPercentile(values, percentile) {
 	return sorted[Math.ceil(percentile * sorted.length) - 1];
 }
 
+function reduceSampleMeasurements(records) {
+	const first = records[0];
+	const referenceWords = first.reference_words;
+	return {
+		sample_id: first.sample_id,
+		unit_key: first.unit_key,
+		unit_kind: first.unit_kind,
+		passed: records.every((record) => record.passed),
+		reference_words: referenceWords,
+		mean_word_errors:
+			referenceWords === null ? null : mean(records.map((record) => record.word_errors)),
+		audio_duration_seconds: first.metrics.audio_duration_seconds,
+		mean_inference_seconds: mean(records.map((record) => record.metrics.inference_seconds)),
+		mean_inference_audio_seconds: mean(
+			records.map((record) => record.metrics.inference_audio_seconds),
+		),
+		peak_rss_mb: Math.max(...records.map((record) => record.metrics.peak_rss_mb)),
+		peak_rss_delta_mb: Math.max(...records.map((record) => record.metrics.peak_rss_delta_mb)),
+	};
+}
+
+function reduceAnalysisUnit(samples) {
+	const first = samples[0];
+	const werSamples = samples.filter((sample) => sample.reference_words !== null);
+	const referenceWords = werSamples.reduce((sum, sample) => sum + sample.reference_words, 0);
+	const wordErrors = werSamples.reduce((sum, sample) => sum + sample.mean_word_errors, 0);
+	const audioDurationSeconds = samples.reduce(
+		(sum, sample) => sum + sample.audio_duration_seconds,
+		0,
+	);
+	const inferenceSeconds = samples.reduce((sum, sample) => sum + sample.mean_inference_seconds, 0);
+	const inferenceAudioSeconds = samples.reduce(
+		(sum, sample) => sum + sample.mean_inference_audio_seconds,
+		0,
+	);
+	return {
+		unit_key: first.unit_key,
+		unit_kind: first.unit_kind,
+		passed: samples.every((sample) => sample.passed),
+		wer_percent: referenceWords === 0 ? null : (wordErrors / referenceWords) * 100,
+		inference_rtf: inferenceSeconds / audioDurationSeconds,
+		model_inference_rtf:
+			inferenceAudioSeconds === 0 ? null : inferenceSeconds / inferenceAudioSeconds,
+		peak_rss_mb: Math.max(...samples.map((sample) => sample.peak_rss_mb)),
+		peak_rss_delta_mb: Math.max(...samples.map((sample) => sample.peak_rss_delta_mb)),
+	};
+}
+
+function summarizeAnalysisUnits(records) {
+	const measurementsBySample = new Map();
+	for (const record of records) {
+		const sampleMeasurements = measurementsBySample.get(record.sample_id);
+		if (sampleMeasurements) sampleMeasurements.push(record);
+		else measurementsBySample.set(record.sample_id, [record]);
+	}
+	const samples = [...measurementsBySample.entries()]
+		.sort(([left], [right]) => compareText(left, right))
+		.map(([, measurements]) =>
+			reduceSampleMeasurements(
+				measurements.sort((left, right) => left.repeat_index - right.repeat_index),
+			),
+		);
+	const samplesByUnit = new Map();
+	for (const sample of samples) {
+		const unitSamples = samplesByUnit.get(sample.unit_key);
+		if (unitSamples) unitSamples.push(sample);
+		else samplesByUnit.set(sample.unit_key, [sample]);
+	}
+	const units = [...samplesByUnit.entries()]
+		.sort(([left], [right]) => compareText(left, right))
+		.map(([, unitSamples]) => reduceAnalysisUnit(unitSamples));
+	const werUnits = units.filter((unit) => unit.wer_percent !== null);
+	const modelRtfUnits = units.filter((unit) => unit.model_inference_rtf !== null);
+	const inferenceRtfs = units.map((unit) => unit.inference_rtf);
+	const modelInferenceRtfs = modelRtfUnits.map((unit) => unit.model_inference_rtf);
+	const peaks = units.map((unit) => unit.peak_rss_mb);
+	const peakDeltas = units.map((unit) => unit.peak_rss_delta_mb);
+	return {
+		unit_count: units.length,
+		session_count: units.filter((unit) => unit.unit_kind === 'session').length,
+		singleton_sample_count: units.filter((unit) => unit.unit_kind === 'singleton-sample').length,
+		passed_unit_count: units.filter((unit) => unit.passed).length,
+		pass_rate_percent: (units.filter((unit) => unit.passed).length / units.length) * 100,
+		wer_unit_count: werUnits.length,
+		wer_percent: werUnits.length === 0 ? null : mean(werUnits.map((unit) => unit.wer_percent)),
+		mean_inference_rtf: mean(inferenceRtfs),
+		median_inference_rtf: median(inferenceRtfs),
+		p95_inference_rtf: nearestRankPercentile(inferenceRtfs, 0.95),
+		max_inference_rtf: Math.max(...inferenceRtfs),
+		model_rtf_unit_count: modelRtfUnits.length,
+		mean_model_inference_rtf: modelInferenceRtfs.length === 0 ? null : mean(modelInferenceRtfs),
+		median_model_inference_rtf: modelInferenceRtfs.length === 0 ? null : median(modelInferenceRtfs),
+		p95_model_inference_rtf: nearestRankPercentile(modelInferenceRtfs, 0.95),
+		max_model_inference_rtf:
+			modelInferenceRtfs.length === 0 ? null : Math.max(...modelInferenceRtfs),
+		mean_peak_rss_mb: mean(peaks),
+		median_peak_rss_mb: median(peaks),
+		p95_peak_rss_mb: nearestRankPercentile(peaks, 0.95),
+		max_peak_rss_mb: Math.max(...peaks),
+		mean_peak_rss_delta_mb: mean(peakDeltas),
+		median_peak_rss_delta_mb: median(peakDeltas),
+		p95_peak_rss_delta_mb: nearestRankPercentile(peakDeltas, 0.95),
+		max_peak_rss_delta_mb: Math.max(...peakDeltas),
+	};
+}
+
 function summarize(records) {
 	const werRecords = records.filter((record) => record.reference_words !== null);
 	const silenceRecords = records.filter((record) => record.reference_words === null);
@@ -868,6 +1051,7 @@ function summarize(records) {
 		max_peak_rss_mb: Math.max(...peaks),
 		mean_peak_rss_delta_mb: mean(peakDeltas),
 		max_peak_rss_delta_mb: Math.max(...peakDeltas),
+		unit_balanced: summarizeAnalysisUnits(records),
 	};
 }
 
@@ -1052,9 +1236,20 @@ function commonEvaluatorRevision(revision) {
 	return common;
 }
 
-export function aggregateRunReports(reports) {
+export function aggregateRunReports(reports, corpus) {
 	if (!Array.isArray(reports) || reports.length === 0)
 		throw new Error('at least one run report is required');
+	for (const [index, report] of reports.entries()) {
+		const errors = validateRunReport(report, `reports[${index}]`);
+		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
+	}
+	const corpusSamples = aggregationCorpusSamples(corpus);
+	const bindingErrors = validateRunReportsAgainstCorpus(reports, corpus);
+	if (bindingErrors.length > 0) {
+		throw new Error(
+			`benchmark reports do not match the corpus manifest:\n- ${bindingErrors.join('\n- ')}`,
+		);
+	}
 	const records = [];
 	let corpusId;
 	let corpusFingerprint;
@@ -1077,8 +1272,6 @@ export function aggregateRunReports(reports) {
 		task_bound_schema_11: { report_count: 0, measurement_result_count: 0 },
 	};
 	for (const [index, report] of reports.entries()) {
-		const errors = validateRunReport(report, `reports[${index}]`);
-		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
 		const inputBinding =
 			report.schema_version === STANDALONE_RUN_REPORT_SCHEMA_VERSION
 				? inputBindings.standalone_schema_10
@@ -1225,11 +1418,17 @@ export function aggregateRunReports(reports) {
 			} else {
 				sampleIdentities.set(result.sample_id, identity);
 			}
+			const corpusSample = corpusSamples.get(result.sample_id);
+			const sessionUnit = corpusSample.session_id !== undefined;
 			records.push({
 				...result,
 				provider: report.provider,
 				model: report.model,
 				repeat_index: repeatIndex,
+				unit_key: sessionUnit
+					? `session\0${corpusSample.session_id}`
+					: `sample\0${corpusSample.id}`,
+				unit_kind: sessionUnit ? 'session' : 'singleton-sample',
 			});
 		}
 	}
@@ -1254,9 +1453,7 @@ export function aggregateRunReports(reports) {
 	}
 	const variants = [...variantsByKey.values()].sort(compareVariants);
 	const unionSampleIds = new Set(variants.flatMap((variant) => [...variant.sampleIds]));
-	const unionMeasurementIds = new Set(
-		variants.flatMap((variant) => [...variant.measurementIds]),
-	);
+	const unionMeasurementIds = new Set(variants.flatMap((variant) => [...variant.measurementIds]));
 	const commonSampleIds = new Set(variants[0].sampleIds);
 	const commonMeasurementIds = new Set(variants[0].measurementIds);
 	for (const variant of variants.slice(1)) {
@@ -1299,12 +1496,12 @@ export function aggregateRunReports(reports) {
 		not_common_measurement_count: [...variant.measurementIds].filter(
 			(measurementId) => !commonMeasurementIds.has(measurementId),
 		).length,
-		missing_from_union_measurement_count:
-			unionMeasurementIds.size - variant.measurementIds.size,
+		missing_from_union_measurement_count: unionMeasurementIds.size - variant.measurementIds.size,
 	}));
 
 	return {
 		schema_version: AGGREGATE_REPORT_SCHEMA_VERSION,
+		aggregation_unit_policy: AGGREGATION_UNIT_POLICY,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
@@ -1361,17 +1558,21 @@ function variantLabel(row) {
 
 function appendSummaryTable(lines, rows) {
 	lines.push(
-		'| Group | Samples | Pass rate | Micro WER | Macro WER | Aggregate source RTF | P50 source RTF | P95 source RTF | Aggregate model-input RTF | P50 model-input RTF | P95 model-input RTF | Max sampled evaluator-process host RSS | Max sampled host RSS increase from pre-model-load baseline | Hallucinated words |',
+		'| Group | Measurements | Analysis units (sessions + singleton samples) | WER units | Model-RTF units | Unit pass rate | Pooled WER | Unit-balanced WER | Pooled source RTF | Unit P50 source RTF | Unit P95 source RTF | Unit P50 model-input RTF | Unit P95 model-input RTF | Unit P95 sampled evaluator-process host RSS | Unit max sampled evaluator-process host RSS | Unit max sampled host RSS increase | Hallucinated words |',
 	);
 	lines.push(
-		'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+		'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
 	);
 	for (const { label, summary } of rows) {
+		const balanced = summary.unit_balanced;
 		const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
-		const macroWerCell =
-			summary.macro_wer_percent === null ? '—' : `${display(summary.macro_wer_percent)}%`;
+		const balancedWerCell =
+			balanced.wer_percent === null ? '—' : `${display(balanced.wer_percent)}%`;
+		const unitCountCell =
+			`${balanced.unit_count} (${balanced.session_count} + ` +
+			`${balanced.singleton_sample_count})`;
 		lines.push(
-			`| ${escapeCell(label)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${macroWerCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.p95_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.p95_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${display(summary.max_peak_rss_delta_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+			`| ${escapeCell(label)} | ${summary.samples} | ${unitCountCell} | ${balanced.wer_unit_count} | ${balanced.model_rtf_unit_count} | ${display(balanced.pass_rate_percent)}% | ${werCell} | ${balancedWerCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(balanced.median_inference_rtf, 3)} | ${display(balanced.p95_inference_rtf, 3)} | ${display(balanced.median_model_inference_rtf, 3)} | ${display(balanced.p95_model_inference_rtf, 3)} | ${display(balanced.p95_peak_rss_mb, 1)} MiB | ${display(balanced.max_peak_rss_mb, 1)} MiB | ${display(balanced.max_peak_rss_delta_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
 		);
 	}
 }
@@ -1412,6 +1613,8 @@ export function renderMarkdown(report) {
 		'',
 		`Corpus fingerprint: \`${report.corpus_fingerprint}\``,
 		'',
+		`Aggregation-unit policy: \`${report.aggregation_unit_policy}\``,
+		'',
 		`Reference protocol: \`${report.reference_protocol_id}\``,
 		'',
 		`WER scorer: \`${report.wer_scorer}\``,
@@ -1450,7 +1653,11 @@ export function renderMarkdown(report) {
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',
-		'Micro WER is total word errors / total reference words. Macro WER is the arithmetic mean of per-sample WER, with every distinct sample/repeat measurement weighted equally. P95 RTF uses the deterministic nearest-rank method. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR.',
+		'Unit-balanced metrics first reduce technical repeats into each sample, pool samples within the same manifest-declared session, and then weight every session equally. Error and timing components are averaged across repeats; pass state requires every repeat to pass, and peak RSS keeps the maximum. Samples without a natural session are explicitly treated as singleton units. Pooled WER/RTF and the remaining flat JSON summary fields are measurement-weighted diagnostics; raw session identifiers are never emitted.',
+		'',
+		'P95 uses the deterministic nearest-rank method and equals the maximum with 1–19 eligible units. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR. WER and model-RTF unit counts show their eligible denominators.',
+		'',
+		'Each language, scenario, and noise slice rebuilds units from only the samples in that slice. A multilingual or mixed-noise session can therefore contribute once to multiple slice rows; slice unit counts do not partition the overall count.',
 		'',
 		"RSS is evaluator-process host memory sampled every 10 ms from immediately before model load through the end of inference. It includes the evaluator process and runtime, excludes accelerator VRAM, and may miss peaks between samples. RSS increase is the sampled peak minus that process's pre-model-load baseline; it is not model-only memory.",
 		'',
@@ -1541,23 +1748,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 		const markdownOutput = stringFlag(args, '--markdown');
 		if (args.length === 0) {
 			throw new Error(
-				'Usage: nub report.ts <run.json>... [--manifest <path>] [--json <path>] [--markdown <path>]',
+				'Usage: nub report.ts <run.json>... --manifest <path> [--json <path>] [--markdown <path>]',
 			);
 		}
-		if ((jsonOutput || markdownOutput) && !manifestPath) {
-			throw new Error('--manifest is required when writing aggregate output files');
+		if (!manifestPath) {
+			throw new Error('--manifest is required for aggregate reporting');
 		}
 		const reports = args.map((file) => JSON.parse(fs.readFileSync(path.resolve(file), 'utf8')));
-		const corpus = manifestPath ? loadCorpus(manifestPath) : null;
-		if (corpus) {
-			const bindingErrors = validateRunReportsAgainstCorpus(reports, corpus);
-			if (bindingErrors.length > 0) {
-				throw new Error(
-					`benchmark reports do not match the corpus manifest:\n- ${bindingErrors.join('\n- ')}`,
-				);
-			}
-		}
-		const aggregate = aggregateRunReports(reports);
+		const corpus = loadCorpus(manifestPath);
+		const aggregate = aggregateRunReports(reports, corpus);
 		const markdown = renderMarkdown(aggregate);
 		if (jsonOutput || markdownOutput) {
 			writeCorpusBoundFiles({

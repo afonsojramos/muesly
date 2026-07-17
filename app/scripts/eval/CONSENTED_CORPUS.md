@@ -333,18 +333,39 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
 
 The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
-reviewable aggregate JSON and Markdown. Aggregate schema 10 keeps the reference protocol and each
-provider/model/reported-
-backend variant separate and emits comparison tables only when every supplied variant measured the
-identical sample-and-repeat measurement cohort. Unequal or interrupted cohorts remain available as
-clearly labelled per-variant diagnostics, but the report does not score their intersection because
-missing measurements may be failures. Report comparison covers only supplied variants; the
-coverage command above remains the target-completeness authority.
+reviewable aggregate JSON and Markdown. Every aggregation requires `--manifest`, even when only
+printing to standard output, because the authoritative manifest supplies the grouping metadata.
+Aggregate schema 11 keeps the reference protocol and each provider/model/reported-backend variant
+separate and records
+`aggregation_unit_policy: "session-id-or-singleton-sample-v1"`. It emits comparison tables only
+when every supplied variant measured the identical sample-and-repeat measurement cohort. Unequal or
+interrupted cohorts remain available as clearly labelled per-variant diagnostics, but the report
+does not score their intersection because missing measurements may be failures. Report comparison
+covers only supplied variants; the coverage command above remains the target-completeness
+authority.
+
+The aggregate reduces measurements in this order: repeated measurements into one sample, samples
+sharing a manifest `session_id` into one session unit, samples without a `session_id` into explicit
+singleton-sample units, then units with equal weight. Public and non-meeting samples without session
+metadata therefore remain valid evidence, but each is deliberately its own unit. The aggregate
+uses opaque session IDs only in memory to group samples; it emits unit counts and metrics, never raw
+session IDs.
+
+Existing flat summary fields remain measurement-weighted diagnostics. The nested `unit_balanced`
+metrics are the headline quality and speed results and the inputs to public qualification policy v2
+(`muesly-public-asr-qualification-v2`, qualification schema 2). Within each unit, peak RSS and
+peak-minus-baseline RSS use the maximum sample value before the equal-weight unit distribution is
+calculated. Unit-balanced p95 uses nearest rank; with 1–19 eligible units it resolves to the
+observed maximum and must not be presented as a stable tail estimate.
+Language and noise summaries rebuild units inside each slice. A multilingual or mixed-noise
+session can therefore contribute once to multiple rows, so slice unit counts do not partition the
+overall count.
 
 RSS columns are sampled evaluator-process host memory, not model-only allocation or accelerator
 VRAM. Sampling runs every 10 ms from immediately before model load through the end of inference.
 The aggregate shows both the absolute sampled peak and its increase from the pre-model-load
-baseline; it may miss a shorter peak between samples.
+baseline; it may miss a shorter peak between samples. Qualification uses the unit-balanced maximum
+peak RSS, not the flat measurement-weighted RSS diagnostics.
 
 Do not publish model rankings from this corpus without reviewing session independence,
 participant mix, failure examples, confidence intervals, and the limitations above.

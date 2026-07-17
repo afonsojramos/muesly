@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import {
-	aggregateRunReports,
+	aggregateRunReports as aggregateRunReportsWithCorpus,
 	renderMarkdown,
 	validateBenchmarkMetrics,
 	validateRunReport,
@@ -30,6 +30,13 @@ function hardwareProfile(cpu, logicalCpus, memoryBytes) {
 
 function sha256(value) {
 	return createHash('sha256').update(value).digest('hex');
+}
+
+function assertApproximatelyEqual(actual, expected, epsilon = 1e-12) {
+	assert.ok(
+		Math.abs(actual - expected) <= epsilon,
+		`expected ${actual} to be within ${epsilon} of ${expected}`,
+	);
 }
 
 function evaluatorRevision(cargoFeatures = ['metal'], overrides = {}) {
@@ -236,6 +243,60 @@ function loadedCorpus(samples = [corpusSample()], overrides = {}) {
 	};
 }
 
+function authoritativeCorpusForReports(reports, sessionIds = {}) {
+	const firstReport = reports[0];
+	const samples = new Map();
+	for (const runReport of reports) {
+		if (!Array.isArray(runReport?.results)) continue;
+		for (const entry of runReport.results) {
+			if (typeof entry?.sample_id !== 'string' || samples.has(entry.sample_id)) continue;
+			const sample = {
+				id: entry.sample_id,
+				dataset: entry.dataset,
+				language: entry.language,
+				noise_condition: entry.noise_condition,
+				scenario: entry.scenario,
+				speakers: entry.speakers,
+				duration_seconds: entry.metrics?.audio_duration_seconds,
+				audio_sha256: entry.metrics?.audio_sha256,
+				provenance: { basis: entry.provenance_basis },
+			};
+			if (Object.hasOwn(sessionIds, entry.sample_id)) {
+				sample.session_id = sessionIds[entry.sample_id];
+			} else if (entry.scenario === 'meeting') {
+				sample.session_id = `session-test-${sha256(entry.sample_id).slice(0, 12)}`;
+			}
+			samples.set(entry.sample_id, sample);
+		}
+	}
+	const corpus = loadedCorpus(
+		[...samples.values()].sort((left, right) => left.id.localeCompare(right.id)),
+		{
+			corpus_id: firstReport?.corpus_id ?? 'consented-meetings-v1',
+			reference_protocol_id: firstReport?.reference_protocol_id ?? REFERENCE_PROTOCOL_ID,
+		},
+	);
+	corpus.corpus_fingerprint = corpusFingerprint({
+		corpus_id: corpus.corpus_id,
+		reference_protocol_id: corpus.reference_protocol_id,
+		samples: corpus.samples,
+	});
+	return corpus;
+}
+
+function aggregateRunReports(reports, { sessionIds = {} } = {}) {
+	const corpus = authoritativeCorpusForReports(reports, sessionIds);
+	const sourceFingerprint = reports[0]?.corpus_fingerprint;
+	const boundReports = reports.map((entry) => ({
+		...entry,
+		corpus_fingerprint:
+			entry?.corpus_fingerprint === sourceFingerprint
+				? corpus.corpus_fingerprint
+				: entry?.corpus_fingerprint,
+	}));
+	return aggregateRunReportsWithCorpus(boundReports, corpus);
+}
+
 test('compares exact provider/model/backend variants only on one identical sample cohort', () => {
 	const baseSamples = [
 		resultForSample('meeting-en-clean'),
@@ -282,7 +343,8 @@ test('compares exact provider/model/backend variants only on one identical sampl
 		}),
 	]);
 
-	assert.equal(aggregate.schema_version, 10);
+	assert.equal(aggregate.schema_version, 11);
+	assert.equal(aggregate.aggregation_unit_policy, 'session-id-or-singleton-sample-v1');
 	assert.equal(aggregate.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(aggregate.measurement_result_count, 6);
 	assert.deepEqual(aggregate.input_bindings, {
@@ -394,14 +456,14 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /Accelerators: `metal` = `Apple M4 Pro integrated GPU`/);
 	assert.match(markdown, /`whisper\/large-v3-turbo-q5_0`: `c{64}`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
-	assert.match(markdown, /Aggregate source RTF/);
-	assert.match(markdown, /Macro WER/);
-	assert.match(markdown, /P95 source RTF/);
-	assert.match(markdown, /P95 model-input RTF/);
+	assert.match(markdown, /Pooled source RTF/);
+	assert.match(markdown, /Unit-balanced WER/);
+	assert.match(markdown, /Unit P95 source RTF/);
+	assert.match(markdown, /Unit P95 model-input RTF/);
 	assert.match(markdown, /nearest-rank/);
-	assert.match(markdown, /Aggregate model-input RTF/);
+	assert.match(markdown, /model-input RTF/);
 	assert.match(markdown, /exact post-VAD audio passed to ASR/);
-	assert.match(markdown, /Max sampled evaluator-process host RSS/);
+	assert.match(markdown, /Unit max sampled evaluator-process host RSS/);
 	assert.match(markdown, /pre-model-load baseline/);
 	assert.match(markdown, /immediately before model load through the end of inference/);
 	assert.match(markdown, /excludes accelerator VRAM/);
@@ -439,6 +501,306 @@ test('computes equal-measurement macro WER and nearest-rank p95 RTF deterministi
 	assert.match(markdown, /\| 0\.380 \|/);
 });
 
+test('weights sessions equally after reducing their samples', () => {
+	const measurement = (sampleId, { wordErrors, inferenceRtf, peakRssMb }) =>
+		resultForSample(sampleId, {
+			reference_words: 10,
+			word_errors: wordErrors,
+			wer_percent: wordErrors * 10,
+			passed: wordErrors <= 1,
+			metrics: {
+				inference_seconds: inferenceRtf * 20,
+				inference_rtf: inferenceRtf,
+				model_inference_rtf: inferenceRtf * 2,
+				measured_total_seconds: 20,
+				peak_rss_mb: peakRssMb,
+				peak_rss_delta_mb: peakRssMb - 100,
+			},
+		});
+	const measurements = [
+		measurement('busy-session-1', { wordErrors: 0, inferenceRtf: 0.1, peakRssMb: 1000 }),
+		measurement('busy-session-2', { wordErrors: 0, inferenceRtf: 0.1, peakRssMb: 1100 }),
+		measurement('busy-session-3', { wordErrors: 0, inferenceRtf: 0.1, peakRssMb: 1200 }),
+		measurement('short-session-1', { wordErrors: 10, inferenceRtf: 0.9, peakRssMb: 2000 }),
+	];
+	const aggregate = aggregateRunReports([report(measurements)], {
+		sessionIds: {
+			'busy-session-1': 'session-busy',
+			'busy-session-2': 'session-busy',
+			'busy-session-3': 'session-busy',
+			'short-session-1': 'session-short',
+		},
+	});
+	const summary = aggregate.diagnostics.variants[0].groups.overall;
+
+	assert.equal(summary.samples, 4);
+	assert.equal(summary.macro_wer_percent, 25);
+	assertApproximatelyEqual(summary.mean_inference_rtf, 0.3);
+	const expectedUnits = {
+		unit_count: 2,
+		session_count: 2,
+		singleton_sample_count: 0,
+		passed_unit_count: 1,
+		pass_rate_percent: 50,
+		wer_unit_count: 2,
+		wer_percent: 50,
+		mean_inference_rtf: 0.5,
+		median_inference_rtf: 0.5,
+		p95_inference_rtf: 0.9,
+		max_inference_rtf: 0.9,
+		model_rtf_unit_count: 2,
+		mean_model_inference_rtf: 1,
+		median_model_inference_rtf: 1,
+		p95_model_inference_rtf: 1.8,
+		max_model_inference_rtf: 1.8,
+		mean_peak_rss_mb: 1600,
+		median_peak_rss_mb: 1600,
+		p95_peak_rss_mb: 2000,
+		max_peak_rss_mb: 2000,
+		mean_peak_rss_delta_mb: 1500,
+		median_peak_rss_delta_mb: 1500,
+		p95_peak_rss_delta_mb: 1900,
+		max_peak_rss_delta_mb: 1900,
+	};
+	assert.deepEqual(Object.keys(summary.unit_balanced).sort(), Object.keys(expectedUnits).sort());
+	for (const [field, expected] of Object.entries(expectedUnits)) {
+		assertApproximatelyEqual(summary.unit_balanced[field], expected);
+	}
+	assert.doesNotMatch(JSON.stringify(aggregate), /session-busy|session-short/);
+	assert.doesNotMatch(renderMarkdown(aggregate), /session-busy|session-short/);
+});
+
+test('rebalances shared sessions independently inside language and noise slices', () => {
+	const scoredSample = (sampleId, { language, noiseCondition, wordErrors }) =>
+		resultForSample(sampleId, {
+			language,
+			noise_condition: noiseCondition,
+			reference_words: 10,
+			word_errors: wordErrors,
+			wer_percent: wordErrors * 10,
+			passed: wordErrors <= 1,
+		});
+	const aggregate = aggregateRunReports(
+		[
+			report([
+				scoredSample('shared-en-clean', {
+					language: 'en',
+					noiseCondition: 'clean',
+					wordErrors: 0,
+				}),
+				scoredSample('shared-es-office', {
+					language: 'es',
+					noiseCondition: 'office',
+					wordErrors: 10,
+				}),
+				scoredSample('other-en-clean', {
+					language: 'en',
+					noiseCondition: 'clean',
+					wordErrors: 10,
+				}),
+			]),
+		],
+		{
+			sessionIds: {
+				'shared-en-clean': 'session-shared',
+				'shared-es-office': 'session-shared',
+				'other-en-clean': 'session-other',
+			},
+		},
+	);
+	const groups = aggregate.diagnostics.variants[0].groups;
+	const english = groups.language.find((row) => row.language === 'en').summary.unit_balanced;
+	const spanish = groups.language.find((row) => row.language === 'es').summary.unit_balanced;
+	const clean = groups.noise_condition.find((row) => row.noise_condition === 'clean').summary
+		.unit_balanced;
+	const office = groups.noise_condition.find((row) => row.noise_condition === 'office').summary
+		.unit_balanced;
+	const englishClean = groups.language_noise.find(
+		(row) => row.language === 'en' && row.noise_condition === 'clean',
+	).summary.unit_balanced;
+	const spanishOffice = groups.language_noise.find(
+		(row) => row.language === 'es' && row.noise_condition === 'office',
+	).summary.unit_balanced;
+
+	assert.equal(groups.overall.unit_balanced.wer_percent, 75);
+	assert.deepEqual(
+		[english, clean, englishClean].map(({ unit_count, session_count, wer_percent }) => ({
+			unit_count,
+			session_count,
+			wer_percent,
+		})),
+		[
+			{ unit_count: 2, session_count: 2, wer_percent: 50 },
+			{ unit_count: 2, session_count: 2, wer_percent: 50 },
+			{ unit_count: 2, session_count: 2, wer_percent: 50 },
+		],
+	);
+	assert.deepEqual(
+		[spanish, office, spanishOffice].map(({ unit_count, session_count, wer_percent }) => ({
+			unit_count,
+			session_count,
+			wer_percent,
+		})),
+		[
+			{ unit_count: 1, session_count: 1, wer_percent: 100 },
+			{ unit_count: 1, session_count: 1, wer_percent: 100 },
+			{ unit_count: 1, session_count: 1, wer_percent: 100 },
+		],
+	);
+});
+
+test('collapses repeats by sample before computing unit-balanced statistics', () => {
+	const measurement = (sampleId, { wordErrors, inferenceRtf, peakRssMb }) =>
+		resultForSample(sampleId, {
+			reference_words: 10,
+			word_errors: wordErrors,
+			wer_percent: wordErrors * 10,
+			passed: wordErrors <= 1,
+			metrics: {
+				inference_seconds: inferenceRtf * 20,
+				inference_rtf: inferenceRtf,
+				model_inference_rtf: inferenceRtf * 2,
+				measured_total_seconds: 20,
+				peak_rss_mb: peakRssMb,
+				peak_rss_delta_mb: peakRssMb - 100,
+			},
+		});
+	const reports = [
+		campaignReport(
+			report([
+				measurement('repeated-sample', {
+					wordErrors: 0,
+					inferenceRtf: 0.1,
+					peakRssMb: 1000,
+				}),
+			]),
+			1,
+			'repeated-sample-1',
+		),
+		campaignReport(
+			report([
+				measurement('repeated-sample', {
+					wordErrors: 10,
+					inferenceRtf: 0.3,
+					peakRssMb: 3000,
+				}),
+			]),
+			2,
+			'repeated-sample-2',
+		),
+		campaignReport(
+			report([
+				measurement('single-repeat-sample', {
+					wordErrors: 10,
+					inferenceRtf: 0.8,
+					peakRssMb: 2000,
+				}),
+			]),
+			1,
+			'single-repeat-sample-1',
+		),
+	];
+	const aggregate = aggregateRunReports(reports, {
+		sessionIds: {
+			'repeated-sample': 'session-repeated',
+			'single-repeat-sample': 'session-single',
+		},
+	});
+	const summary = aggregate.diagnostics.variants[0].groups.overall;
+
+	assert.equal(summary.macro_wer_percent, 200 / 3);
+	assertApproximatelyEqual(summary.mean_inference_rtf, 0.4);
+	assert.equal(summary.unit_balanced.unit_count, 2);
+	assert.equal(summary.unit_balanced.passed_unit_count, 0);
+	assert.equal(summary.unit_balanced.wer_percent, 75);
+	assertApproximatelyEqual(summary.unit_balanced.mean_inference_rtf, 0.5);
+	assertApproximatelyEqual(summary.unit_balanced.mean_model_inference_rtf, 1);
+	assert.equal(summary.unit_balanced.mean_peak_rss_mb, 2500);
+	assert.equal(summary.unit_balanced.max_peak_rss_mb, 3000);
+	assert.equal(summary.unit_balanced.mean_peak_rss_delta_mb, 2400);
+	assert.equal(summary.unit_balanced.max_peak_rss_delta_mb, 2900);
+});
+
+test('keeps unit-balanced WER and RTF invariant when one session is split into clips', () => {
+	const whole = resultForSample('whole-session', {
+		reference_words: 20,
+		word_errors: 2,
+		wer_percent: 10,
+		metrics: {
+			audio_duration_seconds: 40,
+			inference_seconds: 4,
+			inference_rtf: 0.1,
+			inference_audio_seconds: 20,
+			model_inference_rtf: 0.2,
+			measured_total_seconds: 6,
+		},
+	});
+	const split = ['split-session-1', 'split-session-2'].map((sampleId) =>
+		resultForSample(sampleId, {
+			reference_words: 10,
+			word_errors: 1,
+			wer_percent: 10,
+			metrics: {
+				inference_seconds: 2,
+				inference_rtf: 0.1,
+				model_inference_rtf: 0.2,
+			},
+		}),
+	);
+	const wholeSummary = aggregateRunReports([report([whole])], {
+		sessionIds: { 'whole-session': 'session-stable' },
+	}).diagnostics.variants[0].groups.overall.unit_balanced;
+	const splitSummary = aggregateRunReports([report(split)], {
+		sessionIds: {
+			'split-session-1': 'session-stable',
+			'split-session-2': 'session-stable',
+		},
+	}).diagnostics.variants[0].groups.overall.unit_balanced;
+
+	assert.deepEqual(splitSummary, wholeSummary);
+});
+
+test('uses samples without session ids as independent singleton aggregation units', () => {
+	const aggregate = aggregateRunReports([
+		report([
+			resultForSample('singleton-1', { scenario: 'dictation' }),
+			resultForSample('singleton-2', {
+				scenario: 'dictation',
+				word_errors: 0,
+				wer_percent: 0,
+			}),
+		]),
+	]);
+	const units = aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+
+	assert.equal(aggregate.aggregation_unit_policy, 'session-id-or-singleton-sample-v1');
+	assert.equal(units.unit_count, 2);
+	assert.equal(units.session_count, 0);
+	assert.equal(units.singleton_sample_count, 2);
+	assert.equal(units.wer_percent, 5);
+});
+
+test('requires an authoritative corpus when aggregating through the public API', () => {
+	assert.throws(
+		() => aggregateRunReportsWithCorpus([report([result()])]),
+		/loaded corpus manifest is required/,
+	);
+});
+
+test('rejects stale corpus fingerprints after session membership changes', () => {
+	const sourceReport = report([result()]);
+	const corpus = authoritativeCorpusForReports([sourceReport], {
+		'meeting-en-clean': 'session-original',
+	});
+	const boundReport = { ...sourceReport, corpus_fingerprint: corpus.corpus_fingerprint };
+	corpus.samples[0].session_id = 'session-changed';
+
+	assert.throws(
+		() => aggregateRunReportsWithCorpus([boundReport], corpus),
+		/corpus fingerprint does not match its manifest contents/,
+	);
+});
+
 test('reports supported public datasets as separate diagnostic and comparison groups', () => {
 	const samples = [
 		['fleurs-sample', 'fleurs'],
@@ -471,15 +833,25 @@ test('reports supported public datasets as separate diagnostic and comparison gr
 		() =>
 			aggregateRunReports([
 				variantReport(
-					[resultForSample('same-public-sample', { dataset: 'fleurs', provenance_basis: 'public-license' })],
+					[
+						resultForSample('same-public-sample', {
+							dataset: 'fleurs',
+							provenance_basis: 'public-license',
+						}),
+					],
 					{ model: 'whisper-test', backend: 'metal' },
 				),
 				variantReport(
-					[resultForSample('same-public-sample', { dataset: 'ami', provenance_basis: 'public-license' })],
+					[
+						resultForSample('same-public-sample', {
+							dataset: 'ami',
+							provenance_basis: 'public-license',
+						}),
+					],
 					{ model: 'whisper-test', backend: 'cpu' },
 				),
 			]),
-		/inconsistent identity.*dataset/,
+		/dataset must match corpus sample/,
 	);
 });
 
@@ -560,11 +932,7 @@ test('aggregates declared repetitions while preserving distinct sample cohorts',
 		/repeat_index must be absent or 1 for schema-10 standalone reports/,
 	);
 	assert.throws(
-		() =>
-			aggregateRunReports([
-				first,
-				{ ...second, benchmark_task_id: first.benchmark_task_id },
-			]),
+		() => aggregateRunReports([first, { ...second, benchmark_task_id: first.benchmark_task_id }]),
 		/duplicate benchmark_task_id/,
 	);
 });
@@ -705,7 +1073,12 @@ test('unions report shards and compares identical sample sets independent of inp
 		variantReport([third], { model: 'whisper-test', backend: 'cpu' }),
 		variantReport([third, second, first], { model: 'whisper-test', backend: 'metal' }),
 	];
-	const aggregate = aggregateRunReports(inputs);
+	const sessionIds = {
+		'meeting-first': 'session-first-and-second',
+		'meeting-second': 'session-first-and-second',
+		'meeting-third': 'session-third',
+	};
+	const aggregate = aggregateRunReports(inputs, { sessionIds });
 	assert.equal(aggregate.comparison.status, 'comparable');
 	assert.deepEqual(
 		aggregate.diagnostics.variants.map(({ backend, observed_sample_count }) => ({
@@ -718,13 +1091,15 @@ test('unions report shards and compares identical sample sets independent of inp
 		],
 	);
 
-	const reordered = aggregateRunReports([inputs[3], inputs[2], inputs[1], inputs[0]]);
+	const reordered = aggregateRunReports([inputs[3], inputs[2], inputs[1], inputs[0]], {
+		sessionIds,
+	});
 	aggregate.generated_at = '<generated>';
 	reordered.generated_at = '<generated>';
 	assert.deepEqual(reordered, aggregate);
 });
 
-test('rejects conflicting cross-variant identities for the same sample without a manifest', () => {
+test('rejects cross-variant identities that conflict with the authoritative corpus', () => {
 	const canonical = resultForSample('meeting-en-clean');
 	const conflicts = [
 		[
@@ -756,13 +1131,17 @@ test('rejects conflicting cross-variant identities for the same sample without a
 	];
 
 	for (const [field, conflicting] of conflicts) {
+		const expectedError =
+			field === 'reference_words'
+				? new RegExp(`inconsistent identity.*${field}`)
+				: new RegExp(`${field} must match corpus sample`);
 		assert.throws(
 			() =>
 				aggregateRunReports([
 					variantReport([canonical], { model: 'whisper-test', backend: 'metal' }),
 					variantReport([conflicting], { model: 'whisper-test', backend: 'cpu' }),
 				]),
-			new RegExp(`inconsistent identity.*${field}`),
+			expectedError,
 		);
 	}
 });
@@ -828,9 +1207,7 @@ test('validates reports against canonical loaded corpus identity and sample meta
 			provenance: { basis: 'public-license' },
 		}),
 	]);
-	const publicReport = report([
-		result({ dataset: 'fleurs', provenance_basis: 'public-license' }),
-	]);
+	const publicReport = report([result({ dataset: 'fleurs', provenance_basis: 'public-license' })]);
 	assert.deepEqual(validateRunReportsAgainstCorpus([publicReport], publicCorpus), []);
 	publicReport.results[0].dataset = 'ami';
 	assert.match(
@@ -842,7 +1219,7 @@ test('validates reports against canonical loaded corpus identity and sample meta
 test('rejects mixed corpora and incompatible pass thresholds', () => {
 	const first = report([result()]);
 	const otherCorpus = { ...report([result()]), corpus_id: 'another-corpus' };
-	assert.throws(() => aggregateRunReports([first, otherCorpus]), /different corpora/);
+	assert.throws(() => aggregateRunReports([first, otherCorpus]), /corpus_id must match/);
 
 	const otherThreshold = {
 		...report([result()]),
@@ -939,13 +1316,11 @@ test('requires task and repeat identity only for schema-11 campaign reports', ()
 test('requires a supported dataset only for public-license results in schemas 10 and 11', () => {
 	for (const schemaVersion of [10, 11]) {
 		const identity =
-			schemaVersion === 11
-				? { benchmark_task_id: 'f'.repeat(64), repeat_index: 1 }
-				: {};
-		const valid = report(
-			[result({ dataset: 'fleurs', provenance_basis: 'public-license' })],
-			{ schema_version: schemaVersion, ...identity },
-		);
+			schemaVersion === 11 ? { benchmark_task_id: 'f'.repeat(64), repeat_index: 1 } : {};
+		const valid = report([result({ dataset: 'fleurs', provenance_basis: 'public-license' })], {
+			schema_version: schemaVersion,
+			...identity,
+		});
 		assert.deepEqual(validateRunReport(valid), []);
 
 		const missing = report([result({ provenance_basis: 'public-license' })], {
@@ -956,10 +1331,10 @@ test('requires a supported dataset only for public-license results in schemas 10
 			validateRunReport(missing).join('\n'),
 			/dataset is required for public-license samples/,
 		);
-		const unsupported = report(
-			[result({ dataset: 'other', provenance_basis: 'public-license' })],
-			{ schema_version: schemaVersion, ...identity },
-		);
+		const unsupported = report([result({ dataset: 'other', provenance_basis: 'public-license' })], {
+			schema_version: schemaVersion,
+			...identity,
+		});
 		assert.match(
 			validateRunReport(unsupported).join('\n'),
 			/dataset must be fleurs, ami, or earnings21/,
@@ -1005,7 +1380,7 @@ test('rejects aggregation across WER scoring semantics', () => {
 test('rejects aggregation across corpus revisions', () => {
 	const first = report([result()]);
 	const stale = { ...report([result()]), corpus_fingerprint: 'b'.repeat(64) };
-	assert.throws(() => aggregateRunReports([first, stale]), /different corpus revisions/);
+	assert.throws(() => aggregateRunReports([first, stale]), /corpus_fingerprint must match/);
 });
 
 test('rejects aggregation across different bytes for the same model', () => {
@@ -1580,6 +1955,12 @@ test('requires a manifest and coordinates aggregate output files with the local 
 	});
 	assert.equal(missingManifest.status, 2);
 	assert.match(missingManifest.stderr, /--manifest is required/);
+	const missingManifestForStdout = spawnSync(process.execPath, [scriptPath, inputPath], {
+		encoding: 'utf8',
+	});
+	assert.equal(missingManifestForStdout.status, 2);
+	assert.match(missingManifestForStdout.stderr, /--manifest is required/);
+	assert.equal(missingManifestForStdout.stdout, '');
 
 	const run = spawnSync(
 		process.execPath,

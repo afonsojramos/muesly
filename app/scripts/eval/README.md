@@ -159,23 +159,26 @@ every evaluator platform supported by the benchmark harness. A complete suite mu
 one compatible hardware cohort; do not combine CPU results from one machine with Metal results
 from another to claim completion.
 
-Treat model-policy changes as a separate, fail-closed decision step. Automatic-policy and
-performance coverage must both be complete, every input measurement must be task-bound schema 11,
-and all evidence must come from one macOS/arm64 hardware cohort. A candidate is eligible only when
-its performance p95 inference RTF is below 1.0. Among eligible candidates, its automatic-policy
-macro WER must be within 2 percentage points of the best result and its worst language/noise slice
-must be within 5 points of the best worst-slice result. Prefer the smallest qualifying artifact;
-when measured inference speed differs by less than 10%, use lower peak RSS and then download size
-as the deterministic tie-breakers.
+Treat model-policy changes as a separate, fail-closed decision step. Qualification policy v2
+(`muesly-public-asr-qualification-v2`, qualification schema 2) requires aggregate schema 11 and
+uses only its session/singleton-unit-balanced headline metrics for quality, speed, and memory.
+Automatic-policy and performance coverage must both be complete, every input measurement must be
+task-bound schema 11, and all evidence must come from one macOS/arm64 hardware cohort. A candidate
+is eligible only when its performance `unit_balanced.p95_inference_rtf` is below 1.0. Among eligible
+candidates, its automatic-policy `unit_balanced.wer_percent` must be within 2 percentage points of
+the best result and its worst language/noise slice must be within 5 points of the best worst-slice
+result. Prefer the smallest qualifying artifact; when measured inference speed differs by less than
+10%, use lower `unit_balanced.max_peak_rss_mb` and then download size as the deterministic
+tie-breakers.
 
 The first Apple qualification may change only the non-translation High and Ultra recommendations.
 Low remains Base Q5_1, Medium remains Small Q5_1, and translation selection is a separate phase-two
 decision. Tiny Q5_1 remains fallback/catalog-audit-only. Full-precision artifacts remain supported
-for existing downloads, but become visible as new downloads only when they improve macro WER by at
-least 1 percentage point or a critical language/noise slice by at least 3 points over their
-quantized peer. A qualification report proposes decisions for review; it never edits production
-configuration automatically. Catalog-audit evidence is optional for the tier proposal but required
-to emit full-precision retention decisions.
+for existing downloads, but become visible as new downloads only when they improve unit-balanced
+WER by at least 1 percentage point or a unit-balanced critical language/noise slice by at least 3
+points over their quantized peer. A qualification report proposes decisions for review; it never
+edits production configuration automatically. Catalog-audit evidence is optional for the tier
+proposal but required to emit full-precision retention decisions.
 
 After producing aggregate and coverage JSON for the completed suites, generate the reviewable
 decision report on standard output:
@@ -348,7 +351,9 @@ each checkpoint's exact name, identity, and content digest.
   while compatibility forms, apostrophe variants, and common dash variants are normalized
   consistently across English, Spanish, Portuguese, French, and German references.
 
-Aggregate one or more run reports into transcript-free JSON and Markdown summaries:
+Aggregate one or more run reports into transcript-free JSON and Markdown summaries. `--manifest`
+is mandatory for every aggregation, including stdout-only diagnostics, because aggregation units
+are derived from the authoritative corpus manifest:
 
 ```bash
 nub run eval:report app/scripts/eval/results/whisper-metal.json \
@@ -358,18 +363,39 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```
 
-Reports contain micro-averaged WER (total word errors divided by total reference words), macro WER
-(the mean per-sample WER with distinct repeat measurements weighted equally), duration-weighted,
-median, and nearest-rank p95 source-audio and model-input inference RTF, sampled evaluator-process
-host RSS, and silence hallucinations. Aggregate schema 10 records the reference protocol and treats
-provider, model, and reported backend as one indivisible variant. Diagnostic summaries retain every
-observed sample but are isolated by exact variant, with overall, public-dataset, language, scenario,
-noise-condition, and language/noise dimensions. Public samples are reported separately as
-`fleurs`, `ami`, or `earnings21`. The report emits cross-variant tables only when at least two
-supplied variants contain the identical sample-and-repeat measurement identities. Equal counts are
-not enough, and unequal cohorts are not reduced to a post-hoc intersection: missing measurements
-may be failures, so that would introduce survivorship bias. Instead, partial runs retain clearly
-labelled per-variant diagnostics plus observed/common/missing counts.
+Aggregate schema 11 records the reference protocol and
+`aggregation_unit_policy: "session-id-or-singleton-sample-v1"`, and treats provider, model, and
+reported backend as one indivisible variant. It derives a session unit for samples that share a
+manifest `session_id`; every public or non-meeting sample without one becomes its own explicit
+singleton-sample unit. Raw session IDs are used only in memory for grouping and are never emitted in
+aggregate JSON or Markdown.
+This policy does not infer hidden source-speaker or source-recording relationships: a prepared
+public composite without `session_id` remains one singleton unit. Any future source-balanced public
+policy must add an explicit manifest grouping identity rather than guessing from catalog metadata.
+
+Each summary exposes two metric families. Existing flat fields remain measurement-weighted
+diagnostics: micro WER is total word errors divided by total reference words; flat macro WER is the
+mean per-measurement WER; and flat duration-weighted, median, and nearest-rank p95 source-audio and
+model-input inference RTF, sampled evaluator-process host RSS, and silence metrics retain their
+previous meanings. The nested `unit_balanced` object supplies the headline and qualification
+metrics. Its reduction order is repeats to samples, samples to manifest-session or singleton-sample
+units, then an equal-weight reduction across units. This prevents repeated measurements, sessions
+split into more clips, and longer sessions from receiving extra weight. Within each unit, peak RSS
+and peak-minus-baseline RSS use the maximum observed sample value before unit-level distributions
+are calculated. Because p95 uses nearest rank, 1–19 eligible units make p95 equal the observed
+maximum; treat such a p95 as a low-resolution diagnostic rather than a stable tail estimate.
+Language, scenario, and noise summaries rebuild units from the samples in each slice, so one
+multilingual or mixed-noise session can contribute once to multiple slice rows; those row counts do
+not partition the overall unit count.
+
+Diagnostic summaries retain every observed sample but are isolated by exact variant, with overall,
+public-dataset, language, scenario, noise-condition, and language/noise dimensions. Public samples
+are reported separately as `fleurs`, `ami`, or `earnings21`. The report emits cross-variant tables
+only when at least two supplied variants contain the identical sample-and-repeat measurement
+identities. Equal counts are not enough, and unequal cohorts are not reduced to a post-hoc
+intersection: missing measurements may be failures, so that would introduce survivorship bias.
+Instead, partial runs retain clearly labelled per-variant diagnostics plus
+observed/common/missing counts.
 
 Comparison rows preserve the full provider/model/backend identity in the variant, dataset/variant,
 language/variant, scenario/variant, noise-condition/variant, and language/noise/variant dimensions.
@@ -392,8 +418,9 @@ Run-report schemas 10 and 11 record the versioned reference protocol and WER sco
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 10 records both RTF definitions, measurement and distinct-sample counts, the
-comparison status, the common evaluator inputs, the full evaluator
+Aggregate schema 11 records both diagnostic and unit-balanced RTF definitions, measurement,
+distinct-sample, session-unit, and singleton-unit counts, the aggregation-unit policy, comparison
+status, common evaluator inputs, the full evaluator
 revision, and exact benchmark-executable digest for every backend. Coverage schema 11 similarly
 records the corpus
 fingerprint, reference protocol, verified model-artifact map, evaluator-revision digest by backend,

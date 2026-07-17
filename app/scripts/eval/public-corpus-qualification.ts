@@ -14,8 +14,8 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 
-export const PUBLIC_QUALIFICATION_POLICY_ID = 'muesly-public-asr-qualification-v1';
-export const PUBLIC_QUALIFICATION_SCHEMA_VERSION = 1;
+export const PUBLIC_QUALIFICATION_POLICY_ID = 'muesly-public-asr-qualification-v2';
+export const PUBLIC_QUALIFICATION_SCHEMA_VERSION = 2;
 
 const SUITES = Object.freeze({
 	automatic_policy: {
@@ -53,6 +53,7 @@ const AGGREGATE_FIELDS = new Set([
 	'corpus_id',
 	'corpus_fingerprint',
 	'reference_protocol_id',
+	'aggregation_unit_policy',
 	'wer_scorer',
 	'evaluator_revision_common',
 	'evaluator_revisions',
@@ -121,6 +122,33 @@ const SUMMARY_FIELDS = new Set([
 	'max_peak_rss_mb',
 	'mean_peak_rss_delta_mb',
 	'max_peak_rss_delta_mb',
+	'unit_balanced',
+]);
+const UNIT_BALANCED_FIELDS = new Set([
+	'unit_count',
+	'session_count',
+	'singleton_sample_count',
+	'passed_unit_count',
+	'pass_rate_percent',
+	'wer_unit_count',
+	'wer_percent',
+	'mean_inference_rtf',
+	'median_inference_rtf',
+	'p95_inference_rtf',
+	'max_inference_rtf',
+	'model_rtf_unit_count',
+	'mean_model_inference_rtf',
+	'median_model_inference_rtf',
+	'p95_model_inference_rtf',
+	'max_model_inference_rtf',
+	'mean_peak_rss_mb',
+	'median_peak_rss_mb',
+	'p95_peak_rss_mb',
+	'max_peak_rss_mb',
+	'mean_peak_rss_delta_mb',
+	'median_peak_rss_delta_mb',
+	'p95_peak_rss_delta_mb',
+	'max_peak_rss_delta_mb',
 ]);
 
 function isObject(value) {
@@ -149,6 +177,11 @@ function assertFinite(value, label, minimum = 0) {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum) {
 		fail(`${label} must be a finite number >= ${minimum}`);
 	}
+}
+
+function approximatelyEqual(left, right, tolerance = 1e-9) {
+	const scale = Math.max(1, Math.abs(left), Math.abs(right));
+	return Math.abs(left - right) <= tolerance * scale;
 }
 
 function assertInteger(value, label, minimum = 0) {
@@ -296,6 +329,93 @@ function validateRevisionCommon(value, label, withCargoFeatures) {
 	}
 }
 
+function validateDistribution(value, label, eligibleCount, { mean, median, p95, max }) {
+	for (const field of [mean, median, p95, max]) assertFinite(value[field], `${label}.${field}`);
+	if (value[median] > value[p95] && !approximatelyEqual(value[median], value[p95])) {
+		fail(`${label}.${median} must not exceed ${label}.${p95}`);
+	}
+	if (value[p95] > value[max] && !approximatelyEqual(value[p95], value[max])) {
+		fail(`${label}.${p95} must not exceed ${label}.${max}`);
+	}
+	if (value[mean] > value[max] && !approximatelyEqual(value[mean], value[max])) {
+		fail(`${label}.${mean} must not exceed ${label}.${max}`);
+	}
+	if (eligibleCount > 0 && eligibleCount < 20 && !approximatelyEqual(value[p95], value[max])) {
+		fail(`${label}.${p95} must equal ${label}.${max} for fewer than 20 eligible units`);
+	}
+}
+
+function validateUnitBalanced(value, label) {
+	assertClosed(value, UNIT_BALANCED_FIELDS, label);
+	const countFields = [
+		'unit_count',
+		'session_count',
+		'singleton_sample_count',
+		'passed_unit_count',
+		'wer_unit_count',
+		'model_rtf_unit_count',
+	];
+	for (const field of countFields) assertInteger(value[field], `${label}.${field}`);
+	if (value.unit_count === 0) fail(`${label}.unit_count must be greater than zero`);
+	if (value.session_count + value.singleton_sample_count !== value.unit_count) {
+		fail(`${label} session and singleton counts must add up to unit_count`);
+	}
+	if (
+		value.passed_unit_count > value.unit_count ||
+		value.wer_unit_count > value.unit_count ||
+		value.model_rtf_unit_count > value.unit_count
+	) {
+		fail(`${label} counts cannot exceed unit_count`);
+	}
+	assertFinite(value.pass_rate_percent, `${label}.pass_rate_percent`);
+	if (value.pass_rate_percent > 100) fail(`${label}.pass_rate_percent must be at most 100`);
+	const expectedPassRate = (value.passed_unit_count / value.unit_count) * 100;
+	if (!approximatelyEqual(value.pass_rate_percent, expectedPassRate)) {
+		fail(`${label}.pass_rate_percent must match passed_unit_count / unit_count`);
+	}
+	if (value.wer_unit_count !== value.unit_count || value.wer_percent === null) {
+		fail(`${label} must describe WER evidence for every public aggregation unit`);
+	}
+	assertFinite(value.wer_percent, `${label}.wer_percent`);
+
+	validateDistribution(value, label, value.unit_count, {
+		mean: 'mean_inference_rtf',
+		median: 'median_inference_rtf',
+		p95: 'p95_inference_rtf',
+		max: 'max_inference_rtf',
+	});
+	validateDistribution(value, label, value.unit_count, {
+		mean: 'mean_peak_rss_mb',
+		median: 'median_peak_rss_mb',
+		p95: 'p95_peak_rss_mb',
+		max: 'max_peak_rss_mb',
+	});
+	validateDistribution(value, label, value.unit_count, {
+		mean: 'mean_peak_rss_delta_mb',
+		median: 'median_peak_rss_delta_mb',
+		p95: 'p95_peak_rss_delta_mb',
+		max: 'max_peak_rss_delta_mb',
+	});
+	const modelFields = [
+		'mean_model_inference_rtf',
+		'median_model_inference_rtf',
+		'p95_model_inference_rtf',
+		'max_model_inference_rtf',
+	];
+	if (value.model_rtf_unit_count === 0) {
+		for (const field of modelFields) {
+			if (value[field] !== null) fail(`${label}.${field} must be null without model RTF units`);
+		}
+	} else {
+		validateDistribution(value, label, value.model_rtf_unit_count, {
+			mean: 'mean_model_inference_rtf',
+			median: 'median_model_inference_rtf',
+			p95: 'p95_model_inference_rtf',
+			max: 'max_model_inference_rtf',
+		});
+	}
+}
+
 function validateSummary(value, label, expectedSamples = null) {
 	assertClosed(value, SUMMARY_FIELDS, label);
 	const integerFields = [
@@ -309,7 +429,13 @@ function validateSummary(value, label, expectedSamples = null) {
 	];
 	for (const field of integerFields) assertInteger(value[field], `${label}.${field}`);
 	for (const field of SUMMARY_FIELDS) {
-		if (integerFields.includes(field) || field === 'hallucinated_words_max') continue;
+		if (
+			integerFields.includes(field) ||
+			field === 'hallucinated_words_max' ||
+			field === 'unit_balanced'
+		) {
+			continue;
+		}
 		if (value[field] !== null) assertFinite(value[field], `${label}.${field}`);
 	}
 	if (value.hallucinated_words_max !== null) {
@@ -323,6 +449,10 @@ function validateSummary(value, label, expectedSamples = null) {
 	}
 	if (value.passed_samples > value.samples || value.wer_samples > value.samples) {
 		fail(`${label} sample counts are inconsistent`);
+	}
+	validateUnitBalanced(value.unit_balanced, `${label}.unit_balanced`);
+	if (value.unit_balanced.unit_count > value.samples) {
+		fail(`${label}.unit_balanced.unit_count cannot exceed ${label}.samples`);
 	}
 }
 
@@ -378,6 +508,9 @@ function validateVariantDiagnostic(value, label, target, expectedMeasurements) {
 		`${label}.groups`,
 	);
 	validateSummary(value.groups.overall, `${label}.groups.overall`, expectedMeasurements);
+	if (value.groups.overall.unit_balanced.unit_count > value.observed_sample_count) {
+		fail(`${label}.groups.overall.unit_balanced.unit_count cannot exceed observed_sample_count`);
+	}
 	validateSummaryRows(
 		value.groups.dataset,
 		['dataset'],
@@ -522,7 +655,7 @@ function validateComparison(value, label, diagnostics, target, totalMeasurements
 function validateAggregate(document, suite, target) {
 	const label = `${suite}.aggregate`;
 	assertClosed(document, AGGREGATE_FIELDS, label);
-	if (document.schema_version !== 10) fail(`${label}.schema_version must be 10`);
+	if (document.schema_version !== 11) fail(`${label}.schema_version must be 11`);
 	const generatedAt = Date.parse(document.generated_at);
 	if (
 		!Number.isFinite(generatedAt) ||
@@ -535,6 +668,9 @@ function validateAggregate(document, suite, target) {
 	assertSha256(document.corpus_fingerprint, `${label}.corpus_fingerprint`);
 	if (document.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
 		fail(`${label}.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
+	if (document.aggregation_unit_policy !== 'session-id-or-singleton-sample-v1') {
+		fail(`${label}.aggregation_unit_policy must be 'session-id-or-singleton-sample-v1'`);
 	}
 	if (document.operating_system !== 'macos' || document.architecture !== 'aarch64') {
 		fail(`${label} must come from macOS on arm64`);
@@ -861,7 +997,7 @@ function worstLanguageNoiseSlice(diagnostic) {
 		.map((row) => ({
 			language: row.language,
 			noise_condition: row.noise_condition,
-			macro_wer_percent: row.summary.macro_wer_percent,
+			macro_wer_percent: row.summary.unit_balanced.wer_percent,
 		}))
 		.sort(
 			(left, right) =>
@@ -892,10 +1028,11 @@ function alignedCriticalSliceImprovement(full, quantized) {
 			return {
 				language: fullRow.language,
 				noise_condition: fullRow.noise_condition,
-				full_precision_macro_wer_percent: fullRow.summary.macro_wer_percent,
-				quantized_macro_wer_percent: quantizedRow.summary.macro_wer_percent,
+				full_precision_macro_wer_percent: fullRow.summary.unit_balanced.wer_percent,
+				quantized_macro_wer_percent: quantizedRow.summary.unit_balanced.wer_percent,
 				improvement_points:
-					quantizedRow.summary.macro_wer_percent - fullRow.summary.macro_wer_percent,
+					quantizedRow.summary.unit_balanced.wer_percent -
+					fullRow.summary.unit_balanced.wer_percent,
 			};
 		})
 		.sort(
@@ -934,10 +1071,10 @@ function candidateMetrics(automatic, performance, target) {
 			backend: variant.backend,
 			model_artifact_sha256: automatic.aggregate.model_artifacts[artifactKey(variant)],
 			known_download_bytes: downloadBytes,
-			macro_wer_percent: qualityDiagnostic.groups.overall.macro_wer_percent,
+			macro_wer_percent: qualityDiagnostic.groups.overall.unit_balanced.wer_percent,
 			worst_language_noise_slice: worstLanguageNoiseSlice(qualityDiagnostic),
-			p95_inference_rtf: performanceDiagnostic.groups.overall.p95_inference_rtf,
-			peak_rss_mb: performanceDiagnostic.groups.overall.max_peak_rss_mb,
+			p95_inference_rtf: performanceDiagnostic.groups.overall.unit_balanced.p95_inference_rtf,
+			peak_rss_mb: performanceDiagnostic.groups.overall.unit_balanced.max_peak_rss_mb,
 		};
 	});
 }
@@ -1007,7 +1144,8 @@ function evaluateCatalogRetention(catalog, performance) {
 		const full = find(fullModel, [catalogMetrics]);
 		const quantized = find(quantizedModel, [catalogMetrics, performanceMetrics]);
 		const macroImprovement =
-			quantized.groups.overall.macro_wer_percent - full.groups.overall.macro_wer_percent;
+			quantized.groups.overall.unit_balanced.wer_percent -
+			full.groups.overall.unit_balanced.wer_percent;
 		const criticalSlice = alignedCriticalSliceImprovement(full, quantized);
 		return {
 			full_precision_variant: {

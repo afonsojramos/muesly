@@ -35,12 +35,19 @@ function measurementKeys(target) {
 	);
 }
 
-function summary(samples, overrides = {}) {
+function summary(samples, overrides = {}, unitCount = samples) {
 	const macro = overrides.macro_wer_percent ?? 10;
 	const p95 = overrides.p95_inference_rtf ?? 0.5;
 	const peak = overrides.max_peak_rss_mb ?? 500;
+	const unitOverrides = overrides.unit_balanced ?? {};
+	const unitWer = Object.hasOwn(unitOverrides, 'wer_percent') ? unitOverrides.wer_percent : macro;
+	const unitP95 = unitOverrides.p95_inference_rtf ?? p95;
+	const unitPeak = unitOverrides.max_peak_rss_mb ?? peak;
+	const modelUnitCount = unitOverrides.model_rtf_unit_count ?? unitCount;
 	const summaryOverrides = { ...overrides };
 	delete summaryOverrides.worst_wer_percent;
+	delete summaryOverrides.worst_unit_wer_percent;
+	delete summaryOverrides.unit_balanced;
 	return {
 		samples,
 		passed_samples: samples,
@@ -72,17 +79,63 @@ function summary(samples, overrides = {}) {
 		max_peak_rss_mb: peak,
 		mean_peak_rss_delta_mb: peak - 100,
 		max_peak_rss_delta_mb: peak - 100,
+		unit_balanced: {
+			unit_count: unitCount,
+			session_count: 0,
+			singleton_sample_count: unitCount,
+			passed_unit_count: unitCount,
+			pass_rate_percent: 100,
+			wer_unit_count: unitCount,
+			wer_percent: unitWer,
+			mean_inference_rtf: unitP95,
+			median_inference_rtf: unitP95,
+			p95_inference_rtf: unitP95,
+			max_inference_rtf: unitP95,
+			model_rtf_unit_count: modelUnitCount,
+			mean_model_inference_rtf: modelUnitCount === 0 ? null : unitP95,
+			median_model_inference_rtf: modelUnitCount === 0 ? null : unitP95,
+			p95_model_inference_rtf: modelUnitCount === 0 ? null : unitP95,
+			max_model_inference_rtf: modelUnitCount === 0 ? null : unitP95,
+			mean_peak_rss_mb: unitPeak,
+			median_peak_rss_mb: unitPeak,
+			p95_peak_rss_mb: unitPeak,
+			max_peak_rss_mb: unitPeak,
+			mean_peak_rss_delta_mb: unitPeak - 100,
+			median_peak_rss_delta_mb: unitPeak - 100,
+			p95_peak_rss_delta_mb: unitPeak - 100,
+			max_peak_rss_delta_mb: unitPeak - 100,
+			...unitOverrides,
+		},
 		...summaryOverrides,
 	};
 }
 
 function diagnostic(variant, samples, repetitions, metrics = {}) {
 	const measurements = samples * repetitions;
-	const overall = summary(measurements, metrics);
-	const grouped = (dimension, value, macro = overall.macro_wer_percent) => ({
+	const overall = summary(measurements, metrics, samples);
+	const grouped = (
+		dimension,
+		value,
+		macro = overall.macro_wer_percent,
+		unitWer = overall.unit_balanced.wer_percent,
+	) => ({
 		[dimension]: value,
-		summary: summary(measurements, { ...metrics, macro_wer_percent: macro }),
+		summary: summary(
+			measurements,
+			{
+				...metrics,
+				macro_wer_percent: macro,
+				unit_balanced: { ...metrics.unit_balanced, wer_percent: unitWer },
+			},
+			samples,
+		),
 	});
+	const worstMacro = metrics.worst_wer_percent ?? overall.macro_wer_percent;
+	const worstUnitWer =
+		metrics.worst_unit_wer_percent ??
+		metrics.unit_balanced?.wer_percent ??
+		metrics.worst_wer_percent ??
+		overall.unit_balanced.wer_percent;
 	return {
 		...variant,
 		observed_sample_count: samples,
@@ -97,10 +150,7 @@ function diagnostic(variant, samples, repetitions, metrics = {}) {
 				{
 					language: 'en',
 					noise_condition: 'clean',
-					summary: summary(measurements, {
-						...metrics,
-						macro_wer_percent: metrics.worst_wer_percent ?? overall.macro_wer_percent,
-					}),
+					summary: grouped('language', 'en', worstMacro, worstUnitWer).summary,
 				},
 			],
 		},
@@ -173,11 +223,12 @@ function aggregate(target, overrides = {}) {
 			})),
 		);
 	return {
-		schema_version: 10,
+		schema_version: 11,
 		generated_at: '2026-07-17T00:00:00.000Z',
 		corpus_id: 'muesly-public-asr-v2',
 		corpus_fingerprint: SHA,
 		reference_protocol_id: 'muesly-meeting-reference-v1',
+		aggregation_unit_policy: 'session-id-or-singleton-sample-v1',
 		wer_scorer: 'muesly-wer-v1',
 		evaluator_revision_common: revision(),
 		evaluator_revisions: revisions,
@@ -357,6 +408,8 @@ test('qualifies the smallest artifact inside the complete quality and speed enve
 		},
 	};
 	const result = evaluatePublicCorpusQualification(fixture({ automaticMetrics, catalog: false }));
+	assert.equal(result.schema_version, 2);
+	assert.equal(result.policy_id, 'muesly-public-asr-qualification-v2');
 	assert.equal(result.decision.status, 'qualified');
 	assert.deepEqual(result.decision.selected_candidate, {
 		provider: 'whisper',
@@ -370,6 +423,50 @@ test('qualifies the smallest artifact inside the complete quality and speed enve
 	assert.deepEqual(result.phase_boundary.catalog_audit_only_models, ['tiny-q5_1']);
 	assert.equal(result.phase_boundary.production_configuration_mutated, false);
 	assert.equal(result.catalog_retention.status, 'not-evaluated');
+});
+
+test('bases qualification decisions on unit-balanced metrics when flat diagnostics disagree', () => {
+	const result = evaluatePublicCorpusQualification(
+		fixture({
+			catalog: false,
+			automaticMetrics: {
+				'whisper/base-q5_1/cpu': {
+					macro_wer_percent: 99,
+					worst_wer_percent: 99,
+					worst_unit_wer_percent: 12,
+					unit_balanced: { wer_percent: 10 },
+				},
+				'whisper/medium-q5_0/cpu': {
+					macro_wer_percent: 0,
+					worst_wer_percent: 0,
+					worst_unit_wer_percent: 40,
+					unit_balanced: { wer_percent: 30 },
+				},
+			},
+			performanceMetrics: {
+				'whisper/base-q5_1/cpu': {
+					p95_inference_rtf: 0.1,
+					max_peak_rss_mb: 999,
+					unit_balanced: { p95_inference_rtf: 1.1, max_peak_rss_mb: 123 },
+				},
+			},
+		}),
+	);
+	const base = result.candidates.find((candidate) => candidate.model === 'base-q5_1');
+	assert.equal(base.macro_wer_percent, 10);
+	assert.equal(base.worst_language_noise_slice.macro_wer_percent, 12);
+	assert.equal(base.p95_inference_rtf, 1.1);
+	assert.equal(base.peak_rss_mb, 123);
+	assert(base.ineligibility_reasons.includes('p95-inference-rtf-not-below-1'));
+
+	const medium = result.candidates.find((candidate) => candidate.model === 'medium-q5_0');
+	assert(medium.ineligibility_reasons.includes('macro-wer-more-than-2-points-from-best'));
+	assert(
+		medium.ineligibility_reasons.includes(
+			'worst-language-noise-slice-more-than-5-points-from-best',
+		),
+	);
+	assert.equal(result.decision.selected_candidate.model, 'small-q5_1');
 });
 
 test('requires p95 inference RTF to be strictly below one', () => {
@@ -481,6 +578,35 @@ test('applies the exact catalog retention improvement thresholds', () => {
 	assert.equal(result.catalog_retention.status, 'evaluated');
 });
 
+test('bases catalog retention on unit-balanced WER when flat diagnostics disagree', () => {
+	const result = evaluatePublicCorpusQualification(
+		fixture({
+			performanceMetrics: {
+				'whisper/base-q5_1/cpu': {
+					macro_wer_percent: 20,
+					worst_wer_percent: 30,
+					worst_unit_wer_percent: 17,
+					unit_balanced: { wer_percent: 10.5 },
+				},
+			},
+			catalogMetrics: {
+				'whisper/base/cpu': {
+					macro_wer_percent: 10,
+					worst_wer_percent: 15,
+					worst_unit_wer_percent: 15,
+					unit_balanced: { wer_percent: 10 },
+				},
+			},
+		}),
+	);
+	const base = result.catalog_retention.decisions.find(
+		(decision) => decision.full_precision_variant.model === 'base',
+	);
+	assert.equal(base.macro_wer_improvement_points, 0.5);
+	assert.equal(base.critical_slice_improvement_points, 2);
+	assert.equal(base.retain_new_download_visibility, false);
+});
+
 test('rejects standalone reports even when aggregate counts look complete', () => {
 	const input = fixture({ catalog: false });
 	input.automatic_policy.aggregate.input_bindings.standalone_schema_10.report_count = 1;
@@ -504,6 +630,169 @@ test('rejects unknown nested fields under the closed aggregate schema', () => {
 	const input = fixture({ catalog: false });
 	input.performance.aggregate.diagnostics.variants[0].groups.overall.unreviewed_metric = 1;
 	assert.throws(() => evaluatePublicCorpusQualification(input), /unreviewed_metric is not allowed/);
+
+	const nested = fixture({ catalog: false });
+	nested.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced.unreviewed_metric = 1;
+	assert.throws(
+		() => evaluatePublicCorpusQualification(nested),
+		/unreviewed_metric is not allowed/,
+	);
+});
+
+test('requires the pinned aggregation policy and coherent nullable model RTF metrics', () => {
+	const wrongPolicy = fixture({ catalog: false });
+	wrongPolicy.performance.aggregate.aggregation_unit_policy = 'measurement-v1';
+	assert.throws(() => evaluatePublicCorpusQualification(wrongPolicy), /aggregation_unit_policy/);
+
+	const incoherent = fixture({ catalog: false });
+	const unitBalanced =
+		incoherent.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+	unitBalanced.model_rtf_unit_count = 0;
+	assert.throws(() => evaluatePublicCorpusQualification(incoherent), /without model RTF units/);
+
+	const coherent = fixture({ catalog: false });
+	const modelFree =
+		coherent.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+	modelFree.model_rtf_unit_count = 0;
+	modelFree.mean_model_inference_rtf = null;
+	modelFree.median_model_inference_rtf = null;
+	modelFree.p95_model_inference_rtf = null;
+	modelFree.max_model_inference_rtf = null;
+	assert.doesNotThrow(() => evaluatePublicCorpusQualification(coherent));
+});
+
+test('requires unit pass rates to match their counts within numeric tolerance', () => {
+	const inconsistent = fixture({ catalog: false });
+	const invalid =
+		inconsistent.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+	invalid.passed_unit_count -= 1;
+	assert.throws(
+		() => evaluatePublicCorpusQualification(inconsistent),
+		/pass_rate_percent must match passed_unit_count \/ unit_count/,
+	);
+
+	const rounded = fixture({ catalog: false });
+	const tolerated =
+		rounded.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+	tolerated.passed_unit_count -= 1;
+	tolerated.pass_rate_percent = (tolerated.passed_unit_count / tolerated.unit_count) * 100 + 5e-8;
+	assert.doesNotThrow(() => evaluatePublicCorpusQualification(rounded));
+});
+
+test('rejects more overall aggregation units than observed samples', () => {
+	const input = fixture({ catalog: false });
+	const diagnostic = input.performance.aggregate.diagnostics.variants[0];
+	const unitBalanced = diagnostic.groups.overall.unit_balanced;
+	unitBalanced.unit_count += 1;
+	unitBalanced.singleton_sample_count += 1;
+	unitBalanced.passed_unit_count += 1;
+	unitBalanced.wer_unit_count += 1;
+	unitBalanced.model_rtf_unit_count += 1;
+	assert.throws(
+		() => evaluatePublicCorpusQualification(input),
+		/unit_count cannot exceed observed_sample_count/,
+	);
+
+	const groupedInput = fixture({ catalog: false });
+	const groupedSummary =
+		groupedInput.performance.aggregate.diagnostics.variants[0].groups.language[0].summary;
+	const groupedUnits = groupedSummary.samples + 1;
+	Object.assign(groupedSummary.unit_balanced, {
+		unit_count: groupedUnits,
+		session_count: 0,
+		singleton_sample_count: groupedUnits,
+		passed_unit_count: groupedUnits,
+		wer_unit_count: groupedUnits,
+		model_rtf_unit_count: groupedUnits,
+	});
+	assert.throws(
+		() => evaluatePublicCorpusQualification(groupedInput),
+		/unit_count cannot exceed .*\.samples/,
+	);
+});
+
+test('requires nearest-rank p95 to equal max below twenty eligible units', () => {
+	const cases = [
+		{
+			name: 'source RTF',
+			values: { median_inference_rtf: 0.4, p95_inference_rtf: 0.4 },
+			error: /p95_inference_rtf must equal .*max_inference_rtf.*fewer than 20/,
+		},
+		{
+			name: 'model RTF',
+			values: { median_model_inference_rtf: 0.4, p95_model_inference_rtf: 0.4 },
+			error: /p95_model_inference_rtf must equal .*max_model_inference_rtf.*fewer than 20/,
+		},
+		{
+			name: 'peak RSS',
+			values: { median_peak_rss_mb: 499, p95_peak_rss_mb: 499 },
+			error: /p95_peak_rss_mb must equal .*max_peak_rss_mb.*fewer than 20/,
+		},
+		{
+			name: 'peak RSS delta',
+			values: { median_peak_rss_delta_mb: 399, p95_peak_rss_delta_mb: 399 },
+			error: /p95_peak_rss_delta_mb must equal .*max_peak_rss_delta_mb.*fewer than 20/,
+		},
+	];
+	for (const { name, values, error } of cases) {
+		const input = fixture({ catalog: false });
+		const unitBalanced =
+			input.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+		Object.assign(unitBalanced, values);
+		assert.throws(() => evaluatePublicCorpusQualification(input), error, name);
+	}
+});
+
+test('rejects impossible unit-balanced distribution statistics', () => {
+	const cases = [
+		{
+			name: 'source RTF order',
+			values: { median_inference_rtf: 0.6, p95_inference_rtf: 0.5 },
+			error: /median_inference_rtf must not exceed .*p95_inference_rtf/,
+		},
+		{
+			name: 'source RTF mean',
+			values: { mean_inference_rtf: 0.6, max_inference_rtf: 0.5 },
+			error: /mean_inference_rtf must not exceed .*max_inference_rtf/,
+		},
+		{
+			name: 'model RTF order',
+			values: { p95_model_inference_rtf: 0.6, max_model_inference_rtf: 0.5 },
+			error: /p95_model_inference_rtf must not exceed .*max_model_inference_rtf/,
+		},
+		{
+			name: 'model RTF mean',
+			values: { mean_model_inference_rtf: 0.6, max_model_inference_rtf: 0.5 },
+			error: /mean_model_inference_rtf must not exceed .*max_model_inference_rtf/,
+		},
+		{
+			name: 'peak RSS order',
+			values: { median_peak_rss_mb: 501, p95_peak_rss_mb: 500 },
+			error: /median_peak_rss_mb must not exceed .*p95_peak_rss_mb/,
+		},
+		{
+			name: 'peak RSS mean',
+			values: { mean_peak_rss_mb: 501, max_peak_rss_mb: 500 },
+			error: /mean_peak_rss_mb must not exceed .*max_peak_rss_mb/,
+		},
+		{
+			name: 'peak RSS delta order',
+			values: { p95_peak_rss_delta_mb: 401, max_peak_rss_delta_mb: 400 },
+			error: /p95_peak_rss_delta_mb must not exceed .*max_peak_rss_delta_mb/,
+		},
+		{
+			name: 'peak RSS delta mean',
+			values: { mean_peak_rss_delta_mb: 401, max_peak_rss_delta_mb: 400 },
+			error: /mean_peak_rss_delta_mb must not exceed .*max_peak_rss_delta_mb/,
+		},
+	];
+	for (const { name, values, error } of cases) {
+		const input = fixture({ catalog: false });
+		const unitBalanced =
+			input.performance.aggregate.diagnostics.variants[0].groups.overall.unit_balanced;
+		Object.assign(unitBalanced, values);
+		assert.throws(() => evaluatePublicCorpusQualification(input), error, name);
+	}
 });
 
 test('rejects a second or non-Apple hardware cohort', () => {
