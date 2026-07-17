@@ -33,7 +33,7 @@ function fixture() {
 	return {
 		directory,
 		document: {
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'test-corpus',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			distribution: 'local',
@@ -118,7 +118,7 @@ test('hashes corpus files incrementally across multiple buffer reads', () => {
 
 test('allows an empty local corpus but not an empty repository corpus', () => {
 	const local = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local-only participant-consented multilingual meeting corpus.',
@@ -137,7 +137,7 @@ test('rejects legacy and differently versioned reference manifests without upgra
 	const legacy = { ...document, schema_version: 2 };
 	delete legacy.reference_protocol_id;
 	assert.deepEqual(validateCorpusDocument(legacy, { checkFiles: false }), [
-		'schema_version must be 3',
+		'schema_version must be 4',
 		`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`,
 	]);
 	assert.equal(legacy.schema_version, 2);
@@ -231,7 +231,55 @@ test('rejects meeting audio without participant consent', () => {
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
-	assert(errors.some((error) => error.includes('participant-consent for meeting recordings')));
+	assert(
+		errors.some((error) =>
+			error.includes('participant-consent or public-license for meeting recordings'),
+		),
+	);
+});
+
+test('accepts open-licensed meeting audio only when it is bound to a source catalog', () => {
+	const { directory, document } = fixture();
+	document.source_catalog_sha256 = 'a'.repeat(64);
+	document.samples[0].provenance = {
+		basis: 'public-license',
+		redistribution: 'local-only',
+		source_catalog_id: 'ami',
+		source_item_ids: ['EN2001a/headset-mix/00:02:00-00:05:00'],
+		transform_id: 'clean',
+	};
+	assert.deepEqual(
+		validateCorpusDocument(document, { manifestPath: path.join(directory, 'manifest.json') }),
+		[],
+	);
+
+	delete document.source_catalog_sha256;
+	assert(
+		validateCorpusDocument(document, {
+			manifestPath: path.join(directory, 'manifest.json'),
+		}).includes('source_catalog_sha256 is required for public-license samples'),
+	);
+});
+
+test('rejects ambiguous or unbounded public-license source bindings', () => {
+	const { document } = fixture();
+	document.source_catalog_sha256 = 'not-a-digest';
+	document.samples[0].provenance = {
+		basis: 'public-license',
+		redistribution: 'repository',
+		source_catalog_id: 'AMI',
+		source_item_ids: ['item-1', 'item-1', 'x'.repeat(257)],
+		transform_id: 'Clean',
+	};
+	const errors = validateCorpusDocument(document, { checkFiles: false });
+	assert(errors.includes('source_catalog_sha256 must be a lowercase SHA-256 digest'));
+	assert(errors.some((error) => error.includes('source_catalog_id must be a lowercase slug')));
+	assert(errors.some((error) => error.includes("contains duplicate 'item-1'")));
+	assert(errors.some((error) => error.includes('bounded single-line string')));
+	assert(errors.some((error) => error.includes('transform_id must be a lowercase slug')));
+	assert(
+		errors.some((error) => error.includes('redistribution must be local-only for public-license')),
+	);
 });
 
 test('rejects identity fields and changed fixture contents', () => {

@@ -669,7 +669,8 @@ function assertTaskSampleBinding(task, sample) {
     ["scenario", task.scenario],
     ["speakers", task.speakers],
   ]) {
-    if (sample[field] !== expected) {
+    const actual = field === "session_id" ? (sample[field] ?? null) : sample[field];
+    if (actual !== expected) {
       throw new Error(`leased benchmark sample.${field} does not match the planned task`);
     }
   }
@@ -729,7 +730,11 @@ async function runLeasedTask({ dependencies, lease, session, signal, task }) {
   }
   if (validationError !== null) throw validationError;
   if (runError !== null) throw runError;
-  return report;
+  if (!isObject(report)) throw new Error("benchmark task must return a report object");
+  if (report.repeat_index !== undefined && report.repeat_index !== task.repeat_index) {
+    throw new Error("benchmark report repeat_index does not match the planned task");
+  }
+  return { ...report, repeat_index: task.repeat_index };
 }
 
 function variantKey(task) {

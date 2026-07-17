@@ -22,9 +22,10 @@ function hardwareProfile(cpu, logicalCpus, memoryBytes) {
 }
 
 const targets = {
-	schema_version: 2,
+	schema_version: 3,
 	target_id: 'test-targets',
 	reference_protocol_id: REFERENCE_PROTOCOL_ID,
+	coverage_mode: 'language-noise-matrix',
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [
@@ -80,6 +81,33 @@ test('accepts the canonical Core ML target backend', () => {
 			benchmark_variants: [{ provider: 'whisper', model: 'test-model', backend: 'coreml-metal' }],
 		}),
 		[],
+	);
+});
+
+test('validates discriminated explicit-sample targets and bounded repetitions', () => {
+	const explicit = {
+		schema_version: 3,
+		target_id: 'public-performance-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		coverage_mode: 'explicit-samples',
+		sample_ids: ['en-clean-session-1'],
+		benchmark_variants: [{ provider: 'whisper', model: 'test-model', backend: 'metal' }],
+		repetitions: 3,
+	};
+	assert.deepEqual(validateCoverageTargets(explicit), []);
+	for (const repetitions of [0, 11, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+		assert.match(
+			validateCoverageTargets({ ...explicit, repetitions }).join('\n'),
+			/safe integer from 1 through 10/,
+		);
+	}
+	assert.match(
+		validateCoverageTargets({ ...explicit, languages: ['en'] }).join('\n'),
+		/targets\.languages is not an allowed field/,
+	);
+	assert.match(
+		validateCoverageTargets({ ...targets, sample_ids: ['en-clean-session-1'] }).join('\n'),
+		/targets\.sample_ids is not an allowed field/,
 	);
 });
 
@@ -150,6 +178,7 @@ function runReport(corpus, backend, options = {}) {
 		model: 'test-model',
 		model_artifact_sha256:
 			options.modelArtifactSha256 ?? (backend === 'onnx-cpu' ? 'd'.repeat(64) : 'c'.repeat(64)),
+		...(options.repeatIndex === undefined ? {} : { repeat_index: options.repeatIndex }),
 		evaluator_revision: evaluatorRevision,
 		evaluator_revision_sha256: evaluatorRevisionDigest,
 		benchmark_executable_sha256: benchmarkExecutableSha256,
@@ -215,6 +244,51 @@ function completeCorpus() {
 	};
 }
 
+test('requires every explicit sample, variant, and repeat on one compatible hardware cohort', () => {
+	const corpus = completeCorpus();
+	const selectedSample = corpus.samples[0];
+	const explicitTargets = {
+		schema_version: 3,
+		target_id: 'public-performance-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		coverage_mode: 'explicit-samples',
+		sample_ids: [selectedSample.id],
+		benchmark_variants: [{ provider: 'whisper', model: 'test-model', backend: 'metal' }],
+		repetitions: 3,
+	};
+	const reports = [1, 2, 3].map((repeatIndex) =>
+		runReport(corpus, 'metal', { samples: [selectedSample], repeatIndex }),
+	);
+	const partial = evaluateCoverage(corpus, explicitTargets, reports.slice(0, 2));
+	assert.equal(partial.coverage_mode, 'explicit-samples');
+	assert.equal(partial.corpus.unit_kind, 'sample');
+	assert.equal(partial.corpus.covered_cells, 1);
+	assert.equal(partial.measurements.covered_cells, 2);
+	assert.deepEqual(partial.measurements.missing_cells, [
+		`${selectedSample.id} / whisper / test-model / metal / repeat 3`,
+	]);
+	assert.equal(partial.complete, false);
+
+	const complete = evaluateCoverage(corpus, explicitTargets, reports);
+	assert.equal(complete.repetitions, 3);
+	assert.equal(complete.eligible_samples, 1);
+	assert.equal(complete.measurements.required_cells, 3);
+	assert.equal(complete.measurements.complete_matrix_hardware_cohorts, 1);
+	assert.equal(complete.complete, true);
+	assert.throws(
+		() => evaluateCoverage(corpus, explicitTargets, [...reports, structuredClone(reports[2])]),
+		/duplicate measurement/,
+	);
+	assert.throws(
+		() =>
+			evaluateCoverage(corpus, {
+				...explicitTargets,
+				sample_ids: ['missing-public-sample'],
+			}),
+		/target sample 'missing-public-sample' is absent/,
+	);
+});
+
 test('requires distinct sessions for every language and noise cell', () => {
 	const corpus = completeCorpus();
 	corpus.samples[1].session_id = corpus.samples[0].session_id;
@@ -251,7 +325,7 @@ test('requires every measurement cell and accepts a same-machine multi-backend m
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 9);
+	assert.equal(complete.schema_version, 10);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
 	assert.equal(complete.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(complete.wer_scorer, WER_SCORER_ID);
@@ -747,7 +821,7 @@ test('writes coverage through the managed local corpus results path', () => {
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	fs.mkdirSync(path.join(directory, 'local-corpus'));
 	const document = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'local-consented-meetings',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',

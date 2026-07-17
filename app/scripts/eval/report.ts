@@ -17,7 +17,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 // The VAD flush pads one final 16 kHz processing block, so model input can
 // legitimately exceed decoded source duration by less than one 30 ms block.
 const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
-const RUN_REPORT_FIELDS = new Set([
+const RUN_REPORT_REQUIRED_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
 	'corpus_fingerprint',
@@ -35,6 +35,7 @@ const RUN_REPORT_FIELDS = new Set([
 	'passed',
 	'results',
 ]);
+const RUN_REPORT_FIELDS = new Set([...RUN_REPORT_REQUIRED_FIELDS, 'repeat_index']);
 const THRESHOLD_FIELDS = new Set(['max_wer_percent', 'max_hallucinated_words']);
 const RESULT_FIELDS = new Set([
 	'sample_id',
@@ -359,8 +360,19 @@ export function validateRunReport(report, label = 'report') {
 	if (!isObject(report)) {
 		return [`${label} must be a JSON object`];
 	}
-	rejectUnknownAndMissingFields(report, RUN_REPORT_FIELDS, label, errors);
+	for (const key of Object.keys(report)) {
+		if (!RUN_REPORT_FIELDS.has(key)) errors.push(`${label}.${key} is not allowed`);
+	}
+	for (const key of RUN_REPORT_REQUIRED_FIELDS) {
+		if (!Object.hasOwn(report, key)) errors.push(`${label}.${key} is required`);
+	}
 	if (report.schema_version !== 10) errors.push(`${label}.schema_version must be 10`);
+	if (
+		report.repeat_index !== undefined &&
+		(!Number.isSafeInteger(report.repeat_index) || report.repeat_index < 1 || report.repeat_index > 10)
+	) {
+		errors.push(`${label}.repeat_index must be a safe integer from 1 through 10`);
+	}
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	requireSha256(report.corpus_fingerprint, `${label}.corpus_fingerprint`, errors);
 	if (report.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
@@ -849,15 +861,18 @@ function groupedSummaries(records, dimensions) {
 }
 
 function summarizeVariant(identity, records) {
-	const orderedRecords = [...records].sort((left, right) =>
-		compareText(left.sample_id, right.sample_id),
+	const orderedRecords = [...records].sort(
+		(left, right) =>
+			compareText(left.sample_id, right.sample_id) || left.repeat_index - right.repeat_index,
 	);
 	return {
 		...identity,
-		observed_sample_count: orderedRecords.length,
+		observed_sample_count: new Set(orderedRecords.map((record) => record.sample_id)).size,
+		measurement_result_count: orderedRecords.length,
 		groups: {
 			overall: summarize(orderedRecords),
 			language: groupedSummaries(orderedRecords, [['language', (record) => record.language]]),
+			scenario: groupedSummaries(orderedRecords, [['scenario', (record) => record.scenario]]),
 			noise_condition: groupedSummaries(orderedRecords, [
 				['noise_condition', (record) => record.noise_condition],
 			]),
@@ -893,6 +908,12 @@ function comparisonGroups(diagnostics) {
 				diagnostic.groups.language.map((row) => withVariant(diagnostic, row)),
 			),
 			['language'],
+		),
+		scenario_variant: sortRows(
+			diagnostics.flatMap((diagnostic) =>
+				diagnostic.groups.scenario.map((row) => withVariant(diagnostic, row)),
+			),
+			['scenario'],
 		),
 		noise_condition_variant: sortRows(
 			diagnostics.flatMap((diagnostic) =>
@@ -1029,6 +1050,7 @@ export function aggregateRunReports(reports) {
 			throw new Error('cannot aggregate reports produced with different pass thresholds');
 		}
 		for (const [resultIndex, result] of report.results.entries()) {
+			const repeatIndex = report.repeat_index ?? 1;
 			if (operatingSystem === undefined) {
 				operatingSystem = result.metrics.operating_system;
 				architecture = result.metrics.architecture;
@@ -1075,12 +1097,13 @@ export function aggregateRunReports(reports) {
 				report.model,
 				result.metrics.backend,
 				result.sample_id,
+				repeatIndex,
 			]);
 			const source = `reports[${index}].results[${resultIndex}]`;
 			const priorSource = measurementSources.get(measurementKey);
 			if (priorSource !== undefined) {
 				throw new Error(
-					`cannot aggregate duplicate provider/model/backend/sample_id measurement ` +
+					`cannot aggregate duplicate provider/model/backend/sample_id/repeat_index measurement ` +
 						`${measurementKey} from ${priorSource} and ${source}`,
 				);
 			}
@@ -1098,7 +1121,12 @@ export function aggregateRunReports(reports) {
 			} else {
 				sampleIdentities.set(result.sample_id, identity);
 			}
-			records.push({ ...result, provider: report.provider, model: report.model });
+			records.push({
+				...result,
+				provider: report.provider,
+				model: report.model,
+				repeat_index: repeatIndex,
+			});
 		}
 	}
 
@@ -1110,33 +1138,44 @@ export function aggregateRunReports(reports) {
 		if (existing) {
 			existing.records.push(record);
 			existing.sampleIds.add(record.sample_id);
+			existing.measurementIds.add(`${record.sample_id}\0${record.repeat_index}`);
 		} else {
 			variantsByKey.set(key, {
 				...identity,
 				records: [record],
 				sampleIds: new Set([record.sample_id]),
+				measurementIds: new Set([`${record.sample_id}\0${record.repeat_index}`]),
 			});
 		}
 	}
 	const variants = [...variantsByKey.values()].sort(compareVariants);
 	const unionSampleIds = new Set(variants.flatMap((variant) => [...variant.sampleIds]));
+	const unionMeasurementIds = new Set(
+		variants.flatMap((variant) => [...variant.measurementIds]),
+	);
 	const commonSampleIds = new Set(variants[0].sampleIds);
+	const commonMeasurementIds = new Set(variants[0].measurementIds);
 	for (const variant of variants.slice(1)) {
 		for (const sampleId of commonSampleIds) {
 			if (!variant.sampleIds.has(sampleId)) commonSampleIds.delete(sampleId);
 		}
+		for (const measurementId of commonMeasurementIds) {
+			if (!variant.measurementIds.has(measurementId)) commonMeasurementIds.delete(measurementId);
+		}
 	}
 	const identicalCohorts = variants.every(
 		(variant) =>
-			variant.sampleIds.size === variants[0].sampleIds.size &&
-			[...variants[0].sampleIds].every((sampleId) => variant.sampleIds.has(sampleId)),
+			variant.measurementIds.size === variants[0].measurementIds.size &&
+			[...variants[0].measurementIds].every((measurementId) =>
+				variant.measurementIds.has(measurementId),
+			),
 	);
 	const comparisonStatus =
 		variants.length < 2
 			? 'single-variant'
 			: identicalCohorts
 				? 'comparable'
-				: 'unequal-sample-cohorts';
+				: 'unequal-measurement-cohorts';
 	const diagnostics = variants.map((variant) =>
 		summarizeVariant(
 			variantIdentity(variant.provider, variant.model, variant.backend),
@@ -1148,14 +1187,20 @@ export function aggregateRunReports(reports) {
 		model: variant.model,
 		backend: variant.backend,
 		observed_sample_count: variant.sampleIds.size,
+		observed_measurement_count: variant.measurementIds.size,
 		not_common_sample_count: [...variant.sampleIds].filter(
 			(sampleId) => !commonSampleIds.has(sampleId),
 		).length,
 		missing_from_union_sample_count: unionSampleIds.size - variant.sampleIds.size,
+		not_common_measurement_count: [...variant.measurementIds].filter(
+			(measurementId) => !commonMeasurementIds.has(measurementId),
+		).length,
+		missing_from_union_measurement_count:
+			unionMeasurementIds.size - variant.measurementIds.size,
 	}));
 
 	return {
-		schema_version: 8,
+		schema_version: 9,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
@@ -1189,6 +1234,8 @@ export function aggregateRunReports(reports) {
 			variant_count: variants.length,
 			union_sample_count: unionSampleIds.size,
 			common_sample_count: commonSampleIds.size,
+			union_measurement_count: unionMeasurementIds.size,
+			common_measurement_count: commonMeasurementIds.size,
 			cohorts: comparisonCohorts,
 			groups: comparisonStatus === 'comparable' ? comparisonGroups(diagnostics) : null,
 		},
@@ -1223,6 +1270,7 @@ function appendSummaryTable(lines, rows) {
 function comparisonRowLabel(dimension, row) {
 	const variant = variantLabel(row);
 	if (dimension === 'language_variant') return `${row.language} / ${variant}`;
+	if (dimension === 'scenario_variant') return `${row.scenario} / ${variant}`;
 	if (dimension === 'noise_condition_variant') return `${row.noise_condition} / ${variant}`;
 	if (dimension === 'language_noise_variant') {
 		return `${row.language} / ${row.noise_condition} / ${variant}`;
@@ -1233,6 +1281,7 @@ function comparisonRowLabel(dimension, row) {
 function comparisonDimensionTitle(dimension) {
 	if (dimension === 'variant') return 'By exact variant';
 	if (dimension === 'language_variant') return 'By language and exact variant';
+	if (dimension === 'scenario_variant') return 'By scenario and exact variant';
 	if (dimension === 'noise_condition_variant') return 'By noise condition and exact variant';
 	return 'By language, noise condition, and exact variant';
 }
@@ -1294,24 +1343,24 @@ export function renderMarkdown(report) {
 	];
 	if (report.comparison.status === 'comparable') {
 		lines.push(
-			`Comparable across ${report.comparison.variant_count} supplied exact variants on an identical ${report.comparison.common_sample_count}-sample cohort.`,
+			`Comparable across ${report.comparison.variant_count} supplied exact variants on an identical ${report.comparison.common_sample_count}-sample, ${report.comparison.common_measurement_count}-measurement cohort.`,
 		);
 	} else if (report.comparison.status === 'single-variant') {
 		lines.push('No cross-variant comparison: only one exact variant was supplied.');
 	} else {
 		lines.push(
-			`No cross-variant comparison: supplied variants have unequal sample cohorts (${report.comparison.common_sample_count} common of ${report.comparison.union_sample_count} distinct samples). Post-hoc intersection metrics are intentionally not reported.`,
+			`No cross-variant comparison: supplied variants have unequal sample/repeat cohorts (${report.comparison.common_measurement_count} common of ${report.comparison.union_measurement_count} distinct measurements across ${report.comparison.union_sample_count} samples). Post-hoc intersection metrics are intentionally not reported.`,
 		);
 	}
 	lines.push(
 		'',
 		'This comparison scope includes only the supplied variants and does not assess target completeness. Use `eval:coverage --require-complete` for the target-matrix gate.',
 		'',
-		'| Variant | Observed samples | Samples outside common cohort | Samples missing from union |',
-		'| --- | ---: | ---: | ---: |',
+		'| Variant | Observed samples | Observed measurements | Measurements outside common cohort | Measurements missing from union |',
+		'| --- | ---: | ---: | ---: | ---: |',
 		...report.comparison.cohorts.map(
 			(cohort) =>
-				`| ${escapeCell(variantLabel(cohort))} | ${cohort.observed_sample_count} | ${cohort.not_common_sample_count} | ${cohort.missing_from_union_sample_count} |`,
+				`| ${escapeCell(variantLabel(cohort))} | ${cohort.observed_sample_count} | ${cohort.observed_measurement_count} | ${cohort.not_common_measurement_count} | ${cohort.missing_from_union_measurement_count} |`,
 		),
 	);
 	if (report.comparison.groups !== null) {
@@ -1335,6 +1384,7 @@ export function renderMarkdown(report) {
 			appendSummaryTable(lines, [{ label: 'all observed', summary: diagnostic.groups.overall }]);
 			for (const [dimension, rows] of [
 				['Language', diagnostic.groups.language],
+				['Scenario', diagnostic.groups.scenario],
 				['Noise condition', diagnostic.groups.noise_condition],
 				['Language and noise condition', diagnostic.groups.language_noise],
 			]) {
@@ -1345,7 +1395,7 @@ export function renderMarkdown(report) {
 						label:
 							row.language && row.noise_condition
 								? `${row.language} / ${row.noise_condition}`
-								: (row.language ?? row.noise_condition),
+								: (row.language ?? row.scenario ?? row.noise_condition),
 						summary: row.summary,
 					})),
 				);

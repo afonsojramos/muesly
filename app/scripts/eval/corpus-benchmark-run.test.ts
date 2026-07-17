@@ -287,7 +287,7 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
   fs.writeFileSync(
     manifestPath,
     `${JSON.stringify({
-      schema_version: 3,
+      schema_version: 4,
       corpus_id: "consented-meetings-v1",
       reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Local consented meetings.",
@@ -300,10 +300,11 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
   fs.writeFileSync(
     targetsPath,
     `${JSON.stringify({
-      schema_version: 2,
+      schema_version: 3,
       target_id: "multilingual-v1",
       reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Test target.",
+      coverage_mode: "language-noise-matrix",
       languages: ["en"],
       noise_conditions: ["clean"],
       benchmark_variants: [{ provider: "whisper", model: "whisper-test", backend: "cpu" }],

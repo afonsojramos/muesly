@@ -133,7 +133,7 @@ according to the approved retention policy.
 nub run eval:corpus:validate app/scripts/eval/corpus-local.json
 ```
 
-The validator requires corpus schema 3 and the exact reference protocol, at least two speakers for
+The validator requires corpus schema 4 and the exact reference protocol, at least two speakers for
 meetings, participant consent,
 local-only redistribution, opaque session/consent IDs, valid dates, exact hashes, and no
 identity-bearing or unknown metadata fields. Identical audio cannot appear in more than one sample,
@@ -264,8 +264,8 @@ Check that at least one matrix-wide hardware cohort has three distinct sessions 
 language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
 profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
 best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
-from different machines or accelerator identities does not satisfy coverage schema 9. Coverage
-schema 9 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
+from different machines or accelerator identities does not satisfy coverage schema 10. Coverage
+schema 10 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
 every backend. The
 command fails with `--require-complete` until the corpus cells and one full-matrix cohort are
 complete:
@@ -287,13 +287,13 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
 
 The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
-reviewable aggregate JSON and Markdown. Aggregate schema 8 keeps the reference protocol and each
+reviewable aggregate JSON and Markdown. Aggregate schema 9 keeps the reference protocol and each
 provider/model/reported-
 backend variant separate and emits comparison tables only when every supplied variant measured the
-identical set of sample IDs. Unequal or interrupted cohorts remain available as clearly labelled
-per-variant diagnostics, but the report does not score their intersection because missing
-measurements may be failures. Report comparison covers only supplied variants; the coverage command
-above remains the target-completeness authority.
+identical sample-and-repeat measurement cohort. Unequal or interrupted cohorts remain available as
+clearly labelled per-variant diagnostics, but the report does not score their intersection because
+missing measurements may be failures. Report comparison covers only supplied variants; the
+coverage command above remains the target-completeness authority.
 
 RSS columns are sampled evaluator-process host memory, not model-only allocation or accelerator
 VRAM. Sampling runs every 10 ms from immediately before model load through the end of inference.

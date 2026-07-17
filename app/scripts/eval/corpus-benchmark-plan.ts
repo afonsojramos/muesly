@@ -6,8 +6,8 @@ import {
 	benchmarkDefinitionForReportedBackend,
 	evaluatorPlatformForTargetTriple,
 } from './benchmark-executable.ts';
-import { validateCoverageTargets } from './coverage.ts';
 import { corpusFingerprint, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
+import { resolveCoverageTarget } from './corpus-targets.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 import { validateRunReport } from './report.ts';
@@ -34,6 +34,7 @@ const PLANNING_CORPUS_FIELDS = new Set([
 	'reference_protocol_id',
 	'description',
 	'distribution',
+	'source_catalog_sha256',
 	'samples',
 	'corpus_fingerprint',
 	'manifest_path',
@@ -54,6 +55,7 @@ const CHECKPOINT_FIELDS = new Set([
 	'provider',
 	'model',
 	'model_artifact_sha256',
+	'repeat_index',
 	'thresholds',
 	'passed',
 	'results',
@@ -128,6 +130,20 @@ function requiredString(value, field) {
 function positiveFiniteNumber(value, field) {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
 		throw new Error(`${field} must be a positive finite number`);
+	}
+	return value;
+}
+
+function nonNegativeInteger(value, field) {
+	if (!Number.isInteger(value) || value < 0) {
+		throw new Error(`${field} must be a non-negative integer`);
+	}
+	return value;
+}
+
+function normalizedRepeatIndex(value, field) {
+	if (!Number.isSafeInteger(value) || value < 1 || value > 10) {
+		throw new Error(`${field} must be a safe integer from 1 through 10`);
 	}
 	return value;
 }
@@ -287,16 +303,6 @@ function normalizeAccelerators(accelerators) {
 	return normalized;
 }
 
-function uniqueStrings(values, field) {
-	const normalized = values.map((value, index) => requiredString(value, `${field}[${index}]`));
-	const seen = new Set();
-	for (const value of normalized) {
-		if (seen.has(value)) throw new Error(`${field} contains duplicate '${value}'`);
-		seen.add(value);
-	}
-	return normalized;
-}
-
 function permitsAutomaticAccelerator(targetBackend, evaluatorRevision) {
 	if (!['metal', 'coreml-metal'].includes(targetBackend)) return false;
 	const platform = evaluatorPlatformForTargetTriple(evaluatorRevision.target_triple);
@@ -307,18 +313,6 @@ function matchesConfiguredAccelerator(actual, configured) {
 	if (typeof actual !== 'string') return false;
 	const prefix = `${configured} [ggml=`;
 	return actual.startsWith(prefix) && actual.endsWith(']') && actual.length > prefix.length + 1;
-}
-
-function primaryLanguage(language) {
-	return language.split('-')[0].toLowerCase();
-}
-
-function lexicalCompare(left, right) {
-	return left < right ? -1 : left > right ? 1 : 0;
-}
-
-function compareSamples(left, right) {
-	return lexicalCompare(left.session_id, right.session_id) || lexicalCompare(left.id, right.id);
 }
 
 function taskIdentity(task) {
@@ -375,13 +369,20 @@ function taskIdentity(task) {
 			task.audio_duration_seconds,
 			'task.audio_duration_seconds',
 		),
-		session_id: requiredString(task.session_id, 'task.session_id'),
+		session_id:
+			task.session_id === null || task.session_id === undefined
+				? null
+				: requiredString(task.session_id, 'task.session_id'),
 		language: requiredString(task.language, 'task.language'),
 		target_language: requiredString(task.target_language, 'task.target_language'),
 		noise_condition: requiredString(task.noise_condition, 'task.noise_condition'),
 		scenario: requiredString(task.scenario, 'task.scenario'),
-		speakers: positiveFiniteNumber(task.speakers, 'task.speakers'),
+		speakers: nonNegativeInteger(task.speakers, 'task.speakers'),
 		provenance_basis: requiredString(task.provenance_basis, 'task.provenance_basis'),
+		repeat_index:
+			task.repeat_index === undefined
+				? 1
+				: normalizedRepeatIndex(task.repeat_index, 'task.repeat_index'),
 		thresholds,
 		accelerator,
 	};
@@ -460,6 +461,9 @@ function planningCorpusDocument(corpus) {
 		reference_protocol_id: corpus.reference_protocol_id,
 		description: corpus.description,
 		distribution: corpus.distribution,
+		...(corpus.source_catalog_sha256 === undefined
+			? {}
+			: { source_catalog_sha256: corpus.source_catalog_sha256 }),
 		samples,
 	};
 	const manifestPath =
@@ -493,45 +497,20 @@ export function planCorpusBenchmarkTasks({
 	if (corpusFingerprintValue !== corpusFingerprint(planningCorpus)) {
 		throw new Error('corpus.corpus_fingerprint does not match the validated planning corpus');
 	}
-	const targetErrors = validateCoverageTargets(targets);
-	if (targetErrors.length > 0) {
-		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
-	}
-	if (targets.reference_protocol_id !== planningCorpus.reference_protocol_id) {
-		throw new Error('targets.reference_protocol_id must match corpus.reference_protocol_id');
-	}
+	const resolvedTarget = resolveCoverageTarget(planningCorpus, targets);
 	const targetId = requiredString(targets.target_id, 'targets.target_id');
 	const normalizedThresholds = normalizeThresholds(thresholds);
 	const normalizedAccelerators = normalizeAccelerators(accelerators);
 	const normalizedEvaluatorRevisions = normalizeEvaluatorRevisions(evaluatorRevisions);
-	const languages = uniqueStrings(targets.languages, 'targets.languages');
-	const noiseConditions = uniqueStrings(targets.noise_conditions, 'targets.noise_conditions');
-	const languageSet = new Set(languages);
-	const noiseSet = new Set(noiseConditions);
-	const samplesByCell = new Map();
-	for (const sample of planningCorpus.samples) {
-		if (
-			!isObject(sample) ||
-			sample.scenario !== 'meeting' ||
-			sample.provenance?.basis !== 'participant-consent' ||
-			typeof sample.language !== 'string' ||
-			typeof sample.noise_condition !== 'string'
-		) {
-			continue;
-		}
-		const language = primaryLanguage(sample.language);
-		if (!languageSet.has(language) || !noiseSet.has(sample.noise_condition)) continue;
-		const sessionId = requiredString(sample.session_id, `sample '${sample.id}'.session_id`);
+	const plannedSamples = resolvedTarget.selected_samples.map(({ sample, target_language }) => {
 		const sampleId = requiredString(sample.id, 'sample.id');
 		const audioDurationSeconds = positiveFiniteNumber(
 			sample.duration_seconds,
 			`sample '${sampleId}'.duration_seconds`,
 		);
-		const cell = `${language}\0${sample.noise_condition}`;
-		if (!samplesByCell.has(cell)) samplesByCell.set(cell, []);
-		samplesByCell.get(cell).push({
+		return {
 			id: sampleId,
-			session_id: sessionId,
+			session_id: sample.session_id ?? null,
 			sample_revision_sha256: corpusFingerprint(sample),
 			audio_sha256: requireSha256(
 				sample.audio_sha256,
@@ -539,14 +518,13 @@ export function planCorpusBenchmarkTasks({
 			),
 			audio_duration_seconds: audioDurationSeconds,
 			language: sample.language,
-			target_language: language,
+			target_language,
 			noise_condition: sample.noise_condition,
 			scenario: sample.scenario,
 			speakers: sample.speakers,
 			provenance_basis: sample.provenance.basis,
-		});
-	}
-	for (const samples of samplesByCell.values()) samples.sort(compareSamples);
+		};
+	});
 
 	const tasks = [];
 	const variantKeys = new Set();
@@ -604,9 +582,8 @@ export function planCorpusBenchmarkTasks({
 					`${evaluator.revision.target_triple}`,
 			);
 		}
-		for (const language of languages) {
-			for (const noiseCondition of noiseConditions) {
-				for (const sample of samplesByCell.get(`${language}\0${noiseCondition}`) ?? []) {
+		for (const sample of plannedSamples) {
+			for (let repeatIndex = 1; repeatIndex <= resolvedTarget.repetitions; repeatIndex += 1) {
 					const task = {
 						variant_index: variantIndex,
 						corpus_id: corpusId,
@@ -632,12 +609,12 @@ export function planCorpusBenchmarkTasks({
 						scenario: sample.scenario,
 						speakers: sample.speakers,
 						provenance_basis: sample.provenance_basis,
+						repeat_index: repeatIndex,
 						thresholds: { ...normalizedThresholds },
 					};
 					task.task_id = taskDigest(task);
 					task.report_filename = taskReportFilename(task);
 					tasks.push(task);
-				}
 			}
 		}
 	}
@@ -941,6 +918,12 @@ export function validateTaskCheckpoint(report, task, { expectedModelArtifactSha2
 	}
 	compareField(errors, report.provider, expected.provider, 'checkpoint.provider');
 	compareField(errors, report.model, expected.model, 'checkpoint.model');
+	compareField(
+		errors,
+		report.repeat_index ?? 1,
+		expected.repeat_index,
+		'checkpoint.repeat_index',
+	);
 	if (isObject(report.thresholds)) {
 		compareField(
 			errors,

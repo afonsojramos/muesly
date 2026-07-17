@@ -166,7 +166,7 @@ test('updates the canonical manifest when intake is invoked through a symlink', 
 	fs.writeFileSync(
 		canonicalManifest,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
@@ -271,7 +271,7 @@ test('atomically imports a consented sample with verified metadata and private f
 	assert.equal(sample.provenance.consent_record_id, 'consent-opaque-001');
 	const document = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8'));
 	assert.deepEqual(validateCorpusDocument(document, { manifestPath: options.manifestPath }), []);
-	assert.equal(document.schema_version, 3);
+	assert.equal(document.schema_version, 4);
 	assert.equal(document.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(document.samples.length, 1);
 	assert.equal(
@@ -687,7 +687,7 @@ test('does not reclaim a durable withdrawal intent for new intake', () => {
 	fs.writeFileSync(
 		options.manifestPath,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
@@ -776,7 +776,7 @@ test('preserves recordings when stale-lock recovery finds an invalid manifest', 
 	fs.writeFileSync(
 		options.manifestPath,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			distribution: 'local',

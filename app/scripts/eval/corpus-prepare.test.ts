@@ -16,9 +16,10 @@ import {
 import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
 
 const targets = {
-	schema_version: 2,
+	schema_version: 3,
 	target_id: 'test-targets',
 	reference_protocol_id: REFERENCE_PROTOCOL_ID,
+	coverage_mode: 'language-noise-matrix',
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [{ provider: 'whisper', model: 'test', backend: 'cpu' }],
@@ -239,7 +240,7 @@ test('plans from an intake commit completed while waiting for the corpus lock', 
 	fs.writeFileSync(
 		stagedManifestPath,
 		`${JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local test corpus.',
@@ -488,7 +489,7 @@ test('rejects incomplete selectors and already-complete cells', () => {
 	fs.writeFileSync(
 		manifestPath,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local corpus.',
@@ -606,7 +607,7 @@ test('rejects repository-distributed manifests before creating collection files'
 	fs.writeFileSync(
 		current.manifestPath,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'repository-corpus',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Repository fixture.',

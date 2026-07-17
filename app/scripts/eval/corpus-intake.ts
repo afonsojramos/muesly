@@ -8,6 +8,7 @@ import { TextDecoder } from 'node:util';
 import { assertCorpusBenchmarkAccess } from './corpus-benchmark-lock.ts';
 import {
 	canonicalManifestPath,
+	CORPUS_SCHEMA_VERSION,
 	fileSha256,
 	REFERENCE_PROTOCOL_ID,
 	validateCorpusDocument,
@@ -557,7 +558,7 @@ function relativeManifestPath(manifestPath, filePath) {
 function readManifest(manifestPath) {
 	if (!fs.existsSync(manifestPath)) {
 		return {
-			schema_version: 3,
+			schema_version: CORPUS_SCHEMA_VERSION,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',

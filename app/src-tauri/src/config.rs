@@ -161,6 +161,7 @@ mod tests {
     struct CorpusTargets {
         schema_version: u8,
         reference_protocol_id: String,
+        coverage_mode: String,
         benchmark_variants: Vec<CorpusBenchmarkVariant>,
     }
 
@@ -222,8 +223,9 @@ mod tests {
         let targets: CorpusTargets =
             serde_json::from_str(include_str!("../../scripts/eval/corpus-targets.json"))
                 .expect("committed corpus targets must be valid JSON");
-        assert_eq!(targets.schema_version, 2);
+        assert_eq!(targets.schema_version, 3);
         assert_eq!(targets.reference_protocol_id, "muesly-meeting-reference-v1");
+        assert_eq!(targets.coverage_mode, "language-noise-matrix");
         let available_whisper = WHISPER_MODEL_CATALOG
             .iter()
             .map(|entry| entry.0.to_string())

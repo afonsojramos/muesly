@@ -3,10 +3,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 
-export const CORPUS_SCHEMA_VERSION = 3;
+export const CORPUS_SCHEMA_VERSION = 4;
 export const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
 
-const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
+const PROVENANCE_BASES = new Set([
+	'participant-consent',
+	'public-domain',
+	'public-license',
+	'synthetic',
+]);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
 const CONSENTED_USES = new Set(['asr-benchmarking']);
 const CHECKED_IN_SYNTHETIC_SILENCE = Object.freeze({
@@ -30,6 +35,7 @@ const MANIFEST_FIELDS = new Set([
 	'reference_protocol_id',
 	'description',
 	'distribution',
+	'source_catalog_sha256',
 	'samples',
 ]);
 const SAMPLE_FIELDS = new Set([
@@ -56,6 +62,13 @@ const PROVENANCE_FIELDS = {
 		'consented_uses',
 	]),
 	'public-domain': new Set(['basis', 'redistribution', 'source_url', 'license']),
+	'public-license': new Set([
+		'basis',
+		'redistribution',
+		'source_catalog_id',
+		'source_item_ids',
+		'transform_id',
+	]),
 	synthetic: new Set(['basis', 'redistribution', 'generation_method']),
 };
 
@@ -191,7 +204,9 @@ function validateProvenance(sample, errors, today) {
 	}
 
 	if (!PROVENANCE_BASES.has(provenance.basis)) {
-		errors.push(`${prefix}.basis must be participant-consent, public-domain, or synthetic`);
+		errors.push(
+			`${prefix}.basis must be participant-consent, public-domain, public-license, or synthetic`,
+		);
 		return;
 	}
 	rejectUnknownFields(provenance, PROVENANCE_FIELDS[provenance.basis], prefix, errors);
@@ -223,12 +238,56 @@ function validateProvenance(sample, errors, today) {
 	} else if (provenance.basis === 'public-domain') {
 		requiredString(provenance.source_url, `${prefix}.source_url`, errors);
 		requiredString(provenance.license, `${prefix}.license`, errors);
+	} else if (provenance.basis === 'public-license') {
+		if (
+			!requiredString(provenance.source_catalog_id, `${prefix}.source_catalog_id`, errors) ||
+			!/^[a-z0-9][a-z0-9-]*$/.test(provenance.source_catalog_id)
+		) {
+			errors.push(`${prefix}.source_catalog_id must be a lowercase slug`);
+		}
+		if (!Array.isArray(provenance.source_item_ids) || provenance.source_item_ids.length === 0) {
+			errors.push(`${prefix}.source_item_ids must be a non-empty array`);
+		} else {
+			const seenSourceItems = new Set();
+			for (const [index, sourceItemId] of provenance.source_item_ids.entries()) {
+				if (
+					typeof sourceItemId !== 'string' ||
+					sourceItemId.length === 0 ||
+					sourceItemId.length > 256 ||
+					sourceItemId !== sourceItemId.trim() ||
+					/[\0\r\n]/.test(sourceItemId)
+				) {
+					errors.push(
+						`${prefix}.source_item_ids[${index}] must be a non-empty bounded single-line string`,
+					);
+					continue;
+				}
+				if (seenSourceItems.has(sourceItemId)) {
+					errors.push(`${prefix}.source_item_ids contains duplicate '${sourceItemId}'`);
+				}
+				seenSourceItems.add(sourceItemId);
+			}
+		}
+		if (
+			!requiredString(provenance.transform_id, `${prefix}.transform_id`, errors) ||
+			!/^[a-z0-9][a-z0-9-]*$/.test(provenance.transform_id)
+		) {
+			errors.push(`${prefix}.transform_id must be a lowercase slug`);
+		}
+		if (provenance.redistribution !== 'local-only') {
+			errors.push(`${prefix}.redistribution must be local-only for public-license samples`);
+		}
 	} else if (provenance.basis === 'synthetic') {
 		requiredString(provenance.generation_method, `${prefix}.generation_method`, errors);
 	}
 
-	if (sample.scenario === 'meeting' && provenance.basis !== 'participant-consent') {
-		errors.push(`${prefix}.basis must be participant-consent for meeting recordings`);
+	if (
+		sample.scenario === 'meeting' &&
+		!['participant-consent', 'public-license'].includes(provenance.basis)
+	) {
+		errors.push(
+			`${prefix}.basis must be participant-consent or public-license for meeting recordings`,
+		);
 	}
 }
 
@@ -402,6 +461,12 @@ export function validateCorpusDocument(document, options = {}) {
 	if (!['repository', 'local'].includes(document.distribution)) {
 		errors.push('distribution must be repository or local');
 	}
+	if (
+		document.source_catalog_sha256 !== undefined &&
+		!/^[a-f0-9]{64}$/.test(document.source_catalog_sha256)
+	) {
+		errors.push('source_catalog_sha256 must be a lowercase SHA-256 digest');
+	}
 	if (!Array.isArray(document.samples)) {
 		errors.push('samples must be an array');
 		return errors;
@@ -475,6 +540,12 @@ export function validateCorpusDocument(document, options = {}) {
 		errors.push(
 			`sample '${duplicate.id ?? '?'}'.audio_sha256 duplicates sample '${first.id ?? '?'}'`,
 		);
+	}
+	if (
+		document.samples.some((sample) => sample?.provenance?.basis === 'public-license') &&
+		!/^[a-f0-9]{64}$/.test(document.source_catalog_sha256 ?? '')
+	) {
+		errors.push('source_catalog_sha256 is required for public-license samples');
 	}
 
 	const declaredAudio = new Set(

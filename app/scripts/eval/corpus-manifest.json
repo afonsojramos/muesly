@@ -1,5 +1,5 @@
 {
-	"schema_version": 3,
+	"schema_version": 4,
 	"corpus_id": "muesly-asr-smoke-v1",
 	"reference_protocol_id": "muesly-meeting-reference-v1",
 	"description": "Public-domain and synthetic smoke fixtures. Participant-consented meeting recordings are added through a separate local manifest.",

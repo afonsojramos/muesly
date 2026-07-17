@@ -903,7 +903,7 @@ test('resumes multiple pending withdrawal markers serially', () => {
 	fs.writeFileSync(
 		manifestPath,
 		JSON.stringify({
-			schema_version: 3,
+			schema_version: 4,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',

@@ -117,7 +117,7 @@ function localManifest() {
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	fs.mkdirSync(path.join(directory, 'local-corpus'));
 	const document = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'local-consented-meetings',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
@@ -142,7 +142,7 @@ function leasedCorpusFixture(t, options = {}) {
 	fs.writeFileSync(audioPath, audio, { mode: 0o600 });
 	fs.writeFileSync(referencePath, reference, { mode: 0o600 });
 	const document = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'local-consented-meetings',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',

@@ -16,6 +16,7 @@ app/scripts/eval/
   corpus-targets.json  # private meeting-corpus coverage floor
   REFERENCE_TRANSCRIPTION.md # versioned human-reference annotation contract
   corpus.ts            # manifest validation and language normalization
+  corpus-targets.ts    # shared target validation and exact sample resolution
   corpus-prepare.ts    # scaffold the next private consented collection session
   corpus-intake.ts     # consent-gated, atomic local corpus intake
   corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
@@ -207,18 +208,18 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
 
 Reports contain micro-averaged WER (total word errors divided by total reference words),
 duration-weighted source-audio and model-input inference RTF, sampled evaluator-process host RSS,
-and silence hallucinations. Aggregate schema 8 records the reference protocol and treats provider,
-model, and reported backend as one
-indivisible variant. Diagnostic summaries retain every observed sample but are isolated by exact
-variant, with overall, language, noise-condition, and language/noise dimensions. The report emits
-cross-variant tables only when at least two supplied variants contain the identical set of sample
-IDs. Equal counts are not enough, and unequal cohorts are not reduced to a post-hoc intersection:
-missing measurements may be failures, so that would introduce survivorship bias. Instead, partial
-runs retain clearly labelled per-variant diagnostics plus observed/common/missing counts.
+and silence hallucinations. Aggregate schema 9 records the reference protocol and treats provider,
+model, and reported backend as one indivisible variant. Diagnostic summaries retain every observed
+sample but are isolated by exact variant, with overall, language, scenario, noise-condition, and
+language/noise dimensions. The report emits cross-variant tables only when at least two supplied
+variants contain the identical sample-and-repeat measurement identities. Equal counts are not
+enough, and unequal cohorts are not reduced to a post-hoc intersection: missing measurements may
+be failures, so that would introduce survivorship bias. Instead, partial runs retain clearly
+labelled per-variant diagnostics plus observed/common/missing counts.
 
 Comparison rows preserve the full provider/model/backend identity in the variant,
-language/variant, noise-condition/variant, and language/noise/variant dimensions. The comparison
-scope covers only supplied variants and does not certify the target matrix; use
+language/variant, scenario/variant, noise-condition/variant, and language/noise/variant dimensions.
+The comparison scope covers only supplied variants and does not certify the target matrix; use
 `eval:coverage --require-complete` for that gate. Inputs must use run-report schema 10 with metrics
 schema 7, name the same corpus revision, and use identical pass thresholds and OS/architecture.
 Within each provider/model, all reports must fingerprint identical model bytes; different
@@ -230,9 +231,9 @@ Schema 10 records the versioned reference protocol and WER scorer
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 8 records both RTF definitions, measurement and distinct-sample counts, the
+Aggregate schema 9 records both RTF definitions, measurement and distinct-sample counts, the
 comparison status, the common evaluator inputs, the full evaluator
-revision, and exact benchmark-executable digest for every backend. Coverage schema 9 similarly
+revision, and exact benchmark-executable digest for every backend. Coverage schema 10 similarly
 records the corpus
 fingerprint, reference protocol, verified model-artifact map, evaluator-revision digest by backend,
 and executable
@@ -240,10 +241,18 @@ digest by backend, so a saved completeness result remains bound to the exact cor
 evaluated bytes, source/toolchain inputs, and binary.
 Measurement completeness requires one compatible hardware cohort to satisfy the session floor
 across the entire requested matrix. The operating system, architecture, and machine profile must
-match for every cell, with one consistent accelerator identity per backend. Coverage schema 9
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 10
 retains raw cross-machine counts and the largest compatible count per cell for diagnostics, then
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.
+
+Corpus schema 4 adds source-catalog-bound `public-license` provenance without weakening private
+custody: participant recordings still require local-only consent records and opaque sessions.
+Coverage-target schema 3 is discriminated by `coverage_mode`. The existing
+`language-noise-matrix` mode retains the consented-meeting session floor; `explicit-samples` names
+the exact sample IDs in one benchmark suite. An optional `repetitions` value from 1 through 10
+creates distinct, resumable task identities for every sample/variant/repeat and requires every
+repeat on one compatible hardware cohort.
 
 Metrics schema 7 reports source-audio duration, exact ASR-input audio duration, decode, VAD,
 model-download, model-load, inference, and measured-total timings. `inference_rtf` remains the
@@ -289,8 +298,9 @@ English clip is a regression check, not a general accuracy ranking.
   John Greenman (archive.org item `gettysburg_johng_librivox`, public domain).
   The reference is the canonical Bliss-copy text of the excerpt, cross-checked
   against `tiny` and `base` transcriptions. Additional clips require a validated
-  manifest entry; meeting recordings require an opaque consent-record ID and explicit
-  `asr-benchmarking` consent.
+  manifest entry. Private meeting recordings require an opaque consent-record ID and explicit
+  `asr-benchmarking` consent; open-licensed meeting recordings require a pinned source-catalog
+  digest and per-sample source-item binding.
 
 Fixtures:
 

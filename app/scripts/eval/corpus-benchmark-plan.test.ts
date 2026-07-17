@@ -73,7 +73,7 @@ function sample({
 
 function corpus(samples) {
 	const document = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Validated local consented meetings.',
@@ -87,9 +87,10 @@ function corpus(samples) {
 }
 
 const targets = {
-	schema_version: 2,
+	schema_version: 3,
 	target_id: 'multilingual-v1',
 	reference_protocol_id: REFERENCE_PROTOCOL_ID,
+	coverage_mode: 'language-noise-matrix',
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [
@@ -219,6 +220,7 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		benchmark_executable_sha256: executable,
 		provider: task.provider,
 		model: task.model,
+		repeat_index: task.repeat_index,
 		model_artifact_sha256: artifact,
 		thresholds: { ...task.thresholds },
 		passed: result.passed,
@@ -315,6 +317,40 @@ test('plans only eligible samples in deterministic variant, cell, session, and s
 	assert(tasks.every((task) => !task.report_filename.includes('/')));
 	assert(tasks.every((task) => !task.report_filename.includes(task.sample_id)));
 	assert(tasks.every((task) => task.report_filename.length < 120));
+});
+
+test('plans exact samples and repetitions as distinct resumable task identities', () => {
+	const selectedTargets = {
+		schema_version: 3,
+		target_id: 'public-performance-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		coverage_mode: 'explicit-samples',
+		sample_ids: ['public-en'],
+		benchmark_variants: [{ provider: 'whisper', model: 'whisper-test', backend: 'metal' }],
+		repetitions: 3,
+	};
+	const tasks = planCorpusBenchmarkTasks({
+		corpus: corpus([
+			sample({ id: 'ignored-en' }),
+			sample({ id: 'public-en', basis: 'public-domain', scenario: 'read-speech', speakers: 1 }),
+		]),
+		targets: selectedTargets,
+		thresholds,
+		evaluatorRevisions: evaluatorRevisionsFor(selectedTargets),
+	});
+
+	assert.deepEqual(tasks.map((task) => task.sample_id), ['public-en', 'public-en', 'public-en']);
+	assert.deepEqual(tasks.map((task) => task.repeat_index), [1, 2, 3]);
+	assert.equal(new Set(tasks.map((task) => task.task_id)).size, 3);
+	assert.equal(new Set(tasks.map((task) => task.report_filename)).size, 3);
+	assert.deepEqual(validateTaskCheckpoint(checkpoint(tasks[1]), tasks[1]), []);
+	assert.match(
+		validateTaskCheckpoint(
+			checkpoint(tasks[1], { report: { repeat_index: 1 } }),
+			tasks[1],
+		).join('\n'),
+		/checkpoint\.repeat_index must equal 2/,
+	);
 });
 
 test('requires a fully valid consented corpus before planning', () => {
@@ -509,7 +545,7 @@ test('rejects duplicate target cells, variants, and unsafe accelerators', () => 
 
 test('requires the complete coverage target schema before planning', () => {
 	for (const [name, overrides, expected] of [
-		['schema version', { schema_version: 1 }, /targets\.schema_version must be 2/],
+		['schema version', { schema_version: 1 }, /targets\.schema_version must be 3/],
 		[
 			'reference protocol',
 			{ reference_protocol_id: 'another-reference-v1' },

@@ -18,7 +18,12 @@ import {
 	retirePreparedBundleIfMatching,
 	retirePreparedBundleForWithdrawal,
 } from './corpus-prepared-bundle.ts';
-import { canonicalManifestPath, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
+import {
+	canonicalManifestPath,
+	CORPUS_SCHEMA_VERSION,
+	REFERENCE_PROTOCOL_ID,
+	validateCorpusDocument,
+} from './corpus.ts';
 
 const LEGACY_WITHDRAWAL_CORPUS_SCHEMA_VERSION = 2;
 
@@ -28,7 +33,7 @@ function validateWithdrawalCorpusDocument(document, options) {
 		document.reference_protocol_id === undefined
 			? {
 					...document,
-					schema_version: 3,
+					schema_version: CORPUS_SCHEMA_VERSION,
 					reference_protocol_id: REFERENCE_PROTOCOL_ID,
 				}
 			: document;
@@ -71,7 +76,7 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 	if (!fs.existsSync(manifestPath)) {
 		if (!allowMissing) throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 		return {
-			schema_version: 3,
+			schema_version: CORPUS_SCHEMA_VERSION,
 			corpus_id: 'consented-meetings-v1',
 			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',

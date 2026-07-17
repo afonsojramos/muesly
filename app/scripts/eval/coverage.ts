@@ -3,10 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { benchmarkDefinitionForReportedBackend } from './benchmark-executable.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
-import { findDuplicateAudioSamples, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
-import { validateBenchmarkModelName } from './model-artifact.ts';
+import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
+import {
+	resolveCoverageTarget,
+	validateCoverageTargets,
+	variantKey,
+} from './corpus-targets.ts';
 import {
 	modelArtifactBindingKey,
 	validateRunReport,
@@ -25,123 +28,7 @@ const EVALUATOR_REVISION_COMMON_FIELDS = Object.freeze([
 	'build_env_sha256',
 ]);
 
-const TARGET_FIELDS = new Set([
-	'schema_version',
-	'target_id',
-	'reference_protocol_id',
-	'description',
-	'languages',
-	'noise_conditions',
-	'benchmark_variants',
-	'min_sessions_per_language_noise_cell',
-]);
-
-function isObject(value) {
-	return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function validateSlugList(value, field, errors, pattern) {
-	if (!Array.isArray(value) || value.length === 0) {
-		errors.push(`${field} must be a non-empty array`);
-		return;
-	}
-	const seen = new Set();
-	for (const item of value) {
-		if (typeof item !== 'string' || !pattern.test(item)) {
-			errors.push(`${field} may only contain lowercase slug values`);
-			continue;
-		}
-		if (seen.has(item)) errors.push(`${field} contains duplicate '${item}'`);
-		seen.add(item);
-	}
-}
-
-export function validateCoverageTargets(targets) {
-	const errors = [];
-	if (!isObject(targets)) return ['coverage targets must be a JSON object'];
-	for (const field of Object.keys(targets)) {
-		if (!TARGET_FIELDS.has(field)) errors.push(`targets.${field} is not an allowed field`);
-	}
-	if (targets.schema_version !== 2) errors.push('targets.schema_version must be 2');
-	if (targets.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`targets.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
-	}
-	if (typeof targets.target_id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(targets.target_id)) {
-		errors.push('targets.target_id must be a lowercase slug');
-	}
-	validateSlugList(targets.languages, 'targets.languages', errors, /^[a-z]{2,3}$/);
-	validateSlugList(
-		targets.noise_conditions,
-		'targets.noise_conditions',
-		errors,
-		/^[a-z0-9][a-z0-9-]*$/,
-	);
-	if (!Array.isArray(targets.benchmark_variants) || targets.benchmark_variants.length === 0) {
-		errors.push('targets.benchmark_variants must be a non-empty array');
-	} else {
-		const seenVariants = new Set();
-		for (const [index, variant] of targets.benchmark_variants.entries()) {
-			const prefix = `targets.benchmark_variants[${index}]`;
-			if (!isObject(variant)) {
-				errors.push(`${prefix} must be an object`);
-				continue;
-			}
-			const validSlugs = new Set();
-			for (const field of Object.keys(variant)) {
-				if (!['provider', 'model', 'backend'].includes(field)) {
-					errors.push(`${prefix}.${field} is not an allowed field`);
-				}
-			}
-			for (const field of ['provider', 'backend']) {
-				if (typeof variant[field] !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(variant[field])) {
-					errors.push(`${prefix}.${field} must be a lowercase model slug`);
-				} else {
-					validSlugs.add(field);
-				}
-			}
-			try {
-				validateBenchmarkModelName(variant.model);
-				validSlugs.add('model');
-			} catch {
-				errors.push(`${prefix}.model must be a bounded portable lowercase model slug`);
-			}
-			if (validSlugs.has('provider') && validSlugs.has('backend')) {
-				try {
-					benchmarkDefinitionForReportedBackend(variant.provider, variant.backend);
-				} catch (error) {
-					errors.push(`${prefix}: ${error.message}`);
-				}
-			}
-			const key = `${variant.provider}/${variant.model}/${variant.backend}`;
-			if (seenVariants.has(key)) errors.push(`${prefix} duplicates '${key}'`);
-			seenVariants.add(key);
-		}
-	}
-	if (
-		!Number.isInteger(targets.min_sessions_per_language_noise_cell) ||
-		targets.min_sessions_per_language_noise_cell < 1
-	) {
-		errors.push('targets.min_sessions_per_language_noise_cell must be a positive integer');
-	}
-	return errors;
-}
-
-function primaryLanguage(language) {
-	return language.split('-')[0].toLowerCase();
-}
-
-function cellKey(language, noiseCondition) {
-	return `${language} / ${noiseCondition}`;
-}
-
-function measurementKey(language, noiseCondition, provider, model, backend) {
-	return `${language} / ${noiseCondition} / ${provider} / ${model} / ${backend}`;
-}
-
-function addToCell(map, key, sessionId) {
-	if (!map.has(key)) map.set(key, new Set());
-	map.get(key).add(sessionId);
-}
+export { validateCoverageTargets };
 
 function hardwareCohort(metrics) {
 	return {
@@ -239,7 +126,7 @@ function measurementCohorts(cell) {
 		);
 }
 
-function matrixHardwareCohorts(requiredCells, measurementCells, minimumDistinctSessions) {
+function matrixHardwareCohorts(requiredCells, measurementCells) {
 	const baseCohorts = new Map();
 	const requiredBackends = [...new Set(requiredCells.map((cell) => cell.backend))].sort();
 	for (const cell of requiredCells) {
@@ -298,7 +185,7 @@ function matrixHardwareCohorts(requiredCells, measurementCells, minimumDistinctS
 				]),
 			);
 			const missingCells = requiredCells
-				.filter((cell) => counts[cell.key] < minimumDistinctSessions)
+				.filter((cell) => counts[cell.key] < cell.minimum)
 				.map((cell) => cell.key);
 			candidates.push({
 				operating_system: cohort.operating_system,
@@ -316,13 +203,7 @@ function matrixHardwareCohorts(requiredCells, measurementCells, minimumDistinctS
 }
 
 export function evaluateCoverage(corpus, targets, reports = []) {
-	const targetErrors = validateCoverageTargets(targets);
-	if (targetErrors.length > 0) {
-		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
-	}
-	if (corpus.reference_protocol_id !== targets.reference_protocol_id) {
-		throw new Error('coverage targets reference protocol does not match the corpus manifest');
-	}
+	const resolvedTarget = resolveCoverageTarget(corpus, targets);
 	const reportBindingErrors = validateRunReportsAgainstCorpus(reports, corpus);
 	if (reportBindingErrors.length > 0) {
 		throw new Error(
@@ -335,29 +216,14 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 		throw new Error(`corpus samples '${first.id}' and '${duplicate.id}' reuse identical audio`);
 	}
 	const samplesById = new Map(corpus.samples.map((sample) => [sample.id, sample]));
-	const corpusCells = new Map();
-	const eligibleSamples = corpus.samples.filter(
-		(sample) => sample.scenario === 'meeting' && sample.provenance.basis === 'participant-consent',
-	);
-	for (const sample of eligibleSamples) {
-		addToCell(
-			corpusCells,
-			cellKey(primaryLanguage(sample.language), sample.noise_condition),
-			sample.session_id,
-		);
-	}
-
-	const requiredCorpusCells = [];
-	for (const language of targets.languages) {
-		for (const noise of targets.noise_conditions)
-			requiredCorpusCells.push(cellKey(language, noise));
-	}
+	const eligibleSamples = resolvedTarget.selected_samples.map((descriptor) => descriptor.sample);
+	const requiredCorpusCells = resolvedTarget.corpus_cells;
 	const corpusCoverage = Object.fromEntries(
-		requiredCorpusCells.map((key) => [key, corpusCells.get(key)?.size ?? 0]),
+		requiredCorpusCells.map((cell) => [cell.key, cell.units.size]),
 	);
 	const missingCorpusCells = requiredCorpusCells.filter(
-		(key) => corpusCoverage[key] < targets.min_sessions_per_language_noise_cell,
-	);
+		(cell) => corpusCoverage[cell.key] < cell.minimum,
+	).map((cell) => cell.key);
 
 	const measurementCells = new Map();
 	const modelArtifacts = new Map();
@@ -393,16 +259,19 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 				}
 			}
 		}
+		const reportBackend = report.results[0].metrics.backend;
 		const modelKey = modelArtifactBindingKey(
 			report.provider,
 			report.model,
-			report.results[0].metrics.backend,
+			reportBackend,
 		);
 		const priorArtifact = modelArtifacts.get(modelKey);
 		if (priorArtifact !== undefined && priorArtifact !== report.model_artifact_sha256) {
 			throw new Error(`reports use different artifacts for model '${modelKey}'`);
 		}
 		modelArtifacts.set(modelKey, report.model_artifact_sha256);
+		const repeatIndex = report.repeat_index ?? 1;
+		const reportVariantKey = variantKey(report.provider, report.model, reportBackend);
 		for (const result of report.results) {
 			const sample = samplesById.get(result.sample_id);
 			if (!sample)
@@ -413,6 +282,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 				report.model,
 				result.metrics.backend,
 				result.sample_id,
+				repeatIndex,
 			].join('\0');
 			if (measurementKeys.has(measurementIdentityKey)) {
 				throw new Error(
@@ -432,34 +302,21 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 				result.metrics.benchmark_executable_sha256,
 				'benchmark executables',
 			);
-			if (sample.scenario !== 'meeting' || sample.provenance.basis !== 'participant-consent')
-				continue;
+			const descriptor = resolvedTarget.selected_by_id.get(sample.id);
+			const measurementCell = resolvedTarget.measurement_cell_lookup.get(
+				`${reportVariantKey}\0${sample.id}\0${repeatIndex}`,
+			);
+			if (!descriptor || !measurementCell) continue;
 			addToMeasurementCell(
 				measurementCells,
-				measurementKey(
-					primaryLanguage(sample.language),
-					sample.noise_condition,
-					report.provider,
-					report.model,
-					result.metrics.backend,
-				),
+				measurementCell.key,
 				result.metrics,
-				sample.session_id,
+				descriptor.unit_id,
 			);
 		}
 	}
 
-	const requiredMeasurementCells = [];
-	for (const language of targets.languages) {
-		for (const noise of targets.noise_conditions) {
-			for (const variant of targets.benchmark_variants) {
-				requiredMeasurementCells.push({
-					key: measurementKey(language, noise, variant.provider, variant.model, variant.backend),
-					backend: variant.backend,
-				});
-			}
-		}
-	}
+	const requiredMeasurementCells = resolvedTarget.measurement_cells;
 	const measurementCoverage = Object.fromEntries(
 		requiredMeasurementCells.map(({ key }) => [key, measurementCells.get(key)?.sessions.size ?? 0]),
 	);
@@ -474,29 +331,29 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	);
 	const missingMeasurementCells = requiredMeasurementCells
 		.filter(
-			({ key }) =>
-				compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
+			(cell) => compatibleMeasurementCoverage[cell.key] < cell.minimum,
 		)
 		.map(({ key }) => key);
 	const hardwareSplitMeasurementCells = requiredMeasurementCells
 		.filter(
-			({ key }) =>
-				measurementCoverage[key] >= targets.min_sessions_per_language_noise_cell &&
-				compatibleMeasurementCoverage[key] < targets.min_sessions_per_language_noise_cell,
+			(cell) =>
+				measurementCoverage[cell.key] >= cell.minimum &&
+				compatibleMeasurementCoverage[cell.key] < cell.minimum,
 		)
 		.map(({ key }) => key);
 	const measurementMatrixHardwareCohorts = matrixHardwareCohorts(
 		requiredMeasurementCells,
 		measurementCells,
-		targets.min_sessions_per_language_noise_cell,
 	);
 	const completeMatrixHardwareCohorts = measurementMatrixHardwareCohorts.filter(
 		(cohort) => cohort.missing_cells.length === 0,
 	).length;
 
 	return {
-		schema_version: 9,
+		schema_version: 10,
 		target_id: targets.target_id,
+		coverage_mode: resolvedTarget.coverage_mode,
+		repetitions: resolvedTarget.repetitions,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
 		reference_protocol_id: corpus.reference_protocol_id,
@@ -504,16 +361,33 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 		model_artifacts: sortedMapEntries(modelArtifacts),
 		evaluator_revision_sha256_by_backend: sortedMapEntries(evaluatorRevisions),
 		benchmark_executable_sha256_by_backend: sortedMapEntries(benchmarkExecutables),
-		minimum_distinct_sessions_per_cell: targets.min_sessions_per_language_noise_cell,
-		participant_meeting_samples: eligibleSamples.length,
-		participant_meeting_sessions: new Set(eligibleSamples.map((sample) => sample.session_id)).size,
+		minimum_distinct_sessions_per_cell:
+			resolvedTarget.coverage_mode === 'language-noise-matrix'
+				? targets.min_sessions_per_language_noise_cell
+				: null,
+		eligible_samples: eligibleSamples.length,
+		participant_meeting_samples: eligibleSamples.filter(
+			(sample) => sample.scenario === 'meeting' && sample.provenance.basis === 'participant-consent',
+		).length,
+		participant_meeting_sessions: new Set(
+			eligibleSamples
+				.filter(
+					(sample) =>
+						sample.scenario === 'meeting' && sample.provenance.basis === 'participant-consent',
+				)
+				.map((sample) => sample.session_id),
+		).size,
 		corpus: {
+			unit_kind:
+				resolvedTarget.coverage_mode === 'language-noise-matrix' ? 'session' : 'sample',
 			covered_cells: requiredCorpusCells.length - missingCorpusCells.length,
 			required_cells: requiredCorpusCells.length,
 			counts: corpusCoverage,
 			missing_cells: missingCorpusCells,
 		},
 		measurements: {
+			unit_kind:
+				resolvedTarget.coverage_mode === 'language-noise-matrix' ? 'session' : 'sample',
 			reports: reports.length,
 			covered_cells: requiredMeasurementCells.length - missingMeasurementCells.length,
 			required_cells: requiredMeasurementCells.length,
@@ -537,7 +411,10 @@ export function formatCoverage(coverage) {
 	const lines = [
 		`${coverage.target_id} on ${coverage.corpus_id}`,
 		`Reference protocol: ${coverage.reference_protocol_id}`,
-		`Distinct participant meeting sessions: ${coverage.participant_meeting_sessions}`,
+		`Coverage mode: ${coverage.coverage_mode}`,
+		coverage.coverage_mode === 'language-noise-matrix'
+			? `Distinct participant meeting sessions: ${coverage.participant_meeting_sessions}`
+			: `Explicit target samples: ${coverage.eligible_samples}`,
 		`Corpus cells: ${coverage.corpus.covered_cells}/${coverage.corpus.required_cells}`,
 		`Measurement cells: ${coverage.measurements.covered_cells}/${coverage.measurements.required_cells} (best compatible cohort per cell)`,
 		`Full-matrix hardware cohorts: ${coverage.measurements.complete_matrix_hardware_cohorts}/${coverage.measurements.matrix_hardware_cohorts.length}`,

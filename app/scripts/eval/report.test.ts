@@ -273,7 +273,7 @@ test('compares exact provider/model/backend variants only on one identical sampl
 		}),
 	]);
 
-	assert.equal(aggregate.schema_version, 8);
+	assert.equal(aggregate.schema_version, 9);
 	assert.equal(aggregate.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(aggregate.measurement_result_count, 6);
 	assert.equal(aggregate.distinct_sample_count, 2);
@@ -284,8 +284,11 @@ test('compares exact provider/model/backend variants only on one identical sampl
 	assert.equal(aggregate.comparison.variant_count, 3);
 	assert.equal(aggregate.comparison.common_sample_count, 2);
 	assert.equal(aggregate.comparison.union_sample_count, 2);
+	assert.equal(aggregate.comparison.common_measurement_count, 2);
+	assert.equal(aggregate.comparison.union_measurement_count, 2);
 	assert.equal(aggregate.comparison.groups.variant.length, 3);
 	assert.equal(aggregate.comparison.groups.language_variant.length, 6);
+	assert.equal(aggregate.comparison.groups.scenario_variant.length, 3);
 	assert.equal(aggregate.comparison.groups.noise_condition_variant.length, 6);
 	assert.equal(aggregate.comparison.groups.language_noise_variant.length, 6);
 	assert.deepEqual(
@@ -406,7 +409,7 @@ test('rejects duplicate provider/model/backend/sample measurements across aggreg
 	const duplicate = structuredClone(first);
 	assert.throws(
 		() => aggregateRunReports([first, duplicate]),
-		/duplicate provider\/model\/backend\/sample_id measurement .*meeting-en-clean/,
+		/duplicate provider\/model\/backend\/sample_id\/repeat_index measurement .*meeting-en-clean/,
 	);
 
 	const otherModel = report([result({ metrics: { model: 'another-model' } })], {
@@ -414,6 +417,40 @@ test('rejects duplicate provider/model/backend/sample measurements across aggreg
 		model_artifact_sha256: 'd'.repeat(64),
 	});
 	assert.equal(aggregateRunReports([first, otherModel]).measurement_result_count, 2);
+});
+
+test('aggregates declared repetitions while preserving distinct sample cohorts', () => {
+	const first = report([result()], { repeat_index: 1 });
+	const second = report([result()], { repeat_index: 2 });
+	const aggregate = aggregateRunReports([first, second]);
+	assert.equal(aggregate.measurement_result_count, 2);
+	assert.equal(aggregate.distinct_sample_count, 1);
+	assert.equal(aggregate.diagnostics.variants[0].observed_sample_count, 1);
+	assert.equal(aggregate.diagnostics.variants[0].measurement_result_count, 2);
+	assert.equal(aggregate.diagnostics.variants[0].groups.overall.samples, 2);
+	assert.deepEqual(
+		aggregate.diagnostics.variants[0].groups.scenario.map((row) => row.scenario),
+		['meeting'],
+	);
+	assert.equal(aggregate.comparison.groups, null);
+	const sample = resultForSample('meeting-en-clean');
+	const metal = variantReport([sample], { model: 'whisper-test', backend: 'metal' });
+	const cpu = variantReport([sample], { model: 'whisper-test', backend: 'cpu' });
+	const asymmetric = aggregateRunReports([
+		{ ...metal, repeat_index: 1 },
+		{ ...structuredClone(metal), repeat_index: 2 },
+		{ ...cpu, repeat_index: 1 },
+	]);
+	assert.equal(asymmetric.comparison.status, 'unequal-measurement-cohorts');
+	assert.equal(asymmetric.comparison.common_sample_count, 1);
+	assert.equal(asymmetric.comparison.common_measurement_count, 1);
+	assert.equal(asymmetric.comparison.union_measurement_count, 2);
+	assert.equal(asymmetric.comparison.groups, null);
+
+	assert.match(
+		validateRunReport(report([result()], { repeat_index: 0 })).join('\n'),
+		/repeat_index must be a safe integer from 1 through 10/,
+	);
 });
 
 test('keeps different models on the same backend as separate exact variants', () => {
@@ -450,7 +487,7 @@ test('suppresses comparisons for equal-size cohorts with different sample identi
 		}),
 	]);
 
-	assert.equal(aggregate.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(aggregate.comparison.status, 'unequal-measurement-cohorts');
 	assert.equal(aggregate.comparison.common_sample_count, 1);
 	assert.equal(aggregate.comparison.union_sample_count, 3);
 	assert.equal(aggregate.comparison.groups, null);
@@ -505,7 +542,7 @@ test('suppresses zero-overlap and three-way comparisons when only a pair shares 
 			backend: 'cpu',
 		}),
 	]);
-	assert.equal(disjoint.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(disjoint.comparison.status, 'unequal-measurement-cohorts');
 	assert.equal(disjoint.comparison.common_sample_count, 0);
 	assert.equal(disjoint.comparison.groups, null);
 
@@ -515,7 +552,7 @@ test('suppresses zero-overlap and three-way comparisons when only a pair shares 
 		variantReport(shared, { model: 'model-b', backend: 'cpu' }),
 		variantReport([shared[0]], { model: 'model-c', backend: 'cpu' }),
 	]);
-	assert.equal(threeWay.comparison.status, 'unequal-sample-cohorts');
+	assert.equal(threeWay.comparison.status, 'unequal-measurement-cohorts');
 	assert.equal(threeWay.comparison.common_sample_count, 1);
 	assert.equal(threeWay.comparison.union_sample_count, 2);
 	assert.equal(threeWay.comparison.groups, null);
@@ -1293,7 +1330,7 @@ test('requires a manifest and coordinates aggregate output files with the local 
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.wav'), audioContents);
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.txt'), referenceContents);
 	const document = {
-		schema_version: 3,
+		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
