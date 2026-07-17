@@ -10,7 +10,7 @@
 //!        [--segments] [--dump-segments <dir>]
 //!        [--metrics-json <path> --expected-audio-sha256 <lowercase-sha256>]
 //!        [--hardware-json]
-//!        [--prepare-model-json --model <name> [--models-dir <path>]]
+//!        [--prepare-model-json --model <name> --models-dir <path>]
 //!        [--prompt "term one, term two"] <audio> [model] [models_dir]
 //!
 //! `--segments` (implies `--vad`) prints one line per VAD segment instead of a
@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 use app_lib::audio::decoder::{decode_audio_file, decode_audio_file_handle};
 use app_lib::audio::vad::get_speech_chunks;
+use app_lib::config::WHISPER_MODEL_CATALOG;
 use app_lib::parakeet_engine::engine::ParakeetEngine;
 use app_lib::transcription_models::ModelStatus;
 use app_lib::vocabulary::set_meeting_prompt_terms;
@@ -1033,7 +1034,10 @@ async fn main() {
         let model_name = prepared_model_name
             .take()
             .unwrap_or_else(|| fail("--prepare-model-json requires --model".to_string()));
-        let digests = prepare_model(&provider, &model_name, prepared_models_dir).await;
+        let models_dir = prepared_models_dir
+            .take()
+            .unwrap_or_else(|| fail("--prepare-model-json requires --models-dir".to_string()));
+        let digests = prepare_model(&provider, &model_name, models_dir).await;
         let prepared = PreparedModel {
             schema_version: 3,
             provider,
@@ -1472,7 +1476,7 @@ fn progress_callback() -> Box<dyn Fn(u8) + Send> {
 async fn prepare_model(
     provider: &str,
     model_name: &str,
-    models_dir: Option<PathBuf>,
+    models_dir: PathBuf,
 ) -> PreparedModelDigests {
     if provider == "parakeet" {
         let model_artifact_sha256 =
@@ -1480,7 +1484,14 @@ async fn prepare_model(
                 .unwrap_or_else(|error| {
                     fail(format!("model integrity pin lookup failed: {error:#}"))
                 });
-        let engine = ParakeetEngine::new_with_models_dir(models_dir)
+        let expected_path = models_dir.join("parakeet").join(model_name);
+        require_existing_benchmark_artifact(
+            model_name,
+            &expected_path,
+            BenchmarkArtifactKind::Directory,
+        )
+        .unwrap_or_else(|error| fail(error));
+        let engine = ParakeetEngine::new_with_models_dir(Some(models_dir))
             .unwrap_or_else(|error| fail(format!("engine init failed: {error}")));
         let models = engine
             .discover_models()
@@ -1490,8 +1501,13 @@ async fn prepare_model(
             .iter()
             .find(|model| model.name == model_name)
             .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-        require_available_benchmark_model(model_name, &model.status, &model.path)
-            .unwrap_or_else(|error| fail(error));
+        require_available_benchmark_model(
+            model_name,
+            &model.status,
+            &model.path,
+            BenchmarkArtifactKind::Directory,
+        )
+        .unwrap_or_else(|error| fail(error));
         let available = engine
             .discover_models()
             .await
@@ -1514,7 +1530,14 @@ async fn prepare_model(
     let primary_model_artifact_sha256 =
         app_lib::model_integrity::expected_whisper_model_artifact_sha256(model_name)
             .unwrap_or_else(|error| fail(format!("model integrity pin lookup failed: {error:#}")));
-    let engine = WhisperEngine::new_with_models_dir(models_dir)
+    let filename = WHISPER_MODEL_CATALOG
+        .iter()
+        .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+        .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
+    let expected_path = models_dir.join(filename);
+    require_existing_benchmark_artifact(model_name, &expected_path, BenchmarkArtifactKind::File)
+        .unwrap_or_else(|error| fail(error));
+    let engine = WhisperEngine::new_with_models_dir(Some(models_dir))
         .unwrap_or_else(|error| fail(format!("engine init failed: {error}")));
     let models = engine
         .discover_models()
@@ -1524,8 +1547,13 @@ async fn prepare_model(
         .iter()
         .find(|model| model.name == model_name)
         .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-    require_available_benchmark_model(model_name, &model.status, &model.path)
-        .unwrap_or_else(|error| fail(error));
+    require_available_benchmark_model(
+        model_name,
+        &model.status,
+        &model.path,
+        BenchmarkArtifactKind::File,
+    )
+    .unwrap_or_else(|error| fail(error));
     let available_model = engine
         .discover_models()
         .await
@@ -1564,34 +1592,58 @@ async fn prepare_model(
     }
 }
 
+#[derive(Clone, Copy)]
+enum BenchmarkArtifactKind {
+    File,
+    Directory,
+}
+
+fn require_existing_benchmark_artifact(
+    model_name: &str,
+    artifact_path: &Path,
+    kind: BenchmarkArtifactKind,
+) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(artifact_path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "model '{model_name}' is not downloaded; benchmark preparation is read-only, so download it with muesly before retrying"
+            )
+        } else {
+            format!(
+                "inspect benchmark model artifact '{}' failed: {error}",
+                artifact_path.display()
+            )
+        }
+    })?;
+    let expected_kind = match kind {
+        BenchmarkArtifactKind::File => metadata.file_type().is_file(),
+        BenchmarkArtifactKind::Directory => metadata.file_type().is_dir(),
+    };
+    if !expected_kind {
+        return Err(format!(
+            "model '{model_name}' artifact is not an unaliased {} at '{}'; benchmark preparation is read-only",
+            match kind {
+                BenchmarkArtifactKind::File => "file",
+                BenchmarkArtifactKind::Directory => "directory",
+            },
+            artifact_path.display()
+        ));
+    }
+    Ok(())
+}
+
 fn require_available_benchmark_model(
     model_name: &str,
     status: &ModelStatus,
     artifact_path: &Path,
+    kind: BenchmarkArtifactKind,
 ) -> Result<(), String> {
-    let artifact_exists = match std::fs::symlink_metadata(artifact_path) {
-        Ok(_) => true,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(error) => {
-            return Err(format!(
-                "inspect benchmark model artifact '{}' failed: {error}",
-                artifact_path.display()
-            ));
-        }
-    };
-
-    match (status, artifact_exists) {
-        (ModelStatus::Available, true) => Ok(()),
-        (ModelStatus::Missing, false) => Err(format!(
-            "model '{model_name}' is not downloaded; benchmark preparation is read-only, so download it with muesly before retrying"
-        )),
-        (ModelStatus::Available, false) => Err(format!(
-            "model '{model_name}' was reported available but its artifact is absent"
-        )),
-        _ => Err(format!(
+    if !matches!(status, ModelStatus::Available) {
+        return Err(format!(
             "model '{model_name}' is not safely available; benchmark preparation is read-only and will not modify it"
-        )),
+        ));
     }
+    require_existing_benchmark_artifact(model_name, artifact_path, kind)
 }
 
 async fn download_whisper_model(engine: &WhisperEngine, model_name: &str) {
@@ -2115,14 +2167,40 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let artifact = directory.path().join("model.bin");
         assert!(
-            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
+            require_available_benchmark_model(
+                "model",
+                &ModelStatus::Missing,
+                &artifact,
+                BenchmarkArtifactKind::File,
+            )
+            .is_err()
         );
         assert!(!artifact.exists());
 
         std::fs::write(&artifact, b"preserve me").unwrap();
-        require_available_benchmark_model("model", &ModelStatus::Available, &artifact).unwrap();
+        require_available_benchmark_model(
+            "model",
+            &ModelStatus::Available,
+            &artifact,
+            BenchmarkArtifactKind::File,
+        )
+        .unwrap();
         assert!(
-            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
+            require_existing_benchmark_artifact(
+                "model",
+                &artifact,
+                BenchmarkArtifactKind::Directory,
+            )
+            .is_err()
+        );
+        assert!(
+            require_available_benchmark_model(
+                "model",
+                &ModelStatus::Missing,
+                &artifact,
+                BenchmarkArtifactKind::File,
+            )
+            .is_err()
         );
         assert!(
             require_available_benchmark_model(
@@ -2132,6 +2210,7 @@ mod tests {
                     expected_min_size: 2,
                 },
                 &artifact,
+                BenchmarkArtifactKind::File,
             )
             .is_err()
         );
@@ -2141,24 +2220,63 @@ mod tests {
         let partial = directory.path().join("model.bin.part");
         std::fs::write(&partial, b"partial bytes").unwrap();
         assert!(
-            require_available_benchmark_model("model", &ModelStatus::Missing, &artifact).is_err()
+            require_available_benchmark_model(
+                "model",
+                &ModelStatus::Missing,
+                &artifact,
+                BenchmarkArtifactKind::File,
+            )
+            .is_err()
         );
         assert_eq!(std::fs::read(&partial).unwrap(), b"partial bytes");
+
+        let missing_nested = directory.path().join("absent-parent").join("model");
+        assert!(
+            require_existing_benchmark_artifact(
+                "model",
+                &missing_nested,
+                BenchmarkArtifactKind::Directory,
+            )
+            .is_err()
+        );
+        assert!(!missing_nested.parent().unwrap().exists());
 
         #[cfg(unix)]
         {
             use std::os::unix::fs::symlink;
 
-            let alias = directory.path().join("dangling-model.bin");
-            symlink(directory.path().join("missing-target.bin"), &alias).unwrap();
+            let target = directory.path().join("real-model.bin");
+            std::fs::write(&target, b"real model").unwrap();
+            let alias = directory.path().join("aliased-model.bin");
+            symlink(&target, &alias).unwrap();
             assert!(
-                require_available_benchmark_model("model", &ModelStatus::Missing, &alias).is_err()
+                require_available_benchmark_model(
+                    "model",
+                    &ModelStatus::Available,
+                    &alias,
+                    BenchmarkArtifactKind::File,
+                )
+                .is_err()
             );
             assert!(
                 std::fs::symlink_metadata(alias)
                     .unwrap()
                     .file_type()
                     .is_symlink()
+            );
+
+            let target_directory = directory.path().join("real-model-directory");
+            std::fs::create_dir(&target_directory).unwrap();
+            let directory_alias = directory.path().join("aliased-model-directory");
+            symlink(&target_directory, &directory_alias).unwrap();
+            assert!(
+                require_available_benchmark_model(
+                    "model",
+                    &ModelStatus::Available,
+                    &directory_alias,
+                    BenchmarkArtifactKind::Directory,
+                )
+                .is_err()
             );
         }
     }
