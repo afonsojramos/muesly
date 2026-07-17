@@ -1,0 +1,396 @@
+{
+	"schema_version": 1,
+	"corpus_id": "muesly-public-asr-v1",
+	"source_catalog_id": "muesly-public-asr-sources-v1",
+	"minimum_free_bytes": 21474836480,
+	"approved_ffmpeg": [
+		{
+			"id": "ffmpeg-8-darwin-arm64",
+			"sha256": "77d2c853f431318d55ec02676d9b2f185ebfdddb9f7677a251fbe453affe025a",
+			"version": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+		}
+	],
+	"fleurs": {
+		"composites_per_language": 3,
+		"minimum_seconds": 120,
+		"target_seconds": 150,
+		"maximum_seconds": 180,
+		"inter_utterance_gap_seconds": 0.4,
+		"sources": [
+			{
+				"source_id": "fleurs-en-us-test",
+				"language": "en-US",
+				"whisper_language": "en",
+				"composites": [
+					{
+						"index": 1,
+						"member_count": 16,
+						"ordered_members_sha256": "84d690dffcd305c62764fcc79b1fd715f42f0975959dc398b4ec8a04a62c6ab6",
+						"clean_duration_seconds": 156.54,
+						"overlap_duration_seconds": 123.185,
+						"audio_sha256": {
+							"clean-read": "0441d1a0c91b1613f65b8bb98df2bb4904f6db69464958dd9c4db54e929eaea9",
+							"synthetic-office": "fc05fec1a82875cbc1e90823c5a6604ee29142da492d37f60cbd2a5bd54e1dcd",
+							"synthetic-remote-call": "b1232fdb9da75338a64d0246f63e9dcdc1af9f21ad5f3d00e3287b60b6809d4c",
+							"synthetic-overlap": "b3c69bd394472ec1c429aee534edcfd090ce9e94e2772dc7a6db3853da2eacd9"
+						}
+					},
+					{
+						"index": 2,
+						"member_count": 15,
+						"ordered_members_sha256": "7a603bebab2ac2aa86cde0ad4c758feac837d6a00777f0f99e07b22eaee9836b",
+						"clean_duration_seconds": 150.02,
+						"overlap_duration_seconds": 118.215,
+						"audio_sha256": {
+							"clean-read": "82336cfbd7e01ff19919ed902da79413dd71a9f339230f31cd354aa370aca065",
+							"synthetic-office": "64a7ca3d8ea970da4de6999bb0595ec69400c9efb9f896d9a3d0bb12c0fe05d2",
+							"synthetic-remote-call": "e0dd2d86297d56944b2e980a256560c83a0d7094125768d61b21cc9bfd686fd5",
+							"synthetic-overlap": "1682164fb96633938a62f373c305c2bd1555c28276586d38cf0e8823f9ede95f"
+						}
+					},
+					{
+						"index": 3,
+						"member_count": 17,
+						"ordered_members_sha256": "0245a8e550d1eb74208594e05ae5185e700d735e62d8ce19726bd6b1da714bec",
+						"clean_duration_seconds": 160.86,
+						"overlap_duration_seconds": 123.355,
+						"audio_sha256": {
+							"clean-read": "e5daa5e2d7067931286987192813a95807b057bd3d733b4dc085e3a166c79e22",
+							"synthetic-office": "45152fa93497ec0bce612005da3d6e5992d3ccbfd0adf7349035d03ffe163966",
+							"synthetic-remote-call": "7faef4ca8db240fae504e383a6cfc79f485134af75d449be69f92947fdd7dfcc",
+							"synthetic-overlap": "4af71f80439567ebf2995f4ae5e7244d6649c1cfd760bb8b884af81fc23ec2bc"
+						}
+					}
+				]
+			},
+			{
+				"source_id": "fleurs-es-419-test",
+				"language": "es-419",
+				"whisper_language": "es",
+				"composites": [
+					{
+						"index": 1,
+						"member_count": 14,
+						"ordered_members_sha256": "82f037fd412eb9b347db48dcb2410f4500b2270243eb2580ef2c62ea82009b80",
+						"clean_duration_seconds": 162.46,
+						"overlap_duration_seconds": 126.915,
+						"audio_sha256": {
+							"clean-read": "75d0764351cd83d81bef348ba685119fecd844a5571924e65145b375f8cd1508",
+							"synthetic-office": "5f7e4a0029caf5245b160ff005f4798736a62af9184814d16a7f756ee9c85cb3",
+							"synthetic-remote-call": "02249ef15972caafacc40697c512cdbdcef9254b109e07b092710ba5d2b7742f",
+							"synthetic-overlap": "62d6bc8d36b1a6666109af286c764022d112f0c8c858760fe6243b4964d95771"
+						}
+					},
+					{
+						"index": 2,
+						"member_count": 13,
+						"ordered_members_sha256": "aa195ba9c66013b62b71ce2afcf0096ace2680b58e57f512b69ea24560a49f68",
+						"clean_duration_seconds": 164.7,
+						"overlap_duration_seconds": 126.165,
+						"audio_sha256": {
+							"clean-read": "ab97cc4e0f74c523368ed86fedff0d70913e1b89b45e3e93e3c9dedcb78ee6c7",
+							"synthetic-office": "302e01d5c2518c0deafa21850407cb885541c0b4b7798b4dc30597c6b03c6bea",
+							"synthetic-remote-call": "ecf17b480a312659033d8dcc3a3b86a9f85f9bf7e7554586d5feecb337817f43",
+							"synthetic-overlap": "2b8afd6c4e9447ff9721192122971d4969eb46d40e6e660d87b1f787a46717df"
+						}
+					},
+					{
+						"index": 3,
+						"member_count": 13,
+						"ordered_members_sha256": "95d2292dcc0eca1903b401917334cb1911f2ded37bd092f4654fb0597bd69c46",
+						"clean_duration_seconds": 152.94,
+						"overlap_duration_seconds": 121.26,
+						"audio_sha256": {
+							"clean-read": "05f12345e819af273f88a6b15a03ea67d22c1df98eb357378dbbff27bdbf9406",
+							"synthetic-office": "796ea94978b8e3da6efb5555b360bf9e7ba24d3b6975be9db7d07a1925d25d6f",
+							"synthetic-remote-call": "10ad97d7648a5ff46bd3a4c283c7220a77ef6990d28714f48884413cd52ebce1",
+							"synthetic-overlap": "ef5238675fa9ed9d1e0a17956717bccd08cdc54240a2b3d498b731c35d3c44c1"
+						}
+					}
+				]
+			},
+			{
+				"source_id": "fleurs-pt-br-test",
+				"language": "pt-BR",
+				"whisper_language": "pt",
+				"composites": [
+					{
+						"index": 1,
+						"member_count": 11,
+						"ordered_members_sha256": "fc16d167c3f44c3eed16a397675b5e374bd7b222a0eb563d8b8a9b3276307450",
+						"clean_duration_seconds": 152.92,
+						"overlap_duration_seconds": 121.005,
+						"audio_sha256": {
+							"clean-read": "1792a72f8eccd4ab07f60dd9ac3ef81c29c9bf8c3b507222678ea588d0964d7d",
+							"synthetic-office": "d0b955402cc6bfabbbe9d74547829b8d5a6a0c67c57ac7442fbf9f12b8a000f9",
+							"synthetic-remote-call": "a6d8c5d1922fc6b7fa96b231ebea71dd0f9ebd25cf0b70ab95f11151e6ea3a8e",
+							"synthetic-overlap": "43331f3a4a7afa2025d31842525ff842b6ea47e9e834d87474db10ae44af200a"
+						}
+					},
+					{
+						"index": 2,
+						"member_count": 11,
+						"ordered_members_sha256": "656b5af61b17ac8789d3ede4c0d2e9a62ae074683acb58c2de8e6254993cabc7",
+						"clean_duration_seconds": 155.38,
+						"overlap_duration_seconds": 123.225,
+						"audio_sha256": {
+							"clean-read": "a2aa29e459f04abac714d9f737e24f39ab800c16ac91d461b688a0e8a2df2a76",
+							"synthetic-office": "f30cff8caab4f154de11e41b69ec21abcfc8a3ba84c0f11616e99bec11eced87",
+							"synthetic-remote-call": "938b2c027c1040fc1c6f15178cec476af8d01d5eb97b42d4ba48faf4ef4a9f38",
+							"synthetic-overlap": "57450addeac1d299cbd9cafcaf3faf4afe0de4ff7ba3c85e115e4ee027964f5e"
+						}
+					},
+					{
+						"index": 3,
+						"member_count": 11,
+						"ordered_members_sha256": "7fec2641cc71b2b7b57422fc684e6b5febfa779cb61f669a198e2a88ff3eca23",
+						"clean_duration_seconds": 153.04,
+						"overlap_duration_seconds": 122.055,
+						"audio_sha256": {
+							"clean-read": "c53fee449a29ee33b06dedacda7e15004c8bb0f514909361a3e3abcc2e770ebe",
+							"synthetic-office": "2823c759d7b36c9015cfe7840fbf2e7dbe4920bdd94962512ffaaff5ab1c4716",
+							"synthetic-remote-call": "1a702b530f1e410afd366ee63ffd14bcd26d7feffbd97eac3fe661506acece2d",
+							"synthetic-overlap": "ec5895416e9725b03b2e577b76b6e790f87c9918988d586f8976aee453c2c3bc"
+						}
+					}
+				]
+			},
+			{
+				"source_id": "fleurs-fr-fr-test",
+				"language": "fr-FR",
+				"whisper_language": "fr",
+				"composites": [
+					{
+						"index": 1,
+						"member_count": 14,
+						"ordered_members_sha256": "f39c1a6b68d268b8011af228b2935f9da14d59059c9bb45ec4438ee571cbb60c",
+						"clean_duration_seconds": 159.7,
+						"overlap_duration_seconds": 127.035,
+						"audio_sha256": {
+							"clean-read": "60e13ef8694f497464f622d9cc39041458826b2feb34f851d82ffbcb2f495ac7",
+							"synthetic-office": "f582fc11df213fc3d36cbc1276739994a23b5d86f8480402c4880d010baa768a",
+							"synthetic-remote-call": "5d03fad554bb816467c6b0178d2732a473d10d8a1168ca3c7a89f338b15d06fd",
+							"synthetic-overlap": "113487a5d086d75084bfca99feb47ec699d954fadc6be1c18878c7070ccefad4"
+						}
+					},
+					{
+						"index": 2,
+						"member_count": 13,
+						"ordered_members_sha256": "09dbcf325b3dc5c1de2afc74bfd816be0afbc108cbe96f854e8d334e4034d6d2",
+						"clean_duration_seconds": 159.54,
+						"overlap_duration_seconds": 128.175,
+						"audio_sha256": {
+							"clean-read": "0fbe62dcc75673737b4901ef264c5b872632aa0b29905927d9b8739c60ef3457",
+							"synthetic-office": "05be525e8d7c5c9fb83a63769f6f739378f3e7b5f92d5bbda150b8fef90e7ff4",
+							"synthetic-remote-call": "ecd61f6fa5b940aaa40f18b51f78b6c35529a9ee33ed560d6d737e909d8d9c2a",
+							"synthetic-overlap": "0082266cdda1ac0390b47b69233aef107ef98874db652c99db596cc2cd578805"
+						}
+					},
+					{
+						"index": 3,
+						"member_count": 14,
+						"ordered_members_sha256": "2b6aafe8ceb4f9c5d8c6257c8c850046f0b98d3ff7daa93a348b9ad447d92143",
+						"clean_duration_seconds": 153.88,
+						"overlap_duration_seconds": 120.165,
+						"audio_sha256": {
+							"clean-read": "6b45505b000db601d75c2f46e9649d7000e445c416d557b36b41a373b0daea64",
+							"synthetic-office": "c247a16676688876bacbc834efa023425362af5ac3ae7650d853bc4c7a353437",
+							"synthetic-remote-call": "5de4530b865a06737457c4449496821da848cba8bae1c8d4a3d2f33fa4009de4",
+							"synthetic-overlap": "acfb2cb56c955125b5a437d60b402cb41e6d55f3d4a22578dd145104db6d8eef"
+						}
+					}
+				]
+			},
+			{
+				"source_id": "fleurs-de-de-test",
+				"language": "de-DE",
+				"whisper_language": "de",
+				"composites": [
+					{
+						"index": 1,
+						"member_count": 10,
+						"ordered_members_sha256": "baead5dd0b94f06f7d247430fae6ffe89a8009b9f8ac0d6760e4c69637b7afb9",
+						"clean_duration_seconds": 161.16,
+						"overlap_duration_seconds": 133.875,
+						"audio_sha256": {
+							"clean-read": "b5b6429ea2f7a087071c3bd47b03fe902fbf88869b9055549b4e7bac2f1c128e",
+							"synthetic-office": "7d6e5c827f9034fcac1b92bdffdb5b777b856587573f565e0d78db14a8fbb093",
+							"synthetic-remote-call": "66fadfcdb10357190aab2a098da707bcaa51451047b4311c04d394d78704d6a0",
+							"synthetic-overlap": "2cc5ee6819776af66c4e7e8ac12d6a7b756a6c991b98c4ff2da4fa8e3c8426c9"
+						}
+					},
+					{
+						"index": 2,
+						"member_count": 12,
+						"ordered_members_sha256": "7af2ff2e0361afee23bbb11e07d97be403d4d2d53100c30cf3640aaf6b55a84d",
+						"clean_duration_seconds": 147.86,
+						"overlap_duration_seconds": 118.305,
+						"audio_sha256": {
+							"clean-read": "45b731ddc955e544637e6221463b1bb195a89716d9187dc8ad79e5bb849ae44f",
+							"synthetic-office": "5f4291a327c511420312875502bb174c1539835555e926433f3dcef99a24cdc6",
+							"synthetic-remote-call": "9f6f0e3d5b71ebd6e4d59eb19b95cedeca6afe1bc6af70242badf5569c806413",
+							"synthetic-overlap": "ec9c3b3adee4f6ed68305253920f1d7e65366816b47837ec03d9711b10a67331"
+						}
+					},
+					{
+						"index": 3,
+						"member_count": 11,
+						"ordered_members_sha256": "2dbd6860b8f4d6a16f3aa35273f39a721a8ce66285bfc280dae15fe836ebcf13",
+						"clean_duration_seconds": 155.14,
+						"overlap_duration_seconds": 125.145,
+						"audio_sha256": {
+							"clean-read": "dcc186dbdd5ae4d9a4caf1c1ca12a65b8c4b669502aeb718f8556b4796350647",
+							"synthetic-office": "f48d783d27048aa2a4eaf8651ec73308259bb9112630544e516a234eb0578f03",
+							"synthetic-remote-call": "207a55953bcbdc45a7f1d21fa4451f041168d98cd92cf5490036eeeb2c062aa5",
+							"synthetic-overlap": "89a1dbe7973ea52a029e8b593d8d8793f00783e3b68d189dad1a0f04d56b9608"
+						}
+					}
+				]
+			}
+		],
+		"conditions": [
+			{
+				"id": "clean-read",
+				"transform_id": "clean-read-v1",
+				"speakers": 1
+			},
+			{
+				"id": "synthetic-office",
+				"transform_id": "synthetic-office-v1",
+				"speakers": 1
+			},
+			{
+				"id": "synthetic-remote-call",
+				"transform_id": "synthetic-remote-call-v1",
+				"speakers": 1
+			},
+			{
+				"id": "synthetic-overlap",
+				"transform_id": "synthetic-overlap-v1",
+				"speakers": 2
+			}
+		]
+	},
+	"natural_samples": [
+		{
+			"id": "en-ami-en2001a-natural-office",
+			"source_id": "ami-en2001a",
+			"source_item_id": "ami:EN2001a",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "meeting",
+			"noise_condition": "natural-office",
+			"speakers": 5,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "densest-timed-words",
+				"grid_seconds": 30,
+				"expected_start_seconds": 870,
+				"expected_end_seconds": 1050,
+				"expected_word_count": 777,
+				"annotation_member_count": 5,
+				"ordered_annotation_members_sha256": "23421816cd4b97e28e3aa9c7b96e18b21ff96b56b4293ccb7c9684aeea3f6f9d"
+			},
+			"transform_id": "ami-dense-excerpt-v1",
+			"audio_sha256": "a153330dca45da026944a2fad8c62f44b75613e715602a429968c59a410f548f"
+		},
+		{
+			"id": "en-ami-in1001-natural-office",
+			"source_id": "ami-in1001",
+			"source_item_id": "ami:IN1001",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "meeting",
+			"noise_condition": "natural-office",
+			"speakers": 3,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "densest-timed-words",
+				"grid_seconds": 30,
+				"expected_start_seconds": 2220,
+				"expected_end_seconds": 2400,
+				"expected_word_count": 786,
+				"annotation_member_count": 4,
+				"ordered_annotation_members_sha256": "e403c9f90f3f88f84c392718694f91b3de0798fb674f409db08c876ca9a03389"
+			},
+			"transform_id": "ami-dense-excerpt-v1",
+			"audio_sha256": "1022a5ff2197468b82d0c891d4e8da0377eb3d80fdc86b21fe0b9e52682c13c6"
+		},
+		{
+			"id": "en-ami-in1005-natural-office",
+			"source_id": "ami-in1005",
+			"source_item_id": "ami:IN1005",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "meeting",
+			"noise_condition": "natural-office",
+			"speakers": 4,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "densest-timed-words",
+				"grid_seconds": 30,
+				"expected_start_seconds": 1710,
+				"expected_end_seconds": 1890,
+				"expected_word_count": 789,
+				"annotation_member_count": 4,
+				"ordered_annotation_members_sha256": "7ac303c0fb571cf5a09bcb3e26e1f084ad0813dceb625c93c643008647db24c9"
+			},
+			"transform_id": "ami-dense-excerpt-v1",
+			"audio_sha256": "a6144381907f71f87494f5f1f6d32b930807f6f13c97b2ae38c3d25327abfc9a"
+		},
+		{
+			"id": "en-earnings21-4320211-natural-remote-call",
+			"source_id": "earnings21-4320211",
+			"source_item_id": "earnings21:4320211",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "remote-call",
+			"noise_condition": "natural-remote-call",
+			"speakers": 2,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "fixed",
+				"start_seconds": 60
+			},
+			"transform_id": "earnings21-fixed-excerpt-v1",
+			"requires_manual_reference": true,
+			"audio_sha256": "c33880ad4658fe198cba73553664fda650efab0f522b8c65c3b1600c9514de44"
+		},
+		{
+			"id": "en-earnings21-4330115-natural-remote-call",
+			"source_id": "earnings21-4330115",
+			"source_item_id": "earnings21:4330115",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "remote-call",
+			"noise_condition": "natural-remote-call",
+			"speakers": 2,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "fixed",
+				"start_seconds": 60
+			},
+			"transform_id": "earnings21-fixed-excerpt-v1",
+			"requires_manual_reference": true,
+			"audio_sha256": "ac14e5ed2a2331f89d61991bfd5be033dee79031aa8c551c2cd65e5753fc2fdb"
+		},
+		{
+			"id": "en-earnings21-4341191-natural-remote-call",
+			"source_id": "earnings21-4341191",
+			"source_item_id": "earnings21:4341191",
+			"language": "en",
+			"whisper_language": "en",
+			"scenario": "remote-call",
+			"noise_condition": "natural-remote-call",
+			"speakers": 2,
+			"duration_seconds": 180,
+			"window": {
+				"strategy": "fixed",
+				"start_seconds": 60
+			},
+			"transform_id": "earnings21-fixed-excerpt-v1",
+			"requires_manual_reference": true,
+			"audio_sha256": "12aa79ba891a9526ab0def22b2f112e72a46aa090ea36a847e9bbeeae476106d"
+		}
+	]
+}

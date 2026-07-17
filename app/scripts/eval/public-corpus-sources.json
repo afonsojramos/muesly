@@ -1,0 +1,296 @@
+{
+	"schema_version": 1,
+	"catalog_id": "muesly-public-asr-sources-v1",
+	"description": "Immutable, open-licensed source files used to reconstruct the local public ASR corpus.",
+	"artifacts": [
+		{
+			"id": "fleurs-en-us-test-audio",
+			"kind": "audio-archive",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us/audio/test.tar.gz",
+			"cache_path": "fleurs/en_us-test.tar.gz",
+			"sha256": "d9c2e37b41aacd41bc283554a0a82b5476b36887049774ecb2819dcaaa55a356",
+			"size_bytes": 289851356,
+			"archive_format": "tar.gz"
+		},
+		{
+			"id": "fleurs-en-us-test-index",
+			"kind": "index",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/en_us/test.tsv",
+			"cache_path": "fleurs/en_us-test.tsv",
+			"sha256": "74c046239374deeb60fa63f258f907388093a32bcaa3140965f70ef05c79f7ca",
+			"size_bytes": 367864
+		},
+		{
+			"id": "fleurs-es-419-test-audio",
+			"kind": "audio-archive",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/es_419/audio/test.tar.gz",
+			"cache_path": "fleurs/es_419-test.tar.gz",
+			"sha256": "981802f6c828fd214fcf8bfc1036d80c9184b6eeb5650b3f7882f8affec046c9",
+			"size_bytes": 582112372,
+			"archive_format": "tar.gz"
+		},
+		{
+			"id": "fleurs-es-419-test-index",
+			"kind": "index",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/es_419/test.tsv",
+			"cache_path": "fleurs/es_419-test.tsv",
+			"sha256": "d107a93a4f54a18ac25cd470bb4cdadce14fb075b0c1d1542258e274d209ec09",
+			"size_bytes": 599882
+		},
+		{
+			"id": "fleurs-pt-br-test-audio",
+			"kind": "audio-archive",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/pt_br/audio/test.tar.gz",
+			"cache_path": "fleurs/pt_br-test.tar.gz",
+			"sha256": "968d1b68a90132ca1f044f664866418b0db0351a93601a671d5637016da4f49b",
+			"size_bytes": 621291324,
+			"archive_format": "tar.gz"
+		},
+		{
+			"id": "fleurs-pt-br-test-index",
+			"kind": "index",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/pt_br/test.tsv",
+			"cache_path": "fleurs/pt_br-test.tsv",
+			"sha256": "4a7b8ae8ce07c355dcd2cf087a6486c7c3ab931d751b9a9218a9ee0cd798964b",
+			"size_bytes": 563257
+		},
+		{
+			"id": "fleurs-fr-fr-test-audio",
+			"kind": "audio-archive",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/fr_fr/audio/test.tar.gz",
+			"cache_path": "fleurs/fr_fr-test.tar.gz",
+			"sha256": "d23690e102f373554d1b544cd2ff1e76e4fedeb04953c0b72751a1b7c518cfdd",
+			"size_bytes": 349036055,
+			"archive_format": "tar.gz"
+		},
+		{
+			"id": "fleurs-fr-fr-test-index",
+			"kind": "index",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/fr_fr/test.tsv",
+			"cache_path": "fleurs/fr_fr-test.tsv",
+			"sha256": "5d06d338b242e00786fcf12c4c92008b9f399d5a5c872c91dca90572e7869c0d",
+			"size_bytes": 456972
+		},
+		{
+			"id": "fleurs-de-de-test-audio",
+			"kind": "audio-archive",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/de_de/audio/test.tar.gz",
+			"cache_path": "fleurs/de_de-test.tar.gz",
+			"sha256": "e86b42dfcdef749926cd92135045f87c25966c09e50d01c401adb04ee7d8628f",
+			"size_bytes": 568734559,
+			"archive_format": "tar.gz"
+		},
+		{
+			"id": "fleurs-de-de-test-index",
+			"kind": "index",
+			"url": "https://huggingface.co/datasets/google/fleurs/resolve/4683b04af03d2d9549064c7d72060a9a94bb6046/data/de_de/test.tsv",
+			"cache_path": "fleurs/de_de-test.tsv",
+			"sha256": "82fab72c58a347345675c238f2492bb997105a4ab45d69e2a2b34ed29082fa97",
+			"size_bytes": 559542
+		},
+		{
+			"id": "ami-manual-annotations-v1-6-2",
+			"kind": "reference-archive",
+			"url": "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip",
+			"cache_path": "ami/ami_public_manual_1.6.2.zip",
+			"sha256": "b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d",
+			"size_bytes": 22887865,
+			"archive_format": "zip"
+		},
+		{
+			"id": "ami-en2001a-headset-mix",
+			"kind": "audio",
+			"url": "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/EN2001a/audio/EN2001a.Mix-Headset.wav",
+			"cache_path": "ami/EN2001a.Mix-Headset.wav",
+			"sha256": "81e06be816e9d94d0bee410bef1b158b2cdfba8e2b80f44a6e62cf6b9fd780f9",
+			"size_bytes": 168007726
+		},
+		{
+			"id": "ami-in1001-headset-mix",
+			"kind": "audio",
+			"url": "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1001/audio/IN1001.Mix-Headset.wav",
+			"cache_path": "ami/IN1001.Mix-Headset.wav",
+			"sha256": "9bffc290193022169e7cb46af699eccf383cae37b412d47b1462fd8619b296f0",
+			"size_bytes": 110840024
+		},
+		{
+			"id": "ami-in1005-headset-mix",
+			"kind": "audio",
+			"url": "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/IN1005/audio/IN1005.Mix-Headset.wav",
+			"cache_path": "ami/IN1005.Mix-Headset.wav",
+			"sha256": "e00cac97fd5dbab71397e6eb32f871f3f8c2b6e59c5581d9e37bf209bbfefc7c",
+			"size_bytes": 89562668
+		},
+		{
+			"id": "earnings21-4320211-audio",
+			"kind": "audio",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/wav/4320211.wav",
+			"cache_path": "earnings21/4320211.wav",
+			"sha256": "a6050511806f16d02362d2fe926adc534a1999aa80b3e86726bb0646ee3cfbc9",
+			"size_bytes": 105146190
+		},
+		{
+			"id": "earnings21-4320211-reference",
+			"kind": "reference",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4320211.nlp",
+			"cache_path": "earnings21/4320211.nlp",
+			"sha256": "ebfe146c00a7057e55a8b30f78280aa04c707f34d4be77edd05da86a69af613f",
+			"size_bytes": 195513
+		},
+		{
+			"id": "earnings21-4330115-audio",
+			"kind": "audio",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/wav/4330115.wav",
+			"cache_path": "earnings21/4330115.wav",
+			"sha256": "9b84dbf1de01bc95c91ab918dc7ee0ecaa254754e0b09fb55a56f026d0c1dceb",
+			"size_bytes": 78683982
+		},
+		{
+			"id": "earnings21-4330115-reference",
+			"kind": "reference",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4330115.nlp",
+			"cache_path": "earnings21/4330115.nlp",
+			"sha256": "6fc925c7781e73830a3810a9107268986f04ad77eae2ce9450404f8b0a99d49c",
+			"size_bytes": 147534
+		},
+		{
+			"id": "earnings21-4341191-audio",
+			"kind": "audio",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/wav/4341191.wav",
+			"cache_path": "earnings21/4341191.wav",
+			"sha256": "271e8e00b952dfce89c62628be6eb96a09f8f946a2eb595b11d63e81c6e2c749",
+			"size_bytes": 183699534
+		},
+		{
+			"id": "earnings21-4341191-reference",
+			"kind": "reference",
+			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/nlp_references/4341191.nlp",
+			"cache_path": "earnings21/4341191.nlp",
+			"sha256": "e494a1306b67355186bf4fff603ceebd0b95114bff11ce4b4ece544c7348de2f",
+			"size_bytes": 319689
+		}
+	],
+	"sources": [
+		{
+			"id": "fleurs-en-us-test",
+			"dataset": "FLEURS",
+			"revision": "4683b04af03d2d9549064c7d72060a9a94bb6046",
+			"homepage": "https://huggingface.co/datasets/google/fleurs",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["fleurs-en-us-test-audio", "fleurs-en-us-test-index"]
+		},
+		{
+			"id": "fleurs-es-419-test",
+			"dataset": "FLEURS",
+			"revision": "4683b04af03d2d9549064c7d72060a9a94bb6046",
+			"homepage": "https://huggingface.co/datasets/google/fleurs",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["fleurs-es-419-test-audio", "fleurs-es-419-test-index"]
+		},
+		{
+			"id": "fleurs-pt-br-test",
+			"dataset": "FLEURS",
+			"revision": "4683b04af03d2d9549064c7d72060a9a94bb6046",
+			"homepage": "https://huggingface.co/datasets/google/fleurs",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["fleurs-pt-br-test-audio", "fleurs-pt-br-test-index"]
+		},
+		{
+			"id": "fleurs-fr-fr-test",
+			"dataset": "FLEURS",
+			"revision": "4683b04af03d2d9549064c7d72060a9a94bb6046",
+			"homepage": "https://huggingface.co/datasets/google/fleurs",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["fleurs-fr-fr-test-audio", "fleurs-fr-fr-test-index"]
+		},
+		{
+			"id": "fleurs-de-de-test",
+			"dataset": "FLEURS",
+			"revision": "4683b04af03d2d9549064c7d72060a9a94bb6046",
+			"homepage": "https://huggingface.co/datasets/google/fleurs",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["fleurs-de-de-test-audio", "fleurs-de-de-test-index"]
+		},
+		{
+			"id": "ami-en2001a",
+			"dataset": "AMI Meeting Corpus",
+			"revision": "manual-annotations-1.6.2",
+			"homepage": "https://groups.inf.ed.ac.uk/ami/corpus/",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["ami-en2001a-headset-mix", "ami-manual-annotations-v1-6-2"]
+		},
+		{
+			"id": "ami-in1001",
+			"dataset": "AMI Meeting Corpus",
+			"revision": "manual-annotations-1.6.2",
+			"homepage": "https://groups.inf.ed.ac.uk/ami/corpus/",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["ami-in1001-headset-mix", "ami-manual-annotations-v1-6-2"]
+		},
+		{
+			"id": "ami-in1005",
+			"dataset": "AMI Meeting Corpus",
+			"revision": "manual-annotations-1.6.2",
+			"homepage": "https://groups.inf.ed.ac.uk/ami/corpus/",
+			"license_id": "CC-BY-4.0",
+			"license_url": "https://creativecommons.org/licenses/by/4.0/",
+			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["ami-in1005-headset-mix", "ami-manual-annotations-v1-6-2"]
+		},
+		{
+			"id": "earnings21-4320211",
+			"dataset": "Earnings-21",
+			"revision": "33b26fbc8bb1e1ab1815d89867c65f13ffdb7422",
+			"homepage": "https://huggingface.co/datasets/Revai/earnings21",
+			"license_id": "CC-BY-SA-4.0",
+			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["earnings21-4320211-audio", "earnings21-4320211-reference"]
+		},
+		{
+			"id": "earnings21-4330115",
+			"dataset": "Earnings-21",
+			"revision": "33b26fbc8bb1e1ab1815d89867c65f13ffdb7422",
+			"homepage": "https://huggingface.co/datasets/Revai/earnings21",
+			"license_id": "CC-BY-SA-4.0",
+			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["earnings21-4330115-audio", "earnings21-4330115-reference"]
+		},
+		{
+			"id": "earnings21-4341191",
+			"dataset": "Earnings-21",
+			"revision": "33b26fbc8bb1e1ab1815d89867c65f13ffdb7422",
+			"homepage": "https://huggingface.co/datasets/Revai/earnings21",
+			"license_id": "CC-BY-SA-4.0",
+			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
+			"redistribution": "local-only",
+			"artifact_ids": ["earnings21-4341191-audio", "earnings21-4341191-reference"]
+		}
+	]
+}

@@ -10,7 +10,10 @@ import {
 	canonicalManifestPath,
 	corpusFingerprint,
 	fileSha256,
+	isPublicDatasetId,
 	loadCorpus,
+	PUBLIC_DATASET_IDS,
+	PUBLIC_PREPARATION_PROTOCOL_ID,
 	REFERENCE_PROTOCOL_ID,
 	validateCorpusDocument,
 	whisperLanguageForSample,
@@ -22,11 +25,7 @@ function hash(value) {
 
 function fixture() {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-'));
-	const sessionDirectory = path.join(
-		directory,
-		'local-corpus',
-		'session-example-001',
-	);
+	const sessionDirectory = path.join(directory, 'local-corpus', 'session-example-001');
 	fs.mkdirSync(sessionDirectory, { recursive: true });
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.wav'), 'audio');
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.txt'), 'hello');
@@ -41,11 +40,9 @@ function fixture() {
 				{
 					id: 'meeting-en-clean',
 					session_id: 'session-example-001',
-					audio_path:
-						'local-corpus/session-example-001/meeting-en-clean.wav',
+					audio_path: 'local-corpus/session-example-001/meeting-en-clean.wav',
 					audio_sha256: hash('audio'),
-					reference_path:
-						'local-corpus/session-example-001/meeting-en-clean.txt',
+					reference_path: 'local-corpus/session-example-001/meeting-en-clean.txt',
 					reference_sha256: hash('hello'),
 					language: 'en-US',
 					scenario: 'meeting',
@@ -62,6 +59,18 @@ function fixture() {
 				},
 			],
 		},
+	};
+}
+
+function addPublicPreparation(document, sourceCatalogId = 'ami') {
+	document.source_catalog_sha256 = 'a'.repeat(64);
+	document.preparation = {
+		protocol_id: PUBLIC_PREPARATION_PROTOCOL_ID,
+		source_catalog_id: sourceCatalogId,
+		selection_sha256: 'b'.repeat(64),
+		ffmpeg_id: 'ffmpeg-8-darwin-arm64',
+		ffmpeg_sha256: 'c'.repeat(64),
+		ffmpeg_version: 'ffmpeg version 8.0',
 	};
 }
 
@@ -85,12 +94,7 @@ test('loads a manifest through its canonical file identity', () => {
 	assert.equal(
 		corpus.samples[0].audio_file,
 		fs.realpathSync(
-			path.join(
-				directory,
-				'local-corpus',
-				'session-example-001',
-				'meeting-en-clean.wav',
-			),
+			path.join(directory, 'local-corpus', 'session-example-001', 'meeting-en-clean.wav'),
 		),
 	);
 	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
@@ -110,16 +114,10 @@ test('loads a schema-3 local manifest as a strict in-memory schema-4 projection'
 	assert.deepEqual(validateCorpusDocument(previous, { manifestPath }), [
 		'schema_version must be 4',
 	]);
-	assert.throws(
-		() => {
-			fs.writeFileSync(
-				manifestPath,
-				JSON.stringify({ ...previous, distribution: 'repository' }),
-			);
-			loadCorpus(manifestPath);
-		},
-		/schema_version must be 4/,
-	);
+	assert.throws(() => {
+		fs.writeFileSync(manifestPath, JSON.stringify({ ...previous, distribution: 'repository' }));
+		loadCorpus(manifestPath);
+	}, /schema_version must be 4/);
 });
 
 test('resolves a dangling manifest symlink to its intended missing target', () => {
@@ -181,12 +179,7 @@ test('rejects legacy and differently versioned reference manifests without upgra
 test('rejects empty speech references outside the checked-in synthetic silence fixture', () => {
 	const { directory, document } = fixture();
 	fs.writeFileSync(
-		path.join(
-			directory,
-			'local-corpus',
-			'session-example-001',
-			'meeting-en-clean.txt',
-		),
+		path.join(directory, 'local-corpus', 'session-example-001', 'meeting-en-clean.txt'),
 		'   \n',
 	);
 	document.samples[0].reference_sha256 = hash('   \n');
@@ -266,7 +259,8 @@ test('rejects meeting audio without participant consent', () => {
 
 test('accepts open-licensed meeting audio only when it is bound to a source catalog', () => {
 	const { directory, document } = fixture();
-	document.source_catalog_sha256 = 'a'.repeat(64);
+	addPublicPreparation(document);
+	document.samples[0].dataset = 'ami';
 	document.samples[0].provenance = {
 		basis: 'public-license',
 		redistribution: 'local-only',
@@ -287,9 +281,56 @@ test('accepts open-licensed meeting audio only when it is bound to a source cata
 	);
 });
 
+test('requires exact public dataset and closed preparation provenance', () => {
+	const { document } = fixture();
+	addPublicPreparation(document);
+	document.samples[0].dataset = 'fleurs';
+	document.samples[0].scenario = 'read-speech';
+	delete document.samples[0].session_id;
+	document.samples[0].provenance = {
+		basis: 'public-license',
+		redistribution: 'local-only',
+		source_catalog_id: 'ami',
+		source_item_ids: ['item-1'],
+		transform_id: 'clean',
+	};
+	assert.deepEqual(validateCorpusDocument(document, { checkFiles: false }), []);
+	assert.deepEqual(PUBLIC_DATASET_IDS, ['fleurs', 'ami', 'earnings21']);
+	assert(isPublicDatasetId('earnings21'));
+	assert(!isPublicDatasetId('earnings-21'));
+
+	document.samples[0].dataset = 'other';
+	document.preparation.unknown = true;
+	document.preparation.ffmpeg_version = 'ffmpeg version 8.0\nforged';
+	const errors = validateCorpusDocument(document, { checkFiles: false });
+	assert(errors.some((error) => error.includes('.dataset must be fleurs, ami, or earnings21')));
+	assert(errors.includes('preparation.unknown is not an allowed field'));
+	assert(
+		errors.some((error) =>
+			error.includes('preparation.ffmpeg_version must be a trimmed single-line'),
+		),
+	);
+
+	document.samples[0].provenance = fixture().document.samples[0].provenance;
+	document.samples[0].dataset = 'ami';
+	const detachedErrors = validateCorpusDocument(document, { checkFiles: false });
+	assert(
+		detachedErrors.some((error) =>
+			error.includes('.dataset is only valid for public-license samples'),
+		),
+	);
+	assert(
+		detachedErrors.includes(
+			'preparation is only valid when the manifest contains public-license samples',
+		),
+	);
+});
+
 test('rejects ambiguous or unbounded public-license source bindings', () => {
 	const { document } = fixture();
+	addPublicPreparation(document, 'different-catalog');
 	document.source_catalog_sha256 = 'not-a-digest';
+	document.samples[0].dataset = 'ami';
 	document.samples[0].provenance = {
 		basis: 'public-license',
 		redistribution: 'repository',
@@ -312,12 +353,7 @@ test('rejects identity fields and changed fixture contents', () => {
 	const { directory, document } = fixture();
 	document.samples[0].provenance.participants = [{ email: 'person@example.com' }];
 	fs.writeFileSync(
-		path.join(
-			directory,
-			'local-corpus',
-			'session-example-001',
-			'meeting-en-clean.wav',
-		),
+		path.join(directory, 'local-corpus', 'session-example-001', 'meeting-en-clean.wav'),
 		'changed',
 	);
 	const errors = validateCorpusDocument(document, {
@@ -384,9 +420,7 @@ test('requires local participant files to remain in their opaque session directo
 	});
 	assert(
 		errors.some((error) =>
-			error.includes(
-				'audio_path must be local-corpus/session-example-001/meeting-en-clean.wav',
-			),
+			error.includes('audio_path must be local-corpus/session-example-001/meeting-en-clean.wav'),
 		),
 	);
 });
@@ -415,11 +449,7 @@ test('requires non-meeting participant recordings to use managed session custody
 test('rejects symlinked and hard-linked participant files in managed sessions', () => {
 	for (const aliasType of ['symbolic', 'hard']) {
 		const { directory, document } = fixture();
-		const sessionDirectory = path.join(
-			directory,
-			'local-corpus',
-			'session-example-001',
-		);
+		const sessionDirectory = path.join(directory, 'local-corpus', 'session-example-001');
 		const audioPath = path.join(sessionDirectory, 'meeting-en-clean.wav');
 		const externalAudio = path.join(directory, `${aliasType}-source.wav`);
 		fs.writeFileSync(externalAudio, 'audio');

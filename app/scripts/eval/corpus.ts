@@ -5,6 +5,12 @@ import { TextDecoder } from 'node:util';
 
 export const CORPUS_SCHEMA_VERSION = 4;
 export const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
+export const PUBLIC_PREPARATION_PROTOCOL_ID = 'muesly-public-asr-preparation-v1';
+export const PUBLIC_DATASET_IDS = Object.freeze(['fleurs', 'ami', 'earnings21']);
+
+export function isPublicDatasetId(value) {
+	return typeof value === 'string' && PUBLIC_DATASET_IDS.includes(value);
+}
 
 const PROVENANCE_BASES = new Set([
 	'participant-consent',
@@ -36,11 +42,21 @@ const MANIFEST_FIELDS = new Set([
 	'description',
 	'distribution',
 	'source_catalog_sha256',
+	'preparation',
 	'samples',
+]);
+const PREPARATION_FIELDS = new Set([
+	'protocol_id',
+	'source_catalog_id',
+	'selection_sha256',
+	'ffmpeg_id',
+	'ffmpeg_sha256',
+	'ffmpeg_version',
 ]);
 const SAMPLE_FIELDS = new Set([
 	'id',
 	'session_id',
+	'dataset',
 	'audio_path',
 	'audio_sha256',
 	'reference_path',
@@ -173,6 +189,53 @@ function requiredString(value, field, errors) {
 	return true;
 }
 
+function boundedSingleLineString(value, field, errors, maximumLength = 160) {
+	if (
+		!requiredString(value, field, errors) ||
+		value !== value.trim() ||
+		Buffer.byteLength(value, 'utf8') > maximumLength ||
+		/[\0\r\n]/.test(value)
+	) {
+		errors.push(`${field} must be a trimmed single-line string of at most ${maximumLength} bytes`);
+		return false;
+	}
+	return true;
+}
+
+function validatePreparation(preparation, errors) {
+	if (!isObject(preparation)) {
+		errors.push('preparation must be an object');
+		return;
+	}
+	rejectUnknownFields(preparation, PREPARATION_FIELDS, 'preparation', errors);
+	if (preparation.protocol_id !== PUBLIC_PREPARATION_PROTOCOL_ID) {
+		errors.push(`preparation.protocol_id must be '${PUBLIC_PREPARATION_PROTOCOL_ID}'`);
+	}
+	if (
+		!boundedSingleLineString(
+			preparation.source_catalog_id,
+			'preparation.source_catalog_id',
+			errors,
+		) ||
+		!/^[a-z0-9][a-z0-9-]*$/.test(preparation.source_catalog_id)
+	) {
+		errors.push('preparation.source_catalog_id must be a lowercase slug');
+	}
+	if (!/^[a-f0-9]{64}$/.test(preparation.selection_sha256 ?? '')) {
+		errors.push('preparation.selection_sha256 must be a lowercase SHA-256 digest');
+	}
+	if (
+		!boundedSingleLineString(preparation.ffmpeg_id, 'preparation.ffmpeg_id', errors) ||
+		!/^[a-z0-9][a-z0-9-]*$/.test(preparation.ffmpeg_id)
+	) {
+		errors.push('preparation.ffmpeg_id must be a lowercase slug');
+	}
+	if (!/^[a-f0-9]{64}$/.test(preparation.ffmpeg_sha256 ?? '')) {
+		errors.push('preparation.ffmpeg_sha256 must be a lowercase SHA-256 digest');
+	}
+	boundedSingleLineString(preparation.ffmpeg_version, 'preparation.ffmpeg_version', errors);
+}
+
 function rejectUnknownFields(value, allowed, prefix, errors) {
 	for (const field of Object.keys(value)) {
 		if (!allowed.has(field)) errors.push(`${prefix}.${field} is not an allowed field`);
@@ -239,6 +302,11 @@ function validateProvenance(sample, errors, today) {
 		requiredString(provenance.source_url, `${prefix}.source_url`, errors);
 		requiredString(provenance.license, `${prefix}.license`, errors);
 	} else if (provenance.basis === 'public-license') {
+		if (!isPublicDatasetId(sample.dataset)) {
+			errors.push(
+				`${prefix.replace('.provenance', '')}.dataset must be fleurs, ami, or earnings21 for public-license samples`,
+			);
+		}
 		if (
 			!requiredString(provenance.source_catalog_id, `${prefix}.source_catalog_id`, errors) ||
 			!/^[a-z0-9][a-z0-9-]*$/.test(provenance.source_catalog_id)
@@ -279,6 +347,11 @@ function validateProvenance(sample, errors, today) {
 		}
 	} else if (provenance.basis === 'synthetic') {
 		requiredString(provenance.generation_method, `${prefix}.generation_method`, errors);
+	}
+	if (provenance.basis !== 'public-license' && sample.dataset !== undefined) {
+		errors.push(
+			`${prefix.replace('.provenance', '')}.dataset is only valid for public-license samples`,
+		);
 	}
 
 	if (
@@ -353,14 +426,7 @@ function validateReferenceText(document, sample, manifestPath, checkFiles, error
 	}
 }
 
-function validateLocalParticipantFile(
-	sample,
-	field,
-	extension,
-	manifestPath,
-	checkFiles,
-	errors,
-) {
+function validateLocalParticipantFile(sample, field, extension, manifestPath, checkFiles, errors) {
 	const prefix = `sample '${sample.id ?? '?'}'`;
 	if (
 		typeof sample.id !== 'string' ||
@@ -422,22 +488,8 @@ function validateLocalParticipantCustody(sample, manifestPath, checkFiles, error
 		);
 		return;
 	}
-	validateLocalParticipantFile(
-		sample,
-		'audio_path',
-		'.wav',
-		manifestPath,
-		checkFiles,
-		errors,
-	);
-	validateLocalParticipantFile(
-		sample,
-		'reference_path',
-		'.txt',
-		manifestPath,
-		checkFiles,
-		errors,
-	);
+	validateLocalParticipantFile(sample, 'audio_path', '.wav', manifestPath, checkFiles, errors);
+	validateLocalParticipantFile(sample, 'reference_path', '.txt', manifestPath, checkFiles, errors);
 }
 
 export function validateCorpusDocument(document, options = {}) {
@@ -467,6 +519,7 @@ export function validateCorpusDocument(document, options = {}) {
 	) {
 		errors.push('source_catalog_sha256 must be a lowercase SHA-256 digest');
 	}
+	if (document.preparation !== undefined) validatePreparation(document.preparation, errors);
 	if (!Array.isArray(document.samples)) {
 		errors.push('samples must be an array');
 		return errors;
@@ -541,11 +594,24 @@ export function validateCorpusDocument(document, options = {}) {
 			`sample '${duplicate.id ?? '?'}'.audio_sha256 duplicates sample '${first.id ?? '?'}'`,
 		);
 	}
-	if (
-		document.samples.some((sample) => sample?.provenance?.basis === 'public-license') &&
-		!/^[a-f0-9]{64}$/.test(document.source_catalog_sha256 ?? '')
-	) {
-		errors.push('source_catalog_sha256 is required for public-license samples');
+	const publicSamples = document.samples.filter(
+		(sample) => sample?.provenance?.basis === 'public-license',
+	);
+	if (publicSamples.length > 0) {
+		if (!/^[a-f0-9]{64}$/.test(document.source_catalog_sha256 ?? '')) {
+			errors.push('source_catalog_sha256 is required for public-license samples');
+		}
+		if (!isObject(document.preparation)) {
+			errors.push('preparation is required for public-license samples');
+		} else if (
+			publicSamples.some(
+				(sample) => sample.provenance?.source_catalog_id !== document.preparation.source_catalog_id,
+			)
+		) {
+			errors.push('preparation.source_catalog_id must match every public-license sample');
+		}
+	} else if (document.preparation !== undefined) {
+		errors.push('preparation is only valid when the manifest contains public-license samples');
 	}
 
 	const declaredAudio = new Set(
