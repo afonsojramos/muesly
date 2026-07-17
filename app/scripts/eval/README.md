@@ -79,8 +79,13 @@ nub run eval:models:prepare -- \
 ```
 
 Use `--set catalog-audit` for the legacy/full-precision comparison set or `--set all` for both.
-The command reserves 20 GiB of free space, reuses already verified models, and never writes model
-bytes to the repository.
+The command reserves 20 GiB only when a download is pending; an all-present read-only verification
+does not require or probe that reserve. It reuses already verified models and never writes model
+bytes to the repository. Preparation re-attests the canonical model root, provider directories,
+and single-link artifacts before and after external product commands. Product downloads,
+deletions, and cancellation cleanup share an OS-backed per-model lock across app and evaluator
+processes, download into confined `.part` files, verify them before publication, and reject unsafe
+resume ranges or link/reparse-point aliases.
 
 Prepare the next underfilled language/noise cell before recruiting or recording:
 
