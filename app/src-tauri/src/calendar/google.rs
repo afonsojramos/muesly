@@ -919,7 +919,18 @@ mod tests {
         let parsed = url::Url::parse(&url).unwrap();
         let q: std::collections::HashMap<_, _> = parsed.query_pairs().into_owned().collect();
         // Scope-creep guard: exactly the minimal scope, nothing broader.
-        assert_eq!(q.get("scope").map(String::as_str), Some(SCOPE));
+        assert_eq!(
+            q.get("scope").map(String::as_str),
+            Some(
+                "openid email https://www.googleapis.com/auth/calendar.events.readonly \
+                 https://www.googleapis.com/auth/calendar.calendarlist.readonly"
+            )
+        );
+        assert!(
+            !SCOPE
+                .split_ascii_whitespace()
+                .any(|scope| scope == "https://www.googleapis.com/auth/calendar.readonly")
+        );
         assert_eq!(
             q.get("code_challenge_method").map(String::as_str),
             Some("S256")
