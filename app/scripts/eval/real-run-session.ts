@@ -28,6 +28,7 @@ import {
 } from './evaluator-revision.ts';
 import {
 	modelArtifactSha256,
+	primaryModelArtifactSha256,
 	resolveModelsDirectory,
 	stageModelArtifactSnapshot,
 } from './model-artifact.ts';
@@ -56,6 +57,7 @@ const DEFAULT_DEPENDENCIES = Object.freeze({
 	createPrivateArtifactSnapshotDirectory,
 	evaluatorRevision: collectEvaluatorRevision,
 	modelArtifactSha256,
+	primaryModelArtifactSha256,
 	prepareBenchmarkModel,
 	probeBenchmarkExecutable,
 	stageBenchmarkExecutableSnapshot,
@@ -868,6 +870,18 @@ export function prepareRealRunSession(input, dependencies = {}) {
 				'prepared model bytes do not match the canonical artifact digest attested by the evaluator',
 			);
 		}
+		if (preparedModel.primary_model_artifact_sha256 !== null) {
+			const sourcePrimarySha256 = resolvedDependencies.primaryModelArtifactSha256(
+				input.provider,
+				input.model,
+				modelsDirectory,
+			);
+			if (sourcePrimarySha256 !== preparedModel.primary_model_artifact_sha256) {
+				throw new Error(
+					'prepared primary model bytes do not match the canonical digest attested by the evaluator',
+				);
+			}
+		}
 		const modelSnapshotRoot =
 			resolvedDependencies.createPrivateArtifactSnapshotDirectory(modelsDirectory);
 		privateDirectories.push(modelSnapshotRoot);
@@ -886,6 +900,18 @@ export function prepareRealRunSession(input, dependencies = {}) {
 			throw new Error(
 				'model snapshot does not match the canonical artifact digest attested by the evaluator',
 			);
+		}
+		if (preparedModel.primary_model_artifact_sha256 !== null) {
+			const snapshotPrimarySha256 = resolvedDependencies.primaryModelArtifactSha256(
+				input.provider,
+				input.model,
+				modelSnapshot.modelsDirectory,
+			);
+			if (snapshotPrimarySha256 !== preparedModel.primary_model_artifact_sha256) {
+				throw new Error(
+					'private snapshot primary model bytes do not match the canonical digest attested by the evaluator',
+				);
+			}
 		}
 		const metricsDirectory = resolvedDependencies.createPrivateArtifactSnapshotDirectory(
 			os.tmpdir(),

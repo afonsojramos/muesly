@@ -29,6 +29,7 @@ const MODEL_PREPARATION_FIELDS = new Set([
 	'provider',
 	'model',
 	'model_artifact_sha256',
+	'primary_model_artifact_sha256',
 ]);
 const BENCHMARK_RUNTIME_ENVIRONMENT_NAMES = new Set([
 	'ALL_PROXY',
@@ -1106,21 +1107,47 @@ export function prepareBenchmarkModel(
 	for (const field of MODEL_PREPARATION_FIELDS) {
 		if (!Object.hasOwn(result, field)) throw new Error(`model preparation.${field} is required`);
 	}
-	if (result.schema_version !== 2) throw new Error('model preparation.schema_version must be 2');
+	if (result.schema_version !== 3) throw new Error('model preparation.schema_version must be 3');
 	if (result.provider !== normalizedProvider) {
 		throw new Error('model preparation.provider does not match the requested provider');
 	}
 	if (result.model !== normalizedModel) {
 		throw new Error('model preparation.model does not match the requested model');
 	}
-	if (result.model_artifact_sha256 === null) {
-		if (!(normalizedProvider === 'whisper' && normalizedReportedBackend === 'coreml-metal')) {
+	if (result.model_artifact_sha256 !== null && !SHA256_PATTERN.test(result.model_artifact_sha256)) {
+		throw new Error('model preparation.model_artifact_sha256 must be a lowercase SHA-256 digest');
+	}
+	if (
+		result.primary_model_artifact_sha256 !== null &&
+		!SHA256_PATTERN.test(result.primary_model_artifact_sha256)
+	) {
+		throw new Error(
+			'model preparation.primary_model_artifact_sha256 must be a lowercase SHA-256 digest',
+		);
+	}
+	if (normalizedProvider === 'parakeet') {
+		if (result.model_artifact_sha256 === null) {
+			throw new Error('Parakeet model preparation requires a canonical artifact digest');
+		}
+		if (result.primary_model_artifact_sha256 !== null) {
+			throw new Error('Parakeet model preparation must not report a separate primary artifact');
+		}
+	} else if (normalizedReportedBackend === 'coreml-metal') {
+		if (result.model_artifact_sha256 !== null) {
+			throw new Error('Core ML model preparation must not report a canonical composite digest');
+		}
+		if (result.primary_model_artifact_sha256 === null) {
+			throw new Error('Core ML model preparation requires the pinned primary GGML digest');
+		}
+	} else {
+		if (result.model_artifact_sha256 === null) {
+			throw new Error('Whisper model preparation requires a canonical artifact digest');
+		}
+		if (result.primary_model_artifact_sha256 !== null) {
 			throw new Error(
-				'model preparation.model_artifact_sha256 may only be null for whisper/coreml-metal',
+				'non-Core-ML Whisper preparation must not report a separate primary artifact',
 			);
 		}
-	} else if (!SHA256_PATTERN.test(result.model_artifact_sha256)) {
-		throw new Error('model preparation.model_artifact_sha256 must be a lowercase SHA-256 digest');
 	}
 	return result;
 }

@@ -16,6 +16,7 @@ import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import {
 	coreMlEncoderBundlePath,
 	modelArtifactSha256,
+	primaryModelArtifactSha256,
 	stageModelArtifactSnapshot,
 } from './model-artifact.ts';
 import {
@@ -152,6 +153,9 @@ function createHarness(t, options = {}) {
 			counts.modelDigest += 1;
 			return modelArtifactSha256(...args);
 		},
+		primaryModelArtifactSha256(...args) {
+			return primaryModelArtifactSha256(...args);
+		},
 		buildBenchmarkExecutable() {
 			counts.build += 1;
 			options.onBuild?.(counts.build, executablePath);
@@ -177,10 +181,11 @@ function createHarness(t, options = {}) {
 				modelArtifactSha256(input.provider, input.model, input.modelsDirectory, 'cpu');
 			options.onPrepare?.(input, modelArtifactDigest);
 			return {
-				schema_version: 2,
+				schema_version: 3,
 				provider: input.provider,
 				model: input.model,
 				model_artifact_sha256: modelArtifactDigest,
+				primary_model_artifact_sha256: null,
 			};
 		},
 		evaluatorRevision() {
@@ -330,50 +335,63 @@ test('preserves explicit unpinned Core ML composite preparation and snapshots ex
 	fs.mkdirSync(bundlePath);
 	fs.writeFileSync(path.join(bundlePath, 'model.mil'), 'compiled encoder');
 	const expectedComposite = modelArtifactSha256('whisper', 'tiny', modelsDirectory, 'coreml-metal');
+	const input = {
+		provider: 'whisper',
+		model: 'tiny',
+		backend: 'coreml',
+		accelerator: null,
+		modelsDirectory,
+		repoRoot: root,
+		buildEnvironment: {},
+		runtimeEnvironment: {},
+		evaluatorRevision: null,
+	};
+	let swapAfterPreparation = false;
+	const dependencies = {
+		cargoFeaturesForBenchmark: () => ['coreml'],
+		buildBenchmarkExecutable: () => ({
+			cargoFeatures: ['coreml'],
+			executablePath,
+		}),
+		probeBenchmarkExecutable: (command) => ({
+			schema_version: 1,
+			backend: 'coreml-metal',
+			operating_system: 'macos',
+			architecture: 'aarch64',
+			hardware_profile: `cpu=Apple M4;logical_cpus=10;memory_bytes=17179869184;runtime_env_sha256=${'d'.repeat(64)}`,
+			accelerator: 'Apple M4',
+			benchmark_executable_sha256: benchmarkExecutableSha256(command),
+		}),
+		prepareBenchmarkModel(_command, input) {
+			assert.equal(input.reportedBackend, 'coreml-metal');
+			const primaryDigest = primaryModelArtifactSha256('whisper', 'tiny', modelsDirectory);
+			if (swapAfterPreparation) {
+				fs.writeFileSync(modelPath, 'replacement after Rust verification');
+			}
+			return {
+				schema_version: 3,
+				provider: 'whisper',
+				model: 'tiny',
+				model_artifact_sha256: null,
+				primary_model_artifact_sha256: primaryDigest,
+			};
+		},
+		createPrivateArtifactSnapshotDirectory: () =>
+			createPrivateArtifactSnapshotDirectory(privateParent),
+	};
 
-	const session = prepareRealRunSession(
-		{
-			provider: 'whisper',
-			model: 'tiny',
-			backend: 'coreml',
-			accelerator: null,
-			modelsDirectory,
-			repoRoot: root,
-			buildEnvironment: {},
-			runtimeEnvironment: {},
-			evaluatorRevision: null,
-		},
-		{
-			cargoFeaturesForBenchmark: () => ['coreml'],
-			buildBenchmarkExecutable: () => ({
-				cargoFeatures: ['coreml'],
-				executablePath,
-			}),
-			probeBenchmarkExecutable: (command) => ({
-				schema_version: 1,
-				backend: 'coreml-metal',
-				operating_system: 'macos',
-				architecture: 'aarch64',
-				hardware_profile: `cpu=Apple M4;logical_cpus=10;memory_bytes=17179869184;runtime_env_sha256=${'d'.repeat(64)}`,
-				accelerator: 'Apple M4',
-				benchmark_executable_sha256: benchmarkExecutableSha256(command),
-			}),
-			prepareBenchmarkModel(_command, input) {
-				assert.equal(input.reportedBackend, 'coreml-metal');
-				return {
-					schema_version: 2,
-					provider: 'whisper',
-					model: 'tiny',
-					model_artifact_sha256: null,
-				};
-			},
-			createPrivateArtifactSnapshotDirectory: () =>
-				createPrivateArtifactSnapshotDirectory(privateParent),
-		},
-	);
-	t.after(() => session.close());
+	const session = prepareRealRunSession(input, dependencies);
 	assert.equal(session.identity.backend, 'coreml-metal');
 	assert.equal(session.identity.model_artifact_sha256, expectedComposite);
+	session.close();
+
+	fs.writeFileSync(modelPath, 'pinned primary model');
+	swapAfterPreparation = true;
+	assert.throws(
+		() => prepareRealRunSession(input, dependencies),
+		/prepared primary model bytes do not match the canonical digest/,
+	);
+	assert.equal(fs.readFileSync(modelPath, 'utf8'), 'replacement after Rust verification');
 });
 
 test('prepares once and runs three samples in three fresh exact processes', async (t) => {

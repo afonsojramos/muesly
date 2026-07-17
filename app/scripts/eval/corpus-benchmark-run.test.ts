@@ -166,10 +166,11 @@ function cancellableRealSession(t, task, directory, markerPath) {
         executablePath,
       }),
       prepareBenchmarkModel: (_command, input) => ({
-        schema_version: 2,
+        schema_version: 3,
         provider: input.provider,
         model: input.model,
         model_artifact_sha256: sha256("prepared model"),
+        primary_model_artifact_sha256: null,
       }),
       probeBenchmarkExecutable: (command) => ({
         schema_version: 1,
@@ -403,10 +404,11 @@ test("campaign preflight stages Windows profile-root ORT DLLs before probing", (
       assertStagedRuntime(candidatePath, options);
       assert.equal(options.reportedBackend, "onnx-cpu");
       return {
-        schema_version: 2,
+        schema_version: 3,
         provider: "parakeet",
         model: "parakeet-test",
         model_artifact_sha256: MODEL_ARTIFACT,
+        primary_model_artifact_sha256: null,
       };
     },
     probeBenchmarkExecutableImpl: (candidatePath, options) => {
@@ -436,10 +438,11 @@ test("campaign preflight stages Windows profile-root ORT DLLs before probing", (
         modelArtifactSha256Impl: () => MODEL_ARTIFACT,
         platform: "win32",
         prepareBenchmarkModelImpl: () => ({
-          schema_version: 2,
+          schema_version: 3,
           provider: "parakeet",
           model: "parakeet-test",
           model_artifact_sha256: "f".repeat(64),
+          primary_model_artifact_sha256: null,
         }),
         probeBenchmarkExecutableImpl: (candidatePath, options) => ({
           backend: "onnx-cpu",
@@ -453,6 +456,34 @@ test("campaign preflight stages Windows profile-root ORT DLLs before probing", (
         }),
       }),
     /canonical artifact digest attested by the evaluator/,
+  );
+
+  assert.throws(
+    () =>
+      inspectVariantIdentity(inspectionInput, {
+        buildBenchmarkExecutableImpl: () => ({ cargoFeatures: [], executablePath }),
+        modelArtifactSha256Impl: () => MODEL_ARTIFACT,
+        primaryModelArtifactSha256Impl: () => MODEL_ARTIFACT,
+        platform: "win32",
+        prepareBenchmarkModelImpl: () => ({
+          schema_version: 3,
+          provider: "whisper",
+          model: "large-v3-turbo-q5_0",
+          model_artifact_sha256: null,
+          primary_model_artifact_sha256: "f".repeat(64),
+        }),
+        probeBenchmarkExecutableImpl: (candidatePath, options) => ({
+          backend: "onnx-cpu",
+          operating_system: "windows",
+          architecture: "x86_64",
+          hardware_profile:
+            `cpu=test;logical_cpus=8;memory_bytes=17179869184;` +
+            `runtime_env_sha256=${options.environment.MUESLY_EVAL_RUNTIME_ENV_SHA256}`,
+          accelerator: "none",
+          benchmark_executable_sha256: benchmarkExecutableSha256(candidatePath),
+        }),
+      }),
+    /prepared primary model bytes do not match the canonical digest/,
   );
 });
 

@@ -61,10 +61,11 @@ if (process.argv.includes('--prepare-model-json')) {
 		.update(fs.readFileSync(modelsDirectory + '/ggml-' + model + '.bin'))
 		.digest('hex');
 	process.stdout.write(JSON.stringify({
-		schema_version: 2,
+		schema_version: 3,
 		provider,
 		model,
 		model_artifact_sha256: modelArtifactSha256,
+		primary_model_artifact_sha256: null,
 	}) + '\\n');
 	process.exit(0);
 }

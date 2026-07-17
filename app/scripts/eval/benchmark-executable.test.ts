@@ -1424,19 +1424,21 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 			return {
 				status: 0,
 				stdout: `${JSON.stringify({
-					schema_version: 2,
+					schema_version: 3,
 					provider: 'parakeet',
 					model: 'parakeet-test',
 					model_artifact_sha256: canonicalDigest,
+					primary_model_artifact_sha256: null,
 				})}\n`,
 			};
 		},
 	});
 	assert.deepEqual(prepared, {
-		schema_version: 2,
+		schema_version: 3,
 		provider: 'parakeet',
 		model: 'parakeet-test',
 		model_artifact_sha256: canonicalDigest,
+		primary_model_artifact_sha256: null,
 	});
 	assert.equal(invocation.command, executablePath);
 	assert.deepEqual(invocation.args, [
@@ -1472,10 +1474,11 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				spawnSyncImpl: () => ({
 					status: 0,
 					stdout: `${JSON.stringify({
-						schema_version: 2,
+						schema_version: 3,
 						provider: 'parakeet',
 						model: 'wrong',
 						model_artifact_sha256: canonicalDigest,
+						primary_model_artifact_sha256: null,
 					})}\n`,
 				}),
 			}),
@@ -1494,10 +1497,11 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 					return {
 						status: 0,
 						stdout: `${JSON.stringify({
-							schema_version: 2,
+							schema_version: 3,
 							provider: 'parakeet',
 							model: 'parakeet-test',
 							model_artifact_sha256: canonicalDigest,
+							primary_model_artifact_sha256: null,
 						})}\n`,
 					};
 				},
@@ -1533,14 +1537,15 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				spawnSyncImpl: () => ({
 					status: 0,
 					stdout: `${JSON.stringify({
-						schema_version: 2,
+						schema_version: 3,
 						provider: 'parakeet',
 						model: 'parakeet-test',
 						model_artifact_sha256: null,
+						primary_model_artifact_sha256: null,
 					})}\n`,
 				}),
 			}),
-		/may only be null for whisper\/coreml-metal/,
+		/Parakeet model preparation requires a canonical artifact digest/,
 	);
 
 	const coreml = prepareBenchmarkModel(executablePath, {
@@ -1552,12 +1557,36 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 		spawnSyncImpl: () => ({
 			status: 0,
 			stdout: `${JSON.stringify({
-				schema_version: 2,
+				schema_version: 3,
 				provider: 'whisper',
 				model: 'large-v3-turbo-q5_0',
 				model_artifact_sha256: null,
+				primary_model_artifact_sha256: canonicalDigest,
 			})}\n`,
 		}),
 	});
 	assert.equal(coreml.model_artifact_sha256, null);
+	assert.equal(coreml.primary_model_artifact_sha256, canonicalDigest);
+
+	assert.throws(
+		() =>
+			prepareBenchmarkModel(executablePath, {
+				provider: 'whisper',
+				model: 'large-v3-turbo-q5_0',
+				modelsDirectory: '/private/models',
+				reportedBackend: 'coreml-metal',
+				environment: attestedRuntimeEnvironment(),
+				spawnSyncImpl: () => ({
+					status: 0,
+					stdout: `${JSON.stringify({
+						schema_version: 3,
+						provider: 'whisper',
+						model: 'large-v3-turbo-q5_0',
+						model_artifact_sha256: null,
+						primary_model_artifact_sha256: null,
+					})}\n`,
+				}),
+			}),
+		/Core ML model preparation requires the pinned primary GGML digest/,
+	);
 });

@@ -44,7 +44,11 @@ import {
   evaluatorBuildEnvironment,
   evaluatorRevision,
 } from "./evaluator-revision.ts";
-import { modelArtifactSha256, resolveModelsDirectory } from "./model-artifact.ts";
+import {
+  modelArtifactSha256,
+  primaryModelArtifactSha256,
+  resolveModelsDirectory,
+} from "./model-artifact.ts";
 import { processIdentity } from "./process-identity.ts";
 import { prepareRealRunSession } from "./real-run-session.ts";
 
@@ -299,6 +303,7 @@ export function inspectVariantIdentity(
     buildBenchmarkExecutableImpl = buildBenchmarkExecutable,
     createPrivateArtifactSnapshotDirectoryImpl = createPrivateArtifactSnapshotDirectory,
     modelArtifactSha256Impl = modelArtifactSha256,
+    primaryModelArtifactSha256Impl = primaryModelArtifactSha256,
     platform = process.platform,
     prepareBenchmarkModelImpl = prepareBenchmarkModel,
     probeBenchmarkExecutableImpl = probeBenchmarkExecutable,
@@ -369,6 +374,18 @@ export function inspectVariantIdentity(
       throw new Error(
         "prepared model bytes do not match the canonical artifact digest attested by the evaluator",
       );
+    }
+    if (preparedModel.primary_model_artifact_sha256 !== null) {
+      const primaryDigest = primaryModelArtifactSha256Impl(
+        task.provider,
+        task.model,
+        modelsDirectory,
+      );
+      if (primaryDigest !== preparedModel.primary_model_artifact_sha256) {
+        throw new Error(
+          "prepared primary model bytes do not match the canonical digest attested by the evaluator",
+        );
+      }
     }
     if (
       benchmarkExecutableSha256Impl(built.executablePath) !== executableSha256 ||

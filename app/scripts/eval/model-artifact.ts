@@ -289,6 +289,13 @@ function whisperArtifactSha256(modelPath, reportedBackend) {
 		.digest('hex');
 }
 
+/** Hash the pinned GGML file independently from any locally compiled Core ML bundle. */
+export function primaryModelArtifactSha256(provider, model, modelsDirectory) {
+	if (provider !== 'whisper') return null;
+	const validatedModel = validateBenchmarkModelName(model);
+	return sha256File(path.join(modelsDirectory, `ggml-${validatedModel}.bin`));
+}
+
 function parakeetArtifactFilenames(modelDirectory) {
 	const int8 = entryAt(path.join(modelDirectory, 'encoder-model.int8.onnx')) !== undefined;
 	const filenames = int8

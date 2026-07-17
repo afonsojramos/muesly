@@ -102,6 +102,12 @@ struct PreparedModel {
     provider: String,
     model: String,
     model_artifact_sha256: Option<String>,
+    primary_model_artifact_sha256: Option<String>,
+}
+
+struct PreparedModelDigests {
+    model_artifact_sha256: Option<String>,
+    primary_model_artifact_sha256: Option<String>,
 }
 
 fn audio_seconds_from_samples(sample_count: usize) -> f64 {
@@ -1027,13 +1033,13 @@ async fn main() {
         let model_name = prepared_model_name
             .take()
             .unwrap_or_else(|| fail("--prepare-model-json requires --model".to_string()));
-        let model_artifact_sha256 =
-            prepare_model(&provider, &model_name, prepared_models_dir).await;
+        let digests = prepare_model(&provider, &model_name, prepared_models_dir).await;
         let prepared = PreparedModel {
-            schema_version: 2,
+            schema_version: 3,
             provider,
             model: model_name,
-            model_artifact_sha256,
+            model_artifact_sha256: digests.model_artifact_sha256,
+            primary_model_artifact_sha256: digests.primary_model_artifact_sha256,
         };
         let json = serde_json::to_string(&prepared)
             .unwrap_or_else(|error| fail(format!("serialize prepared model failed: {error}")));
@@ -1467,20 +1473,26 @@ async fn prepare_model(
     provider: &str,
     model_name: &str,
     models_dir: Option<PathBuf>,
-) -> Option<String> {
+) -> PreparedModelDigests {
     if provider == "parakeet" {
+        let model_artifact_sha256 =
+            app_lib::model_integrity::expected_parakeet_model_artifact_sha256(model_name)
+                .unwrap_or_else(|error| {
+                    fail(format!("model integrity pin lookup failed: {error:#}"))
+                });
         let engine = ParakeetEngine::new_with_models_dir(models_dir)
             .unwrap_or_else(|error| fail(format!("engine init failed: {error}")));
         let models = engine
             .discover_models()
             .await
             .unwrap_or_else(|error| fail(format!("model discovery failed: {error}")));
-        let status = models
+        let model = models
             .iter()
             .find(|model| model.name == model_name)
-            .map(|model| &model.status)
             .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-        if !matches!(status, ModelStatus::Available) {
+        if benchmark_model_needs_download(model_name, &model.status, &model.path)
+            .unwrap_or_else(|error| fail(error))
+        {
             download_parakeet_model(&engine, model_name).await;
         }
         let available = engine
@@ -1496,26 +1508,32 @@ async fn prepare_model(
                 "model preparation did not produce an available model: {model_name}"
             ));
         }
-        return Some(
-            app_lib::model_integrity::expected_parakeet_model_artifact_sha256(model_name)
-                .unwrap_or_else(|error| {
-                    fail(format!("model integrity pin lookup failed: {error:#}"))
-                }),
-        );
+        return PreparedModelDigests {
+            model_artifact_sha256: Some(model_artifact_sha256),
+            primary_model_artifact_sha256: None,
+        };
     }
 
+    let primary_model_artifact_sha256 =
+        app_lib::model_integrity::expected_whisper_model_artifact_sha256(model_name)
+            .unwrap_or_else(|error| fail(format!("model integrity pin lookup failed: {error:#}")));
     let engine = WhisperEngine::new_with_models_dir(models_dir)
         .unwrap_or_else(|error| fail(format!("engine init failed: {error}")));
     let models = engine
         .discover_models()
         .await
         .unwrap_or_else(|error| fail(format!("model discovery failed: {error}")));
-    let status = models
+    let model = models
         .iter()
         .find(|model| model.name == model_name)
-        .map(|model| &model.status)
         .unwrap_or_else(|| fail(format!("unknown model: {model_name}")));
-    if !matches!(status, ModelStatus::Available) {
+    if benchmark_model_needs_download(model_name, &model.status, &model.path)
+        .unwrap_or_else(|error| fail(error))
+    {
+        let mut partial_path = model.path.as_os_str().to_os_string();
+        partial_path.push(".part");
+        require_absent_benchmark_download_path(Path::new(&partial_path), "partial model download")
+            .unwrap_or_else(|error| fail(error));
         download_whisper_model(&engine, model_name).await;
     }
     let available_model = engine
@@ -1529,25 +1547,73 @@ async fn prepare_model(
             "model preparation did not produce an available model: {model_name}"
         ));
     };
-    let model_artifact_sha256 =
-        app_lib::model_integrity::expected_whisper_model_artifact_sha256(model_name)
-            .unwrap_or_else(|error| fail(format!("model integrity pin lookup failed: {error:#}")));
     let backend = resolved_benchmark_backend("whisper").unwrap_or_else(|error| fail(error));
     if backend == BenchmarkBackend::CoreMlMetal {
-        app_lib::model_integrity::verify_file_sha256(&available_model.path, model_artifact_sha256)
-            .unwrap_or_else(|error| {
-                fail(format!(
-                    "Core ML primary model integrity verification failed: {error:#}"
-                ))
-            });
+        app_lib::model_integrity::verify_file_sha256(
+            &available_model.path,
+            primary_model_artifact_sha256,
+        )
+        .unwrap_or_else(|error| {
+            fail(format!(
+                "Core ML primary model integrity verification failed: {error:#}"
+            ))
+        });
         require_coreml_encoder_bundle(&available_model.path).unwrap_or_else(|error| fail(error));
         // The primary GGML file is pinned and verified above. Compiled Core ML
         // bundles are local build products without a product-distribution pin,
         // so the caller fingerprints and snapshots the complete bundle but
         // must not represent that composite digest as canonical.
-        return None;
+        return PreparedModelDigests {
+            model_artifact_sha256: None,
+            primary_model_artifact_sha256: Some(primary_model_artifact_sha256.to_string()),
+        };
     }
-    Some(model_artifact_sha256.to_string())
+    PreparedModelDigests {
+        model_artifact_sha256: Some(primary_model_artifact_sha256.to_string()),
+        primary_model_artifact_sha256: None,
+    }
+}
+
+fn benchmark_model_needs_download(
+    model_name: &str,
+    status: &ModelStatus,
+    artifact_path: &Path,
+) -> Result<bool, String> {
+    let artifact_exists = match std::fs::symlink_metadata(artifact_path) {
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            return Err(format!(
+                "inspect benchmark model artifact '{}' failed: {error}",
+                artifact_path.display()
+            ));
+        }
+    };
+
+    match (status, artifact_exists) {
+        (ModelStatus::Available, true) => Ok(false),
+        (ModelStatus::Missing, false) => Ok(true),
+        (ModelStatus::Available, false) => Err(format!(
+            "model '{model_name}' was reported available but its artifact is absent"
+        )),
+        _ => Err(format!(
+            "model '{model_name}' has an existing or non-missing unusable artifact; refusing to modify it during benchmark preparation"
+        )),
+    }
+}
+
+fn require_absent_benchmark_download_path(path: &Path, label: &str) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Ok(_) => Err(format!(
+            "{label} already exists at '{}'; refusing to modify it during benchmark preparation",
+            path.display()
+        )),
+        Err(error) => Err(format!(
+            "inspect {label} at '{}' failed: {error}",
+            path.display()
+        )),
+    }
 }
 
 async fn download_whisper_model(engine: &WhisperEngine, model_name: &str) {
@@ -2044,10 +2110,11 @@ mod tests {
     #[test]
     fn prepared_model_serializes_only_the_strict_public_fields() {
         let prepared = PreparedModel {
-            schema_version: 2,
+            schema_version: 3,
             provider: "whisper".to_string(),
             model: "tiny".to_string(),
             model_artifact_sha256: Some("a".repeat(64)),
+            primary_model_artifact_sha256: None,
         };
         let value = serde_json::to_value(prepared).unwrap();
         let object = value.as_object().unwrap();
@@ -2058,10 +2125,60 @@ mod tests {
             [
                 "model",
                 "model_artifact_sha256",
+                "primary_model_artifact_sha256",
                 "provider",
                 "schema_version"
             ]
         );
+    }
+
+    #[test]
+    fn benchmark_preparation_downloads_only_a_genuinely_absent_model() {
+        let directory = tempfile::tempdir().unwrap();
+        let artifact = directory.path().join("model.bin");
+        assert!(benchmark_model_needs_download("model", &ModelStatus::Missing, &artifact).unwrap());
+
+        std::fs::write(&artifact, b"preserve me").unwrap();
+        assert!(
+            !benchmark_model_needs_download("model", &ModelStatus::Available, &artifact).unwrap()
+        );
+        assert!(benchmark_model_needs_download("model", &ModelStatus::Missing, &artifact).is_err());
+        assert!(
+            benchmark_model_needs_download(
+                "model",
+                &ModelStatus::Corrupted {
+                    file_size: 1,
+                    expected_min_size: 2,
+                },
+                &artifact,
+            )
+            .is_err()
+        );
+        assert_eq!(std::fs::read(&artifact).unwrap(), b"preserve me");
+
+        let partial = directory.path().join("model.bin.part");
+        std::fs::write(&partial, b"partial bytes").unwrap();
+        assert!(
+            require_absent_benchmark_download_path(&partial, "partial model download").is_err()
+        );
+        assert_eq!(std::fs::read(&partial).unwrap(), b"partial bytes");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let alias = directory.path().join("dangling-model.bin");
+            symlink(directory.path().join("missing-target.bin"), &alias).unwrap();
+            assert!(
+                benchmark_model_needs_download("model", &ModelStatus::Missing, &alias).is_err()
+            );
+            assert!(
+                std::fs::symlink_metadata(alias)
+                    .unwrap()
+                    .file_type()
+                    .is_symlink()
+            );
+        }
     }
 
     #[test]

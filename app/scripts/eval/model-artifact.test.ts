@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
 	coreMlEncoderBundlePath,
 	modelArtifactSha256,
+	primaryModelArtifactSha256,
 	resolveModelsDirectory,
 	stageModelArtifactSnapshot,
 	validateBenchmarkModelName,
@@ -87,6 +88,11 @@ test('fingerprints the exact Whisper model bytes', (t) => {
 		modelArtifactSha256('whisper', 'test', directory, 'cpu'),
 		'd83a8c24e2e979dfebef2b73e8eeba84bb52b03f5291c655a481ccacc9dccc48',
 	);
+	assert.equal(
+		primaryModelArtifactSha256('whisper', 'test', directory),
+		'd83a8c24e2e979dfebef2b73e8eeba84bb52b03f5291c655a481ccacc9dccc48',
+	);
+	assert.equal(primaryModelArtifactSha256('parakeet', 'test', directory), null);
 });
 
 test('derives the Core ML encoder bundle exactly like whisper.cpp', () => {
