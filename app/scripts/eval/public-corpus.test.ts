@@ -17,6 +17,7 @@ import {
 	publishExtractedDirectory,
 	publishNoClobber,
 	releasePreparationLock,
+	writeDraftReference,
 } from './public-corpus-prepare.ts';
 import { parsePublicAttestArgs } from './public-corpus-attest.ts';
 import { parsePublicFinalizeArgs } from './public-corpus-finalize.ts';
@@ -24,6 +25,7 @@ import { parsePublicValidateArgs } from './public-corpus-validate.ts';
 import {
 	atomicWriteJson,
 	createReviewTemplate,
+	deriveEarningsReferenceExcerpt,
 	downloadPinnedArtifact,
 	ensurePrivateDirectory,
 	expectedPublicSampleIds,
@@ -34,6 +36,7 @@ import {
 	parseAmiWordDocuments,
 	parseFleursTsv,
 	planOverlapTimings,
+	PUBLIC_PREPARED_SCHEMA_VERSION,
 	recordPublicReviewAttestation,
 	renderTimedReference,
 	selectDensestTimedWindow,
@@ -43,6 +46,7 @@ import {
 	validateArchiveMemberPaths,
 	validateFinalizedPublicCorpus,
 	validatePublicSelection,
+	validateSourceCatalog,
 } from './public-corpus.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -55,9 +59,29 @@ function temporaryDirectory(prefix = 'muesly-public-corpus-') {
 
 test('committed public source pins and deterministic selection are internally complete', () => {
 	const { catalog, selection } = loadPublicCorpusConfig(catalogPath, selectionPath);
-	assert.equal(catalog.catalog_id, 'muesly-public-asr-sources-v1');
-	assert.equal(catalog.artifacts.length, 20);
+	assert.equal(catalog.schema_version, 2);
+	assert.equal(catalog.catalog_id, 'muesly-public-asr-sources-v2');
+	assert.equal(selection.schema_version, 2);
+	assert.equal(selection.corpus_id, 'muesly-public-asr-v2');
+	assert.equal(catalog.artifacts.length, 23);
 	assert.equal(catalog.sources.length, 11);
+	const alignmentArtifacts = catalog.artifacts.filter(
+		(artifact) => artifact.kind === 'alignment-hypothesis',
+	);
+	assert.equal(alignmentArtifacts.length, 3);
+	assert(
+		alignmentArtifacts.every(
+			(artifact) => artifact.revision === 'c05ab6fd8b4b627d123c922a22a39e993dd37635',
+		),
+	);
+	const missingAlignmentRevision = structuredClone(catalog);
+	delete missingAlignmentRevision.artifacts.find(
+		(artifact) => artifact.kind === 'alignment-hypothesis',
+	).revision;
+	assert.match(
+		validateSourceCatalog(missingAlignmentRevision).join('\n'),
+		/revision must be a non-empty trimmed string/,
+	);
 	assert.equal(expectedPublicSampleIds(selection).length, 66);
 	assert.equal(new Set(expectedPublicSampleIds(selection)).size, 66);
 	assert.equal(selection.fleurs.inter_utterance_gap_seconds, 0.4);
@@ -83,11 +107,43 @@ test('committed public source pins and deterministic selection are internally co
 	assert.deepEqual(
 		selection.natural_samples
 			.filter((sample) => sample.source_id.startsWith('earnings21-'))
-			.map((sample) => [sample.source_item_id, sample.window]),
+			.map((sample) => [
+				sample.source_item_id,
+				{
+					strategy: sample.window.strategy,
+					start_seconds: sample.window.start_seconds,
+					alignment_context_seconds: sample.window.alignment_context_seconds,
+					reference_token_count: sample.window.expected_reference_token_count,
+				},
+			]),
 		[
-			['earnings21:4320211', { strategy: 'fixed', start_seconds: 60 }],
-			['earnings21:4330115', { strategy: 'fixed', start_seconds: 60 }],
-			['earnings21:4341191', { strategy: 'fixed', start_seconds: 60 }],
+			[
+				'earnings21:4320211',
+				{
+					strategy: 'fixed',
+					start_seconds: 60,
+					alignment_context_seconds: 30,
+					reference_token_count: 445,
+				},
+			],
+			[
+				'earnings21:4330115',
+				{
+					strategy: 'fixed',
+					start_seconds: 60,
+					alignment_context_seconds: 30,
+					reference_token_count: 465,
+				},
+			],
+			[
+				'earnings21:4341191',
+				{
+					strategy: 'fixed',
+					start_seconds: 60,
+					alignment_context_seconds: 30,
+					reference_token_count: 455,
+				},
+			],
 		],
 	);
 });
@@ -563,6 +619,107 @@ test('no-clobber file publication accepts identical output and rejects drift', (
 	assert.throws(() => publishNoClobber(drifted, destination), /refusing to replace/);
 });
 
+test('generated reference seeding is recoverable without replacing reviewer text', () => {
+	const directory = temporaryDirectory('muesly-public-reference-seed-');
+	const empty = path.join(directory, 'empty.txt');
+	fs.writeFileSync(empty, '', { mode: 0o600 });
+	assert.equal(writeDraftReference(empty, 'Public human reference.\n', { seedEmpty: true }), true);
+	assert.equal(fs.readFileSync(empty, 'utf8'), 'Public human reference.\n');
+
+	const reviewed = path.join(directory, 'reviewed.txt');
+	fs.writeFileSync(reviewed, 'Reviewer correction.\n', { mode: 0o600 });
+	assert.equal(writeDraftReference(reviewed, 'Generated seed.\n', { seedEmpty: true }), false);
+	assert.equal(fs.readFileSync(reviewed, 'utf8'), 'Reviewer correction.\n');
+
+	const shortenedReview = path.join(directory, 'shortened-review.txt');
+	fs.writeFileSync(shortenedReview, 'Public human', { mode: 0o600 });
+	assert.equal(
+		writeDraftReference(shortenedReview, 'Public human reference.\n', { seedEmpty: true }),
+		false,
+	);
+	assert.equal(fs.readFileSync(shortenedReview, 'utf8'), 'Public human');
+
+	const recoveredPublication = path.join(directory, 'recovered-publication.txt');
+	const publicationTransaction = path.join(directory, '.recovered-publication.txt.publish');
+	fs.writeFileSync(publicationTransaction, 'Published seed.\n', { mode: 0o600 });
+	fs.linkSync(publicationTransaction, recoveredPublication);
+	assert.equal(
+		writeDraftReference(recoveredPublication, 'Published seed.\n', { seedEmpty: true }),
+		true,
+	);
+	assert.equal(fs.readFileSync(recoveredPublication, 'utf8'), 'Published seed.\n');
+	assert.equal(fs.lstatSync(recoveredPublication, { bigint: true }).nlink, 1n);
+	assert(!fs.existsSync(publicationTransaction));
+	const ambiguousPublication = path.join(directory, 'ambiguous-publication.txt');
+	const ambiguousPublicationTransaction = path.join(
+		directory,
+		'.ambiguous-publication.txt.publish',
+	);
+	fs.writeFileSync(ambiguousPublicationTransaction, 'Published', { mode: 0o600 });
+	fs.linkSync(ambiguousPublicationTransaction, ambiguousPublication);
+	assert.throws(
+		() => writeDraftReference(ambiguousPublication, 'Published seed.\n', { seedEmpty: true }),
+		/does not match its exact seed/,
+	);
+	assert.equal(fs.readFileSync(ambiguousPublication, 'utf8'), 'Published');
+	assert(fs.existsSync(ambiguousPublicationTransaction));
+
+	const ambiguousEmptySeed = path.join(directory, 'ambiguous-empty-seed.txt');
+	const recoveredDraft = 'Recovered public human reference.\n';
+	const emptySeedTransaction = path.join(
+		directory,
+		`.ambiguous-empty-seed.txt.seed-empty-${sha256Text(recoveredDraft)}.txn`,
+	);
+	fs.writeFileSync(ambiguousEmptySeed, '', { mode: 0o600 });
+	fs.linkSync(ambiguousEmptySeed, emptySeedTransaction);
+	fs.writeFileSync(ambiguousEmptySeed, 'Recovered public');
+	assert.throws(
+		() => writeDraftReference(ambiguousEmptySeed, recoveredDraft, { seedEmpty: true }),
+		/ambiguous nonempty text; preserving it/,
+	);
+	assert.equal(fs.readFileSync(ambiguousEmptySeed, 'utf8'), 'Recovered public');
+	assert(fs.existsSync(emptySeedTransaction));
+
+	const recoveredEmptySeed = path.join(directory, 'recovered-empty-seed.txt');
+	const completedSeedTransaction = path.join(
+		directory,
+		`.recovered-empty-seed.txt.seed-empty-${sha256Text(recoveredDraft)}.txn`,
+	);
+	fs.writeFileSync(recoveredEmptySeed, '', { mode: 0o600 });
+	fs.linkSync(recoveredEmptySeed, completedSeedTransaction);
+	fs.writeFileSync(recoveredEmptySeed, recoveredDraft);
+	assert.equal(writeDraftReference(recoveredEmptySeed, recoveredDraft, { seedEmpty: true }), true);
+	assert.equal(fs.readFileSync(recoveredEmptySeed, 'utf8'), recoveredDraft);
+	assert.equal(fs.lstatSync(recoveredEmptySeed, { bigint: true }).nlink, 1n);
+	assert(!fs.existsSync(completedSeedTransaction));
+
+	const target = path.join(directory, 'target.txt');
+	const symbolic = path.join(directory, 'symbolic.txt');
+	fs.writeFileSync(target, '', { mode: 0o600 });
+	fs.symlinkSync(target, symbolic);
+	assert.throws(
+		() => writeDraftReference(symbolic, 'Seed.\n', { seedEmpty: true }),
+		/must be a regular file/,
+	);
+
+	const raced = path.join(directory, 'raced.txt');
+	const displaced = path.join(directory, 'raced-displaced.txt');
+	fs.writeFileSync(raced, '', { mode: 0o600 });
+	assert.throws(
+		() =>
+			writeDraftReference(raced, 'Seed.\n', {
+				seedEmpty: true,
+				beforeExistingOpen() {
+					fs.renameSync(raced, displaced);
+					fs.writeFileSync(raced, '', { mode: 0o600 });
+				},
+			}),
+		/changed while opening/,
+	);
+	assert.equal(fs.readFileSync(raced, 'utf8'), '');
+	assert.equal(fs.readFileSync(displaced, 'utf8'), '');
+});
+
 test('FLEURS selection includes deterministic 400 ms gaps in every duration bound', () => {
 	const lines = Array.from({ length: 8 }, (_, index) =>
 		[
@@ -605,6 +762,64 @@ test('AMI word parsing is Latin-1 aware and excludes boundary-crossing words', (
 	assert.equal(renderTimedReference(words, 30, 60), 'café.\n');
 	const window = selectDensestTimedWindow(words, 30, 30);
 	assert(window.words.every((word) => word.start >= window.start && word.end <= window.end));
+});
+
+test('Earnings-21 alignment slices the public human reference on exact timed anchors', () => {
+	const reference = [
+		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
+		'Before|1||||UC|[]|[]',
+		'alpha|1||||LC|[]|[]',
+		'preserved|1||||LC|[]|[]',
+		'bravo|1|||.|LC|[]|[]',
+		'after|1||||LC|[]|[]',
+	].join('\n');
+	const hypothesis = [
+		'token|speaker|ts|endTs|punctuation|case|tags',
+		'before|1|8|10.2|||',
+		'alpha|1|10.2|11|||',
+		'bravo|1|19|19.5|||',
+		'after|1|20.1|20.4|||',
+	].join('\n');
+	const aligned = deriveEarningsReferenceExcerpt(reference, hypothesis, {
+		startSeconds: 10,
+		endSeconds: 20,
+		contextSeconds: 5,
+	});
+	assert.equal(aligned.text, 'alpha preserved bravo.\n');
+	assert.equal(aligned.referenceStartTokenIndex, 1);
+	assert.equal(aligned.referenceEndTokenIndex, 3);
+	assert.equal(aligned.referenceTokenCount, 3);
+	assert.equal(aligned.editDistance, 1);
+	assert.equal(aligned.exactPairs, 4);
+
+	const shortReference = [
+		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
+		'one|1||||LC|[]|[]',
+		'two|1||||LC|[]|[]',
+		'three|1||||LC|[]|[]',
+	].join('\n');
+	const longHypothesis = [
+		'token|speaker|ts|endTs|punctuation|case|tags',
+		...Array.from({ length: 10 }, (_, index) => `word${index}|1|${index}|${index + 0.5}|||`),
+	].join('\n');
+	assert.throws(
+		() =>
+			deriveEarningsReferenceExcerpt(shortReference, longHypothesis, {
+				startSeconds: 1,
+				endSeconds: 5,
+				contextSeconds: 5,
+			}),
+		/alignment quality is unsafe/,
+	);
+	assert.throws(
+		() =>
+			deriveEarningsReferenceExcerpt(
+				reference,
+				['token|speaker|ts|endTs|punctuation|case|tags', 'alpha|1|||||'].join('\n'),
+				{ startSeconds: 10, endSeconds: 20, contextSeconds: 5 },
+			),
+		/alignment hypothesis line 2 is invalid/,
+	);
 });
 
 test('office-noise gain calculation targets measured 10 dB RMS separation', () => {
@@ -774,7 +989,17 @@ function writePreparedFixture(workspace) {
 						strategy: 'fixed',
 						start_seconds: sample.window.start_seconds,
 						end_seconds: sample.window.start_seconds + sample.duration_seconds,
-						reference_policy: 'listening-required-upstream-transcript-is-unaligned-context-only',
+						boundary_policy: 'exclude-crossing-anchor-words',
+						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
+						alignment_artifact_id: `${sample.source_id}-alignment`,
+						alignment_context_seconds: sample.window.alignment_context_seconds,
+						alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
+						alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
+						alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+						reference_start_token_index: sample.window.expected_reference_start_token_index,
+						reference_end_token_index: sample.window.expected_reference_end_token_index,
+						reference_token_count: sample.window.expected_reference_token_count,
+						reference_seed_sha256: sample.window.expected_reference_seed_sha256,
 					};
 		addSample({
 			...sample,
@@ -803,7 +1028,7 @@ function writePreparedFixture(workspace) {
 	}
 	atomicWriteJson(fixtureSelectionPath, selectionForDisk);
 	const prepared = {
-		schema_version: 2,
+		schema_version: PUBLIC_PREPARED_SCHEMA_VERSION,
 		corpus_id: selection.corpus_id,
 		source_catalog_id: catalog.catalog_id,
 		source_catalog_sha256: fileSha256(catalogPath),

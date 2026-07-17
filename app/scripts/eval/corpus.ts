@@ -5,7 +5,7 @@ import { TextDecoder } from 'node:util';
 
 export const CORPUS_SCHEMA_VERSION = 4;
 export const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
-export const PUBLIC_PREPARATION_PROTOCOL_ID = 'muesly-public-asr-preparation-v1';
+export const PUBLIC_PREPARATION_PROTOCOL_ID = 'muesly-public-asr-preparation-v2';
 export const PUBLIC_DATASET_IDS = Object.freeze(['fleurs', 'ami', 'earnings21']);
 
 export function isPublicDatasetId(value) {

@@ -17,14 +17,15 @@ import {
 	releasePublicCorpusLock,
 } from './public-corpus-lock.ts';
 
-export const PUBLIC_CATALOG_SCHEMA_VERSION = 1;
-export const PUBLIC_SELECTION_SCHEMA_VERSION = 1;
-export const PUBLIC_PREPARED_SCHEMA_VERSION = 2;
+export const PUBLIC_CATALOG_SCHEMA_VERSION = 2;
+export const PUBLIC_SELECTION_SCHEMA_VERSION = 2;
+export const PUBLIC_PREPARED_SCHEMA_VERSION = 3;
 export const PUBLIC_REVIEW_SCHEMA_VERSION = 1;
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 const ARTIFACT_KINDS = new Set([
+	'alignment-hypothesis',
 	'audio',
 	'audio-archive',
 	'index',
@@ -116,7 +117,16 @@ export function validateSourceCatalog(document, options = {}) {
 			}
 			rejectUnknownFields(
 				artifact,
-				new Set(['id', 'kind', 'url', 'cache_path', 'sha256', 'size_bytes', 'archive_format']),
+				new Set([
+					'id',
+					'kind',
+					'url',
+					'cache_path',
+					'sha256',
+					'size_bytes',
+					'archive_format',
+					'revision',
+				]),
 				prefix,
 				errors,
 			);
@@ -128,6 +138,11 @@ export function validateSourceCatalog(document, options = {}) {
 			artifactIds.add(artifact.id);
 			if (!ARTIFACT_KINDS.has(artifact.kind)) {
 				errors.push(`${prefix}.kind is not supported`);
+			}
+			if (artifact.kind === 'alignment-hypothesis') {
+				requiredString(artifact.revision, `${prefix}.revision`, errors);
+			} else if (artifact.revision !== undefined) {
+				requiredString(artifact.revision, `${prefix}.revision`, errors);
 			}
 			if (requiredString(artifact.url, `${prefix}.url`, errors)) {
 				let url;
@@ -533,12 +548,66 @@ export function validatePublicSelection(document, catalog) {
 			} else if (sample.window.strategy === 'fixed') {
 				rejectUnknownFields(
 					sample.window,
-					new Set(['strategy', 'start_seconds']),
+					new Set([
+						'strategy',
+						'start_seconds',
+						'alignment_context_seconds',
+						'expected_alignment_hypothesis_tokens',
+						'expected_alignment_reference_tokens',
+						'expected_alignment_edit_distance',
+						'expected_reference_start_token_index',
+						'expected_reference_end_token_index',
+						'expected_reference_token_count',
+						'expected_reference_seed_sha256',
+					]),
 					`${prefix}.window`,
 					errors,
 				);
 				if (typeof sample.window.start_seconds !== 'number' || sample.window.start_seconds < 0) {
 					errors.push(`${prefix}.window.start_seconds must be non-negative`);
+				}
+				if (sample.source_id?.startsWith('earnings21-')) {
+					if (
+						typeof sample.window.alignment_context_seconds !== 'number' ||
+						sample.window.alignment_context_seconds <= 0
+					) {
+						errors.push(`${prefix}.window.alignment_context_seconds must be positive`);
+					}
+					for (const field of [
+						'expected_alignment_hypothesis_tokens',
+						'expected_alignment_reference_tokens',
+						'expected_reference_token_count',
+					]) {
+						if (!Number.isInteger(sample.window[field]) || sample.window[field] < 1) {
+							errors.push(`${prefix}.window.${field} must be a positive integer`);
+						}
+					}
+					for (const field of [
+						'expected_alignment_edit_distance',
+						'expected_reference_start_token_index',
+						'expected_reference_end_token_index',
+					]) {
+						if (!Number.isInteger(sample.window[field]) || sample.window[field] < 0) {
+							errors.push(`${prefix}.window.${field} must be a non-negative integer`);
+						}
+					}
+					if (
+						Number.isInteger(sample.window.expected_reference_start_token_index) &&
+						Number.isInteger(sample.window.expected_reference_end_token_index) &&
+						Number.isInteger(sample.window.expected_reference_token_count) &&
+						sample.window.expected_reference_end_token_index -
+							sample.window.expected_reference_start_token_index +
+							1 !==
+							sample.window.expected_reference_token_count
+					) {
+						errors.push(`${prefix}.window expected reference token bounds do not match its count`);
+					}
+					if (!SHA256_PATTERN.test(sample.window.expected_reference_seed_sha256 ?? '')) {
+						errors.push(`${prefix}.window.expected_reference_seed_sha256 must be a SHA-256 digest`);
+					}
+					if (sample.requires_manual_reference === true) {
+						errors.push(`${prefix}.requires_manual_reference must be false for aligned references`);
+					}
 				}
 			} else {
 				rejectUnknownFields(
@@ -677,7 +746,17 @@ function expectedPreparedContracts(selection) {
 						strategy: 'fixed',
 						start_seconds: sample.window.start_seconds,
 						end_seconds: sample.window.start_seconds + sample.duration_seconds,
-						reference_policy: 'listening-required-upstream-transcript-is-unaligned-context-only',
+						boundary_policy: 'exclude-crossing-anchor-words',
+						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
+						alignment_artifact_id: `${sample.source_id}-alignment`,
+						alignment_context_seconds: sample.window.alignment_context_seconds,
+						alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
+						alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
+						alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+						reference_start_token_index: sample.window.expected_reference_start_token_index,
+						reference_end_token_index: sample.window.expected_reference_end_token_index,
+						reference_token_count: sample.window.expected_reference_token_count,
+						reference_seed_sha256: sample.window.expected_reference_seed_sha256,
 					};
 		contracts.set(sample.id, {
 			audio_path: `audio/${sample.id}.wav`,
@@ -1594,23 +1673,271 @@ export function renderTimedReference(words, startSeconds, endSeconds) {
 	return `${reference.trim()}\n`;
 }
 
-export function renderEarningsContext(input) {
-	const text =
-		typeof input === 'string' ? input : new TextDecoder('utf-8', { fatal: true }).decode(input);
-	const lines = text.split(/\r?\n/).filter((line) => line.length > 0);
-	if (lines[0] !== 'token|speaker|ts|endTs|punctuation|case|tags|wer_tags') {
+const EARNINGS_REFERENCE_HEADER = 'token|speaker|ts|endTs|punctuation|case|tags|wer_tags';
+const EARNINGS_HYPOTHESIS_HEADER = 'token|speaker|ts|endTs|punctuation|case|tags';
+
+function earningsText(input, label) {
+	if (typeof input === 'string') return input;
+	try {
+		return new TextDecoder('utf-8', { fatal: true }).decode(input);
+	} catch {
+		throw new Error(`${label} must be valid UTF-8`);
+	}
+}
+
+export function parseEarningsReference(input) {
+	const lines = earningsText(input, 'Earnings-21 reference')
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0);
+	if (lines[0] !== EARNINGS_REFERENCE_HEADER) {
 		throw new Error('Earnings-21 reference has an unexpected header');
 	}
-	let reference = '';
+	const tokens = [];
 	for (const [index, line] of lines.slice(1).entries()) {
 		const columns = line.split('|');
 		if (columns.length !== 8) throw new Error(`Earnings-21 reference line ${index + 2} is invalid`);
-		const token = columns[0].trim();
-		if (token.length === 0) continue;
-		reference += `${reference.length === 0 ? '' : ' '}${token}`;
-		if (columns[4]) reference += columns[4];
+		const text = columns[0].trim();
+		if (text.length === 0) {
+			throw new Error(`Earnings-21 reference line ${index + 2} has an empty token`);
+		}
+		tokens.push({ text, punctuation: columns[4] });
+	}
+	if (tokens.length === 0) throw new Error('Earnings-21 reference contains no tokens');
+	return tokens;
+}
+
+export function parseEarningsTimedHypothesis(input) {
+	const lines = earningsText(input, 'Earnings-21 alignment hypothesis')
+		.split(/\r?\n/)
+		.filter((line) => line.length > 0);
+	if (lines[0] !== EARNINGS_HYPOTHESIS_HEADER) {
+		throw new Error('Earnings-21 alignment hypothesis has an unexpected header');
+	}
+	const tokens = [];
+	for (const [index, line] of lines.slice(1).entries()) {
+		const columns = line.split('|');
+		if (columns.length !== 7) {
+			throw new Error(`Earnings-21 alignment hypothesis line ${index + 2} is invalid`);
+		}
+		const text = columns[0].trim();
+		const start = Number(columns[2]);
+		const end = Number(columns[3]);
+		if (
+			text.length === 0 ||
+			columns[2].trim().length === 0 ||
+			columns[3].trim().length === 0 ||
+			!Number.isFinite(start) ||
+			!Number.isFinite(end) ||
+			start < 0 ||
+			end < start
+		) {
+			throw new Error(`Earnings-21 alignment hypothesis line ${index + 2} is invalid`);
+		}
+		tokens.push({ text, start, end });
+	}
+	if (tokens.length === 0) throw new Error('Earnings-21 alignment hypothesis contains no tokens');
+	return tokens;
+}
+
+function normalizedEarningsToken(value) {
+	return value
+		.normalize('NFKC')
+		.toLowerCase()
+		.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function renderEarningsTokens(tokens) {
+	let reference = '';
+	for (const token of tokens) {
+		reference += `${reference.length === 0 ? '' : ' '}${token.text}`;
+		if (token.punctuation) reference += token.punctuation;
 	}
 	return `${reference.trim()}\n`;
+}
+
+export function deriveEarningsReferenceExcerpt(referenceInput, hypothesisInput, options) {
+	const { startSeconds, endSeconds, contextSeconds } = options;
+	if (
+		!Number.isFinite(startSeconds) ||
+		!Number.isFinite(endSeconds) ||
+		!Number.isFinite(contextSeconds) ||
+		startSeconds < 0 ||
+		endSeconds <= startSeconds ||
+		contextSeconds <= 0
+	) {
+		throw new Error('Earnings-21 alignment requires a valid window and positive context');
+	}
+	const reference = parseEarningsReference(referenceInput);
+	const hypothesis = parseEarningsTimedHypothesis(hypothesisInput).filter(
+		(token) => token.end <= endSeconds + contextSeconds,
+	);
+	if (hypothesis.length === 0) {
+		throw new Error('Earnings-21 alignment context contains no timed hypothesis tokens');
+	}
+
+	// The recordings and hypotheses begin at the same origin. Aligning a bounded prefix keeps the
+	// dynamic-programming matrix small while the free reference endpoint absorbs token-count drift.
+	const referenceLimit = Math.min(reference.length, Math.ceil(hypothesis.length * 1.5) + 256);
+	const width = referenceLimit + 1;
+	const matrixCells = (hypothesis.length + 1) * width;
+	if (!Number.isSafeInteger(matrixCells) || matrixCells > 10_000_000) {
+		throw new Error('Earnings-21 alignment matrix exceeds the deterministic safety bound');
+	}
+	const normalizedReference = reference
+		.slice(0, referenceLimit)
+		.map((token) => normalizedEarningsToken(token.text));
+	const normalizedHypothesis = hypothesis.map((token) => normalizedEarningsToken(token.text));
+	const directions = new Uint8Array(matrixCells);
+	let previous = new Uint32Array(width);
+	let current = new Uint32Array(width);
+	for (let referenceIndex = 0; referenceIndex <= referenceLimit; referenceIndex += 1) {
+		previous[referenceIndex] = referenceIndex;
+		directions[referenceIndex] = 2;
+	}
+	for (let hypothesisIndex = 1; hypothesisIndex <= hypothesis.length; hypothesisIndex += 1) {
+		current[0] = hypothesisIndex;
+		directions[hypothesisIndex * width] = 1;
+		const hypothesisToken = normalizedHypothesis[hypothesisIndex - 1];
+		for (let referenceIndex = 1; referenceIndex <= referenceLimit; referenceIndex += 1) {
+			const tokensMatch =
+				hypothesisToken.length > 0 && hypothesisToken === normalizedReference[referenceIndex - 1];
+			const diagonal = previous[referenceIndex - 1] + (tokensMatch ? 0 : 1);
+			const hypothesisInsertion = previous[referenceIndex] + 1;
+			const referenceDeletion = current[referenceIndex - 1] + 1;
+			let cost = diagonal;
+			let direction = 0;
+			if (referenceDeletion < cost) {
+				cost = referenceDeletion;
+				direction = 2;
+			}
+			if (hypothesisInsertion < cost) {
+				cost = hypothesisInsertion;
+				direction = 1;
+			}
+			current[referenceIndex] = cost;
+			directions[hypothesisIndex * width + referenceIndex] = direction;
+		}
+		const swap = previous;
+		previous = current;
+		current = swap;
+	}
+
+	let alignedReferenceTokens = Math.min(referenceLimit, Math.floor(hypothesis.length / 2));
+	let editDistance = previous[alignedReferenceTokens];
+	for (
+		let referenceIndex = alignedReferenceTokens + 1;
+		referenceIndex <= referenceLimit;
+		referenceIndex += 1
+	) {
+		if (
+			previous[referenceIndex] < editDistance ||
+			(previous[referenceIndex] === editDistance && referenceIndex > alignedReferenceTokens)
+		) {
+			alignedReferenceTokens = referenceIndex;
+			editDistance = previous[referenceIndex];
+		}
+	}
+
+	const hypothesisByReference = new Int32Array(alignedReferenceTokens);
+	hypothesisByReference.fill(-1);
+	let hypothesisIndex = hypothesis.length;
+	let referenceIndex = alignedReferenceTokens;
+	let pairedTokens = 0;
+	let exactPairs = 0;
+	while (hypothesisIndex > 0 || referenceIndex > 0) {
+		const direction = directions[hypothesisIndex * width + referenceIndex];
+		if (hypothesisIndex > 0 && referenceIndex > 0 && direction === 0) {
+			hypothesisByReference[referenceIndex - 1] = hypothesisIndex - 1;
+			pairedTokens += 1;
+			if (
+				normalizedHypothesis[hypothesisIndex - 1].length > 0 &&
+				normalizedHypothesis[hypothesisIndex - 1] === normalizedReference[referenceIndex - 1]
+			) {
+				exactPairs += 1;
+			}
+			hypothesisIndex -= 1;
+			referenceIndex -= 1;
+		} else if (hypothesisIndex > 0 && (referenceIndex === 0 || direction === 1)) {
+			hypothesisIndex -= 1;
+		} else {
+			referenceIndex -= 1;
+		}
+	}
+
+	if (!Number.isFinite(editDistance) || pairedTokens === 0) {
+		throw new Error('Earnings-21 alignment did not produce a finite paired path');
+	}
+	const exactPairRatio = exactPairs / pairedTokens;
+	const normalizedEditDistance = editDistance / Math.max(hypothesis.length, alignedReferenceTokens);
+	if (
+		!Number.isFinite(exactPairRatio) ||
+		!Number.isFinite(normalizedEditDistance) ||
+		exactPairRatio < 0.8 ||
+		normalizedEditDistance > 0.25
+	) {
+		throw new Error(
+			`Earnings-21 alignment quality is unsafe: exact=${exactPairRatio.toFixed(4)}, edit=${normalizedEditDistance.toFixed(4)}`,
+		);
+	}
+
+	let startAnchor;
+	let endAnchor;
+	for (let index = 0; index < alignedReferenceTokens; index += 1) {
+		const mappedIndex = hypothesisByReference[index];
+		if (mappedIndex < 0) continue;
+		const timedToken = hypothesis[mappedIndex];
+		if (
+			normalizedHypothesis[mappedIndex].length === 0 ||
+			normalizedHypothesis[mappedIndex] !== normalizedReference[index]
+		) {
+			continue;
+		}
+		const anchor = {
+			referenceTokenIndex: index,
+			hypothesisTokenIndex: mappedIndex,
+			start: timedToken.start,
+			end: timedToken.end,
+		};
+		if (!startAnchor && timedToken.start >= startSeconds && timedToken.end <= endSeconds) {
+			startAnchor = anchor;
+		}
+		if (timedToken.start >= startSeconds && timedToken.end <= endSeconds) {
+			endAnchor = anchor;
+		}
+	}
+	if (
+		!startAnchor ||
+		!endAnchor ||
+		endAnchor.referenceTokenIndex < startAnchor.referenceTokenIndex
+	) {
+		throw new Error('Earnings-21 alignment could not resolve exact excerpt boundary anchors');
+	}
+
+	const referenceTokens = reference.slice(
+		startAnchor.referenceTokenIndex,
+		endAnchor.referenceTokenIndex + 1,
+	);
+	const text = renderEarningsTokens(referenceTokens);
+	return {
+		text,
+		referenceSeedSha256: sha256Text(text),
+		hypothesisTokens: hypothesis.length,
+		alignedReferenceTokens,
+		editDistance,
+		pairedTokens,
+		exactPairs,
+		exactPairRatio,
+		normalizedEditDistance,
+		referenceStartTokenIndex: startAnchor.referenceTokenIndex,
+		referenceEndTokenIndex: endAnchor.referenceTokenIndex,
+		referenceTokenCount: referenceTokens.length,
+		startAnchor,
+		endAnchor,
+	};
+}
+
+export function renderEarningsContext(input) {
+	return renderEarningsTokens(parseEarningsReference(input));
 }
 
 export function atomicWriteJson(filePath, document, options = {}) {

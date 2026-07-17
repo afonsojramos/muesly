@@ -15,6 +15,7 @@ import {
 import {
 	artifactCachePath,
 	assertExtractedTree,
+	deriveEarningsReferenceExcerpt,
 	ensurePrivateDirectory,
 	extractArchiveMembers,
 	listArchiveEntries,
@@ -252,17 +253,337 @@ function generatedWav(ffmpegPath, destination, args) {
 	return destination;
 }
 
-function writeDraftReference(referencePath, draft) {
-	ensurePrivateDirectory(path.dirname(referencePath), 'public reference directory');
-	const existing = fs.lstatSync(referencePath, { throwIfNoEntry: false });
-	if (existing) {
-		if (!existing.isFile() || existing.isSymbolicLink() || existing.nlink !== 1) {
-			throw new Error(`existing public reference must be a regular file: ${referencePath}`);
+function sameReferenceIdentity(left, right) {
+	return left.dev === right.dev && left.ino === right.ino;
+}
+
+function safeReferenceStatus(status) {
+	return status.isFile() && !status.isSymbolicLink() && status.nlink === 1n;
+}
+
+function fsyncReferenceDirectory(referencePath) {
+	if (process.platform === 'win32') return;
+	const descriptor = fs.openSync(
+		path.dirname(referencePath),
+		fs.constants.O_RDONLY | (fs.constants.O_DIRECTORY ?? 0) | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		fs.fsyncSync(descriptor);
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
+function readStableReference(descriptor, status, referencePath) {
+	const size = Number(status.size);
+	if (!Number.isSafeInteger(size) || size > 16 * 1024 * 1024) {
+		throw new Error(`existing public reference is too large: ${referencePath}`);
+	}
+	const contents = Buffer.alloc(size);
+	let read = 0;
+	while (read < size) {
+		const count = fs.readSync(descriptor, contents, read, size - read, read);
+		if (count === 0) break;
+		read += count;
+	}
+	if (read !== size)
+		throw new Error(`existing public reference changed while reading: ${referencePath}`);
+	return contents;
+}
+
+function completeReferenceWrite(descriptor, opened, contents, referencePath) {
+	const existing = readStableReference(descriptor, opened, referencePath);
+	if (
+		existing.length > contents.length ||
+		!contents.subarray(0, existing.length).equals(existing)
+	) {
+		throw new Error(`interrupted public reference is not an exact seed prefix: ${referencePath}`);
+	}
+	let written = existing.length;
+	while (written < contents.length) {
+		const count = fs.writeSync(descriptor, contents, written, contents.length - written, written);
+		if (count === 0) throw new Error(`seeded public reference write stalled: ${referencePath}`);
+		written += count;
+	}
+	fs.fsyncSync(descriptor);
+	const completed = fs.fstatSync(descriptor, { bigint: true });
+	if (
+		!completed.isFile() ||
+		!sameReferenceIdentity(opened, completed) ||
+		completed.size !== BigInt(contents.length) ||
+		!readStableReference(descriptor, completed, referencePath).equals(contents)
+	) {
+		throw new Error(`seeded public reference failed content re-attestation: ${referencePath}`);
+	}
+	return completed;
+}
+
+function attestExactReferenceContents(descriptor, opened, contents, referencePath) {
+	if (!readStableReference(descriptor, opened, referencePath).equals(contents)) {
+		throw new Error(`published public reference does not match its exact seed: ${referencePath}`);
+	}
+	fs.fsyncSync(descriptor);
+	const exact = fs.fstatSync(descriptor, { bigint: true });
+	if (
+		!exact.isFile() ||
+		!sameReferenceIdentity(opened, exact) ||
+		exact.size !== BigInt(contents.length) ||
+		!readStableReference(descriptor, exact, referencePath).equals(contents)
+	) {
+		throw new Error(`published public reference failed content re-attestation: ${referencePath}`);
+	}
+	return exact;
+}
+
+function draftPublicationPath(referencePath) {
+	return path.join(path.dirname(referencePath), `.${path.basename(referencePath)}.publish`);
+}
+
+function recoverInterruptedDraftPublication(referencePath, temporary, contents) {
+	const stagedStatus = fs.lstatSync(temporary, { bigint: true, throwIfNoEntry: false });
+	if (!stagedStatus) return false;
+	const publishedStatus = fs.lstatSync(referencePath, {
+		bigint: true,
+		throwIfNoEntry: false,
+	});
+	const descriptor = fs.openSync(
+		publishedStatus ? referencePath : temporary,
+		fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		if (
+			!opened.isFile() ||
+			opened.isSymbolicLink() ||
+			!stagedStatus.isFile() ||
+			stagedStatus.isSymbolicLink() ||
+			!sameReferenceIdentity(opened, stagedStatus) ||
+			opened.nlink !== (publishedStatus ? 2n : 1n) ||
+			(publishedStatus &&
+				(publishedStatus.nlink !== 2n || !sameReferenceIdentity(opened, publishedStatus)))
+		) {
+			throw new Error(
+				`interrupted public reference publication is not recoverable: ${referencePath}`,
+			);
 		}
+		const completed = publishedStatus
+			? attestExactReferenceContents(descriptor, opened, contents, referencePath)
+			: completeReferenceWrite(descriptor, opened, contents, referencePath);
+		if (!publishedStatus) {
+			fs.linkSync(temporary, referencePath);
+			const linked = fs.fstatSync(descriptor, { bigint: true });
+			const published = fs.lstatSync(referencePath, { bigint: true });
+			if (
+				linked.nlink !== 2n ||
+				published.nlink !== 2n ||
+				!sameReferenceIdentity(completed, linked) ||
+				!sameReferenceIdentity(linked, published)
+			) {
+				throw new Error(`recovered public reference changed during publication: ${referencePath}`);
+			}
+		}
+		fsyncReferenceDirectory(referencePath);
+		const stagedBeforeUnlink = fs.lstatSync(temporary, { bigint: true });
+		const publishedBeforeUnlink = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			!sameReferenceIdentity(completed, stagedBeforeUnlink) ||
+			!sameReferenceIdentity(completed, publishedBeforeUnlink)
+		) {
+			throw new Error(`recovered public reference changed before cleanup: ${referencePath}`);
+		}
+		fs.unlinkSync(temporary);
+		fsyncReferenceDirectory(referencePath);
+		const recovered = fs.fstatSync(descriptor, { bigint: true });
+		const named = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			recovered.nlink !== 1n ||
+			named.nlink !== 1n ||
+			!sameReferenceIdentity(completed, recovered) ||
+			!sameReferenceIdentity(recovered, named)
+		) {
+			throw new Error(`public reference did not recover to one stable name: ${referencePath}`);
+		}
+		return true;
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
+function publishNewDraftReference(referencePath, contents) {
+	const temporary = draftPublicationPath(referencePath);
+	if (recoverInterruptedDraftPublication(referencePath, temporary, contents)) return true;
+	if (fs.lstatSync(referencePath, { throwIfNoEntry: false })) return false;
+	const descriptor = fs.openSync(
+		temporary,
+		fs.constants.O_RDWR |
+			fs.constants.O_CREAT |
+			fs.constants.O_EXCL |
+			(fs.constants.O_NOFOLLOW ?? 0),
+		0o600,
+	);
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		completeReferenceWrite(descriptor, opened, contents, referencePath);
+		try {
+			fs.linkSync(temporary, referencePath);
+		} catch (error) {
+			if (error.code !== 'EEXIST') throw error;
+			const staged = fs.lstatSync(temporary, { bigint: true });
+			const current = fs.fstatSync(descriptor, { bigint: true });
+			if (current.nlink !== 1n || !sameReferenceIdentity(current, staged)) {
+				throw new Error(`public reference staging changed during publication: ${referencePath}`);
+			}
+			fs.unlinkSync(temporary);
+			fsyncReferenceDirectory(referencePath);
+			return false;
+		}
+		const staged = fs.lstatSync(temporary, { bigint: true });
+		const published = fs.lstatSync(referencePath, { bigint: true });
+		const linked = fs.fstatSync(descriptor, { bigint: true });
+		if (
+			linked.nlink !== 2n ||
+			published.nlink !== 2n ||
+			!sameReferenceIdentity(staged, linked) ||
+			!sameReferenceIdentity(linked, published)
+		) {
+			throw new Error(`public reference changed during publication: ${referencePath}`);
+		}
+		fsyncReferenceDirectory(referencePath);
+		fs.unlinkSync(temporary);
+		fsyncReferenceDirectory(referencePath);
+		const completed = fs.fstatSync(descriptor, { bigint: true });
+		const named = fs.lstatSync(referencePath, { bigint: true });
+		if (completed.nlink !== 1n || named.nlink !== 1n || !sameReferenceIdentity(completed, named)) {
+			throw new Error(`public reference did not publish to one stable name: ${referencePath}`);
+		}
+		return true;
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
+function emptySeedTransactionPath(referencePath, contents) {
+	return path.join(
+		path.dirname(referencePath),
+		`.${path.basename(referencePath)}.seed-empty-${sha256Text(contents.toString('utf8'))}.txn`,
+	);
+}
+
+function seedExistingEmptyReference(referencePath, expected, contents, options) {
+	const transactionPath = emptySeedTransactionPath(referencePath, contents);
+	let transaction = fs.lstatSync(transactionPath, { bigint: true, throwIfNoEntry: false });
+	const recovering = Boolean(transaction);
+	if (!transaction) options.beforeExistingOpen?.();
+	const descriptor = fs.openSync(
+		referencePath,
+		fs.constants.O_RDWR | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		let opened = fs.fstatSync(descriptor, { bigint: true });
+		if (recovering) {
+			if (
+				!transaction.isFile() ||
+				transaction.isSymbolicLink() ||
+				transaction.nlink !== 2n ||
+				opened.nlink !== 2n ||
+				!sameReferenceIdentity(transaction, opened) ||
+				!sameReferenceIdentity(expected, opened)
+			) {
+				throw new Error(`empty-reference seed transaction is not recoverable: ${referencePath}`);
+			}
+		} else {
+			if (
+				!safeReferenceStatus(opened) ||
+				opened.size !== 0n ||
+				!sameReferenceIdentity(expected, opened)
+			) {
+				throw new Error(`empty public reference changed while opening: ${referencePath}`);
+			}
+			const named = fs.lstatSync(referencePath, { bigint: true });
+			if (!sameReferenceIdentity(opened, named)) {
+				throw new Error(`empty public reference changed before seeding: ${referencePath}`);
+			}
+			fs.linkSync(referencePath, transactionPath);
+			fsyncReferenceDirectory(referencePath);
+			transaction = fs.lstatSync(transactionPath, { bigint: true });
+			opened = fs.fstatSync(descriptor, { bigint: true });
+			if (
+				transaction.nlink !== 2n ||
+				opened.nlink !== 2n ||
+				!sameReferenceIdentity(transaction, opened)
+			) {
+				throw new Error(
+					`empty-reference seed transaction changed during creation: ${referencePath}`,
+				);
+			}
+		}
+		let completed;
+		if (recovering) {
+			const interruptedContents = readStableReference(descriptor, opened, referencePath);
+			if (interruptedContents.length === 0) {
+				completed = completeReferenceWrite(descriptor, opened, contents, referencePath);
+			} else if (interruptedContents.equals(contents)) {
+				completed = attestExactReferenceContents(descriptor, opened, contents, referencePath);
+			} else {
+				throw new Error(
+					`interrupted empty-reference seed contains ambiguous nonempty text; preserving it: ${referencePath}`,
+				);
+			}
+		} else {
+			completed = completeReferenceWrite(descriptor, opened, contents, referencePath);
+		}
+		const transactionBeforeUnlink = fs.lstatSync(transactionPath, { bigint: true });
+		const namedBeforeUnlink = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			completed.nlink !== 2n ||
+			!sameReferenceIdentity(completed, transactionBeforeUnlink) ||
+			!sameReferenceIdentity(completed, namedBeforeUnlink)
+		) {
+			throw new Error(`empty-reference seed transaction changed before cleanup: ${referencePath}`);
+		}
+		fs.unlinkSync(transactionPath);
+		fsyncReferenceDirectory(referencePath);
+		const seeded = fs.fstatSync(descriptor, { bigint: true });
+		const named = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			seeded.nlink !== 1n ||
+			named.nlink !== 1n ||
+			!sameReferenceIdentity(completed, seeded) ||
+			!sameReferenceIdentity(seeded, named)
+		) {
+			throw new Error(
+				`seeded public reference did not return to one stable name: ${referencePath}`,
+			);
+		}
+		return true;
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
+export function writeDraftReference(referencePath, draft, options = {}) {
+	ensurePrivateDirectory(path.dirname(referencePath), 'public reference directory');
+	const contents = Buffer.from(draft, 'utf8');
+	if (publishNewDraftReference(referencePath, contents)) return true;
+	const expected = fs.lstatSync(referencePath, { bigint: true, throwIfNoEntry: false });
+	const seedTransaction = emptySeedTransactionPath(referencePath, contents);
+	const interruptedSeed = fs.lstatSync(seedTransaction, {
+		bigint: true,
+		throwIfNoEntry: false,
+	});
+	if (interruptedSeed) {
+		if (!options.seedEmpty || contents.length === 0 || !expected) {
+			throw new Error(`unexpected empty-reference seed transaction: ${referencePath}`);
+		}
+		return seedExistingEmptyReference(referencePath, expected, contents, options);
+	}
+	if (!expected || !safeReferenceStatus(expected)) {
+		throw new Error(`existing public reference must be a regular file: ${referencePath}`);
+	}
+	if (!options.seedEmpty || expected.size !== 0n || contents.length === 0) {
 		return false;
 	}
-	fs.writeFileSync(referencePath, draft, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
-	return true;
+	return seedExistingEmptyReference(referencePath, expected, contents, options);
 }
 
 function artifactMaps(catalog, cacheRoot) {
@@ -845,14 +1166,19 @@ function prepareEarningsSources(context, earningsSamples) {
 		const artifacts = sourceArtifacts(source, context.maps);
 		const audioEntry = artifacts.find(({ artifact }) => artifact.kind === 'audio');
 		const referenceEntry = artifacts.find(({ artifact }) => artifact.kind === 'reference');
-		if (!audioEntry || !referenceEntry) {
+		const alignmentEntry = artifacts.find(
+			({ artifact }) => artifact.kind === 'alignment-hypothesis',
+		);
+		if (!audioEntry || !referenceEntry || !alignmentEntry) {
 			throw new Error(
-				`Earnings-21 source '${source.id}' must have audio and full reference context`,
+				`Earnings-21 source '${source.id}' must have audio, a human reference, and a timed alignment hypothesis`,
 			);
 		}
 		verifyPinnedArtifactFile(audioEntry.path, audioEntry.artifact);
 		verifyPinnedArtifactFile(referenceEntry.path, referenceEntry.artifact);
+		verifyPinnedArtifactFile(alignmentEntry.path, alignmentEntry.artifact);
 		const startSeconds = sample.window.start_seconds;
+		const endSeconds = startSeconds + sample.duration_seconds;
 		const audioPath = path.join(context.workspace, 'audio', `${sample.id}.wav`);
 		excerptAudio(
 			context.ffmpegPath,
@@ -866,8 +1192,33 @@ function prepareEarningsSources(context, earningsSamples) {
 				`generated ${sample.id} does not match its committed deterministic output hash`,
 			);
 		}
+		const alignedReference = deriveEarningsReferenceExcerpt(
+			fs.readFileSync(referenceEntry.path),
+			fs.readFileSync(alignmentEntry.path),
+			{
+				startSeconds,
+				endSeconds,
+				contextSeconds: sample.window.alignment_context_seconds,
+			},
+		);
+		const expectedAlignment = {
+			hypothesisTokens: sample.window.expected_alignment_hypothesis_tokens,
+			alignedReferenceTokens: sample.window.expected_alignment_reference_tokens,
+			editDistance: sample.window.expected_alignment_edit_distance,
+			referenceStartTokenIndex: sample.window.expected_reference_start_token_index,
+			referenceEndTokenIndex: sample.window.expected_reference_end_token_index,
+			referenceTokenCount: sample.window.expected_reference_token_count,
+			referenceSeedSha256: sample.window.expected_reference_seed_sha256,
+		};
+		for (const [field, expected] of Object.entries(expectedAlignment)) {
+			if (alignedReference[field] !== expected) {
+				throw new Error(
+					`Earnings-21 aligned reference '${sample.id}' ${field} drifted: expected ${expected}, got ${alignedReference[field]}`,
+				);
+			}
+		}
 		const referencePath = path.join(context.workspace, 'references', `${sample.id}.txt`);
-		writeDraftReference(referencePath, '');
+		writeDraftReference(referencePath, alignedReference.text, { seedEmpty: true });
 		const contextPath = path.join(
 			context.workspace,
 			'review-context',
@@ -889,12 +1240,21 @@ function prepareEarningsSources(context, earningsSamples) {
 				},
 				{
 					dataset: 'earnings21',
-					requires_manual_reference: true,
 					source_window: {
 						strategy: 'fixed',
 						start_seconds: startSeconds,
-						end_seconds: startSeconds + sample.duration_seconds,
-						reference_policy: 'listening-required-upstream-transcript-is-unaligned-context-only',
+						end_seconds: endSeconds,
+						boundary_policy: 'exclude-crossing-anchor-words',
+						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
+						alignment_artifact_id: alignmentEntry.artifact.id,
+						alignment_context_seconds: sample.window.alignment_context_seconds,
+						alignment_hypothesis_tokens: alignedReference.hypothesisTokens,
+						alignment_reference_tokens: alignedReference.alignedReferenceTokens,
+						alignment_edit_distance: alignedReference.editDistance,
+						reference_start_token_index: alignedReference.referenceStartTokenIndex,
+						reference_end_token_index: alignedReference.referenceEndTokenIndex,
+						reference_token_count: alignedReference.referenceTokenCount,
+						reference_seed_sha256: alignedReference.referenceSeedSha256,
 					},
 				},
 			),
@@ -972,7 +1332,7 @@ export async function preparePublicCorpusUnlocked(options) {
 		...bundle,
 		workspace,
 		sampleCount: samples.length,
-		manualReferenceCount: samples.filter((sample) => sample.requires_manual_reference).length,
+		alignedReferenceSeedCount: samples.filter((sample) => sample.dataset === 'earnings21').length,
 	};
 }
 
@@ -998,7 +1358,7 @@ async function main() {
 		const result = await preparePublicCorpus(options);
 		process.stdout.write(
 			`Prepared ${result.sampleCount} public ASR samples in ${result.workspace}.\n` +
-				`${result.manualReferenceCount} Earnings-21 references require listening transcription.\n` +
+				`Seeded ${result.alignedReferenceSeedCount} Earnings-21 drafts from aligned public human references.\n` +
 				`Complete two independent reviews in ${result.reviewsPath}, then run public-corpus-finalize.ts.\n`,
 		);
 	} catch (error) {

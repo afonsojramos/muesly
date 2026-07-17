@@ -1,7 +1,7 @@
 {
-	"schema_version": 1,
-	"corpus_id": "muesly-public-asr-v1",
-	"source_catalog_id": "muesly-public-asr-sources-v1",
+	"schema_version": 2,
+	"corpus_id": "muesly-public-asr-v2",
+	"source_catalog_id": "muesly-public-asr-sources-v2",
 	"minimum_free_bytes": 21474836480,
 	"approved_ffmpeg": [
 		{
@@ -350,10 +350,17 @@
 			"duration_seconds": 180,
 			"window": {
 				"strategy": "fixed",
-				"start_seconds": 60
+				"start_seconds": 60,
+				"alignment_context_seconds": 30,
+				"expected_alignment_hypothesis_tokens": 697,
+				"expected_alignment_reference_tokens": 681,
+				"expected_alignment_edit_distance": 59,
+				"expected_reference_start_token_index": 159,
+				"expected_reference_end_token_index": 603,
+				"expected_reference_token_count": 445,
+				"expected_reference_seed_sha256": "6d394e4b3d5075eba3c868852f439464a14664986439c9723f0a6e949c6f02b2"
 			},
-			"transform_id": "earnings21-fixed-excerpt-v1",
-			"requires_manual_reference": true,
+			"transform_id": "earnings21-aligned-excerpt-v1",
 			"audio_sha256": "c33880ad4658fe198cba73553664fda650efab0f522b8c65c3b1600c9514de44"
 		},
 		{
@@ -368,10 +375,17 @@
 			"duration_seconds": 180,
 			"window": {
 				"strategy": "fixed",
-				"start_seconds": 60
+				"start_seconds": 60,
+				"alignment_context_seconds": 30,
+				"expected_alignment_hypothesis_tokens": 703,
+				"expected_alignment_reference_tokens": 694,
+				"expected_alignment_edit_distance": 67,
+				"expected_reference_start_token_index": 152,
+				"expected_reference_end_token_index": 616,
+				"expected_reference_token_count": 465,
+				"expected_reference_seed_sha256": "2d599dbc4df2cccce13bb7fd1df69f34d1815803e0ce0a091d7ff3e0c00db776"
 			},
-			"transform_id": "earnings21-fixed-excerpt-v1",
-			"requires_manual_reference": true,
+			"transform_id": "earnings21-aligned-excerpt-v1",
 			"audio_sha256": "ac14e5ed2a2331f89d61991bfd5be033dee79031aa8c551c2cd65e5753fc2fdb"
 		},
 		{
@@ -386,10 +400,17 @@
 			"duration_seconds": 180,
 			"window": {
 				"strategy": "fixed",
-				"start_seconds": 60
+				"start_seconds": 60,
+				"alignment_context_seconds": 30,
+				"expected_alignment_hypothesis_tokens": 704,
+				"expected_alignment_reference_tokens": 695,
+				"expected_alignment_edit_distance": 42,
+				"expected_reference_start_token_index": 174,
+				"expected_reference_end_token_index": 628,
+				"expected_reference_token_count": 455,
+				"expected_reference_seed_sha256": "68867517f725b954e7d9940b47c2d137b7aa48049374aad15e140980d37f65ea"
 			},
-			"transform_id": "earnings21-fixed-excerpt-v1",
-			"requires_manual_reference": true,
+			"transform_id": "earnings21-aligned-excerpt-v1",
 			"audio_sha256": "12aa79ba891a9526ab0def22b2f112e72a46aa090ea36a847e9bbeeae476106d"
 		}
 	]

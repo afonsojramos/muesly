@@ -1,6 +1,6 @@
 {
-	"schema_version": 1,
-	"catalog_id": "muesly-public-asr-sources-v1",
+	"schema_version": 2,
+	"catalog_id": "muesly-public-asr-sources-v2",
 	"description": "Immutable, open-licensed source files used to reconstruct the local public ASR corpus.",
 	"artifacts": [
 		{
@@ -138,6 +138,15 @@
 			"size_bytes": 195513
 		},
 		{
+			"id": "earnings21-4320211-alignment",
+			"kind": "alignment-hypothesis",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4320211.nlp",
+			"cache_path": "earnings21/4320211.rev-kaldi.nlp",
+			"sha256": "755ba120ccd41c4fa2ffcc94d2d078f11a15eaeac6886227964525e34ae7bd7d",
+			"size_bytes": 258824
+		},
+		{
 			"id": "earnings21-4330115-audio",
 			"kind": "audio",
 			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/wav/4330115.wav",
@@ -154,6 +163,15 @@
 			"size_bytes": 147534
 		},
 		{
+			"id": "earnings21-4330115-alignment",
+			"kind": "alignment-hypothesis",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4330115.nlp",
+			"cache_path": "earnings21/4330115.rev-kaldi.nlp",
+			"sha256": "c6f821a72668de1b3b53c1fb08bb885bacf524e2d13bb379465f99c9e7fe2456",
+			"size_bytes": 193000
+		},
+		{
 			"id": "earnings21-4341191-audio",
 			"kind": "audio",
 			"url": "https://huggingface.co/datasets/Revai/earnings21/resolve/33b26fbc8bb1e1ab1815d89867c65f13ffdb7422/wav/4341191.wav",
@@ -168,6 +186,15 @@
 			"cache_path": "earnings21/4341191.nlp",
 			"sha256": "e494a1306b67355186bf4fff603ceebd0b95114bff11ce4b4ece544c7348de2f",
 			"size_bytes": 319689
+		},
+		{
+			"id": "earnings21-4341191-alignment",
+			"kind": "alignment-hypothesis",
+			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
+			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4341191.nlp",
+			"cache_path": "earnings21/4341191.rev-kaldi.nlp",
+			"sha256": "f4b0652eb743658d0c619a479dfe0c584dbbca484c8c0af75ba380e39ea1b4d5",
+			"size_bytes": 423681
 		}
 	],
 	"sources": [
@@ -268,7 +295,11 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
-			"artifact_ids": ["earnings21-4320211-audio", "earnings21-4320211-reference"]
+			"artifact_ids": [
+				"earnings21-4320211-audio",
+				"earnings21-4320211-reference",
+				"earnings21-4320211-alignment"
+			]
 		},
 		{
 			"id": "earnings21-4330115",
@@ -279,7 +310,11 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
-			"artifact_ids": ["earnings21-4330115-audio", "earnings21-4330115-reference"]
+			"artifact_ids": [
+				"earnings21-4330115-audio",
+				"earnings21-4330115-reference",
+				"earnings21-4330115-alignment"
+			]
 		},
 		{
 			"id": "earnings21-4341191",
@@ -290,7 +325,11 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
-			"artifact_ids": ["earnings21-4341191-audio", "earnings21-4341191-reference"]
+			"artifact_ids": [
+				"earnings21-4341191-audio",
+				"earnings21-4341191-reference",
+				"earnings21-4341191-alignment"
+			]
 		}
 	]
 }

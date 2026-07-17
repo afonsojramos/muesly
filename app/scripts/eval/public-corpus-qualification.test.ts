@@ -175,7 +175,7 @@ function aggregate(target, overrides = {}) {
 	return {
 		schema_version: 10,
 		generated_at: '2026-07-17T00:00:00.000Z',
-		corpus_id: 'muesly-public-asr-v1',
+		corpus_id: 'muesly-public-asr-v2',
 		corpus_fingerprint: SHA,
 		reference_protocol_id: 'muesly-meeting-reference-v1',
 		wer_scorer: 'muesly-wer-v1',

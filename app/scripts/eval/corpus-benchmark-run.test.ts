@@ -24,7 +24,11 @@ import {
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
 import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
-import { loadCorpus, REFERENCE_PROTOCOL_ID } from "./corpus.ts";
+import {
+  loadCorpus,
+  PUBLIC_PREPARATION_PROTOCOL_ID,
+  REFERENCE_PROTOCOL_ID,
+} from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
 import { processIdentity } from "./process-identity.ts";
 import { prepareRealRunSession } from "./real-run-session.ts";
@@ -310,7 +314,7 @@ function fixture(t, { samples = ["sample-b", "sample-a"], dataset } = {}) {
         : {
             source_catalog_sha256: "9".repeat(64),
             preparation: {
-              protocol_id: "muesly-public-asr-preparation-v1",
+              protocol_id: PUBLIC_PREPARATION_PROTOCOL_ID,
               source_catalog_id: "public-corpus-sources-v1",
               selection_sha256: "8".repeat(64),
               ffmpeg_id: "ffmpeg-test",

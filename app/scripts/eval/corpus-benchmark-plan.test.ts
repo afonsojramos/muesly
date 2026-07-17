@@ -15,7 +15,12 @@ import {
 	taskReportFilename,
 	validateTaskCheckpoint,
 } from './corpus-benchmark-plan.ts';
-import { corpusFingerprint, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import {
+	corpusFingerprint,
+	loadCorpus,
+	PUBLIC_PREPARATION_PROTOCOL_ID,
+	REFERENCE_PROTOCOL_ID,
+} from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
@@ -100,7 +105,7 @@ function corpus(samples) {
 			? {
 					source_catalog_sha256: '9'.repeat(64),
 					preparation: {
-						protocol_id: 'muesly-public-asr-preparation-v1',
+						protocol_id: PUBLIC_PREPARATION_PROTOCOL_ID,
 						source_catalog_id: 'public-corpus-sources-v1',
 						selection_sha256: '8'.repeat(64),
 						ffmpeg_id: 'ffmpeg-test',
