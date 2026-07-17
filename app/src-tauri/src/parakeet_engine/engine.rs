@@ -1,8 +1,13 @@
+use crate::model_storage::{
+    ModelMutationLock, attest_model_file, existing_model_directory, is_model_mutation_busy,
+    open_model_file_for_write, remove_model_directory, remove_model_file,
+    validate_resume_content_range,
+};
 use crate::parakeet_engine::model::ParakeetModel;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::fs;
@@ -128,8 +133,8 @@ pub struct ParakeetEngine {
 impl ParakeetEngine {
     /// Create a new Parakeet engine with optional custom models directory
     pub fn new_with_models_dir(models_dir: Option<PathBuf>) -> Result<Self> {
-        let models_dir = if let Some(dir) = models_dir {
-            dir.join("parakeet") // Parakeet models in subdirectory
+        let models_root = if let Some(dir) = models_dir {
+            dir
         } else {
             // Fallback to default location
             let current_dir = std::env::current_dir()
@@ -137,7 +142,7 @@ impl ParakeetEngine {
 
             if cfg!(debug_assertions) {
                 // Development mode
-                current_dir.join("models").join("parakeet")
+                current_dir.join("models")
             } else {
                 // Production mode
                 dirs::data_dir()
@@ -145,19 +150,16 @@ impl ParakeetEngine {
                     .ok_or_else(|| anyhow!("Could not find system data directory"))?
                     .join("muesly")
                     .join("models")
-                    .join("parakeet")
             }
         };
+
+        let models_root = crate::model_storage::prepare_models_root(&models_root)?;
+        let models_dir = crate::model_storage::provider_directory(&models_root, "parakeet")?;
 
         log::info!(
             "ParakeetEngine using models directory: {}",
             models_dir.display()
         );
-
-        // Create directory if it doesn't exist
-        if !models_dir.exists() {
-            std::fs::create_dir_all(&models_dir)?;
-        }
 
         Ok(Self {
             models_dir,
@@ -169,6 +171,12 @@ impl ParakeetEngine {
             active_downloads: Arc::new(RwLock::new(HashSet::new())),
             last_used: Arc::new(RwLock::new(std::time::Instant::now())),
         })
+    }
+
+    fn models_root(&self) -> Result<&Path> {
+        self.models_dir
+            .parent()
+            .ok_or_else(|| anyhow!("Parakeet provider directory has no models root"))
     }
 
     /// Discover available Parakeet models
@@ -241,8 +249,10 @@ impl ParakeetEngine {
                             // Calculate total size of existing files
                             let mut total_size = 0u64;
                             for file in required_files {
-                                if let Ok(metadata) = std::fs::metadata(model_path.join(file)) {
-                                    total_size += metadata.len();
+                                if let Ok(Some(size)) =
+                                    attest_model_file(&model_path, file, "Parakeet model artifact")
+                                {
+                                    total_size += size;
                                 }
                             }
                             ModelStatus::Corrupted {
@@ -282,23 +292,35 @@ impl ParakeetEngine {
     }
 
     /// Validate model directory by checking if all required files exist AND have valid sizes
-    async fn validate_model_directory(&self, model_dir: &PathBuf) -> Result<()> {
+    async fn validate_model_directory(&self, model_dir: &Path) -> Result<()> {
+        let model_name = model_dir
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("Parakeet model directory name must be UTF-8"))?;
+        let model_dir = existing_model_directory(&self.models_dir, model_name)?
+            .ok_or_else(|| anyhow!("Parakeet model directory not found"))?;
+
         // Check if vocab.txt exists and is readable
-        let vocab_path = model_dir.join("vocab.txt");
-        if !vocab_path.exists() {
+        if attest_model_file(&model_dir, "vocab.txt", "Parakeet vocabulary")?.is_none() {
             return Err(anyhow!("vocab.txt not found"));
         }
 
         // Determine which files to check based on what exists
-        let is_int8 = model_dir.join("encoder-model.int8.onnx").exists();
-        let is_fp32 = model_dir.join("encoder-model.onnx").exists();
+        let is_int8 = attest_model_file(
+            &model_dir,
+            "encoder-model.int8.onnx",
+            "Parakeet INT8 encoder",
+        )?
+        .is_some();
+        let is_fp32 =
+            attest_model_file(&model_dir, "encoder-model.onnx", "Parakeet FP32 encoder")?.is_some();
 
         if !is_int8 && !is_fp32 {
             return Err(anyhow!("No ONNX model files found"));
         }
 
         // Check preprocessor
-        if !model_dir.join("nemo128.onnx").exists() {
+        if attest_model_file(&model_dir, "nemo128.onnx", "Parakeet preprocessor")?.is_none() {
             return Err(anyhow!("Preprocessor (nemo128.onnx) not found"));
         }
 
@@ -322,83 +344,19 @@ impl ParakeetEngine {
 
         // Validate each file exists AND has sufficient size
         for (filename, min_size) in expected_sizes {
-            let file_path = model_dir.join(filename);
-            if !file_path.exists() {
-                return Err(anyhow!("{} not found", filename));
-            }
-
-            match std::fs::metadata(&file_path) {
-                Ok(metadata) => {
-                    let actual_size = metadata.len();
-                    if actual_size < min_size {
-                        return Err(anyhow!(
-                            "{} is incomplete: {} bytes (expected at least {} bytes)",
-                            filename,
-                            actual_size,
-                            min_size
-                        ));
-                    }
-                }
-                Err(e) => {
-                    return Err(anyhow!("Failed to read {} metadata: {}", filename, e));
-                }
+            let actual_size = attest_model_file(&model_dir, filename, "Parakeet model artifact")?
+                .ok_or_else(|| anyhow!("{} not found", filename))?;
+            if actual_size < min_size {
+                return Err(anyhow!(
+                    "{} is incomplete: {} bytes (expected at least {} bytes)",
+                    filename,
+                    actual_size,
+                    min_size
+                ));
             }
         }
 
         Ok(())
-    }
-
-    /// Clean incomplete model directory before download
-    /// Removes all files if directory exists but model is not Available
-    async fn clean_incomplete_model_directory(&self, model_dir: &PathBuf) -> Result<()> {
-        if !model_dir.exists() {
-            return Ok(()); // Nothing to clean
-        }
-
-        // Validate the directory
-        match self.validate_model_directory(model_dir).await {
-            Ok(_) => {
-                log::info!("Model directory is valid, no cleanup needed");
-                return Ok(());
-            }
-            Err(validation_error) => {
-                log::warn!(
-                    "Model directory exists but is invalid: {}. Cleaning up...",
-                    validation_error
-                );
-
-                // List and remove all files in the directory
-                let mut entries = fs::read_dir(model_dir)
-                    .await
-                    .map_err(|e| anyhow!("Failed to read model directory: {}", e))?;
-
-                let mut removed_count = 0;
-                while let Some(entry) = entries
-                    .next_entry()
-                    .await
-                    .map_err(|e| anyhow!("Failed to read directory entry: {}", e))?
-                {
-                    let path = entry.path();
-                    if path.is_file() {
-                        match fs::remove_file(&path).await {
-                            Ok(_) => {
-                                log::info!("Removed incomplete file: {:?}", path.file_name());
-                                removed_count += 1;
-                            }
-                            Err(e) => {
-                                log::warn!("Failed to remove file {:?}: {}", path, e);
-                            }
-                        }
-                    }
-                }
-
-                log::info!(
-                    "Cleaned {} incomplete files from model directory",
-                    removed_count
-                );
-                Ok(())
-            }
-        }
     }
 
     /// Load a Parakeet model
@@ -431,9 +389,13 @@ impl ParakeetEngine {
 
                 log::info!("Loading Parakeet model: {}", model_name);
 
+                self.validate_model_directory(&model_info.path).await?;
+                let model_path = existing_model_directory(&self.models_dir, model_name)?
+                    .ok_or_else(|| anyhow!("Parakeet model disappeared before load"))?;
+
                 // Load model based on quantization type
                 let quantized = model_info.quantization == QuantizationType::Int8;
-                let model = ParakeetModel::new(&model_info.path, quantized)
+                let model = ParakeetModel::new(&model_path, quantized)
                     .map_err(|e| anyhow!("Failed to load Parakeet model {}: {}", model_name, e))?;
 
                 // Update current model and model name
@@ -551,6 +513,9 @@ impl ParakeetEngine {
 
         let model_info =
             model_info.ok_or_else(|| anyhow!("Parakeet model '{}' not found", model_name))?;
+        let mutation_lock =
+            ModelMutationLock::try_acquire(self.models_root()?, "parakeet", model_name)?;
+        let provider_directory = mutation_lock.provider_directory()?;
 
         log::info!(
             "Parakeet model '{}' has status: {:?}",
@@ -561,15 +526,7 @@ impl ParakeetEngine {
         // Allow deletion of corrupted or available models
         match &model_info.status {
             ModelStatus::Corrupted { .. } | ModelStatus::Available => {
-                // Delete the entire model directory
-                if model_info.path.exists() {
-                    fs::remove_dir_all(&model_info.path).await.map_err(|e| {
-                        anyhow!(
-                            "Failed to delete directory '{}': {}",
-                            model_info.path.display(),
-                            e
-                        )
-                    })?;
+                if remove_model_directory(&provider_directory, model_name)? {
                     log::info!(
                         "Successfully deleted Parakeet model directory: {}",
                         model_info.path.display()
@@ -580,6 +537,7 @@ impl ParakeetEngine {
                         model_info.path.display()
                     );
                 }
+                mutation_lock.attest_ancestors()?;
 
                 // Update model status to Missing
                 {
@@ -633,6 +591,10 @@ impl ParakeetEngine {
                 crate::config::DEFAULT_PARAKEET_MODEL
             ));
         }
+
+        let mutation_lock =
+            ModelMutationLock::try_acquire(self.models_root()?, "parakeet", model_name)?;
+        let model_dir = mutation_lock.model_directory()?;
 
         // Check if download is already in progress for this model
         {
@@ -703,24 +665,6 @@ impl ParakeetEngine {
             ],
         };
 
-        // Create model directory
-        let model_dir = &model_info.path;
-        if !model_dir.exists() {
-            if let Err(e) = fs::create_dir_all(model_dir).await {
-                // Remove from active downloads on error
-                let mut active = self.active_downloads.write().await;
-                active.remove(model_name);
-                return Err(anyhow!("Failed to create model directory: {}", e));
-            }
-        }
-
-        // Clean up incomplete downloads before starting
-        log::info!("Checking for incomplete model files to clean up...");
-        if let Err(e) = self.clean_incomplete_model_directory(model_dir).await {
-            log::warn!("Failed to clean incomplete model directory: {}", e);
-            // Continue anyway - we'll handle errors during download
-        }
-
         // Optimized HTTP client for large file downloads
         let client = reqwest::Client::builder()
             .tcp_nodelay(true) // Disable Nagle's algorithm for better streaming
@@ -784,19 +728,21 @@ impl ParakeetEngine {
         // Check for existing downloads (complete or partial) to calculate resume offset
         let mut already_downloaded: u64 = 0;
         for filename in &files_to_download {
-            let file_path = model_dir.join(filename);
-            if file_path.exists() {
-                if let Ok(metadata) = fs::metadata(&file_path).await {
-                    let file_size = metadata.len();
-                    let expected_size = file_sizes.get(*filename).copied().unwrap_or(0);
-                    // Count all existing bytes (complete files capped at expected size, partial as-is)
-                    // This ensures progress starts from where we left off
-                    already_downloaded += file_size.min(expected_size);
-                }
-            }
+            let part_filename = format!("{filename}.part");
+            let final_size =
+                attest_model_file(&model_dir, filename, "final Parakeet model artifact")?;
+            let partial_size = attest_model_file(
+                &model_dir,
+                &part_filename,
+                "partial Parakeet model artifact",
+            )?;
+            let file_size = final_size.or(partial_size).unwrap_or(0);
+            let expected_size = file_sizes.get(*filename).copied().unwrap_or(0);
+            already_downloaded += file_size.min(expected_size);
         }
 
         let mut total_downloaded: u64 = already_downloaded;
+        let mut downloaded_this_run: u64 = 0;
 
         // Timing for speed calculation
         let download_start_time = Instant::now();
@@ -813,28 +759,76 @@ impl ParakeetEngine {
 
         for (index, filename) in files_to_download.iter().enumerate() {
             let file_url = format!("{}/{}", base_url, filename);
-            let file_path = model_dir.join(filename);
+            let part_filename = format!("{filename}.part");
 
-            // Check for existing partial file to resume
-            let existing_size: u64 = if file_path.exists() {
-                fs::metadata(&file_path).await.map(|m| m.len()).unwrap_or(0)
-            } else {
-                0
-            };
+            mutation_lock.attest_storage()?;
 
             let expected_size = file_sizes.get(*filename).copied().unwrap_or(0);
-
-            // Skip if file is already complete (with 1% tolerance for size variations)
             let size_tolerance = (expected_size as f64 * 0.99) as u64;
-            if existing_size >= size_tolerance && expected_size > 0 {
-                log::info!(
-                    "Skipping complete file: {} ({:.2} MB, expected: {:.2} MB)",
-                    filename,
-                    existing_size as f64 / 1_048_576.0,
-                    expected_size as f64 / 1_048_576.0
-                );
-                continue;
+            if let Some(final_size) =
+                attest_model_file(&model_dir, filename, "final Parakeet model artifact")?
+            {
+                if final_size >= size_tolerance && expected_size > 0 {
+                    match crate::model_integrity::require_and_verify_confined(
+                        &model_dir,
+                        filename,
+                        crate::model_integrity::parakeet_file_sha256(filename),
+                        &format!("parakeet file '{filename}'"),
+                    ) {
+                        Ok(()) => {
+                            log::info!(
+                                "Skipping verified complete file: {} ({:.2} MB)",
+                                filename,
+                                final_size as f64 / 1_048_576.0
+                            );
+                            continue;
+                        }
+                        Err(error) => {
+                            match attest_model_file(
+                                &model_dir,
+                                filename,
+                                "rejected Parakeet model artifact",
+                            ) {
+                                Ok(None) => {
+                                    total_downloaded = total_downloaded.saturating_sub(final_size);
+                                    log::warn!(
+                                        "Rejected existing Parakeet artifact {}: {}",
+                                        filename,
+                                        error
+                                    );
+                                }
+                                Ok(Some(_)) => {
+                                    let mut active = self.active_downloads.write().await;
+                                    active.remove(model_name);
+                                    return Err(error);
+                                }
+                                Err(attestation_error) => {
+                                    let mut active = self.active_downloads.write().await;
+                                    active.remove(model_name);
+                                    return Err(attestation_error.context(format!(
+                                        "unsafe existing Parakeet artifact {filename}"
+                                    )));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    remove_model_file(
+                        &model_dir,
+                        filename,
+                        "incomplete final Parakeet model artifact",
+                    )?;
+                    total_downloaded = total_downloaded.saturating_sub(final_size);
+                }
             }
+
+            // Check for existing partial file to resume
+            let existing_size = attest_model_file(
+                &model_dir,
+                &part_filename,
+                "partial Parakeet model artifact",
+            )?
+            .unwrap_or(0);
 
             log::info!(
                 "Downloading file {}/{}: {} (resuming from {} bytes)",
@@ -859,10 +853,26 @@ impl ParakeetEngine {
             // Handle response status
             let (file_total_size, resuming) =
                 if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-                    // Server supports resume, get remaining size
-                    let remaining = response.content_length().unwrap_or(0);
-                    log::info!("Server supports resume, remaining: {} bytes", remaining);
-                    (existing_size + remaining, true)
+                    let content_range = response
+                        .headers()
+                        .get(reqwest::header::CONTENT_RANGE)
+                        .and_then(|value| value.to_str().ok());
+                    let total = match validate_resume_content_range(
+                        content_range,
+                        existing_size,
+                        response.content_length(),
+                    ) {
+                        Ok(total) => total,
+                        Err(error) => {
+                            let mut active = self.active_downloads.write().await;
+                            active.remove(model_name);
+                            return Err(error.context(format!(
+                                "refusing unsafe Parakeet resume response for {filename}"
+                            )));
+                        }
+                    };
+                    log::info!("Server supports an attested resume to {} bytes", total);
+                    (total, true)
                 } else if response.status().is_success() {
                     // Fresh download or server doesn't support resume
                     if existing_size > 0 {
@@ -870,60 +880,43 @@ impl ParakeetEngine {
                             "Server doesn't support resume for {}, starting fresh download",
                             filename
                         );
+                        total_downloaded = total_downloaded.saturating_sub(existing_size);
                     }
                     (response.content_length().unwrap_or(0), false)
                 } else if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
                     // 416: Range not satisfiable - file complete or invalid range
                     log::warn!("Server returned 416 Range Not Satisfiable for {}", filename);
 
-                    let size_tolerance = (expected_size as f64 * 0.99) as u64;
-                    if existing_size >= size_tolerance && expected_size > 0 {
-                        // File is complete - skip it
-                        log::info!(
-                            "File {} complete ({} bytes). Skipping.",
+                    log::warn!(
+                        "Partial file {} cannot be resumed ({}/{} bytes); restarting",
+                        filename,
+                        existing_size,
+                        expected_size
+                    );
+                    remove_model_file(
+                        &model_dir,
+                        &part_filename,
+                        "incomplete partial Parakeet model artifact",
+                    )?;
+                    total_downloaded = total_downloaded.saturating_sub(existing_size);
+
+                    response = client
+                        .get(&file_url)
+                        .send()
+                        .await
+                        .map_err(|e| anyhow!("Retry failed for {}: {}", filename, e))?;
+
+                    if !response.status().is_success() {
+                        let mut active = self.active_downloads.write().await;
+                        active.remove(model_name);
+                        return Err(anyhow!(
+                            "Retry failed for {} with status: {}",
                             filename,
-                            existing_size
-                        );
-                        continue;
-                    } else {
-                        // File incomplete but server won't accept range - delete and retry
-                        log::warn!(
-                            "File {} incomplete ({}/{} bytes). Deleting and retrying.",
-                            filename,
-                            existing_size,
-                            expected_size
-                        );
-
-                        if let Err(e) = fs::remove_file(&file_path).await {
-                            let mut active = self.active_downloads.write().await;
-                            active.remove(model_name);
-                            return Err(anyhow!(
-                                "Failed to delete incomplete file {}: {}",
-                                filename,
-                                e
-                            ));
-                        }
-
-                        // Retry without Range header
-                        log::info!("Retrying {} without resume", filename);
-                        response = client
-                            .get(&file_url)
-                            .send()
-                            .await
-                            .map_err(|e| anyhow!("Retry failed for {}: {}", filename, e))?;
-
-                        if !response.status().is_success() {
-                            let mut active = self.active_downloads.write().await;
-                            active.remove(model_name);
-                            return Err(anyhow!(
-                                "Retry failed for {} with status: {}",
-                                filename,
-                                response.status()
-                            ));
-                        }
-
-                        (response.content_length().unwrap_or(0), false)
+                            response.status()
+                        ));
                     }
+
+                    (response.content_length().unwrap_or(0), false)
                 } else {
                     // Other errors
                     let mut active = self.active_downloads.write().await;
@@ -936,17 +929,12 @@ impl ParakeetEngine {
                 };
 
             // Open file for writing (append if resuming, create new if not)
-            let file = if resuming {
-                fs::OpenOptions::new()
-                    .append(true)
-                    .open(&file_path)
-                    .await
-                    .map_err(|e| anyhow!("Failed to open file for resume {}: {}", filename, e))?
-            } else {
-                fs::File::create(&file_path)
-                    .await
-                    .map_err(|e| anyhow!("Failed to create file {}: {}", filename, e))?
-            };
+            let file = fs::File::from_std(open_model_file_for_write(
+                &model_dir,
+                &part_filename,
+                resuming,
+                "partial Parakeet model artifact",
+            )?);
 
             // Use buffered writer for better I/O performance (8MB buffer)
             let mut writer = BufWriter::with_capacity(8 * 1024 * 1024, file);
@@ -962,9 +950,11 @@ impl ParakeetEngine {
                     let cancel_flag = self.cancel_download_flag.read().await;
                     if cancel_flag.as_ref() == Some(&model_name.to_string()) {
                         log::info!("Download cancelled for {}", model_name);
-                        // Flush and keep partial file for resume on next attempt
                         let _ = writer.flush().await;
                         drop(writer);
+                        mutation_lock.attest_storage()?;
+                        remove_model_directory(&self.models_dir, model_name)?;
+                        mutation_lock.attest_ancestors()?;
                         // Remove from active downloads on cancellation
                         let mut active = self.active_downloads.write().await;
                         active.remove(model_name);
@@ -1043,6 +1033,22 @@ impl ParakeetEngine {
                     }
                 };
 
+                if file_total_size > 0
+                    && file_downloaded.saturating_add(chunk.len() as u64) > file_total_size
+                {
+                    drop(writer);
+                    remove_model_file(
+                        &model_dir,
+                        &part_filename,
+                        "overlong partial Parakeet model artifact",
+                    )?;
+                    let mut active = self.active_downloads.write().await;
+                    active.remove(model_name);
+                    return Err(anyhow!(
+                        "Parakeet response for {filename} exceeded its declared artifact size"
+                    ));
+                }
+
                 if let Err(e) = writer.write_all(&chunk).await {
                     // Remove from active downloads on error
                     {
@@ -1064,6 +1070,7 @@ impl ParakeetEngine {
                 let chunk_len = chunk.len() as u64;
                 file_downloaded += chunk_len;
                 total_downloaded += chunk_len;
+                downloaded_this_run += chunk_len;
                 bytes_since_last_report += chunk_len;
 
                 // Calculate weighted overall progress based on total bytes downloaded
@@ -1093,8 +1100,7 @@ impl ParakeetEngine {
                         // Fallback to overall average speed
                         let total_elapsed = download_start_time.elapsed().as_secs_f64();
                         if total_elapsed > 0.0 {
-                            ((total_downloaded - already_downloaded) as f64 / (1024.0 * 1024.0))
-                                / total_elapsed
+                            (downloaded_this_run as f64 / (1024.0 * 1024.0)) / total_elapsed
                         } else {
                             0.0
                         }
@@ -1123,6 +1129,14 @@ impl ParakeetEngine {
                 }
             }
 
+            if file_total_size > 0 && file_downloaded != file_total_size {
+                let mut active = self.active_downloads.write().await;
+                active.remove(model_name);
+                return Err(anyhow!(
+                    "Parakeet response for {filename} ended at {file_downloaded} bytes, expected {file_total_size}"
+                ));
+            }
+
             // Flush the buffered writer
             if let Err(e) = writer.flush().await {
                 // Remove from active downloads on error
@@ -1141,6 +1155,7 @@ impl ParakeetEngine {
 
                 return Err(anyhow!("Failed to flush file {}: {}", filename, e));
             }
+            drop(writer);
 
             log::info!(
                 "Completed download: {} ({:.2} MB, overall progress: {:.1}%)",
@@ -1149,34 +1164,30 @@ impl ParakeetEngine {
                 (total_downloaded as f64 / total_size_bytes as f64) * 100.0
             );
 
-            // Integrity: pin each binary/text artifact (v3 HF LFS OIDs).
-            // FP32 also pulls encoder-model.onnx.data alongside encoder-model.onnx.
-            let files_to_verify: Vec<&str> = if *filename == "encoder-model.onnx" {
-                vec![filename, "encoder-model.onnx.data"]
-            } else {
-                vec![filename]
-            };
-            for verify_name in files_to_verify {
-                let verify_path = model_dir.join(verify_name);
-                if !verify_path.exists() {
-                    continue;
-                }
-                if let Err(e) = crate::model_integrity::require_and_verify(
-                    &verify_path,
-                    crate::model_integrity::parakeet_file_sha256(verify_name),
-                    &format!("parakeet file '{verify_name}'"),
-                ) {
-                    let mut active = self.active_downloads.write().await;
-                    active.remove(model_name);
-                    return Err(e);
-                }
+            mutation_lock.attest_storage()?;
+            if let Err(error) = crate::model_integrity::verify_and_publish_confined(
+                &model_dir,
+                &part_filename,
+                filename,
+                crate::model_integrity::parakeet_file_sha256(filename),
+                &format!("parakeet file '{filename}'"),
+            ) {
+                let mut active = self.active_downloads.write().await;
+                active.remove(model_name);
+                return Err(error);
             }
+            mutation_lock.attest_storage()?;
+            attest_model_file(&model_dir, filename, "verified Parakeet model artifact")?
+                .ok_or_else(|| anyhow!("verified Parakeet artifact disappeared"))?;
         }
+
+        self.validate_model_directory(&model_dir).await?;
+        mutation_lock.attest_storage()?;
 
         // Report 100% progress with final speed
         let total_elapsed = download_start_time.elapsed().as_secs_f64();
         let final_speed = if total_elapsed > 0.0 {
-            ((total_downloaded - already_downloaded) as f64 / (1024.0 * 1024.0)) / total_elapsed
+            (downloaded_this_run as f64 / (1024.0 * 1024.0)) / total_elapsed
         } else {
             0.0
         };
@@ -1239,17 +1250,15 @@ impl ParakeetEngine {
         // Clean up partially downloaded files
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Brief delay to let download loop exit
 
-        let model_path = self.models_dir.join(model_name);
-        if model_path.exists() {
-            if let Err(e) = fs::remove_dir_all(&model_path).await {
-                log::warn!("Failed to clean up cancelled download directory: {}", e);
-            } else {
-                log::info!(
-                    "Cleaned up cancelled download directory: {}",
-                    model_path.display()
-                );
-            }
-        }
+        let mutation_lock =
+            match ModelMutationLock::try_acquire(self.models_root()?, "parakeet", model_name) {
+                Ok(lock) => lock,
+                Err(error) if is_model_mutation_busy(&error) => return Ok(()),
+                Err(error) => return Err(error),
+            };
+        let provider_directory = mutation_lock.provider_directory()?;
+        remove_model_directory(&provider_directory, model_name)?;
+        mutation_lock.attest_ancestors()?;
 
         Ok(())
     }

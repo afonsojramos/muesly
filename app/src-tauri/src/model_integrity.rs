@@ -19,10 +19,8 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// Stream-hash a file on disk (avoids loading multi-GB models into memory).
-pub fn sha256_file(path: &Path) -> Result<String> {
+fn sha256_opened_file(file: &mut std::fs::File) -> Result<String> {
     use sha2::{Digest, Sha256};
-    let mut file = std::fs::File::open(path)
-        .with_context(|| format!("open {} for hashing", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 1024 * 1024];
     loop {
@@ -33,6 +31,15 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+/// Stream-hash a file on disk (avoids loading multi-GB models into memory).
+pub fn sha256_file(path: &Path) -> Result<String> {
+    let mut file = crate::model_storage::open_attested_file_for_read(path, "model artifact")
+        .with_context(|| format!("open {} for hashing", path.display()))?;
+    let digest = sha256_opened_file(&mut file)?;
+    crate::model_storage::attest_opened_file(path, &file, "hashed model artifact")?;
+    Ok(digest)
 }
 
 /// Verify in-memory bytes against a pinned hex digest. Empty pin fails closed.
@@ -189,6 +196,82 @@ pub fn require_and_verify(path: &Path, expected: Option<&str>, label: &str) -> R
     Ok(())
 }
 
+/// Require and verify a direct provider artifact, deleting only that confined
+/// single-link file on failure.
+pub fn require_and_verify_confined(
+    parent: &Path,
+    filename: &str,
+    expected: Option<&str>,
+    label: &str,
+) -> Result<()> {
+    let path = parent.join(filename);
+    crate::model_storage::attest_model_file(parent, filename, label)?
+        .ok_or_else(|| anyhow!("{label} is missing: {}", path.display()))?;
+    let result = expected
+        .filter(|pin| !pin.is_empty())
+        .ok_or_else(|| {
+            anyhow!(
+                "no pinned SHA-256 for {label}; refusing to accept {}",
+                path.display()
+            )
+        })
+        .and_then(|pin| {
+            verify_file_sha256(&path, pin)
+                .with_context(|| format!("integrity check failed for {label}"))
+        });
+    if let Err(error) = result {
+        crate::model_storage::remove_model_file(parent, filename, label)
+            .with_context(|| format!("securely remove rejected {label}"))?;
+        return Err(error);
+    }
+    crate::model_storage::attest_model_file(parent, filename, label)?
+        .ok_or_else(|| anyhow!("{label} disappeared after verification"))?;
+    Ok(())
+}
+
+/// Verify a confined partial artifact before atomically publishing it under the
+/// filename observed by model discovery and loading.
+pub fn verify_and_publish_confined(
+    parent: &Path,
+    partial_filename: &str,
+    final_filename: &str,
+    expected: Option<&str>,
+    label: &str,
+) -> Result<()> {
+    let path = parent.join(partial_filename);
+    let Some(pin) = expected.filter(|pin| !pin.is_empty()) else {
+        crate::model_storage::remove_model_file(parent, partial_filename, label)?;
+        return Err(anyhow!(
+            "no pinned SHA-256 for {label}; refusing to accept {}",
+            path.display()
+        ));
+    };
+    crate::model_storage::attest_model_file(parent, partial_filename, label)?
+        .ok_or_else(|| anyhow!("{label} is missing: {}", path.display()))?;
+    let mut file = crate::model_storage::open_attested_file_for_read(&path, label)?;
+    let actual = sha256_opened_file(&mut file)?;
+    crate::model_storage::attest_opened_file(&path, &file, label)?;
+    if !actual.eq_ignore_ascii_case(pin) {
+        drop(file);
+        crate::model_storage::remove_model_file(parent, partial_filename, label)?;
+        return Err(anyhow!(
+            "SHA-256 mismatch for {}: expected {}, got {}",
+            path.display(),
+            pin,
+            actual
+        ));
+    }
+    crate::model_storage::rename_opened_model_file(
+        parent,
+        partial_filename,
+        final_filename,
+        &file,
+    )?;
+    crate::model_storage::attest_model_file(parent, final_filename, label)?
+        .ok_or_else(|| anyhow!("{label} disappeared after publication"))?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,5 +387,58 @@ mod tests {
         );
         assert!(err.is_err());
         assert!(!path.exists(), "mismatched file must be deleted");
+    }
+
+    #[test]
+    fn confined_verification_rejects_hardlinked_artifacts_without_deleting_aliases() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bad.bin");
+        let alias = outside.path().join("alias.bin");
+        std::fs::write(&path, b"abc").unwrap();
+        std::fs::hard_link(&path, &alias).unwrap();
+
+        let error = require_and_verify_confined(
+            dir.path(),
+            "bad.bin",
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177b7acdd1b1919c6e1b21"),
+            "test artifact",
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("single-link"));
+        assert!(path.exists());
+        assert!(alias.exists());
+    }
+
+    #[test]
+    fn confined_publication_never_exposes_unverified_partial_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("model.bin.part"), b"untrusted").unwrap();
+
+        assert!(
+            verify_and_publish_confined(
+                dir.path(),
+                "model.bin.part",
+                "model.bin",
+                Some("ba7816bf8f01cfea414140de5dae2223b00361a396177b7acdd1b1919c6e1b21"),
+                "test artifact",
+            )
+            .is_err()
+        );
+        assert!(!dir.path().join("model.bin.part").exists());
+        assert!(!dir.path().join("model.bin").exists());
+
+        std::fs::write(dir.path().join("model.bin.part"), b"abc").unwrap();
+        verify_and_publish_confined(
+            dir.path(),
+            "model.bin.part",
+            "model.bin",
+            Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"),
+            "test artifact",
+        )
+        .unwrap();
+        assert!(!dir.path().join("model.bin.part").exists());
+        assert_eq!(std::fs::read(dir.path().join("model.bin")).unwrap(), b"abc");
     }
 }

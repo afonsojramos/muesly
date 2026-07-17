@@ -33,6 +33,7 @@ pub mod keychain;
 pub mod meeting_detect;
 pub mod model_idle;
 pub mod model_integrity;
+pub mod model_storage;
 pub mod notifications;
 pub mod onboarding;
 pub mod parakeet_engine;

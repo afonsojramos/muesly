@@ -4,6 +4,10 @@ use super::acceleration::{
     WhisperCompiledBackend, verify_gpu_backend_available, whisper_context_acceleration_for,
 };
 use crate::config::WHISPER_MODEL_CATALOG;
+use crate::model_storage::{
+    ModelMutationLock, attest_model_file, is_model_mutation_busy, open_model_file_for_write,
+    remove_model_file, validate_resume_content_range,
+};
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -219,6 +223,8 @@ impl WhisperEngine {
                     .join("models")
             }
         };
+        let models_dir = crate::model_storage::prepare_models_root(&models_dir)?;
+        let models_dir = crate::model_storage::provider_directory(&models_dir, "whisper")?;
 
         log::info!(
             "WhisperEngine using models directory: {}",
@@ -280,81 +286,51 @@ impl WhisperEngine {
 
         for &(name, filename, size_mb, accuracy, speed, description) in model_configs {
             let model_path = models_dir.join(filename);
-            let status = if model_path.exists() {
-                // Check if file size is reasonable (at least 1MB for a valid model)
-                match std::fs::metadata(&model_path) {
-                    Ok(metadata) => {
-                        let file_size_bytes = metadata.len();
-                        let file_size_mb = file_size_bytes / (1024 * 1024);
-                        let expected_min_size_mb = (size_mb as f64 * 0.9) as u64; // Allow 90% of expected size as minimum for more accurate corruption detection
-
-                        if file_size_mb >= expected_min_size_mb && file_size_mb > 1 {
-                            // File size looks good, but let's also check if it's a valid GGML file
-                            match self.validate_model_file(&model_path).await {
-                                Ok(_) => ModelStatus::Available,
-                                Err(_) => {
-                                    log::warn!(
-                                        "Model file {} has correct size but appears corrupted (failed validation)",
-                                        filename
-                                    );
-                                    ModelStatus::Corrupted {
-                                        file_size: file_size_bytes,
-                                        expected_min_size: (expected_min_size_mb * 1024 * 1024)
-                                            as u64,
-                                    }
-                                }
-                            }
-                        } else if file_size_mb > 0 {
-                            // File exists but is smaller than expected
-                            // Check if this model is currently being downloaded
-                            let models_guard = self.available_models.read().await;
-                            if let Some(existing_model) = models_guard.get(name) {
-                                match &existing_model.status {
-                                    ModelStatus::Downloading { progress } => {
-                                        log::debug!(
-                                            "Model {} appears to be downloading ({} MB so far, {}% complete)",
-                                            filename,
-                                            file_size_mb,
-                                            progress
-                                        );
-                                        ModelStatus::Downloading {
-                                            progress: *progress,
-                                        }
-                                    }
-                                    _ => {
-                                        log::warn!(
-                                            "Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
-                                            filename,
-                                            file_size_mb,
-                                            size_mb
-                                        );
-                                        ModelStatus::Corrupted {
-                                            file_size: file_size_bytes,
-                                            expected_min_size: (expected_min_size_mb * 1024 * 1024)
-                                                as u64,
-                                        }
-                                    }
-                                }
-                            } else {
+            let expected_min_size_mb = (size_mb as f64 * 0.9) as u64;
+            let status = match attest_model_file(models_dir, filename, "Whisper model artifact") {
+                Ok(Some(file_size_bytes)) => {
+                    let file_size_mb = file_size_bytes / (1024 * 1024);
+                    if file_size_mb >= expected_min_size_mb && file_size_mb > 1 {
+                        match self.validate_model_file(&model_path).await {
+                            Ok(_) => ModelStatus::Available,
+                            Err(error) => {
                                 log::warn!(
-                                    "Model file {} exists but is corrupted ({} MB, expected ~{} MB)",
+                                    "Model file {} failed secure validation: {}",
                                     filename,
-                                    file_size_mb,
-                                    size_mb
+                                    error
                                 );
                                 ModelStatus::Corrupted {
                                     file_size: file_size_bytes,
-                                    expected_min_size: (expected_min_size_mb * 1024 * 1024) as u64,
+                                    expected_min_size: expected_min_size_mb * 1024 * 1024,
                                 }
                             }
-                        } else {
-                            ModelStatus::Missing
                         }
+                    } else if file_size_mb > 0 {
+                        let models_guard = self.available_models.read().await;
+                        if let Some(ModelStatus::Downloading { progress }) =
+                            models_guard.get(name).map(|model| &model.status)
+                        {
+                            ModelStatus::Downloading {
+                                progress: *progress,
+                            }
+                        } else {
+                            ModelStatus::Corrupted {
+                                file_size: file_size_bytes,
+                                expected_min_size: expected_min_size_mb * 1024 * 1024,
+                            }
+                        }
+                    } else {
+                        ModelStatus::Missing
                     }
-                    Err(_) => ModelStatus::Missing,
                 }
-            } else {
-                ModelStatus::Missing
+                Ok(None) => ModelStatus::Missing,
+                Err(error) => {
+                    log::warn!("Rejected unsafe Whisper model {}: {}", filename, error);
+                    ModelStatus::Corrupted {
+                        file_size: 0,
+                        expected_min_size: expected_min_size_mb * 1024 * 1024,
+                    }
+                }
             };
 
             let model_info = WhisperModelInfo {
@@ -405,6 +381,14 @@ impl WhisperEngine {
                 }
 
                 log::info!("Loading model: {}", model_name);
+
+                let filename = WHISPER_MODEL_CATALOG
+                    .iter()
+                    .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+                    .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
+                attest_model_file(&self.models_dir, filename, "Whisper model before load")?
+                    .ok_or_else(|| anyhow!("Whisper model disappeared before load"))?;
+                let model_path = self.models_dir.join(filename).to_string_lossy().to_string();
 
                 // PERFORMANCE OPTIMIZATION: Use comprehensive hardware profile for optimal GPU configuration
                 let hardware_profile = crate::audio::HardwareProfile::detect();
@@ -466,8 +450,6 @@ impl WhisperEngine {
                     acceleration.flash_attn,
                     acceleration.gpu_device,
                 );
-
-                let model_path = model_info.path.to_string_lossy().to_string();
 
                 // Load whisper context with hardware-optimized parameters. If GPU
                 // loading fails (missing/broken driver, incompatible flash-attn), fall
@@ -1374,9 +1356,11 @@ impl WhisperEngine {
     async fn validate_model_file(&self, model_path: &PathBuf) -> Result<()> {
         use tokio::io::AsyncReadExt;
 
-        let mut file = fs::File::open(model_path)
-            .await
-            .map_err(|e| anyhow!("Failed to open model file: {}", e))?;
+        let standard_file = crate::model_storage::open_attested_file_for_read(
+            model_path,
+            "Whisper model artifact",
+        )?;
+        let mut file = fs::File::from_std(standard_file);
 
         // Read the first 8 bytes to check for GGML magic number
         let mut buffer = [0u8; 8];
@@ -1385,13 +1369,19 @@ impl WhisperEngine {
             .map_err(|e| anyhow!("Failed to read model file header: {}", e))?;
 
         // Check for GGML magic number (various versions and endianness)
-        if buffer.starts_with(b"ggml")
+        let valid = buffer.starts_with(b"ggml")
             || buffer.starts_with(b"GGUF")
             || buffer.starts_with(b"ggmf")
             || buffer.starts_with(b"lmgg")
             || buffer.starts_with(b"FUGU")
-            || buffer.starts_with(b"fmgg")
-        {
+            || buffer.starts_with(b"fmgg");
+        let standard_file = file.into_std().await;
+        crate::model_storage::attest_opened_file(
+            model_path,
+            &standard_file,
+            "validated Whisper model artifact",
+        )?;
+        if valid {
             Ok(())
         } else {
             Err(anyhow!(
@@ -1411,6 +1401,13 @@ impl WhisperEngine {
         };
 
         let model_info = model_info.ok_or_else(|| anyhow!("Model '{}' not found", model_name))?;
+        let filename = WHISPER_MODEL_CATALOG
+            .iter()
+            .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
+        let mutation_lock =
+            ModelMutationLock::try_acquire(&self.models_dir, "whisper", model_name)?;
+        let provider_directory = mutation_lock.provider_directory()?;
 
         // Check if model is corrupted before allowing deletion
         log::info!("Model '{}' has status: {:?}", model_name, model_info.status);
@@ -1427,14 +1424,7 @@ impl WhisperEngine {
                 );
 
                 // Delete the file
-                if model_info.path.exists() {
-                    fs::remove_file(&model_info.path).await.map_err(|e| {
-                        anyhow!(
-                            "Failed to delete file '{}': {}",
-                            model_info.path.display(),
-                            e
-                        )
-                    })?;
+                if remove_model_file(&provider_directory, filename, "corrupted Whisper model")? {
                     log::info!(
                         "Successfully deleted corrupted file: {}",
                         model_info.path.display()
@@ -1445,6 +1435,7 @@ impl WhisperEngine {
                         model_info.path.display()
                     );
                 }
+                mutation_lock.attest_storage()?;
 
                 // Update model status to Missing
                 {
@@ -1463,14 +1454,7 @@ impl WhisperEngine {
                 // Allow deletion of available models for testing/cleanup
                 log::info!("Deleting available model '{}' (for cleanup)", model_name);
 
-                if model_info.path.exists() {
-                    fs::remove_file(&model_info.path).await.map_err(|e| {
-                        anyhow!(
-                            "Failed to delete file '{}': {}",
-                            model_info.path.display(),
-                            e
-                        )
-                    })?;
+                if remove_model_file(&provider_directory, filename, "Whisper model")? {
                     log::info!(
                         "Successfully deleted available model file: {}",
                         model_info.path.display()
@@ -1481,6 +1465,7 @@ impl WhisperEngine {
                         model_info.path.display()
                     );
                 }
+                mutation_lock.attest_storage()?;
 
                 // Update model status to Missing
                 {
@@ -1507,6 +1492,14 @@ impl WhisperEngine {
     ) -> Result<()> {
         log::info!("Starting download for model: {}", model_name);
 
+        let filename = WHISPER_MODEL_CATALOG
+            .iter()
+            .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
+        let mutation_lock =
+            ModelMutationLock::try_acquire(&self.models_dir, "whisper", model_name)?;
+        let provider_directory = mutation_lock.provider_directory()?;
+
         // Check if download is already in progress for this model
         {
             let active = self.active_downloads.read().await;
@@ -1531,10 +1524,6 @@ impl WhisperEngine {
             *cancel_flag = None;
         }
 
-        let filename = WHISPER_MODEL_CATALOG
-            .iter()
-            .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
-            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
         // Official ggerganov/whisper.cpp artifact at a pinned Hugging Face
         // revision. The independent SHA-256 pin still verifies raw contents.
         let model_url = format!(
@@ -1543,25 +1532,19 @@ impl WhisperEngine {
 
         log::info!("Model URL for {}: {}", model_name, model_url);
 
-        let file_path = self.models_dir.join(filename);
+        let file_path = provider_directory.join(filename);
         // Download into a `.part` file and atomically rename on success. A crash or
         // cancellation then leaves a `.part` file that `discover_models` ignores
         // (it only matches `ggml-*.bin`), instead of a truncated file at the real
         // path that could pass the header check and fail at load time.
-        let part_path = self.models_dir.join(format!("{filename}.part"));
+        let part_filename = format!("{filename}.part");
+        let part_path = provider_directory.join(&part_filename);
 
         log::info!(
             "Downloading to file path: {} (via {})",
             file_path.display(),
             part_path.display()
         );
-
-        // Create models directory if it doesn't exist
-        if !self.models_dir.exists() {
-            fs::create_dir_all(&self.models_dir)
-                .await
-                .map_err(|e| anyhow!("Failed to create models directory: {}", e))?;
-        }
 
         // Update model status to downloading
         {
@@ -1575,10 +1558,9 @@ impl WhisperEngine {
         let client = crate::providers::common::http_client();
 
         // Check for an existing partial file so we can resume.
-        let existing_size = match fs::metadata(&part_path).await {
-            Ok(m) => m.len(),
-            Err(_) => 0,
-        };
+        let existing_size =
+            attest_model_file(&provider_directory, &part_filename, "partial Whisper model")?
+                .unwrap_or(0);
 
         // Build the request with an optional Range header for resume.
         let mut request = client.get(&model_url);
@@ -1600,10 +1582,24 @@ impl WhisperEngine {
         log::info!("Received response with status: {}", response.status());
 
         let (total_size, resuming) = if response.status() == reqwest::StatusCode::PARTIAL_CONTENT {
-            // Server supports resume; remaining bytes come after what we already have.
-            let remaining = response.content_length().unwrap_or(0);
-            log::info!("Server supports resume, remaining: {} bytes", remaining);
-            (existing_size + remaining, true)
+            let content_range = response
+                .headers()
+                .get(reqwest::header::CONTENT_RANGE)
+                .and_then(|value| value.to_str().ok());
+            let total = match validate_resume_content_range(
+                content_range,
+                existing_size,
+                response.content_length(),
+            ) {
+                Ok(total) => total,
+                Err(error) => {
+                    let mut active = self.active_downloads.write().await;
+                    active.remove(model_name);
+                    return Err(error.context("refusing unsafe Whisper resume response"));
+                }
+            };
+            log::info!("Server supports an attested resume to {} bytes", total);
+            (total, true)
         } else if response.status().is_success() {
             // Fresh download or server ignored the Range header.
             if existing_size > 0 {
@@ -1619,7 +1615,7 @@ impl WhisperEngine {
                 "416 for {}; deleting partial and retrying fresh",
                 model_name
             );
-            let _ = fs::remove_file(&part_path).await;
+            remove_model_file(&provider_directory, &part_filename, "partial Whisper model")?;
             response = client
                 .get(&model_url)
                 .send()
@@ -1670,17 +1666,12 @@ impl WhisperEngine {
             }
         }
 
-        let mut file = if resuming {
-            fs::OpenOptions::new()
-                .append(true)
-                .open(&part_path)
-                .await
-                .map_err(|e| anyhow!("Failed to open partial file for resume: {}", e))?
-        } else {
-            fs::File::create(&part_path)
-                .await
-                .map_err(|e| anyhow!("Failed to create file: {}", e))?
-        };
+        let mut file = fs::File::from_std(open_model_file_for_write(
+            &provider_directory,
+            &part_filename,
+            resuming,
+            "partial Whisper model",
+        )?);
 
         log::info!(
             "File opened at: {} (resuming: {})",
@@ -1717,12 +1708,31 @@ impl WhisperEngine {
                     active.remove(model_name);
                     // Drop the open handle and delete the partial file.
                     drop(file);
-                    let _ = fs::remove_file(&part_path).await;
+                    remove_model_file(
+                        &provider_directory,
+                        &part_filename,
+                        "partial Whisper model",
+                    )?;
+                    mutation_lock.attest_storage()?;
                     return Err(anyhow!("Download cancelled by user"));
                 }
             }
 
             let chunk = chunk_result.map_err(|e| anyhow!("Failed to read chunk: {}", e))?;
+
+            if total_size > 0 && downloaded.saturating_add(chunk.len() as u64) > total_size {
+                drop(file);
+                remove_model_file(
+                    &provider_directory,
+                    &part_filename,
+                    "overlong partial Whisper model",
+                )?;
+                let mut active = self.active_downloads.write().await;
+                active.remove(model_name);
+                return Err(anyhow!(
+                    "Whisper response exceeded its declared artifact size"
+                ));
+            }
 
             file.write_all(&chunk)
                 .await
@@ -1732,7 +1742,7 @@ impl WhisperEngine {
 
             // Calculate progress
             let progress = if total_size > 0 {
-                ((downloaded as f64 / total_size as f64) * 100.0) as u8
+                ((downloaded as f64 / total_size as f64) * 100.0).min(100.0) as u8
             } else {
                 0
             };
@@ -1770,6 +1780,14 @@ impl WhisperEngine {
 
         log::info!("Streaming download completed: {} bytes", downloaded);
 
+        if total_size > 0 && downloaded != total_size {
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(anyhow!(
+                "Whisper response ended at {downloaded} bytes, expected {total_size}"
+            ));
+        }
+
         // Ensure 100% progress is always reported
         {
             let mut models = self.available_models.write().await;
@@ -1788,14 +1806,13 @@ impl WhisperEngine {
         // Close the handle before renaming so all data is on disk.
         drop(file);
 
-        // Atomically move the completed download into place.
-        fs::rename(&part_path, &file_path)
-            .await
-            .map_err(|e| anyhow!("Failed to finalize downloaded model: {}", e))?;
-
-        // Fail closed: refuse models without a pinned SHA-256, delete on mismatch.
-        if let Err(e) = crate::model_integrity::require_and_verify(
-            &file_path,
+        // Verify the private `.part` file before publishing it at the filename
+        // observed by discovery/load readers.
+        mutation_lock.attest_storage()?;
+        if let Err(e) = crate::model_integrity::verify_and_publish_confined(
+            &provider_directory,
+            &part_filename,
+            filename,
             crate::model_integrity::whisper_model_sha256(model_name),
             &format!("whisper model '{model_name}'"),
         ) {
@@ -1803,6 +1820,9 @@ impl WhisperEngine {
             active.remove(model_name);
             return Err(e);
         }
+        mutation_lock.attest_storage()?;
+        attest_model_file(&provider_directory, filename, "verified Whisper model")?
+            .ok_or_else(|| anyhow!("verified Whisper model disappeared"))?;
 
         log::info!("Download completed for model: {}", model_name);
 
@@ -1850,29 +1870,28 @@ impl WhisperEngine {
         // Clean up partially downloaded files
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; // Brief delay to let download loop detect cancellation
 
-        // The in-progress download lives at `{filename}.part`; the download loop
-        // also removes it on cancellation, but clean up here as a backstop. Remove
-        // any stray final file too.
-        let filename = format!("ggml-{}.bin", model_name);
-        for candidate in [
-            self.models_dir.join(format!("{}.part", filename)),
-            self.models_dir.join(&filename),
-        ] {
-            if candidate.exists() {
-                if let Err(e) = fs::remove_file(&candidate).await {
-                    log::warn!(
-                        "Failed to clean up cancelled download file {}: {}",
-                        candidate.display(),
-                        e
-                    );
-                } else {
-                    log::info!(
-                        "Cleaned up cancelled download file: {}",
-                        candidate.display()
-                    );
-                }
-            }
+        // The download loop owns cleanup while its cross-process lock is held.
+        // If ownership has already ended, take that same lock before removing
+        // any residual partial/final artifact.
+        let mutation_lock =
+            match ModelMutationLock::try_acquire(&self.models_dir, "whisper", model_name) {
+                Ok(lock) => lock,
+                Err(error) if is_model_mutation_busy(&error) => return Ok(()),
+                Err(error) => return Err(error),
+            };
+        let provider_directory = mutation_lock.provider_directory()?;
+        let filename = WHISPER_MODEL_CATALOG
+            .iter()
+            .find_map(|entry| (entry.0 == model_name).then_some(entry.1))
+            .ok_or_else(|| anyhow!("Unsupported model: {}", model_name))?;
+        for candidate in [format!("{filename}.part"), filename.to_string()] {
+            remove_model_file(
+                &provider_directory,
+                &candidate,
+                "cancelled Whisper model artifact",
+            )?;
         }
+        mutation_lock.attest_storage()?;
 
         Ok(())
     }
