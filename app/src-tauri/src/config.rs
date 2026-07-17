@@ -162,6 +162,10 @@ mod tests {
         schema_version: u8,
         reference_protocol_id: String,
         coverage_mode: String,
+        #[serde(default)]
+        sample_ids: Vec<String>,
+        #[serde(default)]
+        repetitions: Option<u8>,
         benchmark_variants: Vec<CorpusBenchmarkVariant>,
     }
 
@@ -310,5 +314,148 @@ mod tests {
             actual, expected,
             "the committed corpus baseline must measure the exact shipped comparison matrix"
         );
+    }
+
+    #[test]
+    fn public_policy_targets_track_primary_recommendations_and_selected_fallbacks() {
+        let targets: CorpusTargets = serde_json::from_str(include_str!(
+            "../../scripts/eval/public-corpus-targets-automatic-policy.json"
+        ))
+        .expect("committed public Automatic-policy targets must be valid JSON");
+        assert_eq!(targets.schema_version, 3);
+        assert_eq!(targets.reference_protocol_id, "muesly-meeting-reference-v1");
+        assert_eq!(targets.coverage_mode, "explicit-samples");
+        assert_eq!(targets.sample_ids.len(), 66);
+        assert_eq!(targets.repetitions.unwrap_or(1), 1);
+
+        let available_whisper = WHISPER_MODEL_CATALOG
+            .iter()
+            .map(|entry| entry.0.to_string())
+            .collect::<Vec<_>>();
+        let available_parakeet = vec![DEFAULT_PARAKEET_MODEL.to_string()];
+        let mut tier_recommendations = Vec::new();
+        for tier in [
+            PerformanceTier::Low,
+            PerformanceTier::Medium,
+            PerformanceTier::High,
+            PerformanceTier::Ultra,
+        ] {
+            let hardware = profile(tier);
+            let resolved = crate::transcription_models::choose_automatic_transcription_model(
+                &hardware,
+                &available_whisper,
+                &available_parakeet,
+                false,
+            )
+            .expect("the shipped catalog must resolve non-translation Automatic transcription");
+            assert_eq!(resolved.provider, "localWhisper");
+            assert_eq!(resolved.model, recommended_whisper_model(&hardware));
+            tier_recommendations.push(resolved.model);
+        }
+        assert_eq!(tier_recommendations[2], tier_recommendations[3]);
+
+        let high_profile = profile(PerformanceTier::High);
+        let medium_fallback = crate::transcription_models::choose_automatic_transcription_model(
+            &high_profile,
+            &["medium-q5_0".to_string()],
+            &[],
+            false,
+        )
+        .expect("High Automatic selection must retain its quantized Medium fallback");
+        assert_eq!(medium_fallback.provider, "localWhisper");
+        let large_fallback = crate::transcription_models::choose_automatic_transcription_model(
+            &high_profile,
+            &["large-v3-q5_0".to_string()],
+            &[],
+            false,
+        )
+        .expect("Automatic selection must retain a downloaded compatible Whisper fallback");
+        assert_eq!(large_fallback.provider, "localWhisper");
+        let parakeet_fallback = crate::transcription_models::choose_automatic_transcription_model(
+            &high_profile,
+            &[large_fallback.model.clone()],
+            &available_parakeet,
+            false,
+        )
+        .expect("Automatic selection must retain the Parakeet fallback");
+        assert_eq!(parakeet_fallback.provider, "parakeet");
+
+        for variant in &targets.benchmark_variants {
+            match variant.provider.as_str() {
+                "whisper" => {
+                    assert!(
+                        WHISPER_MODEL_CATALOG
+                            .iter()
+                            .any(|entry| entry.0 == variant.model),
+                        "public policy target references an unsupported Whisper model: {}",
+                        variant.model
+                    );
+                    assert!(
+                        crate::model_integrity::whisper_model_sha256(&variant.model).is_some(),
+                        "public policy target Whisper model has no integrity pin: {}",
+                        variant.model
+                    );
+                }
+                "parakeet" => {
+                    assert_eq!(variant.model, DEFAULT_PARAKEET_MODEL);
+                    let files =
+                        crate::model_integrity::parakeet_model_artifact_files(&variant.model)
+                            .expect("public policy Parakeet model must have a pinned artifact set");
+                    for filename in files {
+                        assert!(
+                            crate::model_integrity::parakeet_file_sha256(filename).is_some(),
+                            "public policy Parakeet file has no integrity pin: {filename}"
+                        );
+                    }
+                }
+                provider => {
+                    panic!("public policy target references an unsupported provider: {provider}")
+                }
+            }
+        }
+
+        let actual = targets
+            .benchmark_variants
+            .into_iter()
+            .map(|variant| (variant.provider, variant.model, variant.backend))
+            .collect::<BTreeSet<_>>();
+        let expected = BTreeSet::from([
+            (
+                "whisper".to_string(),
+                tier_recommendations[0].clone(),
+                "cpu".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                tier_recommendations[1].clone(),
+                "cpu".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                medium_fallback.model,
+                "cpu".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                tier_recommendations[2].clone(),
+                "cpu".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                tier_recommendations[2].clone(),
+                "metal".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                large_fallback.model,
+                "metal".to_string(),
+            ),
+            (
+                "parakeet".to_string(),
+                parakeet_fallback.model,
+                "onnx-cpu".to_string(),
+            ),
+        ]);
+        assert_eq!(actual, expected, "public policy backend matrix drifted");
     }
 }

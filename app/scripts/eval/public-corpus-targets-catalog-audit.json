@@ -1,0 +1,56 @@
+{
+	"schema_version": 3,
+	"target_id": "public-asr-catalog-audit-v1",
+	"reference_protocol_id": "muesly-meeting-reference-v1",
+	"description": "Fixed multilingual and natural-speech compatibility audit for every shipped Whisper artifact outside the primary quantized policy set.",
+	"coverage_mode": "explicit-samples",
+	"sample_ids": [
+		"en-ami-en2001a-natural-office",
+		"en-earnings21-4320211-natural-remote-call",
+		"es-fleurs-01-clean-read",
+		"es-fleurs-01-synthetic-office",
+		"pt-fleurs-01-clean-read",
+		"pt-fleurs-01-synthetic-remote-call",
+		"fr-fleurs-01-clean-read",
+		"fr-fleurs-01-synthetic-overlap",
+		"de-fleurs-01-clean-read",
+		"de-fleurs-01-synthetic-office"
+	],
+	"benchmark_variants": [
+		{
+			"provider": "whisper",
+			"model": "tiny-q5_1",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "tiny",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "base",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "small",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "medium",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3-turbo",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3",
+			"backend": "cpu"
+		}
+	]
+}

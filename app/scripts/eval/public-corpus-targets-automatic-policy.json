@@ -1,0 +1,112 @@
+{
+	"schema_version": 3,
+	"target_id": "public-asr-automatic-policy-v1",
+	"reference_protocol_id": "muesly-meeting-reference-v1",
+	"description": "Quality qualification for every product-relevant quantized transcription candidate across the complete reproducible public ASR corpus.",
+	"coverage_mode": "explicit-samples",
+	"sample_ids": [
+		"en-fleurs-01-clean-read",
+		"en-fleurs-01-synthetic-office",
+		"en-fleurs-01-synthetic-remote-call",
+		"en-fleurs-01-synthetic-overlap",
+		"en-fleurs-02-clean-read",
+		"en-fleurs-02-synthetic-office",
+		"en-fleurs-02-synthetic-remote-call",
+		"en-fleurs-02-synthetic-overlap",
+		"en-fleurs-03-clean-read",
+		"en-fleurs-03-synthetic-office",
+		"en-fleurs-03-synthetic-remote-call",
+		"en-fleurs-03-synthetic-overlap",
+		"es-fleurs-01-clean-read",
+		"es-fleurs-01-synthetic-office",
+		"es-fleurs-01-synthetic-remote-call",
+		"es-fleurs-01-synthetic-overlap",
+		"es-fleurs-02-clean-read",
+		"es-fleurs-02-synthetic-office",
+		"es-fleurs-02-synthetic-remote-call",
+		"es-fleurs-02-synthetic-overlap",
+		"es-fleurs-03-clean-read",
+		"es-fleurs-03-synthetic-office",
+		"es-fleurs-03-synthetic-remote-call",
+		"es-fleurs-03-synthetic-overlap",
+		"pt-fleurs-01-clean-read",
+		"pt-fleurs-01-synthetic-office",
+		"pt-fleurs-01-synthetic-remote-call",
+		"pt-fleurs-01-synthetic-overlap",
+		"pt-fleurs-02-clean-read",
+		"pt-fleurs-02-synthetic-office",
+		"pt-fleurs-02-synthetic-remote-call",
+		"pt-fleurs-02-synthetic-overlap",
+		"pt-fleurs-03-clean-read",
+		"pt-fleurs-03-synthetic-office",
+		"pt-fleurs-03-synthetic-remote-call",
+		"pt-fleurs-03-synthetic-overlap",
+		"fr-fleurs-01-clean-read",
+		"fr-fleurs-01-synthetic-office",
+		"fr-fleurs-01-synthetic-remote-call",
+		"fr-fleurs-01-synthetic-overlap",
+		"fr-fleurs-02-clean-read",
+		"fr-fleurs-02-synthetic-office",
+		"fr-fleurs-02-synthetic-remote-call",
+		"fr-fleurs-02-synthetic-overlap",
+		"fr-fleurs-03-clean-read",
+		"fr-fleurs-03-synthetic-office",
+		"fr-fleurs-03-synthetic-remote-call",
+		"fr-fleurs-03-synthetic-overlap",
+		"de-fleurs-01-clean-read",
+		"de-fleurs-01-synthetic-office",
+		"de-fleurs-01-synthetic-remote-call",
+		"de-fleurs-01-synthetic-overlap",
+		"de-fleurs-02-clean-read",
+		"de-fleurs-02-synthetic-office",
+		"de-fleurs-02-synthetic-remote-call",
+		"de-fleurs-02-synthetic-overlap",
+		"de-fleurs-03-clean-read",
+		"de-fleurs-03-synthetic-office",
+		"de-fleurs-03-synthetic-remote-call",
+		"de-fleurs-03-synthetic-overlap",
+		"en-ami-en2001a-natural-office",
+		"en-ami-in1001-natural-office",
+		"en-ami-in1005-natural-office",
+		"en-earnings21-4320211-natural-remote-call",
+		"en-earnings21-4330115-natural-remote-call",
+		"en-earnings21-4341191-natural-remote-call"
+	],
+	"benchmark_variants": [
+		{
+			"provider": "whisper",
+			"model": "base-q5_1",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "small-q5_1",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "medium-q5_0",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3-turbo-q5_0",
+			"backend": "cpu"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3-turbo-q5_0",
+			"backend": "metal"
+		},
+		{
+			"provider": "whisper",
+			"model": "large-v3-q5_0",
+			"backend": "metal"
+		},
+		{
+			"provider": "parakeet",
+			"model": "parakeet-tdt-0.6b-v3-int8",
+			"backend": "onnx-cpu"
+		}
+	]
+}
