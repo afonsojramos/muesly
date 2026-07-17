@@ -7,18 +7,32 @@ import test from 'node:test';
 import {
 	CATALOG_AUDIT_MODELS,
 	MODEL_PREPARATION_RESERVE_BYTES,
+	ModelUnavailableError,
 	POLICY_MODELS,
+	acquireModelPreparationLock,
 	assertModelPreparationDiskSpace,
 	availableDiskBytes,
 	downloadModelWithProductPath,
+	modelArtifactAvailability,
 	modelsForSet,
 	parseModelPreparationArgs,
+	prepareExternalModelsDirectory,
 	prepareModelSet,
+	releaseModelPreparationLock,
 	resolveExplicitModelsDirectory,
 	verifyCanonicalModel,
 } from './model-prepare.ts';
 
 const DIGEST = 'a'.repeat(64);
+
+function isolatedOrchestration(overrides = {}) {
+	return {
+		prepareModelsDirectoryImpl: (modelsDirectory) => modelsDirectory,
+		acquirePreparationLockImpl: () => ({ token: 'test-lock' }),
+		releasePreparationLockImpl: () => {},
+		...overrides,
+	};
+}
 
 test('locks the policy and catalog-audit model sets', () => {
 	assert.deepEqual(
@@ -95,6 +109,122 @@ test('rejects relative and repository-local model directories', () => {
 	);
 });
 
+test('canonicalizes an external models directory and rejects symlink escape into the repository', (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-path-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const repositoryRoot = path.join(root, 'repository');
+	const externalRoot = path.join(root, 'external');
+	fs.mkdirSync(path.join(repositoryRoot, 'models'), { recursive: true });
+	fs.mkdirSync(externalRoot);
+
+	const modelsDirectory = path.join(externalRoot, 'app-data', 'models');
+	assert.equal(
+		prepareExternalModelsDirectory(modelsDirectory, repositoryRoot),
+		fs.realpathSync(modelsDirectory),
+	);
+
+	const escape = path.join(externalRoot, 'repository-link');
+	fs.symlinkSync(repositoryRoot, escape, process.platform === 'win32' ? 'junction' : 'dir');
+	assert.throws(
+		() => prepareExternalModelsDirectory(path.join(escape, 'models'), repositoryRoot),
+		/resolves inside the repository through a symlink or directory junction/,
+	);
+});
+
+test('re-attests the canonical destination after mkdir', (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-race-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const repositoryRoot = path.join(root, 'repository');
+	const externalRoot = path.join(root, 'external');
+	const requested = path.join(externalRoot, 'models');
+	fs.mkdirSync(repositoryRoot);
+	fs.mkdirSync(externalRoot);
+	assert.throws(
+		() =>
+			prepareExternalModelsDirectory(requested, repositoryRoot, {
+				mkdirSyncImpl: (target) =>
+					fs.symlinkSync(repositoryRoot, target, process.platform === 'win32' ? 'junction' : 'dir'),
+			}),
+		/changed or escaped through a symlink or directory junction/,
+	);
+});
+
+test('holds an exclusive owner-attested model preparation lock', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-lock-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	const first = acquireModelPreparationLock(modelsDirectory, {
+		currentIdentity: 'test:first',
+		isOwnedByLiveProcess: () => true,
+	});
+	assert.throws(
+		() =>
+			acquireModelPreparationLock(modelsDirectory, {
+				currentIdentity: 'test:second',
+				isOwnedByLiveProcess: () => true,
+			}),
+		/already running/,
+	);
+	releaseModelPreparationLock(first);
+	const second = acquireModelPreparationLock(modelsDirectory, {
+		currentIdentity: 'test:second',
+		isOwnedByLiveProcess: () => true,
+	});
+	releaseModelPreparationLock(second);
+});
+
+test('recovers only a valid stale model preparation lock and fails closed on malformed state', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-stale-lock-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	acquireModelPreparationLock(modelsDirectory, {
+		currentIdentity: 'test:stale',
+		isOwnedByLiveProcess: () => true,
+	});
+	const recovered = acquireModelPreparationLock(modelsDirectory, {
+		currentIdentity: 'test:current',
+		isOwnedByLiveProcess: () => false,
+	});
+	releaseModelPreparationLock(recovered);
+
+	const malformedPath = path.join(modelsDirectory, '.muesly-eval-model-prepare.lock');
+	fs.mkdirSync(malformedPath, { mode: 0o700 });
+	fs.writeFileSync(path.join(malformedPath, 'owner.json'), 'not json\n', { mode: 0o600 });
+	assert.throws(
+		() =>
+			acquireModelPreparationLock(modelsDirectory, {
+				currentIdentity: 'test:blocked',
+				isOwnedByLiveProcess: () => false,
+			}),
+		/not valid JSON/,
+	);
+	assert(fs.existsSync(malformedPath));
+});
+
+test('classifies only structurally missing model artifacts as unavailable', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-available-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	const whisper = POLICY_MODELS[0];
+	assert.deepEqual(modelArtifactAvailability(whisper, modelsDirectory), {
+		available: false,
+		reason: 'model file is missing',
+	});
+	fs.writeFileSync(path.join(modelsDirectory, 'ggml-base-q5_1.bin'), 'model');
+	assert.deepEqual(modelArtifactAvailability(whisper, modelsDirectory), { available: true });
+
+	const parakeet = POLICY_MODELS.at(-1);
+	const parakeetDirectory = path.join(modelsDirectory, 'parakeet', parakeet.model);
+	fs.mkdirSync(parakeetDirectory, { recursive: true });
+	assert.match(modelArtifactAvailability(parakeet, modelsDirectory).reason, /required files/);
+	for (const filename of [
+		'encoder-model.int8.onnx',
+		'decoder_joint-model.int8.onnx',
+		'nemo128.onnx',
+		'vocab.txt',
+	]) {
+		fs.writeFileSync(path.join(parakeetDirectory, filename), filename);
+	}
+	assert.deepEqual(modelArtifactAvailability(parakeet, modelsDirectory), { available: true });
+});
+
 test('checks the nearest existing directory for available disk space', (t) => {
 	const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-space-'));
 	t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
@@ -129,33 +259,41 @@ test('requires model bytes in addition to the 20 GiB safety reserve', () => {
 	);
 });
 
-test('verifies the read-only preparation digest against local model bytes', () => {
+test('verifies the read-only preparation digest against local model bytes', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-verify-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	fs.writeFileSync(path.join(modelsDirectory, 'ggml-base-q5_1.bin'), 'model');
 	let preparationOptions;
 	let artifactOptions;
-	const result = verifyCanonicalModel('/bin/transcribe-fixture', POLICY_MODELS[0], '/models', {
-		prepareModelImpl: (_executable, options) => {
-			preparationOptions = options;
-			return {
-				schema_version: 3,
-				provider: 'whisper',
-				model: 'base-q5_1',
-				model_artifact_sha256: DIGEST,
-				primary_model_artifact_sha256: null,
-			};
+	const result = verifyCanonicalModel(
+		'/bin/transcribe-fixture',
+		POLICY_MODELS[0],
+		modelsDirectory,
+		{
+			prepareModelImpl: (_executable, options) => {
+				preparationOptions = options;
+				return {
+					schema_version: 3,
+					provider: 'whisper',
+					model: 'base-q5_1',
+					model_artifact_sha256: DIGEST,
+					primary_model_artifact_sha256: null,
+				};
+			},
+			modelArtifactSha256Impl: (...args) => {
+				artifactOptions = args;
+				return DIGEST;
+			},
 		},
-		modelArtifactSha256Impl: (...args) => {
-			artifactOptions = args;
-			return DIGEST;
-		},
-	});
+	);
 	assert.equal(result.canonicalDigest, DIGEST);
 	assert.equal(preparationOptions.reportedBackend, 'cpu');
-	assert.equal(preparationOptions.modelsDirectory, '/models');
-	assert.deepEqual(artifactOptions, ['whisper', 'base-q5_1', '/models', 'cpu']);
+	assert.equal(preparationOptions.modelsDirectory, modelsDirectory);
+	assert.deepEqual(artifactOptions, ['whisper', 'base-q5_1', modelsDirectory, 'cpu']);
 
 	assert.throws(
 		() =>
-			verifyCanonicalModel('/bin/transcribe-fixture', POLICY_MODELS[0], '/models', {
+			verifyCanonicalModel('/bin/transcribe-fixture', POLICY_MODELS[0], modelsDirectory, {
 				prepareModelImpl: () => ({ model_artifact_sha256: DIGEST }),
 				modelArtifactSha256Impl: () => 'b'.repeat(64),
 			}),
@@ -211,11 +349,11 @@ test('prepares missing models one at a time and verifies each download before co
 	const repositoryRoot = path.join(path.parse(process.cwd()).root, 'repo');
 	const modelsDirectory = path.join(path.parse(process.cwd()).root, 'app-data', 'models');
 	const events = [];
-	const verificationAttempts = new Map();
 	const result = prepareModelSet(
 		{ modelsDirectory, modelSet: 'policy' },
-		{
+		isolatedOrchestration({
 			repositoryRoot,
+			modelArtifactAvailabilityImpl: () => ({ available: false, reason: 'missing' }),
 			availableDiskBytesImpl: () => 100n * 1024n ** 3n,
 			buildExecutableImpl: (_root, options) => {
 				events.push(`build:${options.provider}/${options.backend}`);
@@ -223,10 +361,7 @@ test('prepares missing models one at a time and verifies each download before co
 			},
 			verifyModelImpl: (_executable, model) => {
 				const key = `${model.provider}/${model.model}`;
-				const attempt = (verificationAttempts.get(key) ?? 0) + 1;
-				verificationAttempts.set(key, attempt);
-				events.push(`verify:${key}:${attempt}`);
-				if (attempt === 1) throw new Error('missing');
+				events.push(`verify:${key}`);
 				return { canonicalDigest: DIGEST };
 			},
 			downloadModelImpl: (_executable, model) => {
@@ -235,7 +370,7 @@ test('prepares missing models one at a time and verifies each download before co
 			onProgress: ({ phase, model }) => {
 				if (phase === 'ready') events.push(`ready:${model.provider}/${model.model}`);
 			},
-		},
+		}),
 	);
 
 	assert.equal(result.models.length, POLICY_MODELS.length);
@@ -243,20 +378,18 @@ test('prepares missing models one at a time and verifies each download before co
 	assert.equal(events[0], 'build:whisper/cpu');
 	for (const model of POLICY_MODELS) {
 		const key = `${model.provider}/${model.model}`;
-		const firstVerification = events.indexOf(`verify:${key}:1`);
 		const download = events.indexOf(`download:${key}`);
-		const secondVerification = events.indexOf(`verify:${key}:2`);
+		const verification = events.indexOf(`verify:${key}`);
 		const ready = events.indexOf(`ready:${key}`);
-		assert(firstVerification < download);
-		assert(download < secondVerification);
-		assert(secondVerification < ready);
+		assert(download < verification);
+		assert(verification < ready);
 	}
 	for (let index = 1; index < POLICY_MODELS.length; index += 1) {
 		const previous = POLICY_MODELS[index - 1];
 		const current = POLICY_MODELS[index];
 		assert(
 			events.indexOf(`ready:${previous.provider}/${previous.model}`) <
-				events.indexOf(`verify:${current.provider}/${current.model}:1`),
+				events.indexOf(`download:${current.provider}/${current.model}`),
 		);
 	}
 });
@@ -267,19 +400,125 @@ test('is idempotent when every selected model already verifies', () => {
 	let downloads = 0;
 	const result = prepareModelSet(
 		{ modelsDirectory, modelSet: 'catalog-audit' },
-		{
+		isolatedOrchestration({
 			repositoryRoot,
-			availableDiskBytesImpl: () => 100n * 1024n ** 3n,
+			modelArtifactAvailabilityImpl: () => ({ available: true }),
+			availableDiskBytesImpl: () => BigInt(MODEL_PREPARATION_RESERVE_BYTES),
 			buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
 			verifyModelImpl: () => ({ canonicalDigest: DIGEST }),
 			downloadModelImpl: () => {
 				downloads += 1;
 			},
-		},
+		}),
 	);
 	assert.equal(downloads, 0);
 	assert.equal(result.models.length, CATALOG_AUDIT_MODELS.length);
 	assert(result.models.every((model) => model.status === 'already-ready'));
+	assert.equal(result.disk_preflight.required_bytes, String(MODEL_PREPARATION_RESERVE_BYTES));
+});
+
+test('charges disk space only for the structurally missing model set', () => {
+	const repositoryRoot = path.join(path.parse(process.cwd()).root, 'repo');
+	const modelsDirectory = path.join(path.parse(process.cwd()).root, 'app-data', 'models');
+	const missingModel = POLICY_MODELS[0];
+	const requiredBytes = BigInt(MODEL_PREPARATION_RESERVE_BYTES + missingModel.downloadBytes);
+	const result = prepareModelSet(
+		{ modelsDirectory, modelSet: 'policy' },
+		isolatedOrchestration({
+			repositoryRoot,
+			modelArtifactAvailabilityImpl: (model) => ({
+				available: model.model !== missingModel.model,
+				reason: 'missing',
+			}),
+			availableDiskBytesImpl: () => requiredBytes,
+			buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
+			verifyModelImpl: () => ({ canonicalDigest: DIGEST }),
+			downloadModelImpl: () => {},
+		}),
+	);
+	assert.equal(result.disk_preflight.required_bytes, requiredBytes.toString());
+	assert.equal(result.models.filter((model) => model.status === 'downloaded').length, 1);
+});
+
+test('preserves non-availability verification failures without downloading', () => {
+	let downloads = 0;
+	const failure = new Error('runtime attestation changed');
+	assert.throws(
+		() =>
+			prepareModelSet(
+				{
+					modelsDirectory: path.join(path.parse(process.cwd()).root, 'app-data', 'models'),
+					modelSet: 'policy',
+				},
+				isolatedOrchestration({
+					repositoryRoot: path.join(path.parse(process.cwd()).root, 'repo'),
+					modelArtifactAvailabilityImpl: () => ({ available: true }),
+					availableDiskBytesImpl: () => 100n * 1024n ** 3n,
+					buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
+					verifyModelImpl: () => {
+						throw failure;
+					},
+					downloadModelImpl: () => {
+						downloads += 1;
+					},
+				}),
+			),
+		(error) => error === failure,
+	);
+	assert.equal(downloads, 0);
+});
+
+test('downloads a model that explicitly becomes unavailable after inventory', () => {
+	let attempts = 0;
+	let downloads = 0;
+	const result = prepareModelSet(
+		{
+			modelsDirectory: path.join(path.parse(process.cwd()).root, 'app-data', 'models'),
+			modelSet: 'policy',
+		},
+		isolatedOrchestration({
+			repositoryRoot: path.join(path.parse(process.cwd()).root, 'repo'),
+			modelArtifactAvailabilityImpl: () => ({ available: true }),
+			availableDiskBytesImpl: () => 100n * 1024n ** 3n,
+			buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
+			verifyModelImpl: (_executable, model) => {
+				attempts += 1;
+				if (model.model === POLICY_MODELS[0].model && attempts === 1) {
+					throw new ModelUnavailableError(model, 'model file disappeared');
+				}
+				return { canonicalDigest: DIGEST };
+			},
+			downloadModelImpl: () => {
+				downloads += 1;
+			},
+		}),
+	);
+	assert.equal(downloads, 1);
+	assert.equal(result.models[0].status, 'downloaded');
+});
+
+test('releases the exclusive preparation lock after an orchestration failure', (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-release-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const repositoryRoot = path.join(root, 'repository');
+	const modelsDirectory = path.join(root, 'app-data', 'models');
+	fs.mkdirSync(repositoryRoot);
+	assert.throws(
+		() =>
+			prepareModelSet(
+				{ modelsDirectory, modelSet: 'policy' },
+				{
+					repositoryRoot,
+					modelArtifactAvailabilityImpl: () => ({ available: true }),
+					availableDiskBytesImpl: () => 100n * 1024n ** 3n,
+					buildExecutableImpl: () => {
+						throw new Error('build failed');
+					},
+				},
+			),
+		/build failed/,
+	);
+	assert.equal(fs.existsSync(path.join(modelsDirectory, '.muesly-eval-model-prepare.lock')), false);
 });
 
 test('fails disk preflight before building or downloading', () => {
@@ -291,13 +530,14 @@ test('fails disk preflight before building or downloading', () => {
 					modelsDirectory: path.join(path.parse(process.cwd()).root, 'app-data', 'models'),
 					modelSet: 'policy',
 				},
-				{
+				isolatedOrchestration({
 					repositoryRoot: path.join(path.parse(process.cwd()).root, 'repo'),
+					modelArtifactAvailabilityImpl: () => ({ available: false, reason: 'missing' }),
 					availableDiskBytesImpl: () => 1n,
 					buildExecutableImpl: () => {
 						built = true;
 					},
-				},
+				}),
 			),
 		/insufficient disk space/,
 	);
@@ -314,8 +554,9 @@ test('never continues to another model after post-download verification fails', 
 					modelsDirectory: path.join(path.parse(process.cwd()).root, 'app-data', 'models'),
 					modelSet: 'policy',
 				},
-				{
+				isolatedOrchestration({
 					repositoryRoot: path.join(path.parse(process.cwd()).root, 'repo'),
+					modelArtifactAvailabilityImpl: () => ({ available: false, reason: 'missing' }),
 					availableDiskBytesImpl: () => 100n * 1024n ** 3n,
 					buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
 					verifyModelImpl: (_executable, model) => {
@@ -323,10 +564,10 @@ test('never continues to another model after post-download verification fails', 
 						throw new Error('canonical verification failed');
 					},
 					downloadModelImpl: (_executable, model) => downloaded.push(model.model),
-				},
+				}),
 			),
 		/canonical verification failed/,
 	);
-	assert.deepEqual(verified, ['base-q5_1', 'base-q5_1']);
+	assert.deepEqual(verified, ['base-q5_1']);
 	assert.deepEqual(downloaded, ['base-q5_1']);
 });
