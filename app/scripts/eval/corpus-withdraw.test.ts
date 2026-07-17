@@ -250,6 +250,34 @@ test('withdraws from a legacy schema-2 corpus without upgrading the retained man
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', 'session-withdraw')));
 });
 
+test('withdraws private schema-3 data without upgrading retained metadata', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const previous = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	previous.schema_version = 3;
+	fs.writeFileSync(manifestPath, `${JSON.stringify(previous, null, 2)}\n`, { mode: 0o600 });
+	const resultsDirectory = path.join(directory, 'results');
+	fs.mkdirSync(resultsDirectory);
+	fs.writeFileSync(path.join(resultsDirectory, 'derived.json'), 'sensitive derived transcript');
+	const withdrawnDirectory = path.join(directory, 'local-corpus', 'session-withdraw');
+	assert(fs.existsSync(path.join(withdrawnDirectory, 'en-clean-001.wav')));
+	assert(fs.existsSync(path.join(withdrawnDirectory, 'en-clean-001.txt')));
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	assert.equal(remaining.schema_version, 3);
+	assert.equal(remaining.reference_protocol_id, REFERENCE_PROTOCOL_ID);
+	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert(!fs.existsSync(withdrawnDirectory));
+	assert(!fs.existsSync(resultsDirectory));
+	assert(fs.existsSync(path.join(directory, 'local-corpus', 'session-keep', 'es-clean-003.wav')));
+});
+
 test('withdraws a prepared session before corpus intake', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-withdraw-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');

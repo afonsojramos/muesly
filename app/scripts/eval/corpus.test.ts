@@ -96,6 +96,32 @@ test('loads a manifest through its canonical file identity', () => {
 	assert(fs.lstatSync(manifestAlias).isSymbolicLink());
 });
 
+test('loads a schema-3 local manifest as a strict in-memory schema-4 projection', () => {
+	const { directory, document } = fixture();
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const previous = { ...document, schema_version: 3 };
+	fs.writeFileSync(manifestPath, JSON.stringify(previous));
+
+	const corpus = loadCorpus(manifestPath);
+
+	assert.equal(corpus.schema_version, 4);
+	assert.equal(corpus.corpus_fingerprint, corpusFingerprint({ ...previous, schema_version: 4 }));
+	assert.equal(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).schema_version, 3);
+	assert.deepEqual(validateCorpusDocument(previous, { manifestPath }), [
+		'schema_version must be 4',
+	]);
+	assert.throws(
+		() => {
+			fs.writeFileSync(
+				manifestPath,
+				JSON.stringify({ ...previous, distribution: 'repository' }),
+			);
+			loadCorpus(manifestPath);
+		},
+		/schema_version must be 4/,
+	);
+});
+
 test('resolves a dangling manifest symlink to its intended missing target', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-dangling-'));
 	const targetPath = path.join(directory, 'target', 'corpus-local.json');

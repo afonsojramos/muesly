@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { writeCorpusBoundJson } from './corpus-result.ts';
 import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
 import {
+	normalizeCoverageTargets,
 	resolveCoverageTarget,
 	validateCoverageTargets,
 	variantKey,
@@ -28,7 +29,7 @@ const EVALUATOR_REVISION_COMMON_FIELDS = Object.freeze([
 	'build_env_sha256',
 ]);
 
-export { validateCoverageTargets };
+export { normalizeCoverageTargets, validateCoverageTargets };
 
 function hardwareCohort(metrics) {
 	return {
@@ -60,24 +61,24 @@ function baseHardwareCohortKey(cohort) {
 	return JSON.stringify([cohort.operating_system, cohort.architecture, cohort.hardware_profile]);
 }
 
-function addToMeasurementCell(map, key, metrics, sessionId) {
+function addToMeasurementCell(map, key, metrics, unitId) {
 	if (!map.has(key)) {
 		map.set(key, {
-			sessions: new Set(),
+			units: new Set(),
 			cohorts: new Map(),
 		});
 	}
 	const cell = map.get(key);
-	cell.sessions.add(sessionId);
+	cell.units.add(unitId);
 	const cohort = hardwareCohort(metrics);
 	const cohortKey = hardwareCohortKey(cohort);
 	if (!cell.cohorts.has(cohortKey)) {
 		cell.cohorts.set(cohortKey, {
 			...cohort,
-			sessions: new Set(),
+			units: new Set(),
 		});
 	}
-	cell.cohorts.get(cohortKey).sessions.add(sessionId);
+	cell.cohorts.get(cohortKey).units.add(unitId);
 }
 
 function addBackendProvenance(map, backend, digest, kind) {
@@ -112,13 +113,13 @@ function sortedMapEntries(map) {
 function measurementCohorts(cell) {
 	if (!cell) return [];
 	return [...cell.cohorts.values()]
-		.map(({ sessions, ...cohort }) => ({
+		.map(({ units, ...cohort }) => ({
 			...cohort,
-			distinct_sessions: sessions.size,
+			distinct_units: units.size,
 		}))
 		.sort(
 			(a, b) =>
-				b.distinct_sessions - a.distinct_sessions ||
+				b.distinct_units - a.distinct_units ||
 				a.operating_system.localeCompare(b.operating_system) ||
 				a.architecture.localeCompare(b.architecture) ||
 				a.hardware_profile.localeCompare(b.hardware_profile) ||
@@ -146,7 +147,7 @@ function matrixHardwareCohorts(requiredCells, measurementCells) {
 			}
 			matrixCohort.acceleratorsByBackend.get(cell.backend).add(cohort.accelerator);
 			if (!matrixCohort.cells.has(cell.key)) matrixCohort.cells.set(cell.key, new Map());
-			matrixCohort.cells.get(cell.key).set(cohort.accelerator, cohort.sessions);
+			matrixCohort.cells.get(cell.key).set(cohort.accelerator, cohort.units);
 		}
 	}
 
@@ -318,7 +319,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 
 	const requiredMeasurementCells = resolvedTarget.measurement_cells;
 	const measurementCoverage = Object.fromEntries(
-		requiredMeasurementCells.map(({ key }) => [key, measurementCells.get(key)?.sessions.size ?? 0]),
+		requiredMeasurementCells.map(({ key }) => [key, measurementCells.get(key)?.units.size ?? 0]),
 	);
 	const measurementHardwareCohorts = Object.fromEntries(
 		requiredMeasurementCells.map(({ key }) => [key, measurementCohorts(measurementCells.get(key))]),
@@ -326,7 +327,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	const compatibleMeasurementCoverage = Object.fromEntries(
 		requiredMeasurementCells.map(({ key }) => [
 			key,
-			measurementHardwareCohorts[key][0]?.distinct_sessions ?? 0,
+			measurementHardwareCohorts[key][0]?.distinct_units ?? 0,
 		]),
 	);
 	const missingMeasurementCells = requiredMeasurementCells
@@ -350,7 +351,7 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	).length;
 
 	return {
-		schema_version: 10,
+		schema_version: 11,
 		target_id: targets.target_id,
 		coverage_mode: resolvedTarget.coverage_mode,
 		repetitions: resolvedTarget.repetitions,

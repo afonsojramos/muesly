@@ -264,8 +264,8 @@ Check that at least one matrix-wide hardware cohort has three distinct sessions 
 language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
 profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
 best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
-from different machines or accelerator identities does not satisfy coverage schema 10. Coverage
-schema 10 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
+from different machines or accelerator identities does not satisfy coverage schema 11. Coverage
+schema 11 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
 every backend. The
 command fails with `--require-complete` until the corpus cells and one full-matrix cohort are
 complete:

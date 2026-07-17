@@ -26,17 +26,22 @@ import {
 } from './corpus.ts';
 
 const LEGACY_WITHDRAWAL_CORPUS_SCHEMA_VERSION = 2;
+const PREVIOUS_WITHDRAWAL_CORPUS_SCHEMA_VERSION = 3;
 
 function validateWithdrawalCorpusDocument(document, options) {
-	const validationDocument =
+	let validationDocument = document;
+	if (
 		document.schema_version === LEGACY_WITHDRAWAL_CORPUS_SCHEMA_VERSION &&
 		document.reference_protocol_id === undefined
-			? {
-					...document,
-					schema_version: CORPUS_SCHEMA_VERSION,
-					reference_protocol_id: REFERENCE_PROTOCOL_ID,
-				}
-			: document;
+	) {
+		validationDocument = {
+			...document,
+			schema_version: CORPUS_SCHEMA_VERSION,
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		};
+	} else if (document.schema_version === PREVIOUS_WITHDRAWAL_CORPUS_SCHEMA_VERSION) {
+		validationDocument = { ...document, schema_version: CORPUS_SCHEMA_VERSION };
+	}
 	return validateCorpusDocument(validationDocument, options);
 }
 

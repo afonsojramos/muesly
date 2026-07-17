@@ -39,6 +39,7 @@ const DEFAULT_LOCAL_LOCK_ATTEMPTS = 10;
 const BENCHMARK_WRITER_LOCK_ATTEMPTS = 100;
 const BENCHMARK_WRITER_RETRY_DELAY_MS = 10;
 const LOCAL_LOCK_RETRY_SIGNAL = new Int32Array(new SharedArrayBuffer(4));
+const LEGACY_INTAKE_CORPUS_SCHEMA_VERSION = 3;
 
 function ensureFile(filePath, label) {
 	if (!fs.statSync(filePath, { throwIfNoEntry: false })?.isFile()) {
@@ -572,11 +573,17 @@ function readManifest(manifestPath) {
 	} catch (error) {
 		throw new Error(`failed to read corpus manifest ${manifestPath}: ${error.message}`);
 	}
-	const errors = validateCorpusDocument(document, { manifestPath });
+	const validationDocument =
+		document.schema_version === LEGACY_INTAKE_CORPUS_SCHEMA_VERSION
+			? { ...document, schema_version: CORPUS_SCHEMA_VERSION }
+			: document;
+	const errors = validateCorpusDocument(validationDocument, { manifestPath });
 	if (errors.length > 0)
 		throw new Error(`existing corpus manifest is invalid:\n- ${errors.join('\n- ')}`);
-	if (document.distribution !== 'local') throw new Error('intake requires a local corpus manifest');
-	return document;
+	if (validationDocument.distribution !== 'local') {
+		throw new Error('intake requires a local corpus manifest');
+	}
+	return validationDocument;
 }
 
 function isIsoDate(value) {

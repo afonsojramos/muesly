@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 import { isCorpusBenchmarkCheckpointName } from './corpus-benchmark-checkpoints.ts';
@@ -12,7 +15,7 @@ import {
 	taskReportFilename,
 	validateTaskCheckpoint,
 } from './corpus-benchmark-plan.ts';
-import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { corpusFingerprint, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
@@ -261,6 +264,64 @@ test('rejects invalid provider and target-backend combinations', () => {
 			new RegExp(`${provider}/${backend}`),
 		);
 	}
+});
+
+test('plans schema-2 matrix targets through the compatibility boundary', () => {
+	const legacyTargets = { ...targets, schema_version: 2 };
+	delete legacyTargets.coverage_mode;
+	const tasks = planCorpusBenchmarkTasks({
+		corpus: corpus([sample({ id: 'en-clean-a' })]),
+		targets: legacyTargets,
+		thresholds,
+		evaluatorRevisions: evaluatorRevisionsFor(legacyTargets),
+	});
+
+	assert.deepEqual(
+		tasks.map((task) => `${task.provider}/${task.target_backend}/${task.sample_id}`),
+		['parakeet/onnx-cpu/en-clean-a', 'whisper/metal/en-clean-a'],
+	);
+	assert(tasks.every((task) => task.repeat_index === 1));
+});
+
+test('plans from a loaded schema-3 local corpus projection', (t) => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-plan-schema3-'));
+	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+	const selectedSample = sample({ id: 'en-clean-a' });
+	const sessionDirectory = path.join(directory, 'local-corpus', selectedSample.session_id);
+	fs.mkdirSync(sessionDirectory, { recursive: true });
+	fs.writeFileSync(path.join(sessionDirectory, `${selectedSample.id}.wav`), `audio:${selectedSample.id}`);
+	fs.writeFileSync(
+		path.join(sessionDirectory, `${selectedSample.id}.txt`),
+		`reference:${selectedSample.id}`,
+	);
+	const previous = {
+		schema_version: 3,
+		corpus_id: 'consented-meetings-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		description: 'Validated local consented meetings.',
+		distribution: 'local',
+		samples: [selectedSample],
+	};
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	fs.writeFileSync(manifestPath, JSON.stringify(previous));
+	const loaded = loadCorpus(manifestPath);
+	const selectedTargets = {
+		...targets,
+		languages: ['en'],
+		noise_conditions: ['clean'],
+	};
+
+	const tasks = planCorpusBenchmarkTasks({
+		corpus: loaded,
+		targets: selectedTargets,
+		thresholds,
+		evaluatorRevisions: evaluatorRevisionsFor(selectedTargets),
+	});
+
+	assert.equal(loaded.schema_version, 4);
+	assert.deepEqual(tasks.map((task) => task.sample_id), ['en-clean-a', 'en-clean-a']);
+	assert(tasks.every((task) => task.corpus_fingerprint === loaded.corpus_fingerprint));
+	assert.equal(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).schema_version, 3);
 });
 
 test('plans only eligible samples in deterministic variant, cell, session, and sample order', () => {

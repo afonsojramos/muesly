@@ -233,7 +233,7 @@ reports from one machine can be combined; reports using different accelerators f
 backend cannot.
 Aggregate schema 9 records both RTF definitions, measurement and distinct-sample counts, the
 comparison status, the common evaluator inputs, the full evaluator
-revision, and exact benchmark-executable digest for every backend. Coverage schema 10 similarly
+revision, and exact benchmark-executable digest for every backend. Coverage schema 11 similarly
 records the corpus
 fingerprint, reference protocol, verified model-artifact map, evaluator-revision digest by backend,
 and executable
@@ -241,8 +241,9 @@ digest by backend, so a saved completeness result remains bound to the exact cor
 evaluated bytes, source/toolchain inputs, and binary.
 Measurement completeness requires one compatible hardware cohort to satisfy the session floor
 across the entire requested matrix. The operating system, architecture, and machine profile must
-match for every cell, with one consistent accelerator identity per backend. Coverage schema 10
-retains raw cross-machine counts and the largest compatible count per cell for diagnostics, then
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 11
+retains raw cross-machine counts and the largest compatible distinct-unit count per cell for
+diagnostics, then
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.
 
@@ -252,7 +253,10 @@ Coverage-target schema 3 is discriminated by `coverage_mode`. The existing
 `language-noise-matrix` mode retains the consented-meeting session floor; `explicit-samples` names
 the exact sample IDs in one benchmark suite. An optional `repetitions` value from 1 through 10
 creates distinct, resumable task identities for every sample/variant/repeat and requires every
-repeat on one compatible hardware cohort.
+repeat on one compatible hardware cohort. Hardware-cohort entries report `distinct_units`: a unit
+is a consented session in matrix mode and an exact sample in explicit-sample mode. Existing valid
+schema-2 matrix target files are normalized in memory to schema 3; newly committed targets remain
+schema 3.
 
 Metrics schema 7 reports source-audio duration, exact ASR-input audio duration, decode, VAD,
 model-download, model-load, inference, and measured-total timings. `inference_rtf` remains the

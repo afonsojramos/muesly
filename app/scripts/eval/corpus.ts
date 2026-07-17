@@ -581,6 +581,9 @@ export function loadCorpus(manifestPath, options = {}) {
 	} catch (error) {
 		throw new Error(`failed to read corpus manifest ${requestedPath}: ${error.message}`);
 	}
+	if (document?.schema_version === 3 && document.distribution === 'local') {
+		document = { ...document, schema_version: CORPUS_SCHEMA_VERSION };
+	}
 	const errors = validateCorpusDocument(document, { manifestPath: absolutePath, ...options });
 	if (errors.length > 0) {
 		throw new Error(`invalid corpus manifest:\n- ${errors.join('\n- ')}`);

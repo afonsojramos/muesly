@@ -8,7 +8,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
-import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.ts';
+import {
+	evaluateCoverage,
+	formatCoverage,
+	normalizeCoverageTargets,
+	validateCoverageTargets,
+} from './coverage.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
@@ -42,6 +47,21 @@ test('accepts the committed multilingual benchmark target', () => {
 	assert.deepEqual(validateCoverageTargets(committed), []);
 	assert.equal(committed.languages.length * committed.noise_conditions.length, 20);
 	assert.equal(committed.benchmark_variants.length, 3);
+});
+
+test('normalizes valid schema-2 matrix targets before strict schema-3 validation', () => {
+	const legacy = { ...targets, schema_version: 2 };
+	delete legacy.coverage_mode;
+	assert.deepEqual(validateCoverageTargets(legacy), []);
+	assert.deepEqual(normalizeCoverageTargets(legacy), {
+		...legacy,
+		schema_version: 3,
+		coverage_mode: 'language-noise-matrix',
+	});
+	assert.match(
+		validateCoverageTargets({ ...legacy, repetitions: 2 }).join('\n'),
+		/targets\.repetitions is not an allowed field in schema 2/,
+	);
 });
 
 test('requires bounded portable model names in coverage targets', () => {
@@ -244,6 +264,16 @@ function completeCorpus() {
 	};
 }
 
+test('evaluates a schema-2 matrix target through the compatibility boundary', () => {
+	const legacy = { ...targets, schema_version: 2 };
+	delete legacy.coverage_mode;
+	const coverage = evaluateCoverage(completeCorpus(), legacy);
+
+	assert.equal(coverage.coverage_mode, 'language-noise-matrix');
+	assert.equal(coverage.corpus.unit_kind, 'session');
+	assert.equal(coverage.corpus.covered_cells, 4);
+});
+
 test('requires every explicit sample, variant, and repeat on one compatible hardware cohort', () => {
 	const corpus = completeCorpus();
 	const selectedSample = corpus.samples[0];
@@ -273,6 +303,9 @@ test('requires every explicit sample, variant, and repeat on one compatible hard
 	assert.equal(complete.repetitions, 3);
 	assert.equal(complete.eligible_samples, 1);
 	assert.equal(complete.measurements.required_cells, 3);
+	const firstCell = complete.measurements.hardware_cohorts[Object.keys(complete.measurements.hardware_cohorts)[0]];
+	assert.equal(firstCell[0].distinct_units, 1);
+	assert.equal(Object.hasOwn(firstCell[0], 'distinct_sessions'), false);
 	assert.equal(complete.measurements.complete_matrix_hardware_cohorts, 1);
 	assert.equal(complete.complete, true);
 	assert.throws(
@@ -325,7 +358,7 @@ test('requires every measurement cell and accepts a same-machine multi-backend m
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 10);
+	assert.equal(complete.schema_version, 11);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
 	assert.equal(complete.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(complete.wer_scorer, WER_SCORER_ID);
@@ -378,18 +411,18 @@ test('does not combine sessions from incompatible hardware profiles', () => {
 		coverage.measurements.hardware_cohorts[cell].map((cohort) => ({
 			hardware_profile: cohort.hardware_profile,
 			accelerator: cohort.accelerator,
-			distinct_sessions: cohort.distinct_sessions,
+			distinct_units: cohort.distinct_units,
 		})),
 		[
 			{
 				hardware_profile: hardwareProfile('Apple M3 Max', 16, 68_719_476_736),
 				accelerator: 'Shared Metal GPU',
-				distinct_sessions: 1,
+				distinct_units: 1,
 			},
 			{
 				hardware_profile: hardwareProfile('Apple M4 Pro', 14, 25_769_803_776),
 				accelerator: 'Shared Metal GPU',
-				distinct_sessions: 1,
+				distinct_units: 1,
 			},
 		],
 	);
@@ -414,7 +447,7 @@ test('combines separate reports only when their complete hardware cohort matches
 	assert.equal(coverage.measurements.counts[cell], 2);
 	assert.equal(coverage.measurements.compatible_counts[cell], 2);
 	assert.equal(coverage.measurements.hardware_cohorts[cell].length, 1);
-	assert.equal(coverage.measurements.hardware_cohorts[cell][0].distinct_sessions, 2);
+	assert.equal(coverage.measurements.hardware_cohorts[cell][0].distinct_units, 2);
 	assert.equal(coverage.complete, true);
 });
 

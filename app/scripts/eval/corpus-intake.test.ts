@@ -67,6 +67,25 @@ function intakeFixture() {
 	};
 }
 
+function writeSchema3Manifest(manifestPath) {
+	fs.writeFileSync(
+		manifestPath,
+		`${JSON.stringify(
+			{
+				schema_version: 3,
+				corpus_id: 'consented-meetings-v1',
+				reference_protocol_id: REFERENCE_PROTOCOL_ID,
+				description: 'Local-only participant-consented multilingual meeting corpus.',
+				distribution: 'local',
+				samples: [],
+			},
+			null,
+			2,
+		)}\n`,
+		{ mode: 0o600 },
+	);
+}
+
 test('reads duration from RIFF/WAVE structure', () => {
 	const { directory } = intakeFixture();
 	assert.equal(wavDurationSeconds(path.join(directory, 'source.wav')), 2);
@@ -289,6 +308,49 @@ test('atomically imports a consented sample with verified metadata and private f
 			0o600,
 		);
 	}
+});
+
+test('atomically migrates a schema-3 local corpus when importing a sample', () => {
+	const { options } = intakeFixture();
+	writeSchema3Manifest(options.manifestPath);
+
+	intakeConsentedSample(options);
+
+	const document = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8'));
+	assert.equal(document.schema_version, 4);
+	assert.equal(document.samples.length, 1);
+	assert.deepEqual(validateCorpusDocument(document, { manifestPath: options.manifestPath }), []);
+	assert.equal(
+		fs.readdirSync(path.dirname(options.manifestPath)).some((entry) =>
+			entry.startsWith(`${path.basename(options.manifestPath)}.tmp-`),
+		),
+		false,
+	);
+});
+
+test('leaves a schema-3 manifest unchanged when its atomic migration cannot commit', (t) => {
+	const { directory, options } = intakeFixture();
+	writeSchema3Manifest(options.manifestPath);
+	const before = fs.readFileSync(options.manifestPath, 'utf8');
+	const canonicalManifest = canonicalManifestPath(options.manifestPath);
+	const originalRenameSync = fs.renameSync;
+	t.mock.method(fs, 'renameSync', (sourcePath, destinationPath) => {
+		if (
+			typeof sourcePath === 'string' &&
+			sourcePath.startsWith(`${canonicalManifest}.tmp-`)
+		) {
+			throw new Error('simulated manifest commit failure');
+		}
+		return originalRenameSync(sourcePath, destinationPath);
+	});
+
+	assert.throws(() => intakeConsentedSample(options), /simulated manifest commit failure/);
+	assert.equal(fs.readFileSync(options.manifestPath, 'utf8'), before);
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', options.sessionId)));
+	assert.equal(
+		fs.readdirSync(directory).some((entry) => entry.startsWith('corpus-local.json.tmp-')),
+		false,
+	);
 });
 
 test('retires a matching prepared source bundle after successful intake', () => {

@@ -3,6 +3,7 @@ import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 
 export const COVERAGE_TARGET_SCHEMA_VERSION = 3;
+const LEGACY_MATRIX_TARGET_SCHEMA_VERSION = 2;
 
 const COVERAGE_MODES = new Set(['language-noise-matrix', 'explicit-samples']);
 const COMMON_TARGET_FIELDS = new Set([
@@ -22,6 +23,16 @@ const MODE_TARGET_FIELDS = {
 	]),
 	'explicit-samples': new Set(['sample_ids']),
 };
+const LEGACY_MATRIX_TARGET_FIELDS = new Set([
+	'schema_version',
+	'target_id',
+	'reference_protocol_id',
+	'description',
+	'languages',
+	'noise_conditions',
+	'benchmark_variants',
+	'min_sessions_per_language_noise_cell',
+]);
 
 function isObject(value) {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -90,7 +101,7 @@ function validateBenchmarkVariants(value, errors) {
 	}
 }
 
-export function validateCoverageTargets(targets) {
+function validateCurrentCoverageTargets(targets) {
 	const errors = [];
 	if (!isObject(targets)) return ['coverage targets must be a JSON object'];
 	const modeFields = MODE_TARGET_FIELDS[targets.coverage_mode] ?? new Set();
@@ -144,6 +155,30 @@ export function validateCoverageTargets(targets) {
 	return errors;
 }
 
+export function normalizeCoverageTargets(targets) {
+	if (!isObject(targets) || targets.schema_version !== LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
+		return targets;
+	}
+	return {
+		...targets,
+		schema_version: COVERAGE_TARGET_SCHEMA_VERSION,
+		coverage_mode: 'language-noise-matrix',
+	};
+}
+
+export function validateCoverageTargets(targets) {
+	if (!isObject(targets) || targets.schema_version !== LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
+		return validateCurrentCoverageTargets(targets);
+	}
+	const errors = [];
+	for (const field of Object.keys(targets)) {
+		if (!LEGACY_MATRIX_TARGET_FIELDS.has(field)) {
+			errors.push(`targets.${field} is not an allowed field in schema 2`);
+		}
+	}
+	return [...errors, ...validateCurrentCoverageTargets(normalizeCoverageTargets(targets))];
+}
+
 export function primaryLanguage(language) {
 	return language.split('-')[0].toLowerCase();
 }
@@ -186,6 +221,7 @@ export function resolveCoverageTarget(corpus, targets) {
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
+	targets = normalizeCoverageTargets(targets);
 	if (!isObject(corpus) || !Array.isArray(corpus.samples)) {
 		throw new Error('corpus must contain a samples array');
 	}
