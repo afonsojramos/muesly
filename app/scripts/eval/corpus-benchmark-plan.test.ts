@@ -33,6 +33,7 @@ function digest(value) {
 function sample({
 	id,
 	session = id,
+	dataset,
 	language = 'en',
 	noise = 'clean',
 	scenario = 'meeting',
@@ -42,24 +43,35 @@ function sample({
 	consentedUses = ['asr-benchmarking'],
 }) {
 	const sessionId = `session-${session}`;
-	const provenance =
-		basis === 'participant-consent'
-			? {
-					basis,
-					redistribution: 'local-only',
-					consent_record_id: `consent-${id}`,
-					consent_date: '2026-07-01',
-					consented_uses: consentedUses,
-				}
-			: {
-					basis,
-					redistribution: 'repository',
-					source_url: 'https://example.com/public-audio',
-					license: 'CC0-1.0',
-				};
+	let provenance;
+	if (basis === 'participant-consent') {
+		provenance = {
+			basis,
+			redistribution: 'local-only',
+			consent_record_id: `consent-${id}`,
+			consent_date: '2026-07-01',
+			consented_uses: consentedUses,
+		};
+	} else if (basis === 'public-license') {
+		provenance = {
+			basis,
+			redistribution: 'local-only',
+			source_catalog_id: 'public-corpus-sources-v1',
+			source_item_ids: [`source-${id}`],
+			transform_id: 'deterministic-test-transform',
+		};
+	} else {
+		provenance = {
+			basis,
+			redistribution: 'repository',
+			source_url: 'https://example.com/public-audio',
+			license: 'CC0-1.0',
+		};
+	}
 	return {
 		id,
 		session_id: sessionId,
+		...(dataset === undefined ? {} : { dataset }),
 		audio_path: `local-corpus/${sessionId}/${id}.wav`,
 		audio_sha256: digest(`audio:${id}`),
 		reference_path: `local-corpus/${sessionId}/${id}.txt`,
@@ -75,12 +87,28 @@ function sample({
 }
 
 function corpus(samples) {
+	const hasPublicSamples = samples.some(
+		(sampleEntry) => sampleEntry.provenance.basis === 'public-license',
+	);
 	const document = {
 		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
 		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Validated local consented meetings.',
 		distribution: 'local',
+		...(hasPublicSamples
+			? {
+					source_catalog_sha256: '9'.repeat(64),
+					preparation: {
+						protocol_id: 'muesly-public-asr-preparation-v1',
+						source_catalog_id: 'public-corpus-sources-v1',
+						selection_sha256: '8'.repeat(64),
+						ffmpeg_id: 'ffmpeg-test',
+						ffmpeg_sha256: '7'.repeat(64),
+						ffmpeg_version: 'ffmpeg test version',
+					},
+				}
+			: {}),
 		samples,
 	};
 	return {
@@ -168,6 +196,7 @@ function plannedTask(options = {}) {
 function checkpoint(task = plannedTask(), overrides = {}) {
 	const result = {
 		sample_id: task.sample_id,
+		...(task.dataset === undefined ? {} : { dataset: task.dataset }),
 		language: task.language,
 		noise_condition: task.noise_condition,
 		scenario: task.scenario,
@@ -211,7 +240,8 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		...overrides.result,
 	};
 	return {
-		schema_version: 10,
+		schema_version: 11,
+		benchmark_task_id: task.task_id,
 		corpus_id: task.corpus_id,
 		corpus_fingerprint: task.corpus_fingerprint,
 		reference_protocol_id: task.reference_protocol_id,
@@ -230,6 +260,13 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		results: [result],
 		...overrides.report,
 	};
+}
+
+function legacyCheckpoint(task = plannedTask(), overrides = {}) {
+	const report = checkpoint(task, overrides);
+	report.schema_version = 10;
+	delete report.benchmark_task_id;
+	return report;
 }
 
 test('maps every canonical target backend to the real-run CLI backend', () => {
@@ -405,12 +442,68 @@ test('plans exact samples and repetitions as distinct resumable task identities'
 	assert.equal(new Set(tasks.map((task) => task.task_id)).size, 3);
 	assert.equal(new Set(tasks.map((task) => task.report_filename)).size, 3);
 	assert.deepEqual(validateTaskCheckpoint(checkpoint(tasks[1]), tasks[1]), []);
+	const cachedFirstRepeat = checkpoint(tasks[0]);
+	for (const repeatedTask of tasks.slice(1)) {
+		const errors = validateTaskCheckpoint(cachedFirstRepeat, repeatedTask).join('\n');
+		assert.match(errors, /checkpoint\.benchmark_task_id must equal/);
+		assert.match(errors, /checkpoint\.repeat_index must equal/);
+	}
 	assert.match(
 		validateTaskCheckpoint(
 			checkpoint(tasks[1], { report: { repeat_index: 1 } }),
 			tasks[1],
 		).join('\n'),
 		/checkpoint\.repeat_index must equal 2/,
+	);
+	assert.match(
+		validateTaskCheckpoint(legacyCheckpoint(tasks[1]), tasks[1]).join('\n'),
+		/schema_version must be 11 for repeated campaign tasks/,
+	);
+});
+
+test('binds a public dataset and preparation contract into task and checkpoint identity', () => {
+	const publicTargets = {
+		schema_version: 3,
+		target_id: 'public-samples-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		coverage_mode: 'explicit-samples',
+		sample_ids: ['meeting-en-fleurs'],
+		benchmark_variants: [{ provider: 'whisper', model: 'whisper-test', backend: 'metal' }],
+		repetitions: 1,
+	};
+	const task = plannedTask({
+		corpus: corpus([
+			sample({ id: 'meeting-en-fleurs', basis: 'public-license', dataset: 'fleurs' }),
+		]),
+		targets: publicTargets,
+	});
+	assert.equal(task.dataset, 'fleurs');
+	assert.deepEqual(validateTaskCheckpoint(checkpoint(task), task), []);
+
+	assert.throws(
+		() => taskReportFilename({ ...task, dataset: 'ami' }),
+		/task\.task_id does not match its benchmark identity/,
+	);
+	const mismatched = checkpoint(task);
+	mismatched.results[0].dataset = 'ami';
+	assert.match(
+		validateTaskCheckpoint(mismatched, task).join('\n'),
+		/checkpoint\.results\[0\]\.dataset must equal "fleurs"/,
+	);
+});
+
+test('preserves schema-10 checkpoint compatibility only for an unambiguous first repeat', () => {
+	const task = plannedTask();
+	const legacy = legacyCheckpoint(task);
+	delete legacy.repeat_index;
+	assert.deepEqual(validateTaskCheckpoint(legacy, task), []);
+
+	const repeated = { ...task, repeat_index: 2 };
+	delete repeated.task_id;
+	delete repeated.report_filename;
+	assert.match(
+		validateTaskCheckpoint(legacy, repeated).join('\n'),
+		/schema_version must be 11 for repeated campaign tasks/,
 	);
 });
 
@@ -973,10 +1066,10 @@ test('requires checkpoint evaluator provenance to match the planned task exactly
 	);
 });
 
-test('requires schema 10, metrics schema 7, and exact executable and audio identities', () => {
+test('requires run schema 10 or 11, metrics schema 7, and exact executable and audio identities', () => {
 	const task = plannedTask();
 	const staleSchema = checkpoint(task, { report: { schema_version: 9 } });
-	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 10/);
+	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 10 or 11/);
 
 	const staleMetrics = checkpoint(task);
 	staleMetrics.results[0].metrics.schema_version = 4;
@@ -1199,5 +1292,5 @@ test('rejects a passing checkpoint above its WER threshold', () => {
 test('delegates the evolving report schema to validateRunReport', () => {
 	const task = plannedTask();
 	const report = checkpoint(task, { report: { schema_version: 7 } });
-	assert.match(validateTaskCheckpoint(report, task).join('\n'), /schema_version must be 10/);
+	assert.match(validateTaskCheckpoint(report, task).join('\n'), /schema_version must be 10 or 11/);
 });

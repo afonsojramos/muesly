@@ -197,8 +197,10 @@ target matrix.
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
 refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
-Run/checkpoint schema 10 also persists the versioned reference protocol and WER scorer, a clean
-evaluator revision, and the SHA-256 digest of the exact benchmark executable. The evaluator
+Standalone run schema 10 and campaign checkpoint schema 11 also persist the versioned reference
+protocol and WER scorer, a clean evaluator revision, and the SHA-256 digest of the exact benchmark
+executable. Campaign schema 11 additionally binds the planned task digest and repeat before
+inference. The evaluator
 revision binds the result to the
 Git commit, `Cargo.lock`, `rustc -vV`, release target and Cargo features, and a digest of the
 allowlisted build environment. Report generation therefore requires a clean Git worktree and
@@ -287,7 +289,7 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
 
 The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
-reviewable aggregate JSON and Markdown. Aggregate schema 9 keeps the reference protocol and each
+reviewable aggregate JSON and Markdown. Aggregate schema 10 keeps the reference protocol and each
 provider/model/reported-
 backend variant separate and emits comparison tables only when every supplied variant measured the
 identical sample-and-repeat measurement cohort. Unequal or interrupted cohorts remain available as

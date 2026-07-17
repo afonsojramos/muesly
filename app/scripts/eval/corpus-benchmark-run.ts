@@ -51,6 +51,7 @@ import {
 } from "./model-artifact.ts";
 import { processIdentity } from "./process-identity.ts";
 import { prepareRealRunSession } from "./real-run-session.ts";
+import { CAMPAIGN_RUN_REPORT_SCHEMA_VERSION } from "./report.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(here, "../../..");
@@ -650,6 +651,8 @@ async function defaultTaskRunner({ task, sample, session, signal }) {
         maxWerPercent: task.thresholds.max_wer_percent,
         maxHallucinatedWords: task.thresholds.max_hallucinated_words,
       },
+      benchmarkTaskId: task.task_id,
+      repeatIndex: task.repeat_index,
       signal,
     },
   );
@@ -662,6 +665,7 @@ function assertTaskSampleBinding(task, sample) {
   for (const [field, expected] of [
     ["id", task.sample_id],
     ["session_id", task.session_id],
+    ["dataset", task.dataset],
     ["audio_sha256", task.audio_sha256],
     ["duration_seconds", task.audio_duration_seconds],
     ["language", task.language],
@@ -731,10 +735,16 @@ async function runLeasedTask({ dependencies, lease, session, signal, task }) {
   if (validationError !== null) throw validationError;
   if (runError !== null) throw runError;
   if (!isObject(report)) throw new Error("benchmark task must return a report object");
-  if (report.repeat_index !== undefined && report.repeat_index !== task.repeat_index) {
+  if (report.schema_version !== CAMPAIGN_RUN_REPORT_SCHEMA_VERSION) {
+    throw new Error("benchmark task must return a schema-11 campaign report");
+  }
+  if (report.benchmark_task_id !== task.task_id) {
+    throw new Error("benchmark report task identity does not match the planned task");
+  }
+  if (report.repeat_index !== task.repeat_index) {
     throw new Error("benchmark report repeat_index does not match the planned task");
   }
-  return { ...report, repeat_index: task.repeat_index };
+  return report;
 }
 
 function variantKey(task) {

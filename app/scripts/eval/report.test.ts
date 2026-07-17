@@ -123,6 +123,15 @@ function report(results, overrides = {}) {
 	};
 }
 
+function campaignReport(runReport, repeatIndex, taskIdentity) {
+	return {
+		...runReport,
+		schema_version: 11,
+		benchmark_task_id: sha256(taskIdentity),
+		repeat_index: repeatIndex,
+	};
+}
+
 function resultForSample(sampleId, overrides = {}) {
 	const { metrics: metricsOverrides = {}, ...resultOverrides } = overrides;
 	return result({
@@ -273,9 +282,13 @@ test('compares exact provider/model/backend variants only on one identical sampl
 		}),
 	]);
 
-	assert.equal(aggregate.schema_version, 9);
+	assert.equal(aggregate.schema_version, 10);
 	assert.equal(aggregate.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(aggregate.measurement_result_count, 6);
+	assert.deepEqual(aggregate.input_bindings, {
+		standalone_schema_10: { report_count: 3, measurement_result_count: 6 },
+		task_bound_schema_11: { report_count: 0, measurement_result_count: 0 },
+	});
 	assert.equal(aggregate.distinct_sample_count, 2);
 	assert.equal(aggregate.groups, undefined);
 	assert.equal(aggregate.comparison.status, 'comparable');
@@ -287,6 +300,7 @@ test('compares exact provider/model/backend variants only on one identical sampl
 	assert.equal(aggregate.comparison.common_measurement_count, 2);
 	assert.equal(aggregate.comparison.union_measurement_count, 2);
 	assert.equal(aggregate.comparison.groups.variant.length, 3);
+	assert.equal(aggregate.comparison.groups.dataset_variant.length, 0);
 	assert.equal(aggregate.comparison.groups.language_variant.length, 6);
 	assert.equal(aggregate.comparison.groups.scenario_variant.length, 3);
 	assert.equal(aggregate.comparison.groups.noise_condition_variant.length, 6);
@@ -314,6 +328,9 @@ test('compares exact provider/model/backend variants only on one identical sampl
 	assert.equal(cpu.groups.overall.mean_peak_rss_delta_mb, 1900);
 	assert.equal(cpu.groups.overall.max_peak_rss_delta_mb, 1900);
 	assert.equal(metal.groups.overall.wer_percent, 10);
+	assert.equal(metal.groups.overall.macro_wer_percent, 10);
+	assert.equal(metal.groups.overall.p95_inference_rtf, 0.1);
+	assert.equal(metal.groups.overall.p95_model_inference_rtf, 0.2);
 	assert.equal(parakeet.groups.overall.wer_percent, 0);
 	assert.equal(aggregate.wer_scorer, WER_SCORER_ID);
 	assert.equal(
@@ -368,6 +385,8 @@ test('tracks silence hallucinations separately from WER', () => {
 	const markdown = renderMarkdown(aggregate);
 	assert.match(markdown, /Available-sample diagnostics/);
 	assert.match(markdown, /No cross-variant comparison: only one exact variant was supplied/);
+	assert.match(markdown, /Standalone schema 10: 1 report\(s\), 2 measurement result\(s\)/);
+	assert.match(markdown, /Task-bound schema 11: 0 report\(s\), 0 measurement result\(s\)/);
 	assert.match(markdown, /Corpus: `consented-meetings-v1`/);
 	assert.match(markdown, /WER scorer: `muesly-wer-unicode-v1`/);
 	assert.match(markdown, /Platform: `macos\/aarch64`/);
@@ -376,6 +395,10 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /`whisper\/large-v3-turbo-q5_0`: `c{64}`/);
 	assert.match(markdown, /WER ≤ 10\.00%; hallucinated words ≤ 2/);
 	assert.match(markdown, /Aggregate source RTF/);
+	assert.match(markdown, /Macro WER/);
+	assert.match(markdown, /P95 source RTF/);
+	assert.match(markdown, /P95 model-input RTF/);
+	assert.match(markdown, /nearest-rank/);
 	assert.match(markdown, /Aggregate model-input RTF/);
 	assert.match(markdown, /exact post-VAD audio passed to ASR/);
 	assert.match(markdown, /Max sampled evaluator-process host RSS/);
@@ -384,6 +407,80 @@ test('tracks silence hallucinations separately from WER', () => {
 	assert.match(markdown, /excludes accelerator VRAM/);
 	assert.doesNotMatch(markdown, /model memory/i);
 	assert.doesNotMatch(markdown, /—%/);
+});
+
+test('computes equal-measurement macro WER and nearest-rank p95 RTF deterministically', () => {
+	const measurements = Array.from({ length: 20 }, (_, index) => {
+		const inferenceRtf = (index + 1) / 100;
+		const inferenceSeconds = inferenceRtf * 20;
+		return resultForSample(`meeting-${String(index + 1).padStart(2, '0')}`, {
+			reference_words: index === 0 ? 1 : 100,
+			word_errors: index === 0 ? 1 : 0,
+			wer_percent: index === 0 ? 100 : 0,
+			passed: index !== 0,
+			metrics: {
+				inference_seconds: inferenceSeconds,
+				inference_rtf: inferenceRtf,
+				model_inference_rtf: inferenceSeconds / 10,
+				measured_total_seconds: 20,
+			},
+		});
+	});
+	const aggregate = aggregateRunReports([report(measurements)]);
+	const summary = aggregate.diagnostics.variants[0].groups.overall;
+
+	assert.equal(summary.wer_percent, (1 / 1901) * 100);
+	assert.equal(summary.macro_wer_percent, 5);
+	assert.equal(summary.p95_inference_rtf, 0.19);
+	assert.equal(summary.p95_model_inference_rtf, 0.38);
+	const markdown = renderMarkdown(aggregate);
+	assert.match(markdown, /\| 5\.00% \|/);
+	assert.match(markdown, /\| 0\.190 \|/);
+	assert.match(markdown, /\| 0\.380 \|/);
+});
+
+test('reports supported public datasets as separate diagnostic and comparison groups', () => {
+	const samples = [
+		['fleurs-sample', 'fleurs'],
+		['ami-sample', 'ami'],
+		['earnings21-sample', 'earnings21'],
+	].map(([sampleId, dataset]) =>
+		resultForSample(sampleId, {
+			dataset,
+			provenance_basis: 'public-license',
+		}),
+	);
+	const aggregate = aggregateRunReports([
+		variantReport(samples, { model: 'whisper-test', backend: 'metal' }),
+		variantReport(samples, { model: 'whisper-test', backend: 'cpu' }),
+	]);
+
+	for (const diagnostic of aggregate.diagnostics.variants) {
+		assert.deepEqual(
+			diagnostic.groups.dataset.map((row) => row.dataset),
+			['ami', 'earnings21', 'fleurs'],
+		);
+	}
+	assert.equal(aggregate.comparison.groups.dataset_variant.length, 6);
+	const markdown = renderMarkdown(aggregate);
+	assert.match(markdown, /### By dataset and exact variant/);
+	assert.match(markdown, /fleurs \/ whisper\/whisper-test\/metal/);
+	assert.match(markdown, /ami \/ whisper\/whisper-test\/cpu/);
+	assert.match(markdown, /earnings21 \/ whisper\/whisper-test\/metal/);
+	assert.throws(
+		() =>
+			aggregateRunReports([
+				variantReport(
+					[resultForSample('same-public-sample', { dataset: 'fleurs', provenance_basis: 'public-license' })],
+					{ model: 'whisper-test', backend: 'metal' },
+				),
+				variantReport(
+					[resultForSample('same-public-sample', { dataset: 'ami', provenance_basis: 'public-license' })],
+					{ model: 'whisper-test', backend: 'cpu' },
+				),
+			]),
+		/inconsistent identity.*dataset/,
+	);
 });
 
 test('rejects reports that cannot produce trustworthy weighted metrics', () => {
@@ -420,10 +517,14 @@ test('rejects duplicate provider/model/backend/sample measurements across aggreg
 });
 
 test('aggregates declared repetitions while preserving distinct sample cohorts', () => {
-	const first = report([result()], { repeat_index: 1 });
-	const second = report([result()], { repeat_index: 2 });
+	const first = campaignReport(report([result()]), 1, 'whisper-metal-repeat-1');
+	const second = campaignReport(report([result()]), 2, 'whisper-metal-repeat-2');
 	const aggregate = aggregateRunReports([first, second]);
 	assert.equal(aggregate.measurement_result_count, 2);
+	assert.deepEqual(aggregate.input_bindings, {
+		standalone_schema_10: { report_count: 0, measurement_result_count: 0 },
+		task_bound_schema_11: { report_count: 2, measurement_result_count: 2 },
+	});
 	assert.equal(aggregate.distinct_sample_count, 1);
 	assert.equal(aggregate.diagnostics.variants[0].observed_sample_count, 1);
 	assert.equal(aggregate.diagnostics.variants[0].measurement_result_count, 2);
@@ -437,19 +538,34 @@ test('aggregates declared repetitions while preserving distinct sample cohorts',
 	const metal = variantReport([sample], { model: 'whisper-test', backend: 'metal' });
 	const cpu = variantReport([sample], { model: 'whisper-test', backend: 'cpu' });
 	const asymmetric = aggregateRunReports([
-		{ ...metal, repeat_index: 1 },
-		{ ...structuredClone(metal), repeat_index: 2 },
-		{ ...cpu, repeat_index: 1 },
+		campaignReport(metal, 1, 'asymmetric-metal-repeat-1'),
+		campaignReport(structuredClone(metal), 2, 'asymmetric-metal-repeat-2'),
+		campaignReport(cpu, 1, 'asymmetric-cpu-repeat-1'),
 	]);
 	assert.equal(asymmetric.comparison.status, 'unequal-measurement-cohorts');
 	assert.equal(asymmetric.comparison.common_sample_count, 1);
 	assert.equal(asymmetric.comparison.common_measurement_count, 1);
 	assert.equal(asymmetric.comparison.union_measurement_count, 2);
 	assert.equal(asymmetric.comparison.groups, null);
+	const markdown = renderMarkdown(aggregate);
+	assert.match(markdown, /Standalone schema 10: 0 report\(s\), 0 measurement result\(s\)/);
+	assert.match(markdown, /Task-bound schema 11: 2 report\(s\), 2 measurement result\(s\)/);
 
 	assert.match(
 		validateRunReport(report([result()], { repeat_index: 0 })).join('\n'),
 		/repeat_index must be a safe integer from 1 through 10/,
+	);
+	assert.match(
+		validateRunReport(report([result()], { repeat_index: 2 })).join('\n'),
+		/repeat_index must be absent or 1 for schema-10 standalone reports/,
+	);
+	assert.throws(
+		() =>
+			aggregateRunReports([
+				first,
+				{ ...second, benchmark_task_id: first.benchmark_task_id },
+			]),
+		/duplicate benchmark_task_id/,
 	);
 });
 
@@ -705,6 +821,22 @@ test('validates reports against canonical loaded corpus identity and sample meta
 		validateRunReportsAgainstCorpus([wrongAudio], corpus).join('\n'),
 		/audio_sha256 must match corpus sample/,
 	);
+
+	const publicCorpus = loadedCorpus([
+		corpusSample({
+			dataset: 'fleurs',
+			provenance: { basis: 'public-license' },
+		}),
+	]);
+	const publicReport = report([
+		result({ dataset: 'fleurs', provenance_basis: 'public-license' }),
+	]);
+	assert.deepEqual(validateRunReportsAgainstCorpus([publicReport], publicCorpus), []);
+	publicReport.results[0].dataset = 'ami';
+	assert.match(
+		validateRunReportsAgainstCorpus([publicReport], publicCorpus).join('\n'),
+		/results\[0\]\.dataset must match corpus sample/,
+	);
 });
 
 test('rejects mixed corpora and incompatible pass thresholds', () => {
@@ -771,12 +903,84 @@ test('allows cross-backend reports on one machine but rejects mixed accelerators
 	);
 });
 
+test('requires task and repeat identity only for schema-11 campaign reports', () => {
+	const campaign = report([result()], {
+		schema_version: 11,
+		benchmark_task_id: 'f'.repeat(64),
+		repeat_index: 2,
+	});
+	assert.deepEqual(validateRunReport(campaign), []);
+
+	const missingTask = { ...campaign };
+	delete missingTask.benchmark_task_id;
+	assert.match(
+		validateRunReport(missingTask).join('\n'),
+		/benchmark_task_id is required for schema-11 campaign reports/,
+	);
+	const missingRepeat = { ...campaign };
+	delete missingRepeat.repeat_index;
+	assert.match(
+		validateRunReport(missingRepeat).join('\n'),
+		/repeat_index is required for schema-11 campaign reports/,
+	);
+	assert.match(
+		validateRunReport({
+			...report([result()]),
+			benchmark_task_id: 'f'.repeat(64),
+		}).join('\n'),
+		/benchmark_task_id is only allowed in schema-11 campaign reports/,
+	);
+	assert.match(
+		validateRunReport({ ...campaign, results: [result(), result()] }).join('\n'),
+		/results must contain exactly one result for a schema-11 campaign report/,
+	);
+});
+
+test('requires a supported dataset only for public-license results in schemas 10 and 11', () => {
+	for (const schemaVersion of [10, 11]) {
+		const identity =
+			schemaVersion === 11
+				? { benchmark_task_id: 'f'.repeat(64), repeat_index: 1 }
+				: {};
+		const valid = report(
+			[result({ dataset: 'fleurs', provenance_basis: 'public-license' })],
+			{ schema_version: schemaVersion, ...identity },
+		);
+		assert.deepEqual(validateRunReport(valid), []);
+
+		const missing = report([result({ provenance_basis: 'public-license' })], {
+			schema_version: schemaVersion,
+			...identity,
+		});
+		assert.match(
+			validateRunReport(missing).join('\n'),
+			/dataset is required for public-license samples/,
+		);
+		const unsupported = report(
+			[result({ dataset: 'other', provenance_basis: 'public-license' })],
+			{ schema_version: schemaVersion, ...identity },
+		);
+		assert.match(
+			validateRunReport(unsupported).join('\n'),
+			/dataset must be fleurs, ami, or earnings21/,
+		);
+		const nonPublic = report([result({ dataset: 'fleurs' })], {
+			schema_version: schemaVersion,
+			...identity,
+		});
+		assert.match(
+			validateRunReport(nonPublic).join('\n'),
+			/dataset is only allowed for public-license samples/,
+		);
+	}
+});
+
 test('rejects legacy reports and missing scorer provenance', () => {
 	const legacy = { ...report([result()]), schema_version: 9 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 10']);
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 10 or 11']);
 	assert.throws(
 		() => aggregateRunReports([report([result()]), legacy]),
-		/schema_version must be 10/,
+		/schema_version must be 10 or 11/,
 	);
 
 	const missingScorer = { ...report([result()]), wer_scorer: undefined };

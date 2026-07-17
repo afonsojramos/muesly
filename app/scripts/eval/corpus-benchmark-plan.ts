@@ -6,11 +6,20 @@ import {
 	benchmarkDefinitionForReportedBackend,
 	evaluatorPlatformForTargetTriple,
 } from './benchmark-executable.ts';
-import { corpusFingerprint, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
+import {
+	corpusFingerprint,
+	isPublicDatasetId,
+	REFERENCE_PROTOCOL_ID,
+	validateCorpusDocument,
+} from './corpus.ts';
 import { resolveCoverageTarget } from './corpus-targets.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
-import { validateRunReport } from './report.ts';
+import {
+	CAMPAIGN_RUN_REPORT_SCHEMA_VERSION,
+	STANDALONE_RUN_REPORT_SCHEMA_VERSION,
+	validateRunReport,
+} from './report.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
 const ACCELERATOR_BACKENDS = new Set(['metal', 'coreml-metal', 'cuda', 'vulkan', 'hipblas']);
@@ -35,6 +44,7 @@ const PLANNING_CORPUS_FIELDS = new Set([
 	'description',
 	'distribution',
 	'source_catalog_sha256',
+	'preparation',
 	'samples',
 	'corpus_fingerprint',
 	'manifest_path',
@@ -55,6 +65,7 @@ const CHECKPOINT_FIELDS = new Set([
 	'provider',
 	'model',
 	'model_artifact_sha256',
+	'benchmark_task_id',
 	'repeat_index',
 	'thresholds',
 	'passed',
@@ -63,6 +74,7 @@ const CHECKPOINT_FIELDS = new Set([
 const THRESHOLD_FIELDS = new Set(['max_wer_percent', 'max_hallucinated_words']);
 const RESULT_FIELDS = new Set([
 	'sample_id',
+	'dataset',
 	'language',
 	'noise_condition',
 	'scenario',
@@ -309,6 +321,19 @@ function permitsAutomaticAccelerator(targetBackend, evaluatorRevision) {
 	return platform.operatingSystem === 'macos' && platform.architecture === 'aarch64';
 }
 
+function normalizeDataset(dataset, provenanceBasis, label) {
+	if (provenanceBasis === 'public-license') {
+		if (!isPublicDatasetId(dataset)) {
+			throw new Error(`${label} must be fleurs, ami, or earnings21 for public-license samples`);
+		}
+		return dataset;
+	}
+	if (dataset !== undefined) {
+		throw new Error(`${label} is only allowed for public-license samples`);
+	}
+	return undefined;
+}
+
 function matchesConfiguredAccelerator(actual, configured) {
 	if (typeof actual !== 'string') return false;
 	const prefix = `${configured} [ggml=`;
@@ -348,6 +373,8 @@ function taskIdentity(task) {
 			`task.real_run_backend must be '${mapping.realRunBackend}' for ${task.provider}/${task.target_backend}`,
 		);
 	}
+	const provenanceBasis = requiredString(task.provenance_basis, 'task.provenance_basis');
+	const dataset = normalizeDataset(task.dataset, provenanceBasis, 'task.dataset');
 	return {
 		corpus_id: requiredString(task.corpus_id, 'task.corpus_id'),
 		corpus_fingerprint: requireSha256(task.corpus_fingerprint, 'task.corpus_fingerprint'),
@@ -378,7 +405,8 @@ function taskIdentity(task) {
 		noise_condition: requiredString(task.noise_condition, 'task.noise_condition'),
 		scenario: requiredString(task.scenario, 'task.scenario'),
 		speakers: nonNegativeInteger(task.speakers, 'task.speakers'),
-		provenance_basis: requiredString(task.provenance_basis, 'task.provenance_basis'),
+		provenance_basis: provenanceBasis,
+		...(dataset === undefined ? {} : { dataset }),
 		repeat_index:
 			task.repeat_index === undefined
 				? 1
@@ -464,6 +492,9 @@ function planningCorpusDocument(corpus) {
 		...(corpus.source_catalog_sha256 === undefined
 			? {}
 			: { source_catalog_sha256: corpus.source_catalog_sha256 }),
+		...(corpus.preparation === undefined
+			? {}
+			: { preparation: structuredClone(corpus.preparation) }),
 		samples,
 	};
 	const manifestPath =
@@ -523,6 +554,7 @@ export function planCorpusBenchmarkTasks({
 			scenario: sample.scenario,
 			speakers: sample.speakers,
 			provenance_basis: sample.provenance.basis,
+			...(sample.dataset === undefined ? {} : { dataset: sample.dataset }),
 		};
 	});
 
@@ -584,37 +616,38 @@ export function planCorpusBenchmarkTasks({
 		}
 		for (const sample of plannedSamples) {
 			for (let repeatIndex = 1; repeatIndex <= resolvedTarget.repetitions; repeatIndex += 1) {
-					const task = {
-						variant_index: variantIndex,
-						corpus_id: corpusId,
-						corpus_fingerprint: corpusFingerprintValue,
-						reference_protocol_id: planningCorpus.reference_protocol_id,
-						target_id: targetId,
-						wer_scorer: WER_SCORER_ID,
-						evaluator_revision: copyEvaluatorRevision(evaluator.revision),
-						evaluator_revision_sha256: evaluator.sha256,
-						provider: mapping.provider,
-						model,
-						target_backend: mapping.targetBackend,
-						real_run_backend: mapping.realRunBackend,
-						accelerator,
-						sample_id: sample.id,
-						sample_revision_sha256: sample.sample_revision_sha256,
-						audio_sha256: sample.audio_sha256,
-						audio_duration_seconds: sample.audio_duration_seconds,
-						session_id: sample.session_id,
-						language: sample.language,
-						target_language: sample.target_language,
-						noise_condition: sample.noise_condition,
-						scenario: sample.scenario,
-						speakers: sample.speakers,
-						provenance_basis: sample.provenance_basis,
-						repeat_index: repeatIndex,
-						thresholds: { ...normalizedThresholds },
-					};
-					task.task_id = taskDigest(task);
-					task.report_filename = taskReportFilename(task);
-					tasks.push(task);
+				const task = {
+					variant_index: variantIndex,
+					corpus_id: corpusId,
+					corpus_fingerprint: corpusFingerprintValue,
+					reference_protocol_id: planningCorpus.reference_protocol_id,
+					target_id: targetId,
+					wer_scorer: WER_SCORER_ID,
+					evaluator_revision: copyEvaluatorRevision(evaluator.revision),
+					evaluator_revision_sha256: evaluator.sha256,
+					provider: mapping.provider,
+					model,
+					target_backend: mapping.targetBackend,
+					real_run_backend: mapping.realRunBackend,
+					accelerator,
+					sample_id: sample.id,
+					sample_revision_sha256: sample.sample_revision_sha256,
+					audio_sha256: sample.audio_sha256,
+					audio_duration_seconds: sample.audio_duration_seconds,
+					session_id: sample.session_id,
+					language: sample.language,
+					target_language: sample.target_language,
+					noise_condition: sample.noise_condition,
+					scenario: sample.scenario,
+					speakers: sample.speakers,
+					provenance_basis: sample.provenance_basis,
+					...(sample.dataset === undefined ? {} : { dataset: sample.dataset }),
+					repeat_index: repeatIndex,
+					thresholds: { ...normalizedThresholds },
+				};
+				task.task_id = taskDigest(task);
+				task.report_filename = taskReportFilename(task);
+				tasks.push(task);
 			}
 		}
 	}
@@ -851,11 +884,13 @@ function validateCheckpointShape(report, errors) {
 
 function checkpointTask(task) {
 	const identity = taskIdentity(task);
-	if (task.task_id !== undefined && task.task_id !== sha256(identity)) {
+	const taskId = sha256(identity);
+	if (task.task_id !== undefined && task.task_id !== taskId) {
 		throw new Error('task.task_id does not match its benchmark identity');
 	}
 	return {
 		...identity,
+		task_id: taskId,
 		real_run_backend: resolveBenchmarkBackend(identity.provider, identity.target_backend)
 			.realRunBackend,
 		language: requiredString(task.language, 'task.language'),
@@ -918,12 +953,33 @@ export function validateTaskCheckpoint(report, task, { expectedModelArtifactSha2
 	}
 	compareField(errors, report.provider, expected.provider, 'checkpoint.provider');
 	compareField(errors, report.model, expected.model, 'checkpoint.model');
-	compareField(
-		errors,
-		report.repeat_index ?? 1,
-		expected.repeat_index,
-		'checkpoint.repeat_index',
-	);
+	if (report.schema_version === CAMPAIGN_RUN_REPORT_SCHEMA_VERSION) {
+		compareField(
+			errors,
+			report.benchmark_task_id,
+			expected.task_id,
+			'checkpoint.benchmark_task_id',
+		);
+		compareField(
+			errors,
+			report.repeat_index,
+			expected.repeat_index,
+			'checkpoint.repeat_index',
+		);
+	} else if (report.schema_version === STANDALONE_RUN_REPORT_SCHEMA_VERSION) {
+		if (expected.repeat_index !== 1) {
+			errors.push(
+				'checkpoint.schema_version must be 11 for repeated campaign tasks because schema 10 ' +
+					'does not bind the planned benchmark task identity',
+			);
+		}
+		compareField(
+			errors,
+			report.repeat_index ?? 1,
+			expected.repeat_index,
+			'checkpoint.repeat_index',
+		);
+	}
 	if (isObject(report.thresholds)) {
 		compareField(
 			errors,
@@ -975,6 +1031,7 @@ export function validateTaskCheckpoint(report, task, { expectedModelArtifactSha2
 		expected.provenance_basis,
 		'checkpoint.results[0].provenance_basis',
 	);
+	compareField(errors, result.dataset, expected.dataset, 'checkpoint.results[0].dataset');
 	if (typeof report.passed === 'boolean' && typeof result.passed === 'boolean') {
 		compareField(errors, report.passed, result.passed, 'checkpoint.passed');
 	}

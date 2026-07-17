@@ -12,6 +12,7 @@ import {
 	variantKey,
 } from './corpus-targets.ts';
 import {
+	CAMPAIGN_RUN_REPORT_SCHEMA_VERSION,
 	modelArtifactBindingKey,
 	validateRunReport,
 	validateRunReportsAgainstCorpus,
@@ -211,6 +212,14 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 			`benchmark reports do not match the corpus manifest:\n- ${reportBindingErrors.join('\n- ')}`,
 		);
 	}
+	if (
+		resolvedTarget.repetitions > 1 &&
+		reports.some((report) => report.schema_version !== CAMPAIGN_RUN_REPORT_SCHEMA_VERSION)
+	) {
+		throw new Error(
+			'repeated coverage requires schema-11 campaign reports with planned task identities',
+		);
+	}
 	const duplicateAudio = findDuplicateAudioSamples(corpus.samples);
 	if (duplicateAudio.length > 0) {
 		const { first, duplicate } = duplicateAudio[0];
@@ -231,11 +240,34 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	const evaluatorRevisions = new Map();
 	const benchmarkExecutables = new Map();
 	const measurementKeys = new Set();
+	const benchmarkTaskSources = new Map();
 	let commonEvaluatorRevision;
 	let werScorer;
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
+		if (report.schema_version === CAMPAIGN_RUN_REPORT_SCHEMA_VERSION) {
+			const result = report.results[0];
+			const taskMeasurement = JSON.stringify([
+				report.provider,
+				report.model,
+				result.metrics.backend,
+				result.sample_id,
+				report.repeat_index,
+			]);
+			const priorTask = benchmarkTaskSources.get(report.benchmark_task_id);
+			if (priorTask !== undefined) {
+				throw new Error(
+					`duplicate benchmark_task_id '${report.benchmark_task_id}' binds ` +
+						`${priorTask.measurement} in reports[${priorTask.index}] and ` +
+						`${taskMeasurement} in reports[${index}]`,
+				);
+			}
+			benchmarkTaskSources.set(report.benchmark_task_id, {
+				index,
+				measurement: taskMeasurement,
+			});
+		}
 		if (report.corpus_id !== corpus.corpus_id) {
 			throw new Error(
 				`report corpus '${report.corpus_id}' does not match manifest corpus '${corpus.corpus_id}'`,

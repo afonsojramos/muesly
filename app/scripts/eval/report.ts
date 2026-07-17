@@ -10,10 +10,13 @@ import {
 	validateHardwareProfile,
 } from './benchmark-executable.ts';
 import { writeCorpusBoundFiles } from './corpus-result.ts';
-import { loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { isPublicDatasetId, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
+export const STANDALONE_RUN_REPORT_SCHEMA_VERSION = 10;
+export const CAMPAIGN_RUN_REPORT_SCHEMA_VERSION = 11;
+export const AGGREGATE_REPORT_SCHEMA_VERSION = 10;
 // The VAD flush pads one final 16 kHz processing block, so model input can
 // legitimately exceed decoded source duration by less than one 30 ms block.
 const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
@@ -35,9 +38,13 @@ const RUN_REPORT_REQUIRED_FIELDS = new Set([
 	'passed',
 	'results',
 ]);
-const RUN_REPORT_FIELDS = new Set([...RUN_REPORT_REQUIRED_FIELDS, 'repeat_index']);
+const RUN_REPORT_FIELDS = new Set([
+	...RUN_REPORT_REQUIRED_FIELDS,
+	'benchmark_task_id',
+	'repeat_index',
+]);
 const THRESHOLD_FIELDS = new Set(['max_wer_percent', 'max_hallucinated_words']);
-const RESULT_FIELDS = new Set([
+const RESULT_REQUIRED_FIELDS = new Set([
 	'sample_id',
 	'language',
 	'noise_condition',
@@ -51,6 +58,7 @@ const RESULT_FIELDS = new Set([
 	'passed',
 	'metrics',
 ]);
+const RESULT_FIELDS = new Set([...RESULT_REQUIRED_FIELDS, 'dataset']);
 const METRICS_FIELDS = new Set([
 	'schema_version',
 	'provider',
@@ -117,12 +125,18 @@ function requireVersionedIdentifier(value, field, errors) {
 	}
 }
 
-function rejectUnknownAndMissingFields(value, allowedFields, field, errors) {
+function rejectUnknownAndMissingFields(
+	value,
+	allowedFields,
+	field,
+	errors,
+	requiredFields = allowedFields,
+) {
 	if (!isObject(value)) return;
 	for (const key of Object.keys(value)) {
 		if (!allowedFields.has(key)) errors.push(`${field}.${key} is not allowed`);
 	}
-	for (const key of allowedFields) {
+	for (const key of requiredFields) {
 		if (!Object.hasOwn(value, key)) errors.push(`${field}.${key} is required`);
 	}
 }
@@ -366,7 +380,29 @@ export function validateRunReport(report, label = 'report') {
 	for (const key of RUN_REPORT_REQUIRED_FIELDS) {
 		if (!Object.hasOwn(report, key)) errors.push(`${label}.${key} is required`);
 	}
-	if (report.schema_version !== 10) errors.push(`${label}.schema_version must be 10`);
+	const standaloneReport = report.schema_version === STANDALONE_RUN_REPORT_SCHEMA_VERSION;
+	const campaignReport = report.schema_version === CAMPAIGN_RUN_REPORT_SCHEMA_VERSION;
+	if (!standaloneReport && !campaignReport) {
+		errors.push(
+			`${label}.schema_version must be ${STANDALONE_RUN_REPORT_SCHEMA_VERSION} or ` +
+				`${CAMPAIGN_RUN_REPORT_SCHEMA_VERSION}`,
+		);
+	}
+	if (standaloneReport && report.benchmark_task_id !== undefined) {
+		errors.push(`${label}.benchmark_task_id is only allowed in schema-11 campaign reports`);
+	}
+	if (standaloneReport && report.repeat_index !== undefined && report.repeat_index !== 1) {
+		errors.push(`${label}.repeat_index must be absent or 1 for schema-10 standalone reports`);
+	}
+	if (campaignReport) {
+		if (!Object.hasOwn(report, 'benchmark_task_id')) {
+			errors.push(`${label}.benchmark_task_id is required for schema-11 campaign reports`);
+		}
+		if (!Object.hasOwn(report, 'repeat_index')) {
+			errors.push(`${label}.repeat_index is required for schema-11 campaign reports`);
+		}
+		requireSha256(report.benchmark_task_id, `${label}.benchmark_task_id`, errors);
+	}
 	if (
 		report.repeat_index !== undefined &&
 		(!Number.isSafeInteger(report.repeat_index) || report.repeat_index < 1 || report.repeat_index > 10)
@@ -440,6 +476,9 @@ export function validateRunReport(report, label = 'report') {
 		errors.push(`${label}.results must be a non-empty array`);
 		return errors;
 	}
+	if (campaignReport && report.results.length !== 1) {
+		errors.push(`${label}.results must contain exactly one result for a schema-11 campaign report`);
+	}
 	let reportMetricsIdentity;
 	const checkedBenchmarkBindings = new Set();
 	const sampleResultIndexes = new Map();
@@ -449,7 +488,7 @@ export function validateRunReport(report, label = 'report') {
 			errors.push(`${prefix} must be an object`);
 			continue;
 		}
-		rejectUnknownAndMissingFields(result, RESULT_FIELDS, prefix, errors);
+		rejectUnknownAndMissingFields(result, RESULT_FIELDS, prefix, errors, RESULT_REQUIRED_FIELDS);
 		for (const field of [
 			'sample_id',
 			'language',
@@ -458,6 +497,15 @@ export function validateRunReport(report, label = 'report') {
 			'provenance_basis',
 		]) {
 			requireString(result[field], `${prefix}.${field}`, errors);
+		}
+		if (result.provenance_basis === 'public-license') {
+			if (!Object.hasOwn(result, 'dataset')) {
+				errors.push(`${prefix}.dataset is required for public-license samples`);
+			} else if (!isPublicDatasetId(result.dataset)) {
+				errors.push(`${prefix}.dataset must be fleurs, ami, or earnings21`);
+			}
+		} else if (Object.hasOwn(result, 'dataset')) {
+			errors.push(`${prefix}.dataset is only allowed for public-license samples`);
 		}
 		if (typeof result.sample_id === 'string' && result.sample_id.length > 0) {
 			const priorIndex = sampleResultIndexes.get(result.sample_id);
@@ -701,6 +749,7 @@ export function validateRunReportsAgainstCorpus(reports, corpus, label = 'report
 				continue;
 			}
 			for (const [resultField, sampleValue, sampleField] of [
+				['dataset', sample.dataset, 'dataset'],
 				['language', sample.language, 'language'],
 				['noise_condition', sample.noise_condition, 'noise_condition'],
 				['scenario', sample.scenario, 'scenario'],
@@ -749,6 +798,12 @@ function median(values) {
 	return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
 }
 
+function nearestRankPercentile(values, percentile) {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((left, right) => left - right);
+	return sorted[Math.ceil(percentile * sorted.length) - 1];
+}
+
 function summarize(records) {
 	const werRecords = records.filter((record) => record.reference_words !== null);
 	const silenceRecords = records.filter((record) => record.reference_words === null);
@@ -784,6 +839,8 @@ function summarize(records) {
 		reference_words: referenceWords,
 		word_errors: wordErrors,
 		wer_percent: referenceWords === 0 ? null : (wordErrors / referenceWords) * 100,
+		macro_wer_percent:
+			werRecords.length === 0 ? null : mean(werRecords.map((record) => record.wer_percent)),
 		hallucination_samples: silenceRecords.length,
 		hallucinated_words_total: silenceRecords.reduce(
 			(sum, record) => sum + record.hallucinated_words,
@@ -797,11 +854,13 @@ function summarize(records) {
 			audioDurationSeconds === 0 ? null : inferenceSeconds / audioDurationSeconds,
 		mean_inference_rtf: mean(rtfs),
 		median_inference_rtf: median(rtfs),
+		p95_inference_rtf: nearestRankPercentile(rtfs, 0.95),
 		max_inference_rtf: Math.max(...rtfs),
 		aggregate_model_inference_rtf:
 			inferenceAudioSeconds === 0 ? null : inferenceSeconds / inferenceAudioSeconds,
 		mean_model_inference_rtf: modelRtfs.length === 0 ? null : mean(modelRtfs),
 		median_model_inference_rtf: modelRtfs.length === 0 ? null : median(modelRtfs),
+		p95_model_inference_rtf: nearestRankPercentile(modelRtfs, 0.95),
 		max_model_inference_rtf: modelRtfs.length === 0 ? null : Math.max(...modelRtfs),
 		mean_baseline_rss_mb: mean(baselines),
 		max_baseline_rss_mb: Math.max(...baselines),
@@ -871,6 +930,10 @@ function summarizeVariant(identity, records) {
 		measurement_result_count: orderedRecords.length,
 		groups: {
 			overall: summarize(orderedRecords),
+			dataset: groupedSummaries(
+				orderedRecords.filter((record) => record.dataset !== undefined),
+				[['dataset', (record) => record.dataset]],
+			),
 			language: groupedSummaries(orderedRecords, [['language', (record) => record.language]]),
 			scenario: groupedSummaries(orderedRecords, [['scenario', (record) => record.scenario]]),
 			noise_condition: groupedSummaries(orderedRecords, [
@@ -903,6 +966,12 @@ function comparisonGroups(diagnostics) {
 		variant: diagnostics.map((diagnostic) =>
 			withVariant(diagnostic, { summary: diagnostic.groups.overall }),
 		),
+		dataset_variant: sortRows(
+			diagnostics.flatMap((diagnostic) =>
+				diagnostic.groups.dataset.map((row) => withVariant(diagnostic, row)),
+			),
+			['dataset'],
+		),
 		language_variant: sortRows(
 			diagnostics.flatMap((diagnostic) =>
 				diagnostic.groups.language.map((row) => withVariant(diagnostic, row)),
@@ -934,6 +1003,7 @@ function sampleIdentity(record) {
 	return {
 		audio_sha256: record.metrics.audio_sha256,
 		audio_duration_seconds: record.metrics.audio_duration_seconds,
+		dataset: record.dataset,
 		language: record.language,
 		noise_condition: record.noise_condition,
 		scenario: record.scenario,
@@ -946,6 +1016,7 @@ function sampleIdentity(record) {
 function sampleIdentityMismatch(left, right) {
 	for (const field of [
 		'audio_sha256',
+		'dataset',
 		'language',
 		'noise_condition',
 		'scenario',
@@ -999,10 +1070,43 @@ export function aggregateRunReports(reports) {
 	const evaluatorRevisions = new Map();
 	const benchmarkExecutables = new Map();
 	const measurementSources = new Map();
+	const benchmarkTaskSources = new Map();
 	const sampleIdentities = new Map();
+	const inputBindings = {
+		standalone_schema_10: { report_count: 0, measurement_result_count: 0 },
+		task_bound_schema_11: { report_count: 0, measurement_result_count: 0 },
+	};
 	for (const [index, report] of reports.entries()) {
 		const errors = validateRunReport(report, `reports[${index}]`);
 		if (errors.length > 0) throw new Error(`invalid benchmark report:\n- ${errors.join('\n- ')}`);
+		const inputBinding =
+			report.schema_version === STANDALONE_RUN_REPORT_SCHEMA_VERSION
+				? inputBindings.standalone_schema_10
+				: inputBindings.task_bound_schema_11;
+		inputBinding.report_count += 1;
+		inputBinding.measurement_result_count += report.results.length;
+		if (report.schema_version === CAMPAIGN_RUN_REPORT_SCHEMA_VERSION) {
+			const result = report.results[0];
+			const taskMeasurement = JSON.stringify([
+				report.provider,
+				report.model,
+				result.metrics.backend,
+				result.sample_id,
+				report.repeat_index,
+			]);
+			const priorTask = benchmarkTaskSources.get(report.benchmark_task_id);
+			if (priorTask !== undefined) {
+				throw new Error(
+					`cannot aggregate duplicate benchmark_task_id '${report.benchmark_task_id}' ` +
+						`for ${priorTask.measurement} from reports[${priorTask.index}] and ` +
+						`${taskMeasurement} from reports[${index}]`,
+				);
+			}
+			benchmarkTaskSources.set(report.benchmark_task_id, {
+				index,
+				measurement: taskMeasurement,
+			});
+		}
 		if (corpusId === undefined) {
 			corpusId = report.corpus_id;
 			corpusFingerprint = report.corpus_fingerprint;
@@ -1200,7 +1304,7 @@ export function aggregateRunReports(reports) {
 	}));
 
 	return {
-		schema_version: 9,
+		schema_version: AGGREGATE_REPORT_SCHEMA_VERSION,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
@@ -1225,6 +1329,7 @@ export function aggregateRunReports(reports) {
 		thresholds,
 		source_report_count: reports.length,
 		measurement_result_count: records.length,
+		input_bindings: inputBindings,
 		distinct_sample_count: unionSampleIds.size,
 		diagnostics: { variants: diagnostics },
 		comparison: {
@@ -1256,19 +1361,24 @@ function variantLabel(row) {
 
 function appendSummaryTable(lines, rows) {
 	lines.push(
-		'| Group | Samples | Pass rate | WER | Aggregate source RTF | P50 source RTF | Aggregate model-input RTF | P50 model-input RTF | Max sampled evaluator-process host RSS | Max sampled host RSS increase from pre-model-load baseline | Hallucinated words |',
+		'| Group | Samples | Pass rate | Micro WER | Macro WER | Aggregate source RTF | P50 source RTF | P95 source RTF | Aggregate model-input RTF | P50 model-input RTF | P95 model-input RTF | Max sampled evaluator-process host RSS | Max sampled host RSS increase from pre-model-load baseline | Hallucinated words |',
 	);
-	lines.push('| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |');
+	lines.push(
+		'| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
+	);
 	for (const { label, summary } of rows) {
 		const werCell = summary.wer_percent === null ? '—' : `${display(summary.wer_percent)}%`;
+		const macroWerCell =
+			summary.macro_wer_percent === null ? '—' : `${display(summary.macro_wer_percent)}%`;
 		lines.push(
-			`| ${escapeCell(label)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${display(summary.max_peak_rss_delta_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
+			`| ${escapeCell(label)} | ${summary.samples} | ${display(summary.pass_rate_percent)}% | ${werCell} | ${macroWerCell} | ${display(summary.aggregate_inference_rtf, 3)} | ${display(summary.median_inference_rtf, 3)} | ${display(summary.p95_inference_rtf, 3)} | ${display(summary.aggregate_model_inference_rtf, 3)} | ${display(summary.median_model_inference_rtf, 3)} | ${display(summary.p95_model_inference_rtf, 3)} | ${display(summary.max_peak_rss_mb, 1)} MiB | ${display(summary.max_peak_rss_delta_mb, 1)} MiB | ${summary.hallucinated_words_total} |`,
 		);
 	}
 }
 
 function comparisonRowLabel(dimension, row) {
 	const variant = variantLabel(row);
+	if (dimension === 'dataset_variant') return `${row.dataset} / ${variant}`;
 	if (dimension === 'language_variant') return `${row.language} / ${variant}`;
 	if (dimension === 'scenario_variant') return `${row.scenario} / ${variant}`;
 	if (dimension === 'noise_condition_variant') return `${row.noise_condition} / ${variant}`;
@@ -1280,6 +1390,7 @@ function comparisonRowLabel(dimension, row) {
 
 function comparisonDimensionTitle(dimension) {
 	if (dimension === 'variant') return 'By exact variant';
+	if (dimension === 'dataset_variant') return 'By dataset and exact variant';
 	if (dimension === 'language_variant') return 'By language and exact variant';
 	if (dimension === 'scenario_variant') return 'By scenario and exact variant';
 	if (dimension === 'noise_condition_variant') return 'By noise condition and exact variant';
@@ -1291,6 +1402,11 @@ export function renderMarkdown(report) {
 		'# ASR corpus benchmark',
 		'',
 		`Generated ${report.generated_at} from ${report.source_report_count} run report(s), ${report.measurement_result_count} measurement result(s), and ${report.distinct_sample_count} distinct sample(s).`,
+		'',
+		'Input bindings:',
+		'',
+		`- Standalone schema 10: ${report.input_bindings.standalone_schema_10.report_count} report(s), ${report.input_bindings.standalone_schema_10.measurement_result_count} measurement result(s).`,
+		`- Task-bound schema 11: ${report.input_bindings.task_bound_schema_11.report_count} report(s), ${report.input_bindings.task_bound_schema_11.measurement_result_count} measurement result(s).`,
 		'',
 		`Corpus: \`${report.corpus_id}\``,
 		'',
@@ -1334,7 +1450,7 @@ export function renderMarkdown(report) {
 		'',
 		`Pass thresholds: WER ≤ ${display(report.thresholds.max_wer_percent)}%; hallucinated words ≤ ${display(report.thresholds.max_hallucinated_words, 0)}.`,
 		'',
-		'WER is micro-averaged from total word errors / total reference words. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR.',
+		'Micro WER is total word errors / total reference words. Macro WER is the arithmetic mean of per-sample WER, with every distinct sample/repeat measurement weighted equally. P95 RTF uses the deterministic nearest-rank method. Source-audio RTF divides inference time by original audio duration; model-input RTF divides it by the exact post-VAD audio passed to ASR.',
 		'',
 		"RSS is evaluator-process host memory sampled every 10 ms from immediately before model load through the end of inference. It includes the evaluator process and runtime, excludes accelerator VRAM, and may miss peaks between samples. RSS increase is the sampled peak minus that process's pre-model-load baseline; it is not model-only memory.",
 		'',
@@ -1366,6 +1482,7 @@ export function renderMarkdown(report) {
 	if (report.comparison.groups !== null) {
 		lines.push('', '## Cross-variant comparisons');
 		for (const [dimension, rows] of Object.entries(report.comparison.groups)) {
+			if (rows.length === 0) continue;
 			lines.push('', `### ${comparisonDimensionTitle(dimension)}`, '');
 			appendSummaryTable(
 				lines,
@@ -1383,11 +1500,13 @@ export function renderMarkdown(report) {
 			lines.push('', `### ${variantLabel(diagnostic)}`, '', '#### Overall', '');
 			appendSummaryTable(lines, [{ label: 'all observed', summary: diagnostic.groups.overall }]);
 			for (const [dimension, rows] of [
+				['Dataset', diagnostic.groups.dataset],
 				['Language', diagnostic.groups.language],
 				['Scenario', diagnostic.groups.scenario],
 				['Noise condition', diagnostic.groups.noise_condition],
 				['Language and noise condition', diagnostic.groups.language_noise],
 			]) {
+				if (rows.length === 0) continue;
 				lines.push('', `#### ${dimension}`, '');
 				appendSummaryTable(
 					lines,
@@ -1395,7 +1514,7 @@ export function renderMarkdown(report) {
 						label:
 							row.language && row.noise_condition
 								? `${row.language} / ${row.noise_condition}`
-								: (row.language ?? row.scenario ?? row.noise_condition),
+								: (row.dataset ?? row.language ?? row.scenario ?? row.noise_condition),
 						summary: row.summary,
 					})),
 				);

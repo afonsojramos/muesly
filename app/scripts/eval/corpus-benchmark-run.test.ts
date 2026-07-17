@@ -190,6 +190,7 @@ function cancellableRealSession(t, task, directory, markerPath) {
 function reportForTask(task, identity = currentIdentity(), overrides = {}) {
   const result = {
     sample_id: task.sample_id,
+    ...(task.dataset === undefined ? {} : { dataset: task.dataset }),
     language: task.language,
     noise_condition: task.noise_condition,
     scenario: task.scenario,
@@ -228,7 +229,8 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
     ...overrides.result,
   };
   return {
-    schema_version: 10,
+    schema_version: 11,
+    benchmark_task_id: task.task_id,
     corpus_id: task.corpus_id,
     corpus_fingerprint: task.corpus_fingerprint,
     reference_protocol_id: task.reference_protocol_id,
@@ -240,6 +242,7 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
     benchmark_executable_sha256: identity.benchmark_executable_sha256,
     provider: task.provider,
     model: task.model,
+    repeat_index: task.repeat_index,
     model_artifact_sha256: identity.model_artifact_sha256,
     thresholds: { ...task.thresholds },
     passed: result.passed,
@@ -248,7 +251,7 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
   };
 }
 
-function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
+function fixture(t, { samples = ["sample-b", "sample-a"], dataset } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "muesly-campaign-"));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
   const localCorpusRoot = path.join(directory, "local-corpus");
@@ -264,6 +267,7 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
     return {
       id: sampleId,
       session_id: "session-a",
+      ...(dataset === undefined ? {} : { dataset }),
       audio_path: `local-corpus/session-a/${audioName}`,
       audio_sha256: sha256(audio),
       reference_path: `local-corpus/session-a/${referenceName}`,
@@ -274,13 +278,22 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
       noise_condition: "clean",
       speakers: 2,
       duration_seconds: 20,
-      provenance: {
-        basis: "participant-consent",
-        redistribution: "local-only",
-        consent_record_id: `consent-${sampleId}`,
-        consent_date: "2026-07-01",
-        consented_uses: ["asr-benchmarking"],
-      },
+      provenance:
+        dataset === undefined
+          ? {
+              basis: "participant-consent",
+              redistribution: "local-only",
+              consent_record_id: `consent-${sampleId}`,
+              consent_date: "2026-07-01",
+              consented_uses: ["asr-benchmarking"],
+            }
+          : {
+              basis: "public-license",
+              redistribution: "local-only",
+              source_catalog_id: "public-corpus-sources-v1",
+              source_item_ids: [`source-${sampleId}`],
+              transform_id: "deterministic-test-transform",
+            },
     };
   });
   const manifestPath = path.join(directory, "corpus-local.json");
@@ -292,6 +305,19 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
       reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Local consented meetings.",
       distribution: "local",
+      ...(dataset === undefined
+        ? {}
+        : {
+            source_catalog_sha256: "9".repeat(64),
+            preparation: {
+              protocol_id: "muesly-public-asr-preparation-v1",
+              source_catalog_id: "public-corpus-sources-v1",
+              selection_sha256: "8".repeat(64),
+              ffmpeg_id: "ffmpeg-test",
+              ffmpeg_sha256: "7".repeat(64),
+              ffmpeg_version: "ffmpeg test version",
+            },
+          }),
       samples: corpusSamples,
     })}\n`,
     { mode: 0o600 },
@@ -304,11 +330,15 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
       target_id: "multilingual-v1",
       reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Test target.",
-      coverage_mode: "language-noise-matrix",
-      languages: ["en"],
-      noise_conditions: ["clean"],
+      coverage_mode: dataset === undefined ? "language-noise-matrix" : "explicit-samples",
+      ...(dataset === undefined
+        ? {
+            languages: ["en"],
+            noise_conditions: ["clean"],
+            min_sessions_per_language_noise_cell: 1,
+          }
+        : { sample_ids: samples, repetitions: 1 }),
       benchmark_variants: [{ provider: "whisper", model: "whisper-test", backend: "cpu" }],
-      min_sessions_per_language_noise_cell: 1,
     })}\n`,
   );
   return {
@@ -569,6 +599,134 @@ test("checkpoints every task privately and resumes only exact completed identiti
   assert.equal(resumed.executedTasks, 0);
   assert.equal(resumed.completedTasks, 2);
   assert.deepEqual(resumed.checkpointNames, first.checkpointNames);
+});
+
+test("rejects one cached report reused across later planned repeats", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  const targets = JSON.parse(fs.readFileSync(current.targetsPath, "utf8"));
+  targets.coverage_mode = "explicit-samples";
+  targets.sample_ids = ["sample-a"];
+  targets.repetitions = 3;
+  delete targets.languages;
+  delete targets.noise_conditions;
+  delete targets.min_sessions_per_language_noise_cell;
+  fs.writeFileSync(current.targetsPath, `${JSON.stringify(targets)}\n`);
+
+  let cachedReport = null;
+  const observedTaskIds = [];
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        runTask: ({ task }) => {
+          observedTaskIds.push(task.task_id);
+          cachedReport ??= reportForTask(task);
+          return {
+            ...cachedReport,
+            repeat_index: task.repeat_index,
+          };
+        },
+      }),
+    ),
+    /benchmark report task identity does not match the planned task/,
+  );
+
+  assert.equal(new Set(observedTaskIds).size, 2);
+  assert.equal(
+    fs.readdirSync(current.resultsDirectory).filter(isCorpusBenchmarkCheckpointName).length,
+    1,
+  );
+});
+
+test("passes the planned task and repeat identity into the evaluator before inference", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  const observed = [];
+  const campaignDependencies = dependencies({
+    prepareSession: ({ task }) => {
+      const session = preparedSession(task);
+      session.runSample = (_sample, runOptions) => {
+        observed.push({
+          benchmarkTaskId: runOptions.benchmarkTaskId,
+          repeatIndex: runOptions.repeatIndex,
+        });
+        return reportForTask(task);
+      };
+      return session;
+    },
+  });
+  delete campaignDependencies.runTask;
+
+  const result = await runCorpusBenchmarkCampaign(options(current), campaignDependencies);
+
+  assert.equal(result.executedTasks, 1);
+  assert.equal(observed.length, 1);
+  assert.match(observed[0].benchmarkTaskId, /^[a-f0-9]{64}$/);
+  assert.equal(observed[0].repeatIndex, 1);
+});
+
+test("binds a public dataset from the leased sample through evaluator output", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"], dataset: "fleurs" });
+  const observed = [];
+  const result = await runCorpusBenchmarkCampaign(
+    options(current),
+    dependencies({
+      runTask: ({ task, sample }) => {
+        observed.push({ taskDataset: task.dataset, sampleDataset: sample.dataset });
+        return reportForTask(task);
+      },
+    }),
+  );
+
+  assert.equal(result.executedTasks, 1);
+  assert.deepEqual(observed, [{ taskDataset: "fleurs", sampleDataset: "fleurs" }]);
+  const checkpointPath = path.join(current.resultsDirectory, result.checkpointNames[0]);
+  assert.equal(JSON.parse(fs.readFileSync(checkpointPath, "utf8")).results[0].dataset, "fleurs");
+});
+
+test("rejects a leased public sample whose dataset differs from the planned task", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"], dataset: "fleurs" });
+  let evaluatorStarted = false;
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        assertSampleUnchanged(lease, sampleId) {
+          return {
+            ...assertLeasedCorpusSampleUnchanged(lease, sampleId),
+            dataset: "ami",
+          };
+        },
+        runTask: () => {
+          evaluatorStarted = true;
+          throw new Error("must not run");
+        },
+      }),
+    ),
+    /leased benchmark sample\.dataset does not match the planned task/,
+  );
+  assert.equal(evaluatorStarted, false);
+});
+
+test("rejects a legacy standalone report returned by a campaign evaluator", async (t) => {
+  const current = fixture(t, { samples: ["sample-a"] });
+  await assert.rejects(
+    runCorpusBenchmarkCampaign(
+      options(current),
+      dependencies({
+        runTask: ({ task }) => {
+          const report = reportForTask(task);
+          report.schema_version = 10;
+          delete report.benchmark_task_id;
+          return report;
+        },
+      }),
+    ),
+    /benchmark task must return a schema-11 campaign report/,
+  );
+  assert.equal(
+    fs.readdirSync(current.resultsDirectory).filter(isCorpusBenchmarkCheckpointName).length,
+    0,
+  );
 });
 
 test("reuses one prepared variant session without reloading the full corpus per sample", async (t) => {

@@ -247,6 +247,28 @@ function runReport(corpus, backend, options = {}) {
 	};
 }
 
+function campaignRunReport(corpus, backend, options = {}) {
+	const repeatIndex = options.repeatIndex ?? 1;
+	const standalone = runReport(corpus, backend, { ...options, repeatIndex });
+	const sampleId = standalone.results[0]?.sample_id ?? 'missing-sample';
+	const taskIdentity = JSON.stringify([
+		options.targetId ?? 'test-targets',
+		corpus.corpus_fingerprint,
+		standalone.provider,
+		standalone.model,
+		backend,
+		sampleId,
+		repeatIndex,
+	]);
+	return {
+		...standalone,
+		schema_version: 11,
+		benchmark_task_id:
+			options.benchmarkTaskId ?? createHash('sha256').update(taskIdentity).digest('hex'),
+		repeat_index: repeatIndex,
+	};
+}
+
 function completeCorpus() {
 	const samples = [];
 	for (const language of targets.languages) {
@@ -287,7 +309,11 @@ test('requires every explicit sample, variant, and repeat on one compatible hard
 		repetitions: 3,
 	};
 	const reports = [1, 2, 3].map((repeatIndex) =>
-		runReport(corpus, 'metal', { samples: [selectedSample], repeatIndex }),
+		campaignRunReport(corpus, 'metal', {
+			samples: [selectedSample],
+			repeatIndex,
+			targetId: explicitTargets.target_id,
+		}),
 	);
 	const partial = evaluateCoverage(corpus, explicitTargets, reports.slice(0, 2));
 	assert.equal(partial.coverage_mode, 'explicit-samples');
@@ -310,7 +336,36 @@ test('requires every explicit sample, variant, and repeat on one compatible hard
 	assert.equal(complete.complete, true);
 	assert.throws(
 		() => evaluateCoverage(corpus, explicitTargets, [...reports, structuredClone(reports[2])]),
-		/duplicate measurement/,
+		/duplicate benchmark_task_id/,
+	);
+	assert.throws(
+		() =>
+			evaluateCoverage(corpus, explicitTargets, [
+				reports[0],
+				{ ...reports[1], benchmark_task_id: reports[0].benchmark_task_id },
+				reports[2],
+			]),
+		/duplicate benchmark_task_id/,
+	);
+	assert.throws(
+		() =>
+			evaluateCoverage(corpus, explicitTargets, [
+				runReport(corpus, 'metal', { samples: [selectedSample] }),
+			]),
+		/repeated coverage requires schema-11 campaign reports/,
+	);
+	const copiedStandalone = runReport(corpus, 'metal', { samples: [selectedSample] });
+	assert.throws(
+		() =>
+			evaluateCoverage(
+				corpus,
+				explicitTargets,
+				[1, 2, 3].map((repeatIndex) => ({
+					...structuredClone(copiedStandalone),
+					repeat_index: repeatIndex,
+				})),
+			),
+		/repeated coverage requires schema-11 campaign reports/,
 	);
 	assert.throws(
 		() =>
@@ -688,7 +743,7 @@ test('rejects duplicate measurements across reports', () => {
 test('rejects legacy reports without versioned scoring provenance', () => {
 	const corpus = completeCorpus();
 	const legacy = { ...runReport(corpus, 'metal'), schema_version: 9 };
-	assert.throws(() => evaluateCoverage(corpus, targets, [legacy]), /schema_version must be 10/);
+	assert.throws(() => evaluateCoverage(corpus, targets, [legacy]), /schema_version must be 10 or 11/);
 });
 
 test('allows backend-specific Cargo features while enforcing a common evaluator revision', () => {

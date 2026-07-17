@@ -470,6 +470,44 @@ test('prepares once and runs three samples in three fresh exact processes', asyn
 	);
 });
 
+test('validates campaign identity before inference and echoes the exact task and repeat', async (t) => {
+	const harness = createHarness(t);
+	t.after(() => harness.session.close());
+	const sample = sampleFiles(harness.root, 'campaign-repeat');
+	sample.dataset = 'fleurs';
+	sample.provenance = { basis: 'public-license' };
+	let transcriptionStarted = false;
+	const runProcess = (command, args) => {
+		transcriptionStarted = true;
+		writeMetrics(command, args);
+		return { status: 0, signal: null, stdout: 'hello world', pid: process.pid };
+	};
+
+	await assert.rejects(
+		runRealRunSample(harness.session, sample, {
+			benchmarkTaskId: 'f'.repeat(64),
+			thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+			runProcess,
+		}),
+		/benchmarkTaskId and repeatIndex together before inference/,
+	);
+	assert.equal(transcriptionStarted, false);
+
+	const report = await runRealRunSample(harness.session, sample, {
+		benchmarkTaskId: 'f'.repeat(64),
+		repeatIndex: 2,
+		thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+		runProcess,
+	});
+
+	assert.equal(transcriptionStarted, true);
+	assert.equal(report.schema_version, 11);
+	assert.equal(report.benchmark_task_id, 'f'.repeat(64));
+	assert.equal(report.repeat_index, 2);
+	assert.equal(report.results.length, 1);
+	assert.equal(report.results[0].dataset, 'fleurs');
+});
+
 test('preserves WER, empty-transcript, and hallucination failure semantics', async (t) => {
 	const harness = createHarness(t);
 	t.after(() => harness.session.close());

@@ -34,7 +34,12 @@ import {
 	stageModelArtifactSnapshot,
 } from './model-artifact.ts';
 import { parseRealRunArgs } from './real-run-options.ts';
-import { validateBenchmarkMetrics, validateRunReport } from './report.ts';
+import {
+	CAMPAIGN_RUN_REPORT_SCHEMA_VERSION,
+	STANDALONE_RUN_REPORT_SCHEMA_VERSION,
+	validateBenchmarkMetrics,
+	validateRunReport,
+} from './report.ts';
 import { WER_SCORER_ID, werDetails } from './wer.ts';
 
 const MAX_TRANSCRIPT_BYTES = 16 * 1024 * 1024;
@@ -313,6 +318,31 @@ function normalizeThresholds(thresholds) {
 	});
 }
 
+function normalizeCampaignReportIdentity(options) {
+	const hasTaskId = options.benchmarkTaskId !== undefined;
+	const hasRepeatIndex = options.repeatIndex !== undefined;
+	if (!hasTaskId && !hasRepeatIndex) return null;
+	if (!hasTaskId || !hasRepeatIndex) {
+		throw new Error(
+			'campaign real-run requires benchmarkTaskId and repeatIndex together before inference',
+		);
+	}
+	if (!SHA256_PATTERN.test(options.benchmarkTaskId)) {
+		throw new Error('benchmarkTaskId must be a lowercase SHA-256 digest');
+	}
+	if (
+		!Number.isSafeInteger(options.repeatIndex) ||
+		options.repeatIndex < 1 ||
+		options.repeatIndex > 10
+	) {
+		throw new Error('repeatIndex must be a safe integer from 1 through 10');
+	}
+	return Object.freeze({
+		benchmarkTaskId: options.benchmarkTaskId,
+		repeatIndex: options.repeatIndex,
+	});
+}
+
 function abortError() {
 	const error = new Error('real transcription was cancelled');
 	error.name = 'AbortError';
@@ -558,6 +588,7 @@ function scoreSample(sample, referenceText, hypothesis, metrics, thresholds) {
 		scenario: sample.scenario,
 		speakers: sample.speakers,
 		provenance_basis: sample.provenance.basis,
+		...(sample.dataset === undefined ? {} : { dataset: sample.dataset }),
 		reference_words: null,
 		word_errors: null,
 		wer_percent: null,
@@ -599,7 +630,7 @@ function referenceTextForSample(sample) {
 	}
 }
 
-function sampleReport(state, sample, thresholds, startedAt, completedAt, result) {
+function sampleReport(state, sample, thresholds, startedAt, completedAt, result, campaignIdentity) {
 	if (!state.evaluatorIdentity) {
 		throw new Error('real-run session requires evaluator provenance to create a report');
 	}
@@ -613,7 +644,16 @@ function sampleReport(state, sample, thresholds, startedAt, completedAt, result)
 		);
 	}
 	const report = {
-		schema_version: 10,
+		schema_version:
+			campaignIdentity === null
+				? STANDALONE_RUN_REPORT_SCHEMA_VERSION
+				: CAMPAIGN_RUN_REPORT_SCHEMA_VERSION,
+		...(campaignIdentity === null
+			? {}
+			: {
+					benchmark_task_id: campaignIdentity.benchmarkTaskId,
+					repeat_index: campaignIdentity.repeatIndex,
+				}),
 		corpus_id: sample.corpus_id,
 		corpus_fingerprint: sample.corpus_fingerprint,
 		reference_protocol_id: sample.reference_protocol_id,
@@ -641,6 +681,7 @@ function sampleReport(state, sample, thresholds, startedAt, completedAt, result)
 }
 
 async function executeRealRunSampleLocked(state, sample, options) {
+	const campaignIdentity = normalizeCampaignReportIdentity(options);
 	const thresholds = normalizeThresholds(options.thresholds);
 	if (options.signal?.aborted) throw abortError();
 	if (!SHA256_PATTERN.test(sample.audio_sha256 ?? '')) {
@@ -703,6 +744,7 @@ async function executeRealRunSampleLocked(state, sample, options) {
 		const score = scoreSample(sample, referenceText, hypothesis, metrics, thresholds);
 		const completedAt = canonicalTimestamp(state.dependencies.now());
 		return {
+			campaignIdentity,
 			thresholds,
 			startedAt,
 			completedAt,
@@ -737,6 +779,7 @@ export async function runRealRunSample(session, sample, options) {
 		run.startedAt,
 		run.completedAt,
 		run.result,
+		run.campaignIdentity,
 	);
 	REPORT_METADATA.set(report, Object.freeze({ failureReason: run.failureReason }));
 	return report;
@@ -759,7 +802,7 @@ export function aggregateRealRunReports(reports) {
 	const first = reports[0];
 	const last = reports.at(-1);
 	for (const [index, report] of reports.entries()) {
-		for (const field of [
+		const identityFields = [
 			'schema_version',
 			'corpus_id',
 			'corpus_fingerprint',
@@ -770,7 +813,11 @@ export function aggregateRealRunReports(reports) {
 			'provider',
 			'model',
 			'model_artifact_sha256',
-		]) {
+		];
+		if (first?.schema_version === CAMPAIGN_RUN_REPORT_SCHEMA_VERSION) {
+			identityFields.push('benchmark_task_id', 'repeat_index');
+		}
+		for (const field of identityFields) {
 			if (report?.[field] !== first?.[field]) {
 				throw new Error(`real-run report ${index} has a different ${field}`);
 			}
