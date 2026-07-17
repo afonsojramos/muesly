@@ -32,6 +32,7 @@ app/scripts/eval/local-corpus/
 app/scripts/eval/consent-records/
 app/scripts/eval/intake/
 app/scripts/eval/corpus-local.json
+app/scripts/eval/.review-*.lock*/
 app/scripts/eval/public-corpus/
 app/scripts/eval/results/
 docs/demo.mov

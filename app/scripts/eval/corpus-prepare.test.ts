@@ -193,7 +193,7 @@ fs.mkdirSync(pendingSessionDirectory, { mode: 0o700 });
 fs.writeFileSync(
   path.join(pendingSessionDirectory, 'collection-session.json'),
   JSON.stringify({
-    schemaVersion: 2,
+    schemaVersion: 3,
     referenceProtocolId: '${REFERENCE_PROTOCOL_ID}',
     sessionId: 'session-concurrent',
     language: 'en',
@@ -331,7 +331,7 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.equal(session.sessionId, `session-${id}`);
 	assert.equal(session.consentRecordId, `consent-${id}`);
 	assert.equal(session.sampleId, `en-clean-${id}`);
-	assert.equal(session.schemaVersion, 2);
+	assert.equal(session.schemaVersion, 3);
 	assert.equal(session.referenceProtocolId, REFERENCE_PROTOCOL_ID);
 	assert.equal(session.remainingUnpreparedObservations, 7);
 	assert(!fs.existsSync(session.audioPath));
@@ -349,6 +349,9 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.match(readme, /Preparing this bundle does not establish consent/);
 	assert.match(readme, /--affirm-all-participants-consented/);
 	assert.match(readme, /--affirm-reference-protocol 'muesly-meeting-reference-v1'/);
+	assert.equal((readme.match(/--accept-reviewed-reference/g) ?? []).length, 4);
+	assert.equal((readme.match(/--reviewer 'primary-annotator'/g) ?? []).length, 2);
+	assert.equal((readme.match(/--reviewer 'independent-reviewer'/g) ?? []).length, 2);
 	assert.match(readme, /REFERENCE_TRANSCRIPTION\.md/);
 	const metadata = JSON.parse(
 		fs.readFileSync(
@@ -356,14 +359,19 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 			'utf8',
 		),
 	);
-	assert.equal(metadata.schemaVersion, 2);
+	assert.equal(metadata.schemaVersion, 3);
 	assert.equal(metadata.referenceProtocolId, REFERENCE_PROTOCOL_ID);
+	assert.equal(metadata.reviewAttestationsPath, session.reviewAttestationsPath);
+	assert(fs.statSync(metadata.reviewAttestationsPath).isDirectory());
+	assert.equal(fs.readdirSync(metadata.reviewAttestationsPath).length, 0);
 	assert(readme.includes(`nub '${session.intakeScriptPath}'`));
+	assert(readme.includes(`nub '${session.attestScriptPath}'`));
 	assert.match(readme, /## Bash \/ zsh/);
 	assert.match(readme, /## PowerShell \(Windows\)/);
 	assert.doesNotMatch(readme, / \\\n/);
 	assert.doesNotMatch(readme, /nub run eval:corpus:intake/);
 	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
+	assert.equal(fs.statSync(metadata.reviewAttestationsPath).mode & 0o777, 0o700);
 	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
 	assert(!fs.existsSync(manifestPath));
 	assert(fs.statSync(path.join(directory, 'local-corpus')).isDirectory());
@@ -384,13 +392,22 @@ test('runs the generated intake entrypoint from an external bundle directory', (
 	assert.equal(result.status, 2);
 	assert.match(result.stderr, /--audio is required/);
 	assert.doesNotMatch(result.stderr, /ERR_NUB_NO_MANIFEST/);
+	const attestResult = spawnSync('nub', [session.attestScriptPath], {
+		cwd: path.dirname(session.referencePath),
+		encoding: 'utf8',
+	});
+	assert.equal(attestResult.status, 2);
+	assert.match(attestResult.stderr, /--session-id is required/);
+	assert.doesNotMatch(attestResult.stderr, /ERR_NUB_NO_MANIFEST/);
 });
 
 test('quotes generated Bash and PowerShell commands independently', () => {
 	const current = fixture();
 	const intakeScriptPath = path.join(current.directory, "Muesly's tools", 'corpus intake.ts');
+	const attestScriptPath = path.join(current.directory, "Muesly's tools", 'corpus attest.ts');
 	const session = prepareCollectionSession(
 		prepareOptions(current, {
+			attestScriptPath,
 			intakeScriptPath,
 			idFactory: () => '00000000-0000-4000-8000-000000000014',
 		}),
@@ -402,6 +419,8 @@ test('quotes generated Bash and PowerShell commands independently', () => {
 
 	assert(readme.includes(`nub '${intakeScriptPath.replaceAll("'", "'\\''")}'`));
 	assert(readme.includes(`nub '${intakeScriptPath.replaceAll("'", "''")}'`));
+	assert(readme.includes(`nub '${attestScriptPath.replaceAll("'", "'\\''")}'`));
+	assert(readme.includes(`nub '${attestScriptPath.replaceAll("'", "''")}'`));
 });
 
 test('allows selecting a specific still-underfilled collection cell', () => {
@@ -477,14 +496,8 @@ test('rejects incomplete selectors and already-complete cells', () => {
 			entry.session_id,
 		);
 		fs.mkdirSync(sessionDirectory, { recursive: true });
-		fs.writeFileSync(
-			path.join(sessionDirectory, `${entry.id}.wav`),
-			audioContents[index],
-		);
-		fs.writeFileSync(
-			path.join(sessionDirectory, `${entry.id}.txt`),
-			referenceContents[index],
-		);
+		fs.writeFileSync(path.join(sessionDirectory, `${entry.id}.wav`), audioContents[index]);
+		fs.writeFileSync(path.join(sessionDirectory, `${entry.id}.txt`), referenceContents[index]);
 	}
 	fs.writeFileSync(
 		manifestPath,
@@ -524,7 +537,8 @@ test('rejects incomplete selectors and already-complete cells', () => {
 	);
 });
 
-test('refuses collection roots that are symbolic links', () => {
+test('refuses collection roots that are symbolic links', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
 	const current = fixture();
 	const { directory } = current;
 	const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-corpus-outside-'));

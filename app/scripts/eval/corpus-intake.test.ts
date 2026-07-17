@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -16,6 +17,10 @@ import {
 	wavDurationSeconds,
 } from './corpus-intake.ts';
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
+import {
+	createConsentedReviewDirectory,
+	recordConsentedReviewAttestation,
+} from './corpus-review.ts';
 import { canonicalManifestPath, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
 import { processOwnsState } from './process-identity.ts';
 
@@ -38,7 +43,74 @@ function writeWav(filePath, durationSeconds = 2) {
 	fs.writeFileSync(filePath, wav);
 }
 
-function intakeFixture() {
+function waitForPathSync(filePath, label) {
+	const signal = new Int32Array(new SharedArrayBuffer(4));
+	const deadline = Date.now() + 5_000;
+	while (!fs.existsSync(filePath)) {
+		if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label}`);
+		Atomics.wait(signal, 0, 0, 10);
+	}
+}
+
+function attestPreparedBundle(current, reviewerId) {
+	return recordConsentedReviewAttestation({
+		bundleDirectory: current.bundleDirectory,
+		audioPath: current.options.audio,
+		referencePath: current.options.reference,
+		sessionId: current.options.sessionId,
+		sampleId: current.options.sampleId,
+		reviewerId,
+		acceptReviewedReference: true,
+		affirmReferenceProtocol: REFERENCE_PROTOCOL_ID,
+		reviewedAt: '2026-07-16T12:00:00.000Z',
+	});
+}
+
+function prepareReviewedBundle(current, { reviewCount = 2, metadataOverride = {} } = {}) {
+	const { options } = current;
+	const manifestPath = canonicalManifestPath(options.manifestPath, { allowMissing: true });
+	const bundleDirectory = path.join(path.dirname(manifestPath), 'intake', options.sessionId);
+	fs.mkdirSync(bundleDirectory, { recursive: true, mode: 0o700 });
+	fs.chmodSync(bundleDirectory, 0o700);
+	const audio = path.join(bundleDirectory, 'recording.wav');
+	const reference = path.join(bundleDirectory, 'reference.txt');
+	if (path.resolve(options.audio) !== audio) fs.renameSync(options.audio, audio);
+	if (path.resolve(options.reference) !== reference) fs.renameSync(options.reference, reference);
+	fs.chmodSync(audio, 0o600);
+	fs.chmodSync(reference, 0o600);
+	options.audio = audio;
+	options.reference = reference;
+	const reviewAttestationsPath = createConsentedReviewDirectory(bundleDirectory);
+	const metadataPath = path.join(bundleDirectory, 'collection-session.json');
+	fs.writeFileSync(
+		metadataPath,
+		`${JSON.stringify({
+			schemaVersion: 3,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
+			sessionId: options.sessionId,
+			consentRecordId: options.consentRecordId,
+			sampleId: options.sampleId,
+			language: options.language,
+			noiseCondition: options.noiseCondition,
+			manifestPath,
+			audioPath: audio,
+			referencePath: reference,
+			reviewAttestationsPath,
+			consentRecordPath: fs.realpathSync(options.consentRecord),
+			...metadataOverride,
+		})}\n`,
+		{ mode: 0o600 },
+	);
+	fs.chmodSync(metadataPath, 0o600);
+	current.bundleDirectory = bundleDirectory;
+	current.reviewAttestationsPath = reviewAttestationsPath;
+	for (let index = 0; index < reviewCount; index += 1) {
+		attestPreparedBundle(current, `reviewer-${index + 1}`);
+	}
+	return current;
+}
+
+function intakeFixture({ prepare = true, reviewCount = 2 } = {}) {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-intake-'));
 	const audio = path.join(directory, 'source.wav');
 	const reference = path.join(directory, 'source.txt');
@@ -46,7 +118,7 @@ function intakeFixture() {
 	writeWav(audio);
 	fs.writeFileSync(reference, 'Hello from the consented meeting.\n');
 	fs.writeFileSync(consentRecord, 'Encrypted-system export or signed affirmative record.\n');
-	return {
+	const current = {
 		directory,
 		options: {
 			manifestPath: path.join(directory, 'corpus-local.json'),
@@ -65,6 +137,7 @@ function intakeFixture() {
 			today: '2026-07-16',
 		},
 	};
+	return prepare ? prepareReviewedBundle(current, { reviewCount }) : current;
 }
 
 function writeSchema3Manifest(manifestPath) {
@@ -87,7 +160,7 @@ function writeSchema3Manifest(manifestPath) {
 }
 
 test('reads duration from RIFF/WAVE structure', () => {
-	const { directory } = intakeFixture();
+	const { directory } = intakeFixture({ prepare: false });
 	assert.equal(wavDurationSeconds(path.join(directory, 'source.wav')), 2);
 	const invalid = path.join(directory, 'invalid.wav');
 	fs.writeFileSync(invalid, 'not wave audio');
@@ -95,7 +168,7 @@ test('reads duration from RIFF/WAVE structure', () => {
 });
 
 test('requires explicit consent affirmation before writing anything', () => {
-	const { directory, options } = intakeFixture();
+	const { directory, options } = intakeFixture({ prepare: false });
 	options.affirmConsent = false;
 	assert.throws(() => intakeConsentedSample(options), /affirm-all-participants-consented/);
 	assert.deepEqual(fs.readdirSync(directory).sort(), [
@@ -106,7 +179,7 @@ test('requires explicit consent affirmation before writing anything', () => {
 });
 
 test('requires explicit affirmation of the exact reference protocol', () => {
-	const { directory, options } = intakeFixture();
+	const { directory, options } = intakeFixture({ prepare: false });
 	delete options.referenceProtocolId;
 	assert.throws(() => intakeConsentedSample(options), /affirm-reference-protocol/);
 	assert(!fs.existsSync(options.manifestPath));
@@ -121,7 +194,7 @@ test('requires explicit affirmation of the exact reference protocol', () => {
 });
 
 test('rejects malformed UTF-8 references before writing anything', () => {
-	const { directory, options } = intakeFixture();
+	const { directory, options } = intakeFixture({ prepare: false });
 	fs.writeFileSync(options.reference, Buffer.from([0xc3, 0x28]));
 
 	assert.throws(() => intakeConsentedSample(options), /reference transcript must be valid UTF-8/);
@@ -134,7 +207,8 @@ test('rejects malformed UTF-8 references before writing anything', () => {
 
 test('requires audio, reference, and consent to identify distinct files', () => {
 	for (const aliasType of ['symlink', 'hard link']) {
-		const { directory, options } = intakeFixture();
+		if (aliasType === 'symlink' && process.platform === 'win32') continue;
+		const { directory, options } = intakeFixture({ prepare: false });
 		const consentAlias = path.join(directory, `consent-${aliasType.replace(' ', '-')}.md`);
 		if (aliasType === 'symlink') {
 			fs.symlinkSync(options.reference, consentAlias);
@@ -154,7 +228,7 @@ test('requires audio, reference, and consent to identify distinct files', () => 
 });
 
 test('requires consent records to remain outside the managed corpus tree', () => {
-	const { directory, options } = intakeFixture();
+	const { directory, options } = intakeFixture({ prepare: false });
 	const managedConsentRecord = path.join(
 		directory,
 		'local-corpus',
@@ -174,8 +248,10 @@ test('requires consent records to remain outside the managed corpus tree', () =>
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
 });
 
-test('updates the canonical manifest when intake is invoked through a symlink', () => {
-	const { directory, options } = intakeFixture();
+test('updates the canonical manifest when intake is invoked through a symlink', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+	const current = intakeFixture({ prepare: false });
+	const { directory, options } = current;
 	const canonicalDirectory = path.join(directory, 'canonical');
 	const aliasDirectory = path.join(directory, 'alias');
 	fs.mkdirSync(canonicalDirectory);
@@ -195,6 +271,7 @@ test('updates the canonical manifest when intake is invoked through a symlink', 
 	);
 	fs.symlinkSync(canonicalManifest, aliasManifest);
 	options.manifestPath = aliasManifest;
+	prepareReviewedBundle(current);
 
 	intakeConsentedSample(options);
 
@@ -204,12 +281,15 @@ test('updates the canonical manifest when intake is invoked through a symlink', 
 	assert(!fs.existsSync(path.join(aliasDirectory, 'local-corpus')));
 });
 
-test('initializes the target behind a dangling manifest symlink', () => {
-	const { directory, options } = intakeFixture();
+test('initializes the target behind a dangling manifest symlink', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+	const current = intakeFixture({ prepare: false });
+	const { directory, options } = current;
 	const canonicalManifest = path.join(directory, 'canonical', 'corpus-local.json');
 	const aliasManifest = path.join(directory, 'corpus-alias.json');
 	fs.symlinkSync(canonicalManifest, aliasManifest);
 	options.manifestPath = aliasManifest;
+	prepareReviewedBundle(current);
 
 	intakeConsentedSample(options);
 
@@ -218,8 +298,9 @@ test('initializes the target behind a dangling manifest symlink', () => {
 	assert(fs.existsSync(path.join(directory, 'canonical', 'local-corpus', options.sessionId)));
 });
 
-test('rejects filesystem aliases into the managed corpus tree', () => {
-	const { directory, options } = intakeFixture();
+test('rejects filesystem aliases into the managed corpus tree', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+	const { directory, options } = intakeFixture({ prepare: false });
 	const corpusDirectory = path.join(directory, 'local-corpus');
 	const managedConsentRecord = path.join(corpusDirectory, options.sessionId, 'consent.md');
 	fs.mkdirSync(path.dirname(managedConsentRecord), { recursive: true });
@@ -239,8 +320,9 @@ test('rejects filesystem aliases into the managed corpus tree', () => {
 	assert(!fs.existsSync(path.join(corpusDirectory, '.intake.lock')));
 });
 
-test('rejects external file symlinks into the managed corpus tree', () => {
-	const { directory, options } = intakeFixture();
+test('rejects external file symlinks into the managed corpus tree', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
+	const { directory, options } = intakeFixture({ prepare: false });
 	const corpusDirectory = path.join(directory, 'local-corpus');
 	const managedConsentRecord = path.join(corpusDirectory, options.sessionId, 'consent.md');
 	fs.mkdirSync(path.dirname(managedConsentRecord), { recursive: true });
@@ -260,7 +342,8 @@ test('rejects external file symlinks into the managed corpus tree', () => {
 
 test('rejects consent records in managed results through direct paths and aliases', () => {
 	for (const alias of [false, true]) {
-		const { directory, options } = intakeFixture();
+		if (alias && process.platform === 'win32') continue;
+		const { directory, options } = intakeFixture({ prepare: false });
 		const resultsDirectory = path.join(directory, 'results');
 		const managedConsentRecord = path.join(resultsDirectory, 'consent.md');
 		fs.mkdirSync(resultsDirectory);
@@ -283,8 +366,101 @@ test('rejects consent records in managed results through direct paths and aliase
 	}
 });
 
+test('rejects direct intake that bypasses generated prepared bundles', () => {
+	const { directory, options } = intakeFixture({ prepare: false });
+
+	assert.throws(() => intakeConsentedSample(options), /no prepared intake bundle exists/);
+	assert(!fs.existsSync(options.manifestPath));
+	assert(!fs.existsSync(path.join(directory, 'local-corpus')));
+	assert(fs.existsSync(options.audio));
+	assert(fs.existsSync(options.reference));
+});
+
+test('requires exactly two accepted reviews before intake', () => {
+	for (const reviewCount of [0, 1]) {
+		const current = intakeFixture({ reviewCount });
+		assert.throws(
+			() => intakeConsentedSample(current.options),
+			new RegExp(`exactly 2 current review attestations; found ${reviewCount}`),
+		);
+		assert(!fs.existsSync(current.options.manifestPath));
+		assert(fs.existsSync(current.bundleDirectory));
+	}
+});
+
+test('rejects reviews made stale by later audio or reference edits', () => {
+	for (const changedInput of ['audio', 'reference']) {
+		const current = intakeFixture();
+		if (changedInput === 'audio') writeWav(current.options.audio, 3);
+		else fs.writeFileSync(current.options.reference, 'Changed after both reviews.\n');
+
+		assert.throws(
+			() => intakeConsentedSample(current.options),
+			/stale because the audio or reference changed/,
+			changedInput,
+		);
+		assert(!fs.existsSync(current.options.manifestPath), changedInput);
+		assert(fs.existsSync(current.bundleDirectory), changedInput);
+	}
+});
+
+test('rechecks the reviewed hashes after staging begins', () => {
+	const current = intakeFixture();
+	current.options.beforePreparedStage = ({ referenceSource }) => {
+		fs.writeFileSync(referenceSource, 'Changed after review validation but before staging.\n');
+	};
+
+	assert.throws(
+		() => intakeConsentedSample(current.options),
+		/prepared reference changed after its review attestations/,
+	);
+	assert(!fs.existsSync(current.options.manifestPath));
+	assert(fs.existsSync(current.bundleDirectory));
+	assert(!fs.existsSync(path.join(current.directory, 'local-corpus', current.options.sessionId)));
+});
+
+test('waits for an active review validation before retiring after intake', async () => {
+	const current = intakeFixture();
+	const configurationPath = path.join(current.directory, 'held-review.json');
+	const enteredPath = path.join(current.directory, 'held-review-entered');
+	const releasePath = path.join(current.directory, 'held-review-release');
+	fs.writeFileSync(
+		configurationPath,
+		JSON.stringify({
+			mode: 'validate',
+			releaseOnContention: true,
+			bundleDirectory: current.bundleDirectory,
+			audioPath: current.options.audio,
+			referencePath: current.options.reference,
+			sessionId: current.options.sessionId,
+			sampleId: current.options.sampleId,
+		}),
+		{ mode: 0o600 },
+	);
+	const holdScript = fileURLToPath(new URL('./fixtures/corpus-review-hold.ts', import.meta.url));
+	let attester;
+	let attesterExit;
+	let attesterError = '';
+	current.options.beforePreparedStage = () => {
+		attester = spawn('nub', [holdScript, configurationPath, enteredPath, releasePath], {
+			stdio: ['ignore', 'pipe', 'pipe'],
+		});
+		attester.stderr.on('data', (chunk) => {
+			attesterError += chunk;
+		});
+		attesterExit = once(attester, 'exit');
+		waitForPathSync(enteredPath, 'held review validation');
+	};
+
+	const sample = intakeConsentedSample(current.options);
+	const [attesterCode] = await attesterExit;
+	assert.equal(attesterCode, 0, attesterError);
+	assert.equal(sample.id, current.options.sampleId);
+	assert(!fs.existsSync(current.bundleDirectory));
+});
+
 test('atomically imports a consented sample with verified metadata and private files', () => {
-	const { options } = intakeFixture();
+	const { bundleDirectory, options } = intakeFixture();
 	const sample = intakeConsentedSample(options);
 	assert.equal(sample.duration_seconds, 2);
 	assert.equal(sample.provenance.consent_record_id, 'consent-opaque-001');
@@ -300,7 +476,12 @@ test('atomically imports a consented sample with verified metadata and private f
 		),
 		'Hello from the consented meeting.\n',
 	);
-	assert(!fs.readFileSync(options.manifestPath, 'utf8').includes('signed affirmative record'));
+	const manifestContents = fs.readFileSync(options.manifestPath, 'utf8');
+	assert(!manifestContents.includes('signed affirmative record'));
+	assert(!manifestContents.includes('reviewer-1'));
+	assert(!manifestContents.includes('reviewer-2'));
+	assert(!manifestContents.includes('reviewed_at'));
+	assert(!fs.existsSync(bundleDirectory));
 	if (process.platform !== 'win32') {
 		assert.equal(fs.statSync(options.manifestPath).mode & 0o777, 0o600);
 		assert.equal(
@@ -321,9 +502,9 @@ test('atomically migrates a schema-3 local corpus when importing a sample', () =
 	assert.equal(document.samples.length, 1);
 	assert.deepEqual(validateCorpusDocument(document, { manifestPath: options.manifestPath }), []);
 	assert.equal(
-		fs.readdirSync(path.dirname(options.manifestPath)).some((entry) =>
-			entry.startsWith(`${path.basename(options.manifestPath)}.tmp-`),
-		),
+		fs
+			.readdirSync(path.dirname(options.manifestPath))
+			.some((entry) => entry.startsWith(`${path.basename(options.manifestPath)}.tmp-`)),
 		false,
 	);
 });
@@ -335,10 +516,7 @@ test('leaves a schema-3 manifest unchanged when its atomic migration cannot comm
 	const canonicalManifest = canonicalManifestPath(options.manifestPath);
 	const originalRenameSync = fs.renameSync;
 	t.mock.method(fs, 'renameSync', (sourcePath, destinationPath) => {
-		if (
-			typeof sourcePath === 'string' &&
-			sourcePath.startsWith(`${canonicalManifest}.tmp-`)
-		) {
+		if (typeof sourcePath === 'string' && sourcePath.startsWith(`${canonicalManifest}.tmp-`)) {
 			throw new Error('simulated manifest commit failure');
 		}
 		return originalRenameSync(sourcePath, destinationPath);
@@ -354,31 +532,7 @@ test('leaves a schema-3 manifest unchanged when its atomic migration cannot comm
 });
 
 test('retires a matching prepared source bundle after successful intake', () => {
-	const { directory, options } = intakeFixture();
-	const bundleDirectory = path.join(directory, 'intake', options.sessionId);
-	fs.mkdirSync(bundleDirectory, { recursive: true, mode: 0o700 });
-	const audio = path.join(bundleDirectory, 'recording.wav');
-	const reference = path.join(bundleDirectory, 'reference.txt');
-	fs.renameSync(options.audio, audio);
-	fs.renameSync(options.reference, reference);
-	options.audio = audio;
-	options.reference = reference;
-	fs.writeFileSync(
-		path.join(bundleDirectory, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: options.sessionId,
-			consentRecordId: options.consentRecordId,
-			sampleId: options.sampleId,
-			language: options.language,
-			noiseCondition: options.noiseCondition,
-			manifestPath: options.manifestPath,
-			audioPath: audio,
-			referencePath: reference,
-			consentRecordPath: options.consentRecord,
-		}),
-	);
+	const { bundleDirectory, directory, options } = intakeFixture();
 
 	intakeConsentedSample(options);
 
@@ -390,9 +544,10 @@ test('retires a matching prepared source bundle after successful intake', () => 
 test('rejects legacy or differently versioned prepared reference metadata', () => {
 	for (const metadataOverride of [
 		{ schemaVersion: 1 },
+		{ schemaVersion: 2 },
 		{ referenceProtocolId: 'another-reference-v1' },
 	]) {
-		const { directory, options } = intakeFixture();
+		const { directory, options } = intakeFixture({ prepare: false });
 		const bundleDirectory = path.join(directory, 'intake', options.sessionId);
 		fs.mkdirSync(bundleDirectory, { recursive: true, mode: 0o700 });
 		const audio = path.join(bundleDirectory, 'recording.wav');
@@ -404,12 +559,13 @@ test('rejects legacy or differently versioned prepared reference metadata', () =
 		fs.writeFileSync(
 			path.join(bundleDirectory, 'collection-session.json'),
 			JSON.stringify({
-				schemaVersion: 2,
+				schemaVersion: 3,
 				referenceProtocolId: REFERENCE_PROTOCOL_ID,
 				sessionId: options.sessionId,
 				manifestPath: options.manifestPath,
 				...metadataOverride,
 			}),
+			{ mode: 0o600 },
 		);
 
 		assert.throws(
@@ -422,20 +578,34 @@ test('rejects legacy or differently versioned prepared reference metadata', () =
 });
 
 test('rejects duplicate audio without changing the existing corpus', () => {
-	const { options } = intakeFixture();
-	intakeConsentedSample(options);
+	const current = intakeFixture();
+	const { directory, options } = current;
+	const imported = intakeConsentedSample(options);
 	const before = fs.readFileSync(options.manifestPath, 'utf8');
-	assert.throws(
-		() =>
-			intakeConsentedSample({
-				...options,
-				sampleId: 'en-office-002',
-				sessionId: 'session-opaque-002',
-				noiseCondition: 'office',
-			}),
-		/audio_sha256 duplicates sample/,
+	const duplicateAudio = path.join(directory, 'duplicate-source.wav');
+	const duplicateReference = path.join(directory, 'duplicate-source.txt');
+	fs.copyFileSync(
+		path.resolve(path.dirname(options.manifestPath), imported.audio_path),
+		duplicateAudio,
 	);
+	fs.copyFileSync(
+		path.resolve(path.dirname(options.manifestPath), imported.reference_path),
+		duplicateReference,
+	);
+	const duplicate = prepareReviewedBundle({
+		directory,
+		options: {
+			...options,
+			audio: duplicateAudio,
+			reference: duplicateReference,
+			sampleId: 'en-office-002',
+			sessionId: 'session-opaque-002',
+			noiseCondition: 'office',
+		},
+	});
+	assert.throws(() => intakeConsentedSample(duplicate.options), /audio_sha256 duplicates sample/);
 	assert.equal(fs.readFileSync(options.manifestPath, 'utf8'), before);
+	assert(fs.existsSync(duplicate.bundleDirectory));
 	assert(
 		!fs.existsSync(
 			path.join(path.dirname(options.manifestPath), 'local-corpus/session-opaque-002'),
@@ -444,7 +614,7 @@ test('rejects duplicate audio without changing the existing corpus', () => {
 });
 
 test('rejects future consent dates and incomplete CLI values', () => {
-	const { options } = intakeFixture();
+	const { options } = intakeFixture({ prepare: false });
 	options.consentDate = '2026-07-17';
 	assert.throws(() => intakeConsentedSample(options), /non-future/);
 	assert.throws(
@@ -465,7 +635,7 @@ test('derives consent-day boundaries from the operator local calendar', () => {
 });
 
 test('rejects path-like identifiers before creating intake directories', () => {
-	const { directory, options } = intakeFixture();
+	const { directory, options } = intakeFixture({ prepare: false });
 	options.sessionId = '../../outside';
 	assert.throws(() => intakeConsentedSample(options), /opaque session/);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus')));
@@ -852,7 +1022,29 @@ test('preserves recordings when stale-lock recovery finds an invalid manifest', 
 });
 
 test('CLI imports through the documented consent-gated path', () => {
-	const { options } = intakeFixture();
+	const { bundleDirectory, options } = intakeFixture({ reviewCount: 0 });
+	const cwd = fileURLToPath(new URL('../../..', import.meta.url));
+	for (const reviewer of ['reviewer-cli-one', 'reviewer-cli-two']) {
+		const attestation = spawnSync(
+			'nub',
+			[
+				'run',
+				'eval:corpus:attest',
+				'--manifest',
+				options.manifestPath,
+				'--session-id',
+				options.sessionId,
+				'--reviewer',
+				reviewer,
+				'--accept-reviewed-reference',
+				'--affirm-reference-protocol',
+				REFERENCE_PROTOCOL_ID,
+			],
+			{ encoding: 'utf8', cwd },
+		);
+		assert.equal(attestation.status, 0, attestation.stderr);
+		assert.match(attestation.stdout, /Recorded review [12]\/2/);
+	}
 	const run = spawnSync(
 		'nub',
 		[
@@ -884,9 +1076,10 @@ test('CLI imports through the documented consent-gated path', () => {
 			'--affirm-reference-protocol',
 			REFERENCE_PROTOCOL_ID,
 		],
-		{ encoding: 'utf8', cwd: fileURLToPath(new URL('../../..', import.meta.url)) },
+		{ encoding: 'utf8', cwd },
 	);
 	assert.equal(run.status, 0, run.stderr);
 	assert.match(run.stdout, /added en-clean-001: en \/ clean, 2\.0s, 2 speakers/);
 	assert.equal(JSON.parse(fs.readFileSync(options.manifestPath, 'utf8')).samples.length, 1);
+	assert(!fs.existsSync(bundleDirectory));
 });

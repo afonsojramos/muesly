@@ -11,6 +11,7 @@ import {
 	loadCorpus,
 	REFERENCE_PROTOCOL_ID,
 } from './corpus.ts';
+import { createConsentedReviewDirectory } from './corpus-review.ts';
 import {
 	acquireLocalCorpusLock,
 	releaseLocalCorpusLock,
@@ -51,6 +52,7 @@ function pendingCollectionSessions(intakeRoot, manifestPath) {
 		throw new Error(`intake directory must be a regular directory: ${intakeRoot}`);
 	}
 	for (const entry of fs.readdirSync(intakeRoot, { withFileTypes: true })) {
+		if (entry.name.startsWith('.')) continue;
 		if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
 		const metadataPath = path.join(intakeRoot, entry.name, 'collection-session.json');
 		const metadataEntry = fs.lstatSync(metadataPath, { throwIfNoEntry: false });
@@ -67,7 +69,7 @@ function pendingCollectionSessions(intakeRoot, manifestPath) {
 			);
 		}
 		if (
-			metadata.schemaVersion !== 2 ||
+			metadata.schemaVersion !== 3 ||
 			metadata.referenceProtocolId !== REFERENCE_PROTOCOL_ID ||
 			typeof metadata.sessionId !== 'string' ||
 			typeof metadata.language !== 'string' ||
@@ -76,9 +78,7 @@ function pendingCollectionSessions(intakeRoot, manifestPath) {
 		) {
 			throw new Error(`collection session metadata is invalid: ${metadataPath}`);
 		}
-		if (
-			canonicalManifestPath(metadata.manifestPath, { allowMissing: true }) !== manifestPath
-		) {
+		if (canonicalManifestPath(metadata.manifestPath, { allowMissing: true }) !== manifestPath) {
 			continue;
 		}
 		sessions.push(metadata);
@@ -179,9 +179,7 @@ function waitForPreparationLock(milliseconds) {
 }
 
 export function isPreparationLockContention(errorCode, lockExists) {
-	return (
-		lockExists || ['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(errorCode)
-	);
+	return lockExists || ['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(errorCode);
 }
 
 function acquirePreparationLock(intakeRoot, timeoutMs = 30_000) {
@@ -357,7 +355,16 @@ function renderConsentRecord(template, session) {
 }
 
 function renderSessionReadme(session) {
-	const renderCommand = (quote) =>
+	const renderAttestCommand = (quote, reviewerId) =>
+		[
+			`nub ${quote(session.attestScriptPath)}`,
+			`--manifest ${quote(session.manifestPath)}`,
+			`--session-id ${quote(session.sessionId)}`,
+			`--reviewer ${quote(reviewerId)}`,
+			'--accept-reviewed-reference',
+			`--affirm-reference-protocol ${quote(session.referenceProtocolId)}`,
+		].join(' ');
+	const renderIntakeCommand = (quote) =>
 		[
 			`nub ${quote(session.intakeScriptPath)}`,
 			`--manifest ${quote(session.manifestPath)}`,
@@ -374,8 +381,16 @@ function renderSessionReadme(session) {
 			'--affirm-all-participants-consented',
 			`--affirm-reference-protocol ${quote(session.referenceProtocolId)}`,
 		].join(' ');
-	const bashCommand = renderCommand(bashQuote);
-	const powerShellCommand = renderCommand(powerShellQuote);
+	const bashCommands = [
+		renderAttestCommand(bashQuote, 'primary-annotator'),
+		renderAttestCommand(bashQuote, 'independent-reviewer'),
+		renderIntakeCommand(bashQuote),
+	].join('\n\n');
+	const powerShellCommands = [
+		renderAttestCommand(powerShellQuote, 'primary-annotator'),
+		renderAttestCommand(powerShellQuote, 'independent-reviewer'),
+		renderIntakeCommand(powerShellQuote),
+	].join('\n\n');
 	return `# Private ASR collection session
 
 Target: \`${session.language} / ${session.noiseCondition}\`
@@ -383,20 +398,24 @@ Target: \`${session.language} / ${session.noiseCondition}\`
 1. Complete the separate consent record before recording.
 2. Save the matching RIFF/WAVE recording as \`recording.wav\` in this directory.
 3. Write a UTF-8 reference in \`reference.txt\` following \`${session.referenceProtocolId}\`
-   in \`${path.join(path.dirname(session.intakeScriptPath), 'REFERENCE_TRANSCRIPTION.md')}\`, then
-   complete the required independent review pass.
-4. Replace the consent date and speaker count in the command for your shell, then run it.
+   in \`${path.join(path.dirname(session.intakeScriptPath), 'REFERENCE_TRANSCRIPTION.md')}\`. The
+   primary annotator and an independent listener must resolve every disagreement.
+4. Run the first two commands with distinct opaque reviewer IDs after each person has accepted the
+   exact audio and reference. Editing either file invalidates prior reviews; rerun both attestations.
+5. Replace the consent date and speaker count in the final command, then run intake.
+
+Review records stay inside this private bundle and are never copied into \`corpus-local.json\`.
 
 ## Bash / zsh
 
 \`\`\`bash
-${bashCommand}
+${bashCommands}
 \`\`\`
 
 ## PowerShell (Windows)
 
 \`\`\`powershell
-${powerShellCommand}
+${powerShellCommands}
 \`\`\`
 
 Preparing this bundle does not establish consent and does not add anything to the corpus.
@@ -439,10 +458,7 @@ export function prepareCollectionSession(options) {
 		options.repositoryIntakeRoot ?? repositoryIntakeRoot,
 		{ allowMissing: true },
 	);
-	const allowedRepositoryManifestPath = path.join(
-		allowedRepositoryIntakeRoot,
-		'corpus-local.json',
-	);
+	const allowedRepositoryManifestPath = path.join(allowedRepositoryIntakeRoot, 'corpus-local.json');
 	if (
 		isWithinOrEqual(protectedRepositoryRoot, manifestPath) &&
 		manifestPath !== allowedRepositoryManifestPath
@@ -499,10 +515,11 @@ export function prepareCollectionSession(options) {
 			fs.mkdirSync(sessionDirectory, { mode: 0o700 });
 			const referencePath = path.join(sessionDirectory, 'reference.txt');
 			const audioPath = path.join(sessionDirectory, 'recording.wav');
+			const reviewAttestationsPath = path.join(sessionDirectory, 'review-attestations');
 			const metadataPath = path.join(sessionDirectory, 'collection-session.json');
 			const readmePath = path.join(sessionDirectory, 'README.md');
 			const session = {
-				schemaVersion: 2,
+				schemaVersion: 3,
 				referenceProtocolId: targets.reference_protocol_id,
 				sessionId,
 				consentRecordId,
@@ -512,10 +529,12 @@ export function prepareCollectionSession(options) {
 				manifestPath,
 				audioPath,
 				referencePath,
+				reviewAttestationsPath,
 				consentRecordPath,
+				attestScriptPath:
+					options.attestScriptPath ?? fileURLToPath(new URL('./corpus-attest.ts', import.meta.url)),
 				intakeScriptPath:
-					options.intakeScriptPath ??
-					fileURLToPath(new URL('./corpus-intake.ts', import.meta.url)),
+					options.intakeScriptPath ?? fileURLToPath(new URL('./corpus-intake.ts', import.meta.url)),
 				collectedSessionsInCell: cell.collected,
 				preparedSessionsInCell: cell.prepared,
 				requiredSessionsInCell: cell.required,
@@ -531,6 +550,7 @@ export function prepareCollectionSession(options) {
 				writePrivateFile(consentRecordPath, renderConsentRecord(template, session));
 				createdConsentRecord = true;
 				writePrivateFile(referencePath, '');
+				createConsentedReviewDirectory(sessionDirectory);
 				writePrivateFile(metadataPath, `${JSON.stringify(session, null, 2)}\n`);
 				writePrivateFile(readmePath, renderSessionReadme(session));
 				return session;

@@ -5,10 +5,10 @@ This is the private intake and measurement procedure for the benchmark target in
 review by counsel and an ethics/privacy owner.
 
 Every reference is governed by [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md), protocol
-`muesly-meeting-reference-v1`. The corpus manifest, target matrix, prepared intake bundle,
-benchmark task, checkpoint, aggregate, and coverage result all carry that exact ID. Protocol
-changes require a new ID, reviewed references, and fresh measurements; legacy private artifacts
-are never upgraded automatically.
+`muesly-meeting-reference-v1`. The corpus manifest, target matrix, prepared intake bundle, review
+attestation, benchmark task, checkpoint, aggregate, and coverage result all carry that exact ID.
+Protocol changes require a new ID, reviewed references, and fresh measurements; legacy private
+artifacts are never upgraded automatically.
 
 The committed public-domain/synthetic corpus is only a smoke test. A quality claim about
 meeting transcription requires real meeting speech. The initial target deliberately asks for
@@ -56,6 +56,8 @@ nub run eval:corpus:withdraw \
 
 The command removes every sample for the opaque session, atomically replaces the manifest, deletes
 the session directory, and removes all derived results because their corpus fingerprint is stale.
+It also recursively deletes any matching pending prepared bundle, including its private review
+attestations, and supports legacy prepared metadata schemas 1 and 2 for withdrawal cleanup only.
 It refuses to delete files outside the expected session directory. The external consent record is
 not deleted automatically: retain or delete it according to the withdrawal and legal-retention
 policy approved by counsel.
@@ -69,11 +71,15 @@ MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
   nub run eval:corpus:prepare
 ```
 
-The command balances collection toward the least-covered language/noise cells, generates
-opaque `session-*`, `consent-*`, and sample IDs, and creates a private gitignored bundle under
+The command balances collection toward the least-covered language/noise cells, generates opaque
+`session-*`, `consent-*`, and sample IDs, and creates a private gitignored schema-3 bundle under
 `intake/` plus a consent record in the explicitly selected external encrypted records directory.
-Concurrent preparation calls serialize before reserving a cell, and planning takes its manifest
-snapshot under the same local mutation lock as intake and withdrawal.
+The bundle contains the prepared metadata, blank reference, private `review-attestations/`
+directory, and a README with two review commands followed by the intake command for Bash/zsh and
+Windows PowerShell. Its paths and opaque IDs are generated; replace only the marked consent date and
+speaker-count placeholders before intake. Concurrent preparation calls serialize before reserving
+a cell, and planning takes its manifest snapshot under the same local mutation lock as intake and
+withdrawal.
 It refuses to put consent records inside the Git repository. It does not create audio, assert
 consent, or count the session toward coverage. Use `--language <code> --noise-condition <slug>`
 to select a specific still-underfilled cell. The equivalent
@@ -82,52 +88,90 @@ variable.
 Custom manifests outside the Git repository are supported. Inside the repository, preparation is
 restricted to the explicitly ignored `app/scripts/eval/corpus-local.json` manifest and its
 gitignored sibling `intake/` directory.
-The generated single-line Bash/zsh and Windows PowerShell intake commands use the absolute
-TypeScript entrypoint, so either can be run directly from an external bundle directory.
+The generated Bash/zsh and Windows PowerShell commands use absolute TypeScript entrypoints, so they
+can be run directly from an external bundle directory.
 
 2. Keep the affirmative consent record in the approved encrypted records system. Never put names,
    emails, meeting titles, customer names, or consent files in the manifest or Git checkout.
 3. Produce a UTF-8 reference in the spoken language using
-   [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md). A second reviewer must listen
-   independently and every disagreement must be resolved before intake. Remove an entire sensitive
-   or unintelligible audio interval and its matching reference rather than guessing, inserting a
-   tag, retaining secrets, or scoring a redacted transcript against unredacted speech.
-4. Import the files. Both explicit affirmations are mandatory: every audible participant consented
-   to `asr-benchmarking` before recording, and the final reference was reviewed under the exact
-   versioned protocol. Use one opaque session ID for every clip from the same meeting—coverage
-   counts distinct sessions, not files.
+   [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md). An independent second reviewer must
+   listen to the exact retained audio and every disagreement must be resolved before either person
+   accepts the final artifacts. Remove an entire sensitive or unintelligible audio interval and its
+   matching reference rather than guessing, inserting a tag, retaining secrets, or scoring a
+   redacted transcript against unredacted speech.
+4. Have exactly two different people run the first two generated commands, using distinct opaque
+   lowercase reviewer IDs. Each command requires `--accept-reviewed-reference` and exact affirmation
+   of `muesly-meeting-reference-v1`; its immutable private record binds the accepted decision,
+   session/sample IDs, protocol, timestamp, and the current audio and reference SHA-256 values.
+   Reviewer IDs must not contain a name, email address, employee ID, or other identity-bearing data.
+   Reviewer IDs enforce procedural separation but do not authenticate identities, so the collection
+   owner remains responsible for confirming that two people performed the reviews.
+
+```bash
+nub run eval:corpus:attest -- \
+  --manifest app/scripts/eval/corpus-local.json \
+  --session-id session-00000000-0000-4000-8000-000000000001 \
+  --reviewer primary-annotator \
+  --accept-reviewed-reference \
+  --affirm-reference-protocol muesly-meeting-reference-v1
+
+nub run eval:corpus:attest -- \
+  --manifest app/scripts/eval/corpus-local.json \
+  --session-id session-00000000-0000-4000-8000-000000000001 \
+  --reviewer independent-reviewer \
+  --accept-reviewed-reference \
+  --affirm-reference-protocol muesly-meeting-reference-v1
+```
+
+   Editing `recording.wav` or `reference.txt` makes every existing acceptance stale. Both reviewers
+   must review the final files again: the first new attestation safely invalidates the stale records
+   and records the first new acceptance, then the second distinct reviewer records the second.
+   Intake rejects zero or one acceptance, duplicate reviewer IDs, a third record, stale hashes,
+   linked records, and files that change during review or import.
+5. Run the generated intake command. Both intake affirmations remain mandatory: every audible
+   participant consented to `asr-benchmarking` before recording, and the final reference followed
+   the exact versioned protocol. Use one opaque session ID for every clip from the same
+   meeting—coverage counts distinct sessions, not files.
 
 ```bash
 nub run eval:corpus:intake \
-  --audio /private/intake/meeting.wav \
-  --reference /private/intake/reference.txt \
-  --sample-id es-office-001 \
-  --session-id session-opaque-001 \
-  --consent-record-id consent-opaque-001 \
-  --consent-record app/scripts/eval/consent-records/consent-opaque-001.md \
+  --audio app/scripts/eval/intake/session-00000000-0000-4000-8000-000000000001/recording.wav \
+  --reference app/scripts/eval/intake/session-00000000-0000-4000-8000-000000000001/reference.txt \
+  --sample-id es-office-00000000-0000-4000-8000-000000000001 \
+  --session-id session-00000000-0000-4000-8000-000000000001 \
+  --consent-record-id consent-00000000-0000-4000-8000-000000000001 \
+  --consent-record /approved/encrypted/muesly-consent-records/consent-00000000-0000-4000-8000-000000000001.md \
   --consent-date 2026-07-16 \
   --language es --noise-condition office --speakers 3 \
   --affirm-all-participants-consented \
   --affirm-reference-protocol muesly-meeting-reference-v1
 ```
 
-The command initializes the gitignored `corpus-local.json` when absent, copies audio and
-reference material under `local-corpus/session-.../` with private permissions, derives WAV
-duration and exact hashes, rejects duplicate audio, validates the complete next manifest, and
-retires a matching prepared source bundle after the manifest commit. Withdrawal also removes any
-matching prepared bundle so revoked recordings and references are not retained or counted as
-pending coverage. Intake rolls back files if any pre-commit step fails. An exclusive local lock
-prevents simultaneous imports from losing manifest entries; a later run reclaims a lock whose
-owner process no longer exists, removes only abandoned temporary files, and safely reuses exact
-destination copies already promoted by an interrupted import. It verifies that
-the supplied consent record exists but never copies its identity-bearing contents into the manifest.
-It rejects consent records inside the managed `local-corpus/` and `results/` trees so session
-withdrawal cannot delete externally retained consent evidence.
+Current intake accepts only a matching schema-3 prepared bundle and the exact `recording.wav` and
+`reference.txt` paths recorded in its metadata. It refuses loose source files and legacy schema-1
+or schema-2 bundles; those legacy schemas remain accepted only so withdrawal can remove them. The
+command initializes the gitignored `corpus-local.json` when absent, copies audio and reference
+material under `local-corpus/session-.../` with private permissions, rechecks their hashes against
+both accepted reviews after staging, derives WAV duration, rejects duplicate audio, validates the
+complete next manifest, and recursively retires the prepared bundle and its review records after
+the manifest commit. Withdrawal also removes any matching prepared bundle so revoked recordings,
+references, and reviewer data are not retained or counted as pending coverage.
+Retirement waits for an active reviewer, identity-claims the exact prepared directory before
+deletion, and leaves an interrupted claim recoverable by the confirmed withdrawal command.
+
+Intake rolls back files if any pre-commit step fails. An exclusive local lock prevents simultaneous
+imports from losing manifest entries; a later run reclaims a lock whose owner process no longer
+exists, removes only abandoned temporary files, and safely reuses exact destination copies already
+promoted by an interrupted import. It verifies that the supplied consent record exists but never
+copies its identity-bearing contents into the manifest. Reviewer IDs, decisions, timestamps, and
+attestation records likewise never enter `corpus-local.json`; only the corpus metadata and exact
+audio/reference hashes do. It rejects consent records inside the managed `local-corpus/` and
+`results/` trees so session withdrawal cannot delete externally retained consent evidence.
 Intake accepts only the five target languages and four defined noise conditions so samples cannot
 silently fall outside the matrix. After validating the imported copy, dispose of the source files
 according to the approved retention policy.
 
-5. Validate independently:
+6. Validate independently:
 
 ```bash
 nub run eval:corpus:validate app/scripts/eval/corpus-local.json

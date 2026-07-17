@@ -101,7 +101,20 @@ function removeClaimedLock(claimedPath, expected, beforeCleanup) {
 }
 
 export function acquirePublicCorpusLock(workspace, timeoutMs = 30_000, options = {}) {
-	const lockPath = path.join(workspace, '.prepare.lock');
+	const lockName = options.lockName ?? '.prepare.lock';
+	if (
+		typeof lockName !== 'string' ||
+		!/^\.[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.lock$/.test(lockName) ||
+		path.basename(lockName) !== lockName ||
+		lockName.includes('\\')
+	) {
+		throw new Error(`public corpus lock name must be a safe .*.lock basename: ${lockName}`);
+	}
+	const lockPath = path.join(workspace, lockName);
+	const activity = options.activity ?? 'public corpus preparation';
+	if (typeof activity !== 'string' || activity.length === 0 || /[\r\n]/.test(activity)) {
+		throw new Error('public corpus lock activity must be a non-empty single-line string');
+	}
 	const token = randomUUID();
 	const pendingPath = `${lockPath}.pending-${token}`;
 	const identity = processIdentity(process.pid);
@@ -131,7 +144,7 @@ export function acquirePublicCorpusLock(workspace, timeoutMs = 30_000, options =
 				if (!['EEXIST', 'ENOTEMPTY', 'EPERM', 'EACCES'].includes(error.code)) throw error;
 			}
 			if (Date.now() >= deadline) {
-				throw new Error(`timed out waiting for public corpus preparation: ${lockPath}`);
+				throw new Error(`timed out waiting for ${activity}: ${lockPath}`);
 			}
 			let observed;
 			try {

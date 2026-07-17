@@ -18,6 +18,9 @@ app/scripts/eval/
   corpus.ts            # manifest validation and language normalization
   corpus-targets.ts    # shared target validation and exact sample resolution
   corpus-prepare.ts    # scaffold the next private consented collection session
+  corpus-attest.ts     # hash-bound private reference-review acceptance
+  corpus-review.ts     # immutable two-review attestation gate
+  corpus-prepared-bundle.ts # schema-3 prepared-bundle validation and retirement
   corpus-intake.ts     # consent-gated, atomic local corpus intake
   corpus-withdraw.ts   # confirmed session withdrawal and result invalidation
   corpus-result.ts     # private, corpus-bound result writes
@@ -225,12 +228,23 @@ MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
   nub run eval:corpus:prepare
 ```
 
-This creates a gitignored, private-permission session folder, an opaque consent record in the
-explicitly selected external encrypted records directory, a blank reference transcript, and an
-exact single-line intake command for Bash/zsh and Windows PowerShell. It refuses repository-local
-consent storage, never creates fake audio, and never marks consent as granted. The generated
-command requires explicit affirmation of `muesly-meeting-reference-v1` after an independent second
-listening pass and disagreement resolution.
+This creates a gitignored, private-permission schema-3 session bundle, an opaque consent record in
+the explicitly selected external encrypted records directory, a blank reference transcript, and a
+private review-attestation directory. It refuses repository-local consent storage, never creates
+fake audio, and never marks consent as granted. The generated README contains exact Bash/zsh and
+Windows PowerShell commands for two distinct opaque reviewers followed by intake. Each accepted
+review is bound to the current audio and reference SHA-256 plus
+`muesly-meeting-reference-v1`; intake requires exactly two such records and accepts files only from
+the generated bundle.
+
+Editing either prepared file makes all existing reviews stale. Both reviewers must review the final
+artifacts again: the first new attestation invalidates the stale pair and records the first new
+acceptance, then the second distinct reviewer records the second acceptance. Reviewer IDs,
+decisions, and timestamps remain in the private prepared bundle and are never copied into
+`corpus-local.json`. Successful intake retires the complete prepared bundle, including its review
+records; confirmed withdrawal performs the same recursive cleanup for any matching pending bundle.
+Retirement waits for active review work, deletes only the exact validated directory identity, and
+lets confirmed withdrawal finish an interrupted retirement claim.
 
 Plan the complete benchmark campaign without running inference:
 

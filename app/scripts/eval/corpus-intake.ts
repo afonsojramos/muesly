@@ -707,6 +707,11 @@ export function intakeConsentedSample(options) {
 		let manifestCommitted = false;
 		fs.mkdirSync(sessionDirectory, { recursive: true, mode: 0o700 });
 		try {
+			options.beforePreparedStage?.({
+				audioSource,
+				referenceSource,
+				bundleDirectory: preparedBundle.bundleDirectory,
+			});
 			const preparedAudio = stageOrReuseFile(audioSource, audioTarget, stagedAudio, 'audio');
 			const preparedReference = stageOrReuseFile(
 				referenceSource,
@@ -714,13 +719,21 @@ export function intakeConsentedSample(options) {
 				stagedReference,
 				'reference',
 			);
+			const audioSha256 = fileSha256(preparedAudio.workingPath);
+			const referenceSha256 = fileSha256(preparedReference.workingPath);
+			if (audioSha256 !== preparedBundle.audioSha256) {
+				throw new Error('prepared audio changed after its review attestations');
+			}
+			if (referenceSha256 !== preparedBundle.referenceSha256) {
+				throw new Error('prepared reference changed after its review attestations');
+			}
 			const sample = {
 				id: options.sampleId,
 				session_id: options.sessionId,
 				audio_path: relativeManifestPath(manifestPath, audioTarget),
-				audio_sha256: fileSha256(preparedAudio.workingPath),
+				audio_sha256: audioSha256,
 				reference_path: relativeManifestPath(manifestPath, referenceTarget),
-				reference_sha256: fileSha256(preparedReference.workingPath),
+				reference_sha256: referenceSha256,
 				language: options.language,
 				scenario: 'meeting',
 				noise_condition: options.noiseCondition,

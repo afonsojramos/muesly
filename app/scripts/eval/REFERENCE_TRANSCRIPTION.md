@@ -4,10 +4,10 @@ Protocol ID: `muesly-meeting-reference-v1`
 
 This document is the normative annotation contract for every reference used by the Muesly
 meeting benchmark. The protocol ID is part of the corpus manifest, target matrix, prepared intake
-metadata, benchmark task identity, run/checkpoint reports, aggregates, and coverage output. A
-change to a normative rule requires a new protocol ID and fresh review and measurement; legacy
-private corpora, prepared bundles, checkpoints, reports, and aggregates are never upgraded
-implicitly.
+metadata, review attestations, benchmark task identity, run/checkpoint reports, aggregates, and
+coverage output. A change to a normative rule requires a new protocol ID and fresh review and
+measurement; legacy private corpora, prepared bundles, checkpoints, reports, and aggregates are
+never upgraded implicitly.
 
 The protocol controls the reference text, not the corpus language stratum. `language` remains a
 human-assigned collection label. Preserve code-switching exactly; do not infer a different stratum
@@ -20,11 +20,22 @@ from token proportions, and do not apply an automatic language-percentage rule.
 2. A second reviewer independently listens to the same retained audio before reviewing the draft.
 3. The annotator and reviewer compare the two renderings, replay every disagreement, and resolve
    one final reference. Never settle an uncertainty by copying model output.
-4. Confirm that the retained audio and final reference cover the same intervals, the declared
-   primary language and noise condition are the intended human-assigned collection stratum, and no
-   private interval marked for removal remains in either artifact.
-5. Only then affirm
-   `--affirm-reference-protocol muesly-meeting-reference-v1` during intake.
+4. Both reviewers confirm that the retained audio and final reference cover the same intervals,
+   the declared primary language and noise condition are the intended human-assigned collection
+   stratum, and no private interval marked for removal remains in either artifact.
+5. Each person then runs the generated `eval:corpus:attest` command with a distinct opaque reviewer
+   ID, `--accept-reviewed-reference`, and
+   `--affirm-reference-protocol muesly-meeting-reference-v1`. The two private accepted records bind
+   the session, sample, protocol, review time, and exact audio and reference SHA-256 values. Exactly
+   two distinct records are required; the IDs provide procedural separation, not identity
+   authentication.
+6. If either artifact changes, its previous reviews no longer apply. Both people must listen to the
+   final artifacts again: the first new attestation removes all stale records and records the first
+   new acceptance, then the second distinct reviewer records the second before intake.
+7. Only after the two hash-bound reviews exist may the operator run the generated intake command
+   and repeat `--affirm-reference-protocol muesly-meeting-reference-v1`. Review records remain in
+   the private prepared bundle, never enter `corpus-local.json`, and are removed when the bundle is
+   retired after successful intake or confirmed withdrawal.
 
 ## What to transcribe
 

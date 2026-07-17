@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,8 +9,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { intakeConsentedSample } from './corpus-intake.ts';
+import {
+	createConsentedReviewDirectory,
+	recordConsentedReviewAttestation,
+} from './corpus-review.ts';
 import { withdrawConsentedSession } from './corpus-withdraw.ts';
-import { REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
+import { canonicalManifestPath, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
 
 function writeWav(filePath, durationSeconds) {
 	const sampleRate = 16_000;
@@ -30,6 +35,68 @@ function writeWav(filePath, durationSeconds) {
 	fs.writeFileSync(filePath, wav);
 }
 
+function writePreparedMetadata(preparedBundle, metadata) {
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
+	fs.chmodSync(preparedBundle, 0o700);
+	const metadataPath = path.join(preparedBundle, 'collection-session.json');
+	const contents = typeof metadata === 'string' ? metadata : JSON.stringify(metadata);
+	fs.writeFileSync(metadataPath, contents, { mode: 0o600 });
+	fs.chmodSync(metadataPath, 0o600);
+}
+
+async function waitForPath(predicate, label) {
+	const deadline = Date.now() + 5_000;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error(`timed out waiting for ${label}`);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+	}
+}
+
+function prepareReviewedSample(options) {
+	const manifestPath = canonicalManifestPath(options.manifestPath, { allowMissing: true });
+	const preparedBundle = path.join(path.dirname(manifestPath), 'intake', options.sessionId);
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
+	fs.chmodSync(preparedBundle, 0o700);
+	const audioPath = path.join(preparedBundle, 'recording.wav');
+	const referencePath = path.join(preparedBundle, 'reference.txt');
+	fs.copyFileSync(options.audio, audioPath);
+	fs.copyFileSync(options.reference, referencePath);
+	fs.chmodSync(audioPath, 0o600);
+	fs.chmodSync(referencePath, 0o600);
+	const reviewAttestationsPath = createConsentedReviewDirectory(preparedBundle);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 3,
+		referenceProtocolId: options.referenceProtocolId,
+		sessionId: options.sessionId,
+		consentRecordId: options.consentRecordId,
+		sampleId: options.sampleId,
+		language: options.language,
+		noiseCondition: options.noiseCondition,
+		manifestPath,
+		audioPath,
+		referencePath,
+		reviewAttestationsPath,
+		consentRecordPath: fs.realpathSync(options.consentRecord),
+	});
+	for (const [reviewerId, reviewedAt] of [
+		['primary-annotator', '2026-07-16T10:00:00.000Z'],
+		['independent-reviewer', '2026-07-16T11:00:00.000Z'],
+	]) {
+		recordConsentedReviewAttestation({
+			bundleDirectory: preparedBundle,
+			audioPath,
+			referencePath,
+			sessionId: options.sessionId,
+			sampleId: options.sampleId,
+			reviewerId,
+			reviewedAt,
+			acceptReviewedReference: true,
+			affirmReferenceProtocol: REFERENCE_PROTOCOL_ID,
+		});
+	}
+	return { ...options, manifestPath, audio: audioPath, reference: referencePath };
+}
+
 function corpusFixture() {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-withdraw-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');
@@ -44,22 +111,24 @@ function corpusFixture() {
 		const reference = path.join(directory, `${index}.txt`);
 		writeWav(audio, sample.duration);
 		fs.writeFileSync(reference, `Reference ${index}.\n`);
-		intakeConsentedSample({
-			manifestPath,
-			audio,
-			reference,
-			sampleId: sample.sampleId,
-			sessionId: sample.sessionId,
-			consentRecordId: `consent-${index}`,
-			consentRecord,
-			consentDate: '2026-07-15',
-			language: index === 'three' ? 'es' : 'en',
-			noiseCondition: index === 'two' ? 'office' : 'clean',
-			speakers: 2,
-			affirmConsent: true,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			today: '2026-07-16',
-		});
+		intakeConsentedSample(
+			prepareReviewedSample({
+				manifestPath,
+				audio,
+				reference,
+				sampleId: sample.sampleId,
+				sessionId: sample.sessionId,
+				consentRecordId: `consent-${index}`,
+				consentRecord,
+				consentDate: '2026-07-15',
+				language: index === 'three' ? 'es' : 'en',
+				noiseCondition: index === 'two' ? 'office' : 'clean',
+				speakers: 2,
+				affirmConsent: true,
+				referenceProtocolId: REFERENCE_PROTOCOL_ID,
+				today: '2026-07-16',
+			}),
+		);
 	}
 	return { directory, manifestPath };
 }
@@ -69,21 +138,23 @@ test('withdraws every sample in one session and invalidates derived results', ()
 	const resultsDirectory = path.join(directory, 'results');
 	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
 	fs.mkdirSync(resultsDirectory);
-	fs.mkdirSync(preparedBundle, { recursive: true });
 	fs.writeFileSync(path.join(resultsDirectory, 'aggregate.json'), '{}');
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-withdraw',
-			manifestPath,
-			language: 'en',
-			noiseCondition: 'clean',
-		}),
-	);
+	const reviewAttestationsPath = createConsentedReviewDirectory(preparedBundle);
+	const privateReview = path.join(reviewAttestationsPath, `${'a'.repeat(64)}.json`);
+	fs.writeFileSync(privateReview, '{"reviewer_id":"private-reviewer"}', { mode: 0o600 });
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 3,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-withdraw',
+		manifestPath,
+		language: 'en',
+		noiseCondition: 'clean',
+		reviewAttestationsPath,
+	});
+	assert(fs.existsSync(privateReview));
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -107,7 +178,8 @@ test('withdraws every sample in one session and invalidates derived results', ()
 	assert(!fs.existsSync(resultsDirectory));
 });
 
-test('withdraws from the canonical manifest behind a symlink', () => {
+test('withdraws from the canonical manifest behind a symlink', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
 	const { directory, manifestPath } = corpusFixture();
 	const manifestAlias = path.join(directory, 'corpus-alias.json');
 	fs.symlinkSync(manifestPath, manifestAlias);
@@ -130,18 +202,15 @@ test('withdraws corpus samples without deleting an unrelated prepared bundle', (
 	const { directory, manifestPath } = corpusFixture();
 	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
 	const unrelatedManifestPath = path.join(directory, 'another-corpus-local.json');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'unrelated source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'unrelated source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-withdraw',
-			manifestPath: unrelatedManifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-withdraw',
+		manifestPath: unrelatedManifestPath,
+	});
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -161,10 +230,10 @@ test('withdraws corpus samples without deleting an unrelated prepared bundle', (
 test('refuses corpus withdrawal when matching prepared metadata is malformed', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(path.join(preparedBundle, 'collection-session.json'), '{ invalid');
+	writePreparedMetadata(preparedBundle, '{ invalid');
 	const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
 
 	assert.throws(
@@ -187,9 +256,9 @@ test('refuses orphan withdrawal before mutation when prepared metadata is malfor
 	const preparedBundle = path.join(directory, 'intake', 'session-orphan');
 	fs.mkdirSync(sessionDirectory);
 	fs.writeFileSync(path.join(sessionDirectory, 'orphan.wav'), 'private promoted audio');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
-	fs.writeFileSync(path.join(preparedBundle, 'collection-session.json'), '{ invalid');
+	writePreparedMetadata(preparedBundle, '{ invalid');
 
 	assert.throws(
 		() =>
@@ -246,7 +315,10 @@ test('withdraws from a legacy schema-2 corpus without upgrading the retained man
 	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	assert.equal(remaining.schema_version, 2);
 	assert.equal(remaining.reference_protocol_id, undefined);
-	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert.deepEqual(
+		remaining.samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', 'session-withdraw')));
 });
 
@@ -272,28 +344,32 @@ test('withdraws private schema-3 data without upgrading retained metadata', () =
 	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 	assert.equal(remaining.schema_version, 3);
 	assert.equal(remaining.reference_protocol_id, REFERENCE_PROTOCOL_ID);
-	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert.deepEqual(
+		remaining.samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
 	assert(!fs.existsSync(withdrawnDirectory));
 	assert(!fs.existsSync(resultsDirectory));
 	assert(fs.existsSync(path.join(directory, 'local-corpus', 'session-keep', 'es-clean-003.wav')));
 });
 
-test('withdraws a prepared session before corpus intake', () => {
+test('withdraws a schema-3 prepared session and its private reviews before corpus intake', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-withdraw-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-prepared',
-			manifestPath,
-		}),
-	);
+	const reviewAttestationsPath = createConsentedReviewDirectory(preparedBundle);
+	const privateReview = path.join(reviewAttestationsPath, `${'b'.repeat(64)}.json`);
+	fs.writeFileSync(privateReview, '{"reviewer_id":"private-reviewer"}', { mode: 0o600 });
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 3,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-prepared',
+		manifestPath,
+		reviewAttestationsPath,
+	});
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -307,39 +383,42 @@ test('withdraws a prepared session before corpus intake', () => {
 		resumed: false,
 	});
 	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(privateReview));
 	assert(!fs.existsSync(manifestPath));
 });
 
-test('withdraws a legacy schema-1 prepared session without upgrading it', () => {
-	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-legacy-prepared-withdraw-'));
-	const manifestPath = path.join(directory, 'corpus-local.json');
-	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
-	fs.mkdirSync(preparedBundle, { recursive: true });
-	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
-	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 1,
+for (const schemaVersion of [1, 2]) {
+	test(`withdraws a legacy schema-${schemaVersion} prepared session without upgrading it`, () => {
+		const directory = fs.mkdtempSync(
+			path.join(os.tmpdir(), `muesly-legacy-${schemaVersion}-prepared-withdraw-`),
+		);
+		const manifestPath = path.join(directory, 'corpus-local.json');
+		const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+		fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
+		fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+		fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+		writePreparedMetadata(preparedBundle, {
+			schemaVersion,
+			...(schemaVersion === 2 ? { referenceProtocolId: REFERENCE_PROTOCOL_ID } : {}),
 			sessionId: 'session-prepared',
 			manifestPath,
-		}),
-	);
+		});
 
-	const result = withdrawConsentedSession({
-		manifestPath,
-		sessionId: 'session-prepared',
-		confirmWithdrawal: true,
-	});
+		const result = withdrawConsentedSession({
+			manifestPath,
+			sessionId: 'session-prepared',
+			confirmWithdrawal: true,
+		});
 
-	assert.deepEqual(result, {
-		sessionId: 'session-prepared',
-		removedSamples: 0,
-		resumed: false,
+		assert.deepEqual(result, {
+			sessionId: 'session-prepared',
+			removedSamples: 0,
+			resumed: false,
+		});
+		assert(!fs.existsSync(preparedBundle));
+		assert(!fs.existsSync(manifestPath));
 	});
-	assert(!fs.existsSync(preparedBundle));
-	assert(!fs.existsSync(manifestPath));
-});
+}
 
 test('holds the corpus mutation lock while retiring a prepared-only session', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-lock-'));
@@ -347,22 +426,19 @@ test('holds the corpus mutation lock while retiring a prepared-only session', ()
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	const preparedBundle = path.join(canonicalDirectory, 'intake', 'session-prepared');
 	const localCorpusRoot = path.join(canonicalDirectory, 'local-corpus');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-prepared',
-			manifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-prepared',
+		manifestPath,
+	});
 	const rmSync = fs.rmSync;
 	let observedLock = false;
 	fs.rmSync = (target, ...args) => {
-		if (target === preparedBundle) {
+		if (target === path.join(canonicalDirectory, 'intake', '.retired-session-prepared')) {
 			observedLock = fs.existsSync(path.join(localCorpusRoot, '.intake.lock'));
 		}
 		return rmSync(target, ...args);
@@ -383,24 +459,105 @@ test('holds the corpus mutation lock while retiring a prepared-only session', ()
 	assert(!fs.existsSync(path.join(localCorpusRoot, '.intake.lock')));
 });
 
+test('waits for an active attester before withdrawing and deleting its prepared bundle', async () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-review-retire-race-'));
+	const canonicalDirectory = fs.realpathSync(directory);
+	const manifestPath = path.join(canonicalDirectory, 'corpus-local.json');
+	const sessionId = 'session-review-retire';
+	const sampleId = 'en-clean-review-retire';
+	const preparedBundle = path.join(canonicalDirectory, 'intake', sessionId);
+	const audioPath = path.join(preparedBundle, 'recording.wav');
+	const referencePath = path.join(preparedBundle, 'reference.txt');
+	const consentRecordPath = path.join(canonicalDirectory, 'consent.md');
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
+	fs.chmodSync(preparedBundle, 0o700);
+	writeWav(audioPath, 1);
+	fs.writeFileSync(referencePath, 'Held review reference.\n', { mode: 0o600 });
+	fs.writeFileSync(consentRecordPath, 'affirmative consent', { mode: 0o600 });
+	const reviewAttestationsPath = createConsentedReviewDirectory(preparedBundle);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 3,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId,
+		consentRecordId: 'consent-review-retire',
+		sampleId,
+		language: 'en',
+		noiseCondition: 'clean',
+		manifestPath,
+		audioPath,
+		referencePath,
+		reviewAttestationsPath,
+		consentRecordPath,
+	});
+	const configurationPath = path.join(canonicalDirectory, 'review.json');
+	const enteredPath = path.join(canonicalDirectory, 'review-entered');
+	const releasePath = path.join(canonicalDirectory, 'review-release');
+	fs.writeFileSync(
+		configurationPath,
+		JSON.stringify({
+			bundleDirectory: preparedBundle,
+			audioPath,
+			referencePath,
+			sessionId,
+			sampleId,
+			reviewerId: 'reviewer-held',
+		}),
+		{ mode: 0o600 },
+	);
+	const holdScript = fileURLToPath(new URL('./fixtures/corpus-review-hold.ts', import.meta.url));
+	const withdrawScript = fileURLToPath(new URL('./corpus-withdraw.ts', import.meta.url));
+	const attester = spawn('nub', [holdScript, configurationPath, enteredPath, releasePath], {
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+	let attesterError = '';
+	attester.stderr.on('data', (chunk) => {
+		attesterError += chunk;
+	});
+	await waitForPath(() => fs.existsSync(enteredPath), 'held review attestation');
+	const withdrawal = spawn(
+		'nub',
+		[withdrawScript, '--manifest', manifestPath, '--session-id', sessionId, '--confirm-withdrawal'],
+		{ stdio: ['ignore', 'pipe', 'pipe'] },
+	);
+	let withdrawalError = '';
+	withdrawal.stderr.on('data', (chunk) => {
+		withdrawalError += chunk;
+	});
+	await waitForPath(
+		() =>
+			fs
+				.readdirSync(canonicalDirectory)
+				.some((name) => /^\.review-[a-f0-9]{64}\.lock\.pending-/.test(name)),
+		'withdrawal review-lock contention',
+	);
+	assert.equal(withdrawal.exitCode, null);
+	assert(fs.existsSync(preparedBundle));
+	fs.writeFileSync(releasePath, 'release\n', { mode: 0o600 });
+	const [[attesterCode], [withdrawalCode]] = await Promise.all([
+		once(attester, 'exit'),
+		once(withdrawal, 'exit'),
+	]);
+	assert.equal(attesterCode, 0, attesterError);
+	assert.equal(withdrawalCode, 0, withdrawalError);
+	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(path.join(canonicalDirectory, 'intake', `.retired-${sessionId}`)));
+});
+
 test('does not report prepared withdrawal while the manifest still contains the session', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const manifestBefore = fs.readFileSync(manifestPath, 'utf8');
 	const localCorpusRoot = path.join(directory, 'local-corpus');
 	const preparedBundle = path.join(directory, 'intake', 'session-withdraw');
 	fs.rmSync(localCorpusRoot, { recursive: true });
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-withdraw',
-			manifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-withdraw',
+		manifestPath,
+	});
 
 	assert.throws(
 		() =>
@@ -421,16 +578,12 @@ test('refuses prepared withdrawal through a non-directory corpus path', () => {
 	const localCorpusRoot = path.join(directory, 'local-corpus');
 	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
 	fs.writeFileSync(localCorpusRoot, 'unexpected file');
-	fs.mkdirSync(preparedBundle, { recursive: true });
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-prepared',
-			manifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-prepared',
+		manifestPath,
+	});
 
 	assert.throws(
 		() =>
@@ -449,18 +602,15 @@ test('withdraws a prepared session after a failed first intake created the corpu
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
 	fs.mkdirSync(path.join(directory, 'local-corpus'), { recursive: true });
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'invalid source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-prepared',
-			manifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-prepared',
+		manifestPath,
+	});
 
 	const result = withdrawConsentedSession({
 		manifestPath,
@@ -482,18 +632,15 @@ test('preserves a prepared session when withdrawal names a different manifest', 
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	const mistypedManifestPath = path.join(directory, 'corpus-lcoal.json');
 	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
-	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.mkdirSync(preparedBundle, { recursive: true, mode: 0o700 });
 	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
 	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
-	fs.writeFileSync(
-		path.join(preparedBundle, 'collection-session.json'),
-		JSON.stringify({
-			schemaVersion: 2,
-			referenceProtocolId: REFERENCE_PROTOCOL_ID,
-			sessionId: 'session-prepared',
-			manifestPath,
-		}),
-	);
+	writePreparedMetadata(preparedBundle, {
+		schemaVersion: 2,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		sessionId: 'session-prepared',
+		manifestPath,
+	});
 
 	assert.throws(
 		() =>
@@ -655,9 +802,7 @@ test('completes an orphan withdrawal whose cleanup finished before lock release'
 test('completes a normal withdrawal whose cleanup finished before lock release', () => {
 	const { directory, manifestPath } = corpusFixture();
 	const document = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	document.samples = document.samples.filter(
-		(sample) => sample.session_id !== 'session-withdraw',
-	);
+	document.samples = document.samples.filter((sample) => sample.session_id !== 'session-withdraw');
 	fs.writeFileSync(manifestPath, `${JSON.stringify(document, null, 2)}\n`);
 	const localCorpusRoot = path.join(directory, 'local-corpus');
 	fs.rmSync(path.join(localCorpusRoot, 'session-withdraw'), {
@@ -825,26 +970,23 @@ test('retains stale-lock evidence until orphan cleanup succeeds', () => {
 	writeWav(unrelatedAudio, 1);
 	fs.writeFileSync(unrelatedReference, 'Unrelated reference.\n');
 	fs.writeFileSync(consentRecord, 'affirmative consent record');
-	assert.throws(
-		() =>
-			intakeConsentedSample({
-				manifestPath,
-				audio: unrelatedAudio,
-				reference: unrelatedReference,
-				sampleId: 'unrelated-clean-001',
-				sessionId: 'session-unrelated',
-				consentRecordId: 'consent-unrelated',
-				consentRecord,
-				consentDate: '2026-07-16',
-				language: 'en',
-				noiseCondition: 'clean',
-				speakers: 2,
-				affirmConsent: true,
-				referenceProtocolId: REFERENCE_PROTOCOL_ID,
-				today: '2026-07-16',
-			}),
-		/corpus withdrawal is pending/,
-	);
+	const unrelatedOptions = prepareReviewedSample({
+		manifestPath,
+		audio: unrelatedAudio,
+		reference: unrelatedReference,
+		sampleId: 'unrelated-clean-001',
+		sessionId: 'session-unrelated',
+		consentRecordId: 'consent-unrelated',
+		consentRecord,
+		consentDate: '2026-07-16',
+		language: 'en',
+		noiseCondition: 'clean',
+		speakers: 2,
+		affirmConsent: true,
+		referenceProtocolId: REFERENCE_PROTOCOL_ID,
+		today: '2026-07-16',
+	});
+	assert.throws(() => intakeConsentedSample(unrelatedOptions), /corpus withdrawal is pending/);
 	assert(!fs.existsSync(`${staleLockPath}.recovered`));
 
 	fs.rmSync(markerPath);
@@ -1127,7 +1269,8 @@ test('requires intake evidence for the exact withdrawn session', () => {
 	assert(fs.existsSync(recording));
 });
 
-test('refuses orphan cleanup when a retained sample reaches it through an alias', () => {
+test('refuses orphan cleanup when a retained sample reaches it through an alias', (t) => {
+	if (process.platform === 'win32') return t.skip('symbolic links are not portable on Windows');
 	const { directory, manifestPath } = corpusFixture();
 	const orphanDirectory = path.join(directory, 'local-corpus', 'session-orphan');
 	fs.mkdirSync(orphanDirectory);
@@ -1217,7 +1360,10 @@ test('withdraws consent even when an unrelated retained sample violates current 
 
 	assert.equal(result.removedSamples, 2);
 	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert.deepEqual(
+		remaining.samples.map((sample) => sample.id),
+		['es-clean-003'],
+	);
 	assert(
 		validateCorpusDocument(remaining, { manifestPath }).some((error) =>
 			error.includes('must be local-corpus/session-keep/es-clean-003'),
