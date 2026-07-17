@@ -101,6 +101,11 @@ The runner coordinates its benchmark lock with the corpus mutation lock, refuses
 withdrawal is pending, and blocks intake, withdrawal, or unrelated result writes until the
 campaign releases ownership. It validates the corpus and target matrix, builds and probes each
 selected provider/model/backend, and writes a private atomic checkpoint after every sample.
+Rust CI binds the committed target's exact CPU/Metal Whisper recommendation and ONNX-CPU Parakeet
+default to the shipped catalogs and integrity pins. At run time the staged evaluator reports the
+expected product-pin digest, then the runner independently hashes both the source artifact and its
+private snapshot against that digest. An unknown pin or byte mismatch fails without deleting the
+operator's model files.
 Re-running the same command resumes only exact completed task, model, evaluator, executable, and
 hardware identities. `--variant provider/model/backend` limits execution to a repeatable subset. Use
 `--accelerator backend=stable-device-id` where an explicit GPU identity is required. A failed
@@ -129,7 +134,8 @@ each checkpoint's exact name, identity, and content digest.
   Vulkan, HIP, and Intel Mac GPU runs. Apple Silicon Metal and Core ML runs derive their
   integrated GPU identity from the SoC automatically. Ambiguous GPU runs fail before compilation.
 - `--models-dir <path>` reuses an existing app model directory instead of downloading
-  another copy into the development directory.
+  another copy into the development directory. Existing canonical-target files must match the
+  product download pins; replace or re-download a mismatched file before benchmarking it.
 - `--output <path>` writes a transcript-free JSON report containing WER or hallucination
   count, source-audio and model-input inference RTF, model-load/inference timings, peak RSS, OS,
   architecture, machine profile,

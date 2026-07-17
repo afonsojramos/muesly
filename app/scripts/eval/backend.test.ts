@@ -56,7 +56,16 @@ if (process.argv.includes('--hardware-json')) {
 if (process.argv.includes('--prepare-model-json')) {
 	const provider = process.argv[process.argv.indexOf('--provider') + 1];
 	const model = process.argv[process.argv.indexOf('--model') + 1];
-	process.stdout.write(JSON.stringify({ schema_version: 1, provider, model }) + '\\n');
+	const modelsDirectory = process.argv[process.argv.indexOf('--models-dir') + 1];
+	const modelArtifactSha256 = createHash('sha256')
+		.update(fs.readFileSync(modelsDirectory + '/ggml-' + model + '.bin'))
+		.digest('hex');
+	process.stdout.write(JSON.stringify({
+		schema_version: 2,
+		provider,
+		model,
+		model_artifact_sha256: modelArtifactSha256,
+	}) + '\\n');
 	process.exit(0);
 }
 ${regularRunSource}

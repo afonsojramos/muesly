@@ -10,6 +10,8 @@ three distinct consented sessions in every combination of five languages (`en`, 
 `fr`, `de`) and four conditions (`clean`, `office`, `remote-call`, `overlapping-speech`):
 60 distinct-session cell observations. Each is then measured with the shipped Parakeet artifact and
 the same Whisper artifact on CPU and Metal, producing 180 required measurement cells.
+Rust CI binds those committed variants to the High/Ultra Automatic Whisper recommendation, the
+default Parakeet model, their supported evaluator backends, and every required integrity pin.
 This floor exposes large product failures; it is not statistically representative of every
 accent, demographic, device, or acoustic environment.
 
@@ -195,6 +197,9 @@ compiler's internal binary bytes. Compiler-wrapper environment variables (`RUSTC
 forces both wrapper settings empty so parent or `CARGO_HOME` configuration cannot interpose. The
 provider/backend executable and model are built, prepared, and privately snapshotted once per
 campaign variant, then the exact snapshot is invoked directly for every selected sample;
+for every committed CPU/Metal Whisper and ONNX-CPU Parakeet target, preparation returns the
+canonical product-pin digest and the runner requires both the source artifact and private snapshot
+to match it. Unknown pins and mismatched bytes fail non-destructively before inference.
 metrics schema 7 must repeat its backend, platform, hardware, accelerator, executable identity,
 and exact corpus audio SHA-256. The campaign captures digest-bound reference text in memory,
 revalidates the selected audio and reference immediately before and after inference, and writes
@@ -218,8 +223,11 @@ For CUDA, Vulkan, HIP, or an Intel Mac GPU backend, also pass
 `--accelerator <stable-model-or-device-id>` (for example, the exact GPU model and PCI bus ID).
 Apple Silicon Metal and Core ML record their integrated accelerator identity automatically.
 Select Core ML with `--backend coreml`; the resulting metrics and coverage cell use the canonical
-reported backend name `coreml-metal`. Core ML is supported for additional target matrices but is
-not part of the initial CPU/Metal/Parakeet 180-cell floor described above.
+reported backend name `coreml-metal`. The primary GGML file is verified against its product pin;
+because a locally compiled Core ML encoder bundle has no distribution pin, its complete composite
+artifact is fingerprinted and privately snapshotted for reproducibility but is explicitly not
+reported as a canonical product artifact. Core ML remains available for diagnostic target matrices
+but is not part of the fully canonical CPU/Metal/Parakeet 180-cell floor described above.
 
 ```bash
 nub run eval:real --manifest app/scripts/eval/corpus-local.json \

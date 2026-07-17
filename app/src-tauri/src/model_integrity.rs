@@ -101,6 +101,58 @@ pub fn parakeet_file_sha256(filename: &str) -> Option<&'static str> {
     })
 }
 
+/// Canonical file set for the actively shipped Parakeet v3 INT8 artifact.
+///
+/// Keep the model-name binding here, next to the file pins: the evaluator must
+/// not apply v3 hashes to an installed legacy model that happens to reuse the
+/// same filenames.
+pub fn parakeet_model_artifact_files(model_name: &str) -> Option<&'static [&'static str]> {
+    const V3_INT8_FILES: &[&str] = &[
+        "encoder-model.int8.onnx",
+        "decoder_joint-model.int8.onnx",
+        "nemo128.onnx",
+        "vocab.txt",
+    ];
+
+    match model_name {
+        "parakeet-tdt-0.6b-v3-int8" => Some(V3_INT8_FILES),
+        _ => None,
+    }
+}
+
+/// Return the canonical product digest for a shipped Whisper artifact.
+pub fn expected_whisper_model_artifact_sha256(model_name: &str) -> Result<&'static str> {
+    whisper_model_sha256(model_name).ok_or_else(|| {
+        anyhow!("no pinned SHA-256 for whisper model '{model_name}'; refusing to benchmark it")
+    })
+}
+
+/// Return the stable filename + per-file-pin manifest digest used by the
+/// evaluator for the actively shipped Parakeet artifact.
+pub fn expected_parakeet_model_artifact_sha256(model_name: &str) -> Result<String> {
+    let files = parakeet_model_artifact_files(model_name).ok_or_else(|| {
+        anyhow!(
+            "no pinned artifact set for parakeet model '{model_name}'; refusing to benchmark it"
+        )
+    })?;
+
+    let mut manifest = String::new();
+    for filename in files {
+        let pin = parakeet_file_sha256(filename).ok_or_else(|| {
+            anyhow!(
+                "no pinned SHA-256 for parakeet model '{model_name}' file '{filename}'; refusing to benchmark it"
+            )
+        })?;
+        if !manifest.is_empty() {
+            manifest.push('\n');
+        }
+        manifest.push_str(filename);
+        manifest.push('\0');
+        manifest.push_str(pin);
+    }
+    Ok(sha256_hex(manifest.as_bytes()))
+}
+
 /// Pinned GGUF summary model SHA-256 by on-disk filename (`ModelDef.gguf_file`).
 pub fn gguf_filename_sha256(filename: &str) -> Option<&'static str> {
     Some(match filename {
@@ -168,6 +220,10 @@ mod tests {
         )
         .unwrap();
         assert!(verify_file_sha256(&path, "deadbeef").is_err());
+        assert!(
+            path.exists(),
+            "read-only verification must not delete a mismatch"
+        );
     }
 
     #[test]
@@ -191,6 +247,49 @@ mod tests {
                 "missing pin for {name}"
             );
         }
+    }
+
+    #[test]
+    fn parakeet_pins_cover_the_active_model_artifact() {
+        let files = parakeet_model_artifact_files("parakeet-tdt-0.6b-v3-int8").unwrap();
+        assert_eq!(files.len(), 4);
+        for filename in files {
+            assert!(
+                parakeet_file_sha256(filename).is_some(),
+                "missing pin for {filename}"
+            );
+        }
+        assert!(parakeet_model_artifact_files("parakeet-tdt-0.6b-v2-int8").is_none());
+        let manifest = files
+            .iter()
+            .map(|filename| format!("{filename}\0{}", parakeet_file_sha256(filename).unwrap()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            sha256_hex(manifest.as_bytes()),
+            "b58197a2d6a6a6b8757ed61005451878028147605499da69d12d16ae4d7efba8"
+        );
+    }
+
+    #[test]
+    fn expected_whisper_artifact_digest_fails_closed_for_unknown_models() {
+        let unknown = expected_whisper_model_artifact_sha256("not-in-the-catalog").unwrap_err();
+        assert!(unknown.to_string().contains("no pinned SHA-256"));
+        assert_eq!(
+            expected_whisper_model_artifact_sha256("large-v3-turbo-q5_0").unwrap(),
+            "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
+        );
+    }
+
+    #[test]
+    fn expected_parakeet_artifact_digest_fails_closed_for_unknown_models() {
+        let unknown =
+            expected_parakeet_model_artifact_sha256("parakeet-tdt-0.6b-v2-int8").unwrap_err();
+        assert!(unknown.to_string().contains("no pinned artifact set"));
+        assert_eq!(
+            expected_parakeet_model_artifact_sha256("parakeet-tdt-0.6b-v3-int8").unwrap(),
+            "b58197a2d6a6a6b8757ed61005451878028147605499da69d12d16ae4d7efba8"
+        );
     }
 
     #[test]

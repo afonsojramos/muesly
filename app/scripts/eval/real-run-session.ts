@@ -844,18 +844,30 @@ export function prepareRealRunSession(input, dependencies = {}) {
 		if (hardwareProbe.benchmark_executable_sha256 !== executableSnapshot.sha256) {
 			throw new Error('hardware probe does not identify the staged benchmark executable');
 		}
-		resolvedDependencies.prepareBenchmarkModel(executableSnapshot.executablePath, {
-			provider: input.provider,
-			model: input.model,
-			modelsDirectory,
-			environment: runtimeEnvironment,
-		});
+		const preparedModel = resolvedDependencies.prepareBenchmarkModel(
+			executableSnapshot.executablePath,
+			{
+				provider: input.provider,
+				model: input.model,
+				modelsDirectory,
+				reportedBackend: hardwareProbe.backend,
+				environment: runtimeEnvironment,
+			},
+		);
 		const sourceModelSha256 = resolvedDependencies.modelArtifactSha256(
 			input.provider,
 			input.model,
 			modelsDirectory,
 			hardwareProbe.backend,
 		);
+		if (
+			preparedModel.model_artifact_sha256 !== null &&
+			sourceModelSha256 !== preparedModel.model_artifact_sha256
+		) {
+			throw new Error(
+				'prepared model bytes do not match the canonical artifact digest attested by the evaluator',
+			);
+		}
 		const modelSnapshotRoot =
 			resolvedDependencies.createPrivateArtifactSnapshotDirectory(modelsDirectory);
 		privateDirectories.push(modelSnapshotRoot);
@@ -865,8 +877,16 @@ export function prepareRealRunSession(input, dependencies = {}) {
 			modelsDirectory,
 			hardwareProbe.backend,
 			path.join(modelSnapshotRoot, 'model'),
-			sourceModelSha256,
+			preparedModel.model_artifact_sha256 ?? sourceModelSha256,
 		);
+		if (
+			preparedModel.model_artifact_sha256 !== null &&
+			modelSnapshot.sha256 !== preparedModel.model_artifact_sha256
+		) {
+			throw new Error(
+				'model snapshot does not match the canonical artifact digest attested by the evaluator',
+			);
+		}
 		const metricsDirectory = resolvedDependencies.createPrivateArtifactSnapshotDirectory(
 			os.tmpdir(),
 		);

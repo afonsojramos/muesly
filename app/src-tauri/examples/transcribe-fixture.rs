@@ -101,6 +101,7 @@ struct PreparedModel {
     schema_version: u8,
     provider: String,
     model: String,
+    model_artifact_sha256: Option<String>,
 }
 
 fn audio_seconds_from_samples(sample_count: usize) -> f64 {
@@ -1026,11 +1027,13 @@ async fn main() {
         let model_name = prepared_model_name
             .take()
             .unwrap_or_else(|| fail("--prepare-model-json requires --model".to_string()));
-        prepare_model(&provider, &model_name, prepared_models_dir).await;
+        let model_artifact_sha256 =
+            prepare_model(&provider, &model_name, prepared_models_dir).await;
         let prepared = PreparedModel {
-            schema_version: 1,
+            schema_version: 2,
             provider,
             model: model_name,
+            model_artifact_sha256,
         };
         let json = serde_json::to_string(&prepared)
             .unwrap_or_else(|error| fail(format!("serialize prepared model failed: {error}")));
@@ -1460,7 +1463,11 @@ fn progress_callback() -> Box<dyn Fn(u8) + Send> {
     })
 }
 
-async fn prepare_model(provider: &str, model_name: &str, models_dir: Option<PathBuf>) {
+async fn prepare_model(
+    provider: &str,
+    model_name: &str,
+    models_dir: Option<PathBuf>,
+) -> Option<String> {
     if provider == "parakeet" {
         let engine = ParakeetEngine::new_with_models_dir(models_dir)
             .unwrap_or_else(|error| fail(format!("engine init failed: {error}")));
@@ -1489,7 +1496,12 @@ async fn prepare_model(provider: &str, model_name: &str, models_dir: Option<Path
                 "model preparation did not produce an available model: {model_name}"
             ));
         }
-        return;
+        return Some(
+            app_lib::model_integrity::expected_parakeet_model_artifact_sha256(model_name)
+                .unwrap_or_else(|error| {
+                    fail(format!("model integrity pin lookup failed: {error:#}"))
+                }),
+        );
     }
 
     let engine = WhisperEngine::new_with_models_dir(models_dir)
@@ -1517,10 +1529,25 @@ async fn prepare_model(provider: &str, model_name: &str, models_dir: Option<Path
             "model preparation did not produce an available model: {model_name}"
         ));
     };
+    let model_artifact_sha256 =
+        app_lib::model_integrity::expected_whisper_model_artifact_sha256(model_name)
+            .unwrap_or_else(|error| fail(format!("model integrity pin lookup failed: {error:#}")));
     let backend = resolved_benchmark_backend("whisper").unwrap_or_else(|error| fail(error));
     if backend == BenchmarkBackend::CoreMlMetal {
+        app_lib::model_integrity::verify_file_sha256(&available_model.path, model_artifact_sha256)
+            .unwrap_or_else(|error| {
+                fail(format!(
+                    "Core ML primary model integrity verification failed: {error:#}"
+                ))
+            });
         require_coreml_encoder_bundle(&available_model.path).unwrap_or_else(|error| fail(error));
+        // The primary GGML file is pinned and verified above. Compiled Core ML
+        // bundles are local build products without a product-distribution pin,
+        // so the caller fingerprints and snapshots the complete bundle but
+        // must not represent that composite digest as canonical.
+        return None;
     }
+    Some(model_artifact_sha256.to_string())
 }
 
 async fn download_whisper_model(engine: &WhisperEngine, model_name: &str) {
@@ -2017,15 +2044,24 @@ mod tests {
     #[test]
     fn prepared_model_serializes_only_the_strict_public_fields() {
         let prepared = PreparedModel {
-            schema_version: 1,
+            schema_version: 2,
             provider: "whisper".to_string(),
             model: "tiny".to_string(),
+            model_artifact_sha256: Some("a".repeat(64)),
         };
         let value = serde_json::to_value(prepared).unwrap();
         let object = value.as_object().unwrap();
         let mut fields = object.keys().map(String::as_str).collect::<Vec<_>>();
         fields.sort_unstable();
-        assert_eq!(fields, ["model", "provider", "schema_version"]);
+        assert_eq!(
+            fields,
+            [
+                "model",
+                "model_artifact_sha256",
+                "provider",
+                "schema_version"
+            ]
+        );
     }
 
     #[test]

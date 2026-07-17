@@ -165,7 +165,12 @@ function cancellableRealSession(t, task, directory, markerPath) {
         cargoFeatures: [...task.evaluator_revision.cargo_features],
         executablePath,
       }),
-      prepareBenchmarkModel: () => {},
+      prepareBenchmarkModel: (_command, input) => ({
+        schema_version: 2,
+        provider: input.provider,
+        model: input.model,
+        model_artifact_sha256: sha256("prepared model"),
+      }),
       probeBenchmarkExecutable: (command) => ({
         schema_version: 1,
         backend: task.target_backend,
@@ -372,35 +377,71 @@ test("campaign preflight stages Windows profile-root ORT DLLs before probing", (
     assert.match(options.environment.MUESLY_EVAL_RUNTIME_DEPENDENCIES_SHA256, /^[a-f0-9]{64}$/);
   };
 
-  const identity = inspectVariantIdentity(
-    {
-      task: {
-        accelerator: null,
-        model: "parakeet-test",
-        provider: "parakeet",
-        real_run_backend: "cpu",
-        target_backend: "onnx-cpu",
-      },
-      repoRoot: repositoryRoot,
-      modelsDirectory,
-      evaluatorContext: {
-        buildEnvironment: {},
-        hostTriple: "x86_64-pc-windows-msvc",
-      },
+  const inspectionInput = {
+    task: {
+      accelerator: null,
+      model: "parakeet-test",
+      provider: "parakeet",
+      real_run_backend: "cpu",
+      target_backend: "onnx-cpu",
     },
-    {
-      buildBenchmarkExecutableImpl: () => ({
-        cargoFeatures: [],
-        executablePath,
-      }),
-      modelArtifactSha256Impl: () => MODEL_ARTIFACT,
-      platform: "win32",
-      prepareBenchmarkModelImpl: (candidatePath, options) => {
-        assertStagedRuntime(candidatePath, options);
-      },
-      probeBenchmarkExecutableImpl: (candidatePath, options) => {
-        assertStagedRuntime(candidatePath, options);
-        return {
+    repoRoot: repositoryRoot,
+    modelsDirectory,
+    evaluatorContext: {
+      buildEnvironment: {},
+      hostTriple: "x86_64-pc-windows-msvc",
+    },
+  };
+  const identity = inspectVariantIdentity(inspectionInput, {
+    buildBenchmarkExecutableImpl: () => ({
+      cargoFeatures: [],
+      executablePath,
+    }),
+    modelArtifactSha256Impl: () => MODEL_ARTIFACT,
+    platform: "win32",
+    prepareBenchmarkModelImpl: (candidatePath, options) => {
+      assertStagedRuntime(candidatePath, options);
+      assert.equal(options.reportedBackend, "onnx-cpu");
+      return {
+        schema_version: 2,
+        provider: "parakeet",
+        model: "parakeet-test",
+        model_artifact_sha256: MODEL_ARTIFACT,
+      };
+    },
+    probeBenchmarkExecutableImpl: (candidatePath, options) => {
+      assertStagedRuntime(candidatePath, options);
+      return {
+        backend: "onnx-cpu",
+        operating_system: "windows",
+        architecture: "x86_64",
+        hardware_profile:
+          `cpu=test;logical_cpus=8;memory_bytes=17179869184;` +
+          `runtime_env_sha256=${options.environment.MUESLY_EVAL_RUNTIME_ENV_SHA256}`,
+        accelerator: "none",
+        benchmark_executable_sha256: sha256("exact benchmark executable"),
+      };
+    },
+  });
+
+  assert.equal(identity.benchmark_executable_sha256, sha256("exact benchmark executable"));
+  assert.equal(identity.model_artifact_sha256, MODEL_ARTIFACT);
+  assert.notEqual(privateSnapshotDirectory, null);
+  assert.equal(fs.existsSync(privateSnapshotDirectory), false);
+
+  assert.throws(
+    () =>
+      inspectVariantIdentity(inspectionInput, {
+        buildBenchmarkExecutableImpl: () => ({ cargoFeatures: [], executablePath }),
+        modelArtifactSha256Impl: () => MODEL_ARTIFACT,
+        platform: "win32",
+        prepareBenchmarkModelImpl: () => ({
+          schema_version: 2,
+          provider: "parakeet",
+          model: "parakeet-test",
+          model_artifact_sha256: "f".repeat(64),
+        }),
+        probeBenchmarkExecutableImpl: (candidatePath, options) => ({
           backend: "onnx-cpu",
           operating_system: "windows",
           architecture: "x86_64",
@@ -408,16 +449,11 @@ test("campaign preflight stages Windows profile-root ORT DLLs before probing", (
             `cpu=test;logical_cpus=8;memory_bytes=17179869184;` +
             `runtime_env_sha256=${options.environment.MUESLY_EVAL_RUNTIME_ENV_SHA256}`,
           accelerator: "none",
-          benchmark_executable_sha256: sha256("exact benchmark executable"),
-        };
-      },
-    },
+          benchmark_executable_sha256: benchmarkExecutableSha256(candidatePath),
+        }),
+      }),
+    /canonical artifact digest attested by the evaluator/,
   );
-
-  assert.equal(identity.benchmark_executable_sha256, sha256("exact benchmark executable"));
-  assert.equal(identity.model_artifact_sha256, MODEL_ARTIFACT);
-  assert.notEqual(privateSnapshotDirectory, null);
-  assert.equal(fs.existsSync(privateSnapshotDirectory), false);
 });
 
 test("plans deterministically without executing in safe plan mode", async (t) => {

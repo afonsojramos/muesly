@@ -348,10 +348,11 @@ export function inspectVariantIdentity(
     ) {
       throw new Error("benchmark hardware probe does not match the planned task");
     }
-    prepareBenchmarkModelImpl(executableSnapshot.executablePath, {
+    const preparedModel = prepareBenchmarkModelImpl(executableSnapshot.executablePath, {
       provider: task.provider,
       model: task.model,
       modelsDirectory,
+      reportedBackend: probe.backend,
       environment: runtimeEnvironment,
       platform,
     });
@@ -361,6 +362,14 @@ export function inspectVariantIdentity(
       modelsDirectory,
       probe.backend,
     );
+    if (
+      preparedModel.model_artifact_sha256 !== null &&
+      modelArtifactDigest !== preparedModel.model_artifact_sha256
+    ) {
+      throw new Error(
+        "prepared model bytes do not match the canonical artifact digest attested by the evaluator",
+      );
+    }
     if (
       benchmarkExecutableSha256Impl(built.executablePath) !== executableSha256 ||
       benchmarkExecutableSha256Impl(executableSnapshot.executablePath) !== executableSha256

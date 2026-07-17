@@ -1406,12 +1406,14 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 	t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
 	const executablePath = path.join(directory, 'transcribe-fixture');
 	const executableBytes = Buffer.from('exact benchmark executable');
+	const canonicalDigest = 'a'.repeat(64);
 	fs.writeFileSync(executablePath, executableBytes, { mode: 0o700 });
 	let invocation;
 	const prepared = prepareBenchmarkModel(executablePath, {
 		provider: 'parakeet',
 		model: 'parakeet-test',
 		modelsDirectory: '/private/models',
+		reportedBackend: 'onnx-cpu',
 		environment: attestedRuntimeEnvironment({
 			HOME: '/private/home',
 			LD_LIBRARY_PATH: '/hostile/runtime-libraries',
@@ -1422,17 +1424,19 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 			return {
 				status: 0,
 				stdout: `${JSON.stringify({
-					schema_version: 1,
+					schema_version: 2,
 					provider: 'parakeet',
 					model: 'parakeet-test',
+					model_artifact_sha256: canonicalDigest,
 				})}\n`,
 			};
 		},
 	});
 	assert.deepEqual(prepared, {
-		schema_version: 1,
+		schema_version: 2,
 		provider: 'parakeet',
 		model: 'parakeet-test',
+		model_artifact_sha256: canonicalDigest,
 	});
 	assert.equal(invocation.command, executablePath);
 	assert.deepEqual(invocation.args, [
@@ -1463,10 +1467,16 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				provider: 'parakeet',
 				model: 'parakeet-test',
 				modelsDirectory: '/private/models',
+				reportedBackend: 'onnx-cpu',
 				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => ({
 					status: 0,
-					stdout: '{"schema_version":1,"provider":"parakeet","model":"wrong"}\n',
+					stdout: `${JSON.stringify({
+						schema_version: 2,
+						provider: 'parakeet',
+						model: 'wrong',
+						model_artifact_sha256: canonicalDigest,
+					})}\n`,
 				}),
 			}),
 		/model does not match/,
@@ -1477,12 +1487,18 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				provider: 'parakeet',
 				model: 'parakeet-test',
 				modelsDirectory: '/private/models',
+				reportedBackend: 'onnx-cpu',
 				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => {
 					fs.writeFileSync(executablePath, 'replacement benchmark executable');
 					return {
 						status: 0,
-						stdout: '{"schema_version":1,"provider":"parakeet","model":"parakeet-test"}\n',
+						stdout: `${JSON.stringify({
+							schema_version: 2,
+							provider: 'parakeet',
+							model: 'parakeet-test',
+							model_artifact_sha256: canonicalDigest,
+						})}\n`,
 					};
 				},
 			}),
@@ -1495,6 +1511,7 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 				provider: 'parakeet',
 				model: '../../escaped',
 				modelsDirectory: '/private/models',
+				reportedBackend: 'onnx-cpu',
 				environment: attestedRuntimeEnvironment(),
 				spawnSyncImpl: () => {
 					invalidModelSpawned = true;
@@ -1504,4 +1521,43 @@ test('prepares the selected model through the exact benchmark executable', (t) =
 		/bounded lowercase model slug/,
 	);
 	assert.equal(invalidModelSpawned, false);
+
+	assert.throws(
+		() =>
+			prepareBenchmarkModel(executablePath, {
+				provider: 'parakeet',
+				model: 'parakeet-test',
+				modelsDirectory: '/private/models',
+				reportedBackend: 'onnx-cpu',
+				environment: attestedRuntimeEnvironment(),
+				spawnSyncImpl: () => ({
+					status: 0,
+					stdout: `${JSON.stringify({
+						schema_version: 2,
+						provider: 'parakeet',
+						model: 'parakeet-test',
+						model_artifact_sha256: null,
+					})}\n`,
+				}),
+			}),
+		/may only be null for whisper\/coreml-metal/,
+	);
+
+	const coreml = prepareBenchmarkModel(executablePath, {
+		provider: 'whisper',
+		model: 'large-v3-turbo-q5_0',
+		modelsDirectory: '/private/models',
+		reportedBackend: 'coreml-metal',
+		environment: attestedRuntimeEnvironment(),
+		spawnSyncImpl: () => ({
+			status: 0,
+			stdout: `${JSON.stringify({
+				schema_version: 2,
+				provider: 'whisper',
+				model: 'large-v3-turbo-q5_0',
+				model_artifact_sha256: null,
+			})}\n`,
+		}),
+	});
+	assert.equal(coreml.model_artifact_sha256, null);
 });

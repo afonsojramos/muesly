@@ -13,7 +13,11 @@ import {
 	stageBenchmarkExecutableSnapshot,
 } from './benchmark-executable.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
-import { modelArtifactSha256, stageModelArtifactSnapshot } from './model-artifact.ts';
+import {
+	coreMlEncoderBundlePath,
+	modelArtifactSha256,
+	stageModelArtifactSnapshot,
+} from './model-artifact.ts';
 import {
 	prepareRealRunSession,
 	runRealRunCli,
@@ -166,8 +170,18 @@ function createHarness(t, options = {}) {
 					options.probeExecutableSha256 ?? benchmarkExecutableSha256(command),
 			};
 		},
-		prepareBenchmarkModel() {
+		prepareBenchmarkModel(_executable, input) {
 			counts.prepare += 1;
+			const modelArtifactDigest =
+				options.preparedModelSha256 ??
+				modelArtifactSha256(input.provider, input.model, input.modelsDirectory, 'cpu');
+			options.onPrepare?.(input, modelArtifactDigest);
+			return {
+				schema_version: 2,
+				provider: input.provider,
+				model: input.model,
+				model_artifact_sha256: modelArtifactDigest,
+			};
 		},
 		evaluatorRevision() {
 			counts.evaluator += 1;
@@ -183,6 +197,7 @@ function createHarness(t, options = {}) {
 		},
 		stageModelArtifactSnapshot(...args) {
 			counts.modelSnapshot += 1;
+			options.beforeModelSnapshot?.(...args);
 			return stageModelArtifactSnapshot(...args);
 		},
 		now() {
@@ -252,6 +267,113 @@ test('rejects a hardware probe that does not identify the staged executable', (t
 		() => createHarness(t, { probeExecutableSha256: 'f'.repeat(64) }),
 		/hardware probe does not identify the staged benchmark executable/,
 	);
+});
+
+test('rejects a noncanonical existing model without deleting it', (t) => {
+	let modelPath;
+	assert.throws(
+		() =>
+			createHarness(t, {
+				preparedModelSha256: 'f'.repeat(64),
+				onPrepare(input) {
+					modelPath = path.join(input.modelsDirectory, `ggml-${input.model}.bin`);
+				},
+			}),
+		/canonical artifact digest attested by the evaluator/,
+	);
+	assert.equal(fs.readFileSync(modelPath, 'utf8'), 'prepared whisper model');
+});
+
+test('rejects a model swapped after canonical preparation attestation', (t) => {
+	let modelPath;
+	assert.throws(
+		() =>
+			createHarness(t, {
+				onPrepare(input) {
+					modelPath = path.join(input.modelsDirectory, `ggml-${input.model}.bin`);
+					fs.writeFileSync(modelPath, 'replacement after preparation');
+				},
+			}),
+		/canonical artifact digest attested by the evaluator/,
+	);
+	assert.equal(fs.readFileSync(modelPath, 'utf8'), 'replacement after preparation');
+});
+
+test('rejects a model swapped between source attestation and private snapshot', (t) => {
+	let modelPath;
+	assert.throws(
+		() =>
+			createHarness(t, {
+				beforeModelSnapshot(provider, model, modelsDirectory) {
+					assert.equal(provider, 'whisper');
+					modelPath = path.join(modelsDirectory, `ggml-${model}.bin`);
+					fs.writeFileSync(modelPath, 'replacement before snapshot');
+				},
+			}),
+		/model artifact snapshot does not match the expected SHA-256/,
+	);
+	assert.equal(fs.readFileSync(modelPath, 'utf8'), 'replacement before snapshot');
+});
+
+test('preserves explicit unpinned Core ML composite preparation and snapshots exact bytes', (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-real-run-coreml-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const privateParent = path.join(root, 'private');
+	const modelsDirectory = path.join(root, 'models');
+	const executablePath = path.join(root, 'transcribe-fixture');
+	fs.mkdirSync(privateParent);
+	fs.mkdirSync(modelsDirectory);
+	fs.writeFileSync(executablePath, 'coreml evaluator', { mode: 0o700 });
+	const modelPath = path.join(modelsDirectory, 'ggml-tiny.bin');
+	fs.writeFileSync(modelPath, 'pinned primary model');
+	const bundlePath = coreMlEncoderBundlePath(modelPath);
+	fs.mkdirSync(bundlePath);
+	fs.writeFileSync(path.join(bundlePath, 'model.mil'), 'compiled encoder');
+	const expectedComposite = modelArtifactSha256('whisper', 'tiny', modelsDirectory, 'coreml-metal');
+
+	const session = prepareRealRunSession(
+		{
+			provider: 'whisper',
+			model: 'tiny',
+			backend: 'coreml',
+			accelerator: null,
+			modelsDirectory,
+			repoRoot: root,
+			buildEnvironment: {},
+			runtimeEnvironment: {},
+			evaluatorRevision: null,
+		},
+		{
+			cargoFeaturesForBenchmark: () => ['coreml'],
+			buildBenchmarkExecutable: () => ({
+				cargoFeatures: ['coreml'],
+				executablePath,
+			}),
+			probeBenchmarkExecutable: (command) => ({
+				schema_version: 1,
+				backend: 'coreml-metal',
+				operating_system: 'macos',
+				architecture: 'aarch64',
+				hardware_profile: `cpu=Apple M4;logical_cpus=10;memory_bytes=17179869184;runtime_env_sha256=${'d'.repeat(64)}`,
+				accelerator: 'Apple M4',
+				benchmark_executable_sha256: benchmarkExecutableSha256(command),
+			}),
+			prepareBenchmarkModel(_command, input) {
+				assert.equal(input.reportedBackend, 'coreml-metal');
+				return {
+					schema_version: 2,
+					provider: 'whisper',
+					model: 'tiny',
+					model_artifact_sha256: null,
+				};
+			},
+			createPrivateArtifactSnapshotDirectory: () =>
+				createPrivateArtifactSnapshotDirectory(privateParent),
+		},
+	);
+	t.after(() => session.close());
+	assert.equal(session.identity.backend, 'coreml-metal');
+	assert.equal(session.identity.model_artifact_sha256, expectedComposite);
 });
 
 test('prepares once and runs three samples in three fresh exact processes', async (t) => {

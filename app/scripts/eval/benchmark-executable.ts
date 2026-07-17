@@ -24,7 +24,12 @@ const HARDWARE_PROBE_FIELDS = new Set([
 	'accelerator',
 	'benchmark_executable_sha256',
 ]);
-const MODEL_PREPARATION_FIELDS = new Set(['schema_version', 'provider', 'model']);
+const MODEL_PREPARATION_FIELDS = new Set([
+	'schema_version',
+	'provider',
+	'model',
+	'model_artifact_sha256',
+]);
 const BENCHMARK_RUNTIME_ENVIRONMENT_NAMES = new Set([
 	'ALL_PROXY',
 	'APPDATA',
@@ -1029,6 +1034,7 @@ export function prepareBenchmarkModel(
 		provider,
 		model,
 		modelsDirectory,
+		reportedBackend,
 		environment = process.env,
 		platform = process.platform,
 		spawnSyncImpl = spawnSync,
@@ -1037,6 +1043,8 @@ export function prepareBenchmarkModel(
 	const normalizedProvider = requiredString(provider, 'benchmark provider');
 	const normalizedModel = validateBenchmarkModelName(model);
 	const normalizedModelsDirectory = requiredString(modelsDirectory, 'benchmark models directory');
+	const normalizedReportedBackend = requiredString(reportedBackend, 'reported benchmark backend');
+	benchmarkDefinitionForReportedBackend(normalizedProvider, normalizedReportedBackend);
 	const executableSha256Before = benchmarkExecutableSha256(executablePath);
 	const runtimeDependenciesSha256Before = benchmarkRuntimeDependenciesSha256(executablePath, {
 		platform,
@@ -1098,12 +1106,21 @@ export function prepareBenchmarkModel(
 	for (const field of MODEL_PREPARATION_FIELDS) {
 		if (!Object.hasOwn(result, field)) throw new Error(`model preparation.${field} is required`);
 	}
-	if (result.schema_version !== 1) throw new Error('model preparation.schema_version must be 1');
+	if (result.schema_version !== 2) throw new Error('model preparation.schema_version must be 2');
 	if (result.provider !== normalizedProvider) {
 		throw new Error('model preparation.provider does not match the requested provider');
 	}
 	if (result.model !== normalizedModel) {
 		throw new Error('model preparation.model does not match the requested model');
+	}
+	if (result.model_artifact_sha256 === null) {
+		if (!(normalizedProvider === 'whisper' && normalizedReportedBackend === 'coreml-metal')) {
+			throw new Error(
+				'model preparation.model_artifact_sha256 may only be null for whisper/coreml-metal',
+			);
+		}
+	} else if (!SHA256_PATTERN.test(result.model_artifact_sha256)) {
+		throw new Error('model preparation.model_artifact_sha256 must be a lowercase SHA-256 digest');
 	}
 	return result;
 }

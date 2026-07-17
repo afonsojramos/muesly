@@ -147,8 +147,27 @@ pub const WHISPER_MODEL_CATALOG: &[(&str, &str, u32, &str, &str, &str)] = &[
 
 #[cfg(test)]
 mod tests {
-    use super::{recommended_whisper_model, recommended_whisper_model_for_task};
+    use std::collections::BTreeSet;
+
+    use serde::Deserialize;
+
+    use super::{
+        DEFAULT_PARAKEET_MODEL, WHISPER_MODEL_CATALOG, recommended_whisper_model,
+        recommended_whisper_model_for_task,
+    };
     use crate::audio::{GpuType, HardwareProfile, PerformanceTier};
+
+    #[derive(Debug, Deserialize)]
+    struct CorpusTargets {
+        benchmark_variants: Vec<CorpusBenchmarkVariant>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct CorpusBenchmarkVariant {
+        provider: String,
+        model: String,
+        backend: String,
+    }
 
     fn profile(performance_tier: PerformanceTier) -> HardwareProfile {
         HardwareProfile {
@@ -193,6 +212,97 @@ mod tests {
         assert_eq!(
             recommended_whisper_model_for_task(&profile(PerformanceTier::High), true),
             "large-v3-q5_0"
+        );
+    }
+
+    #[test]
+    fn committed_corpus_targets_match_shipped_recommended_models() {
+        let targets: CorpusTargets =
+            serde_json::from_str(include_str!("../../scripts/eval/corpus-targets.json"))
+                .expect("committed corpus targets must be valid JSON");
+        let available_whisper = WHISPER_MODEL_CATALOG
+            .iter()
+            .map(|entry| entry.0.to_string())
+            .collect::<Vec<_>>();
+        let available_parakeet = vec![DEFAULT_PARAKEET_MODEL.to_string()];
+
+        let mut recommended_model = None;
+        for tier in [PerformanceTier::High, PerformanceTier::Ultra] {
+            let hardware = profile(tier);
+            let resolved = crate::transcription_models::choose_automatic_transcription_model(
+                &hardware,
+                &available_whisper,
+                &available_parakeet,
+                false,
+            )
+            .expect("the shipped catalog must resolve Automatic transcription");
+            assert_eq!(resolved.provider, "localWhisper");
+            assert_eq!(resolved.model, recommended_whisper_model(&hardware));
+            if let Some(expected) = recommended_model.as_deref() {
+                assert_eq!(resolved.model, expected);
+            } else {
+                recommended_model = Some(resolved.model);
+            }
+        }
+        let recommended_model = recommended_model.expect("High/Ultra recommendation is required");
+
+        for variant in &targets.benchmark_variants {
+            match variant.provider.as_str() {
+                "whisper" => {
+                    assert!(
+                        WHISPER_MODEL_CATALOG
+                            .iter()
+                            .any(|entry| entry.0 == variant.model),
+                        "corpus target references an unsupported Whisper model: {}",
+                        variant.model
+                    );
+                    assert!(
+                        crate::model_integrity::whisper_model_sha256(&variant.model).is_some(),
+                        "corpus target Whisper model has no integrity pin: {}",
+                        variant.model
+                    );
+                }
+                "parakeet" => {
+                    assert_eq!(variant.model, DEFAULT_PARAKEET_MODEL);
+                    let files =
+                        crate::model_integrity::parakeet_model_artifact_files(&variant.model)
+                            .expect("corpus target Parakeet model must have a pinned artifact set");
+                    for filename in files {
+                        assert!(
+                            crate::model_integrity::parakeet_file_sha256(filename).is_some(),
+                            "corpus target Parakeet file has no integrity pin: {filename}"
+                        );
+                    }
+                }
+                provider => panic!("corpus target references an unsupported provider: {provider}"),
+            }
+        }
+
+        let actual = targets
+            .benchmark_variants
+            .into_iter()
+            .map(|variant| (variant.provider, variant.model, variant.backend))
+            .collect::<BTreeSet<_>>();
+        let expected = BTreeSet::from([
+            (
+                "whisper".to_string(),
+                recommended_model.clone(),
+                "cpu".to_string(),
+            ),
+            (
+                "whisper".to_string(),
+                recommended_model,
+                "metal".to_string(),
+            ),
+            (
+                "parakeet".to_string(),
+                DEFAULT_PARAKEET_MODEL.to_string(),
+                "onnx-cpu".to_string(),
+            ),
+        ]);
+        assert_eq!(
+            actual, expected,
+            "the committed corpus baseline must measure the exact shipped comparison matrix"
         );
     }
 }

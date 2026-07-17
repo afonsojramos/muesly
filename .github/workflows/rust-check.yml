@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "app/src-tauri/**"
+      - "app/scripts/eval/corpus-targets.json"
       - "llama-helper/**"
       - "diarization-helper/**"
       - "Cargo.toml"
