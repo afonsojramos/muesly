@@ -4,6 +4,12 @@ This is the private intake and measurement procedure for the benchmark target in
 `corpus-targets.json`. It is an operational baseline, not legal advice or a substitute for
 review by counsel and an ethics/privacy owner.
 
+Every reference is governed by [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md), protocol
+`muesly-meeting-reference-v1`. The corpus manifest, target matrix, prepared intake bundle,
+benchmark task, checkpoint, aggregate, and coverage result all carry that exact ID. Protocol
+changes require a new ID, reviewed references, and fresh measurements; legacy private artifacts
+are never upgraded automatically.
+
 The committed public-domain/synthetic corpus is only a smoke test. A quality claim about
 meeting transcription requires real meeting speech. The initial target deliberately asks for
 three distinct consented sessions in every combination of five languages (`en`, `es`, `pt`,
@@ -81,12 +87,15 @@ TypeScript entrypoint, so either can be run directly from an external bundle dir
 
 2. Keep the affirmative consent record in the approved encrypted records system. Never put names,
    emails, meeting titles, customer names, or consent files in the manifest or Git checkout.
-3. Produce a verbatim UTF-8 reference in the spoken language and export the matching audio as
-   RIFF/WAVE. Remove an entire sensitive audio interval and its matching reference rather than
-   retaining secrets or scoring a redacted transcript against unredacted speech.
-4. Import the files. The explicit affirmation is mandatory; it means every audible participant
-   consented to `asr-benchmarking` before recording. Use one opaque session ID for every clip
-   from the same meeting—coverage counts distinct sessions, not files.
+3. Produce a UTF-8 reference in the spoken language using
+   [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md). A second reviewer must listen
+   independently and every disagreement must be resolved before intake. Remove an entire sensitive
+   or unintelligible audio interval and its matching reference rather than guessing, inserting a
+   tag, retaining secrets, or scoring a redacted transcript against unredacted speech.
+4. Import the files. Both explicit affirmations are mandatory: every audible participant consented
+   to `asr-benchmarking` before recording, and the final reference was reviewed under the exact
+   versioned protocol. Use one opaque session ID for every clip from the same meeting—coverage
+   counts distinct sessions, not files.
 
 ```bash
 nub run eval:corpus:intake \
@@ -98,7 +107,8 @@ nub run eval:corpus:intake \
   --consent-record app/scripts/eval/consent-records/consent-opaque-001.md \
   --consent-date 2026-07-16 \
   --language es --noise-condition office --speakers 3 \
-  --affirm-all-participants-consented
+  --affirm-all-participants-consented \
+  --affirm-reference-protocol muesly-meeting-reference-v1
 ```
 
 The command initializes the gitignored `corpus-local.json` when absent, copies audio and
@@ -123,7 +133,8 @@ according to the approved retention policy.
 nub run eval:corpus:validate app/scripts/eval/corpus-local.json
 ```
 
-The validator requires schema 2, at least two speakers for meetings, participant consent,
+The validator requires corpus schema 3 and the exact reference protocol, at least two speakers for
+meetings, participant consent,
 local-only redistribution, opaque session/consent IDs, valid dates, exact hashes, and no
 identity-bearing or unknown metadata fields. Identical audio cannot appear in more than one sample,
 so copied recordings cannot satisfy multiple independent-session or language/noise coverage cells.
@@ -138,6 +149,8 @@ so copied recordings cannot satisfy multiple independent-session or language/noi
 
 Keep recording device and microphone placement varied inside each cell, but do not encode
 participant or customer identity in filenames or metadata.
+The language cell is a human-assigned collection stratum. Preserve code-switching in the reference;
+do not relabel or reject a sample using an automatic token-percentage rule.
 
 ## Measure and gate coverage
 
@@ -184,8 +197,9 @@ target matrix.
 Before writing a real-run report, the evaluator revalidates the manifest while holding the same
 local corpus lock used by intake and withdrawal. If the corpus changed during transcription, it
 refuses to write a stale report containing removed samples; rerun that benchmark on the new corpus.
-Run-report schema 9 also persists the versioned WER scorer, a clean evaluator revision, and the
-SHA-256 digest of the exact benchmark executable. The evaluator revision binds the result to the
+Run/checkpoint schema 10 also persists the versioned reference protocol and WER scorer, a clean
+evaluator revision, and the SHA-256 digest of the exact benchmark executable. The evaluator
+revision binds the result to the
 Git commit, `Cargo.lock`, `rustc -vV`, release target and Cargo features, and a digest of the
 allowlisted build environment. Report generation therefore requires a clean Git worktree and
 rechecks the revision after transcription. Git, Cargo, and rustc command launchers are resolved
@@ -250,8 +264,9 @@ Check that at least one matrix-wide hardware cohort has three distinct sessions 
 language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
 profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
 best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
-from different machines or accelerator identities does not satisfy coverage schema 8. Coverage
-schema 8 also pins the evaluator-revision and benchmark-executable digest for every backend. The
+from different machines or accelerator identities does not satisfy coverage schema 9. Coverage
+schema 9 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
+every backend. The
 command fails with `--require-complete` until the corpus cells and one full-matrix cohort are
 complete:
 
@@ -272,7 +287,8 @@ nub run eval:report app/scripts/eval/results/whisper-cpu.json \
 
 The explicit `eval:real` commands above remain useful for one-off diagnostics. The campaign runner
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
-reviewable aggregate JSON and Markdown. Aggregate schema 7 keeps each provider/model/reported-
+reviewable aggregate JSON and Markdown. Aggregate schema 8 keeps the reference protocol and each
+provider/model/reported-
 backend variant separate and emits comparison tables only when every supplied variant measured the
 identical set of sample IDs. Unequal or interrupted cohorts remain available as clearly labelled
 per-variant diagnostics, but the report does not score their intersection because missing

@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { corpusFingerprint } from './corpus.ts';
+import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluateCoverage, formatCoverage, validateCoverageTargets } from './coverage.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
@@ -22,8 +22,9 @@ function hardwareProfile(cpu, logicalCpus, memoryBytes) {
 }
 
 const targets = {
-	schema_version: 1,
+	schema_version: 2,
 	target_id: 'test-targets',
+	reference_protocol_id: REFERENCE_PROTOCOL_ID,
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [
@@ -138,9 +139,10 @@ function runReport(corpus, backend, options = {}) {
 	const benchmarkExecutableSha256 =
 		options.benchmarkExecutableSha256 ?? (backend === 'onnx-cpu' ? '2'.repeat(64) : '1'.repeat(64));
 	return {
-		schema_version: 9,
+		schema_version: 10,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
+		reference_protocol_id: corpus.reference_protocol_id,
 		started_at: '2026-07-16T00:00:00.000Z',
 		completed_at: '2026-07-16T00:00:01.000Z',
 		wer_scorer: options.werScorer ?? WER_SCORER_ID,
@@ -205,7 +207,12 @@ function completeCorpus() {
 			}
 		}
 	}
-	return { corpus_id: 'test-corpus', corpus_fingerprint: 'a'.repeat(64), samples };
+	return {
+		corpus_id: 'test-corpus',
+		corpus_fingerprint: 'a'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		samples,
+	};
 }
 
 test('requires distinct sessions for every language and noise cell', () => {
@@ -244,8 +251,9 @@ test('requires every measurement cell and accepts a same-machine multi-backend m
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 8);
+	assert.equal(complete.schema_version, 9);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
+	assert.equal(complete.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(complete.wer_scorer, WER_SCORER_ID);
 	assert.deepEqual(complete.evaluator_revision_sha256_by_backend, {
 		metal: evaluatorRevisionSha256(runReport(corpus, 'metal').evaluator_revision),
@@ -572,8 +580,8 @@ test('rejects duplicate measurements across reports', () => {
 
 test('rejects legacy reports without versioned scoring provenance', () => {
 	const corpus = completeCorpus();
-	const legacy = { ...runReport(corpus, 'metal'), schema_version: 8 };
-	assert.throws(() => evaluateCoverage(corpus, targets, [legacy]), /schema_version must be 9/);
+	const legacy = { ...runReport(corpus, 'metal'), schema_version: 9 };
+	assert.throws(() => evaluateCoverage(corpus, targets, [legacy]), /schema_version must be 10/);
 });
 
 test('allows backend-specific Cargo features while enforcing a common evaluator revision', () => {
@@ -699,6 +707,7 @@ test('fails clearly when accelerator mapping combinations are pathological', () 
 	const corpus = {
 		corpus_id: 'pathological-corpus',
 		corpus_fingerprint: 'a'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		samples: Array.from({ length: 17 }, (_, index) => ({
 			...sample('en', 'clean', `pathological-${index}`),
 			audio_sha256: index.toString(16).padStart(64, '0'),
@@ -738,8 +747,9 @@ test('writes coverage through the managed local corpus results path', () => {
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	fs.mkdirSync(path.join(directory, 'local-corpus'));
 	const document = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'local-consented-meetings',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
 		distribution: 'local',
 		samples: [],

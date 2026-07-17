@@ -6,7 +6,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { TextDecoder } from 'node:util';
 
 import { assertCorpusBenchmarkAccess } from './corpus-benchmark-lock.ts';
-import { canonicalManifestPath, fileSha256, validateCorpusDocument } from './corpus.ts';
+import {
+	canonicalManifestPath,
+	fileSha256,
+	REFERENCE_PROTOCOL_ID,
+	validateCorpusDocument,
+} from './corpus.ts';
 import { preparedBundleForIntake, retirePreparedBundle } from './corpus-prepared-bundle.ts';
 import { processIdentity, processIsAlive, processOwnsState } from './process-identity.ts';
 
@@ -552,8 +557,9 @@ function relativeManifestPath(manifestPath, filePath) {
 function readManifest(manifestPath) {
 	if (!fs.existsSync(manifestPath)) {
 		return {
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
 			distribution: 'local',
 			samples: [],
@@ -590,6 +596,9 @@ function validateIntakeOptions(options, today) {
 	}
 	if (!options.affirmConsent) {
 		throw new Error('--affirm-all-participants-consented is required');
+	}
+	if (options.referenceProtocolId !== REFERENCE_PROTOCOL_ID) {
+		throw new Error(`--affirm-reference-protocol must be '${REFERENCE_PROTOCOL_ID}'`);
 	}
 	if (!Number.isInteger(options.speakers) || options.speakers < 2) {
 		throw new Error('--speakers must be an integer of at least 2');
@@ -671,6 +680,9 @@ export function intakeConsentedSample(options) {
 			throw new Error('a corpus withdrawal is pending; resume it before importing new samples');
 		}
 		const document = readManifest(manifestPath);
+		if (document.reference_protocol_id !== options.referenceProtocolId) {
+			throw new Error('--affirm-reference-protocol does not match the corpus manifest');
+		}
 		const sessionDirectory = path.join(localCorpusRoot, options.sessionId);
 		if (fs.lstatSync(sessionDirectory, { throwIfNoEntry: false })?.isSymbolicLink()) {
 			throw new Error(`intake directory cannot be a symbolic link: ${sessionDirectory}`);
@@ -793,6 +805,7 @@ export function parseIntakeArgs(args, defaultManifestPath) {
 			'--language': 'language',
 			'--noise-condition': 'noiseCondition',
 			'--speakers': 'speakers',
+			'--affirm-reference-protocol': 'referenceProtocolId',
 		};
 		const field = fields[option];
 		if (!field) throw new Error(`unknown option: ${option}`);

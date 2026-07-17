@@ -5,7 +5,12 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { validateCoverageTargets } from './coverage.ts';
-import { canonicalFilePath, canonicalManifestPath, loadCorpus } from './corpus.ts';
+import {
+	canonicalFilePath,
+	canonicalManifestPath,
+	loadCorpus,
+	REFERENCE_PROTOCOL_ID,
+} from './corpus.ts';
 import {
 	acquireLocalCorpusLock,
 	releaseLocalCorpusLock,
@@ -62,7 +67,8 @@ function pendingCollectionSessions(intakeRoot, manifestPath) {
 			);
 		}
 		if (
-			metadata.schemaVersion !== 1 ||
+			metadata.schemaVersion !== 2 ||
+			metadata.referenceProtocolId !== REFERENCE_PROTOCOL_ID ||
 			typeof metadata.sessionId !== 'string' ||
 			typeof metadata.language !== 'string' ||
 			typeof metadata.noiseCondition !== 'string' ||
@@ -366,6 +372,7 @@ function renderSessionReadme(session) {
 			`--noise-condition ${quote(session.noiseCondition)}`,
 			`--speakers ${quote('<count>')}`,
 			'--affirm-all-participants-consented',
+			`--affirm-reference-protocol ${quote(session.referenceProtocolId)}`,
 		].join(' ');
 	const bashCommand = renderCommand(bashQuote);
 	const powerShellCommand = renderCommand(powerShellQuote);
@@ -375,7 +382,9 @@ Target: \`${session.language} / ${session.noiseCondition}\`
 
 1. Complete the separate consent record before recording.
 2. Save the matching RIFF/WAVE recording as \`recording.wav\` in this directory.
-3. Write a verbatim UTF-8 transcript in \`reference.txt\`.
+3. Write a UTF-8 reference in \`reference.txt\` following \`${session.referenceProtocolId}\`
+   in \`${path.join(path.dirname(session.intakeScriptPath), 'REFERENCE_TRANSCRIPTION.md')}\`, then
+   complete the required independent review pass.
 4. Replace the consent date and speaker count in the command for your shell, then run it.
 
 ## Bash / zsh
@@ -451,9 +460,17 @@ export function prepareCollectionSession(options) {
 		return withCorpusPlanningLock(manifestPath, options.lockTimeoutMs, () => {
 			const corpus = fs.existsSync(manifestPath)
 				? loadCorpus(manifestPath)
-				: { corpus_id: 'consented-meetings-v1', distribution: 'local', samples: [] };
+				: {
+						corpus_id: 'consented-meetings-v1',
+						reference_protocol_id: targets.reference_protocol_id,
+						distribution: 'local',
+						samples: [],
+					};
 			if (corpus.distribution !== 'local') {
 				throw new Error('collection preparation requires a local corpus manifest');
+			}
+			if (corpus.reference_protocol_id !== targets.reference_protocol_id) {
+				throw new Error('collection targets reference protocol does not match the corpus manifest');
 			}
 			const cells = planCollectionCells(
 				corpus,
@@ -485,7 +502,8 @@ export function prepareCollectionSession(options) {
 			const metadataPath = path.join(sessionDirectory, 'collection-session.json');
 			const readmePath = path.join(sessionDirectory, 'README.md');
 			const session = {
-				schemaVersion: 1,
+				schemaVersion: 2,
+				referenceProtocolId: targets.reference_protocol_id,
 				sessionId,
 				consentRecordId,
 				sampleId,

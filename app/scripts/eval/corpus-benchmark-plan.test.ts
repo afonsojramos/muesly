@@ -12,7 +12,7 @@ import {
 	taskReportFilename,
 	validateTaskCheckpoint,
 } from './corpus-benchmark-plan.ts';
-import { corpusFingerprint } from './corpus.ts';
+import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
@@ -73,8 +73,9 @@ function sample({
 
 function corpus(samples) {
 	const document = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'consented-meetings-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Validated local consented meetings.',
 		distribution: 'local',
 		samples,
@@ -86,8 +87,9 @@ function corpus(samples) {
 }
 
 const targets = {
-	schema_version: 1,
+	schema_version: 2,
 	target_id: 'multilingual-v1',
+	reference_protocol_id: REFERENCE_PROTOCOL_ID,
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [
@@ -205,9 +207,10 @@ function checkpoint(task = plannedTask(), overrides = {}) {
 		...overrides.result,
 	};
 	return {
-		schema_version: 9,
+		schema_version: 10,
 		corpus_id: task.corpus_id,
 		corpus_fingerprint: task.corpus_fingerprint,
+		reference_protocol_id: task.reference_protocol_id,
 		started_at: '2026-07-16T00:00:00.000Z',
 		completed_at: '2026-07-16T00:01:00.000Z',
 		wer_scorer: WER_SCORER_ID,
@@ -304,6 +307,7 @@ test('plans only eligible samples in deterministic variant, cell, session, and s
 		],
 	);
 	assert(tasks.every((task) => task.wer_scorer === WER_SCORER_ID));
+	assert(tasks.every((task) => task.reference_protocol_id === REFERENCE_PROTOCOL_ID));
 	assert(tasks.every((task) => /^[a-f0-9]{64}$/.test(task.evaluator_revision_sha256)));
 	assert(tasks.every((task) => task.evaluator_revision.schema_version === 1));
 	assert(tasks.every((task) => task.audio_duration_seconds === 20));
@@ -505,7 +509,12 @@ test('rejects duplicate target cells, variants, and unsafe accelerators', () => 
 
 test('requires the complete coverage target schema before planning', () => {
 	for (const [name, overrides, expected] of [
-		['schema version', { schema_version: 2 }, /targets\.schema_version must be 1/],
+		['schema version', { schema_version: 1 }, /targets\.schema_version must be 2/],
+		[
+			'reference protocol',
+			{ reference_protocol_id: 'another-reference-v1' },
+			/targets\.reference_protocol_id/,
+		],
 		['unknown field', { future_option: true }, /targets\.future_option is not an allowed field/],
 		['target slug', { target_id: 'Not Valid' }, /targets\.target_id must be a lowercase slug/],
 		[
@@ -867,10 +876,10 @@ test('requires checkpoint evaluator provenance to match the planned task exactly
 	);
 });
 
-test('requires schema 9, metrics schema 7, and exact executable and audio identities', () => {
+test('requires schema 10, metrics schema 7, and exact executable and audio identities', () => {
 	const task = plannedTask();
-	const staleSchema = checkpoint(task, { report: { schema_version: 8 } });
-	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 9/);
+	const staleSchema = checkpoint(task, { report: { schema_version: 9 } });
+	assert.match(validateTaskCheckpoint(staleSchema, task).join('\n'), /schema_version must be 10/);
 
 	const staleMetrics = checkpoint(task);
 	staleMetrics.results[0].metrics.schema_version = 4;
@@ -996,6 +1005,7 @@ test('recursively rejects transcript, hypothesis, reference payload, and consent
 			{ reference_path: '/private/reference.txt' },
 			{ consentRecordId: 'consent-private' },
 			{ reference_words: 'private words disguised as a count' },
+			{ reference_protocol_id: 'nested protocol field' },
 		],
 	};
 	assert.deepEqual(sensitiveCheckpointKeyPaths(unsafe), [
@@ -1004,6 +1014,7 @@ test('recursively rejects transcript, hypothesis, reference payload, and consent
 		'checkpoint.debug.nested[1].reference_path',
 		'checkpoint.debug.nested[2].consentRecordId',
 		'checkpoint.debug.nested[3].reference_words',
+		'checkpoint.debug.nested[4].reference_protocol_id',
 	]);
 	const errors = validateTaskCheckpoint(unsafe, plannedTask());
 	for (const path of sensitiveCheckpointKeyPaths(unsafe)) {
@@ -1091,5 +1102,5 @@ test('rejects a passing checkpoint above its WER threshold', () => {
 test('delegates the evolving report schema to validateRunReport', () => {
 	const task = plannedTask();
 	const report = checkpoint(task, { report: { schema_version: 7 } });
-	assert.match(validateTaskCheckpoint(report, task).join('\n'), /schema_version must be 9/);
+	assert.match(validateTaskCheckpoint(report, task).join('\n'), /schema_version must be 10/);
 });

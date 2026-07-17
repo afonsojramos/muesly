@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { canonicalFilePath, canonicalManifestPath } from './corpus.ts';
+import { canonicalFilePath, canonicalManifestPath, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 
 class PreparedBundleMismatchError extends Error {}
 
@@ -38,12 +38,21 @@ function readPreparedMetadata(bundleDirectory) {
 	}
 }
 
-function matchingPreparedBundle(manifestPath, sessionId) {
+function matchingPreparedBundle(manifestPath, sessionId, { allowLegacyWithdrawal = false } = {}) {
 	const bundleDirectory = regularPreparedBundle(manifestPath, sessionId);
 	if (!bundleDirectory) return null;
 	const metadata = readPreparedMetadata(bundleDirectory);
-	if (metadata.schemaVersion !== 1) {
+	const isLegacyWithdrawalBundle =
+		allowLegacyWithdrawal &&
+		metadata.schemaVersion === 1 &&
+		metadata.referenceProtocolId === undefined;
+	if (metadata.schemaVersion !== 2 && !isLegacyWithdrawalBundle) {
 		throw new Error(`prepared intake metadata has an unsupported schema: ${bundleDirectory}`);
+	}
+	if (!isLegacyWithdrawalBundle && metadata.referenceProtocolId !== REFERENCE_PROTOCOL_ID) {
+		throw new Error(
+			`prepared intake metadata has an unsupported reference protocol: ${bundleDirectory}`,
+		);
 	}
 	if (metadata.sessionId !== sessionId) {
 		throw new PreparedBundleMismatchError(
@@ -87,7 +96,8 @@ export function preparedBundleForIntake({
 	}
 
 	const expected = {
-		schemaVersion: 1,
+		schemaVersion: 2,
+		referenceProtocolId: options.referenceProtocolId,
 		sessionId: options.sessionId,
 		consentRecordId: options.consentRecordId,
 		sampleId: options.sampleId,
@@ -121,7 +131,10 @@ export function retirePreparedBundle(bundleDirectory) {
 }
 
 export function preparedBundleForWithdrawal(manifestPath, sessionId) {
-	return matchingPreparedBundle(manifestPath, sessionId)?.bundleDirectory ?? null;
+	return (
+		matchingPreparedBundle(manifestPath, sessionId, { allowLegacyWithdrawal: true })
+			?.bundleDirectory ?? null
+	);
 }
 
 export function retirePreparedBundleForWithdrawal(manifestPath, sessionId) {

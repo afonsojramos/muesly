@@ -10,7 +10,7 @@ import {
 	validateHardwareProfile,
 } from './benchmark-executable.ts';
 import { writeCorpusBoundFiles } from './corpus-result.ts';
-import { loadCorpus } from './corpus.ts';
+import { loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
@@ -21,6 +21,7 @@ const RUN_REPORT_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
 	'corpus_fingerprint',
+	'reference_protocol_id',
 	'started_at',
 	'completed_at',
 	'wer_scorer',
@@ -165,11 +166,15 @@ function sensitiveReportKeyPaths(value, root = 'report') {
 				? `${currentPath}.${key}`
 				: `${currentPath}[${JSON.stringify(key)}]`;
 			const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+			const isPublicReferenceProtocol =
+				normalized === 'referenceprotocolid' && path === `${root}.reference_protocol_id`;
 			if (
 				normalized.includes('transcript') ||
 				normalized.includes('hypothesis') ||
 				normalized.includes('consent') ||
-				(normalized.startsWith('reference') && normalized !== 'referencewords')
+				(normalized.startsWith('reference') &&
+					normalized !== 'referencewords' &&
+					!isPublicReferenceProtocol)
 			) {
 				paths.push(path);
 			}
@@ -355,9 +360,12 @@ export function validateRunReport(report, label = 'report') {
 		return [`${label} must be a JSON object`];
 	}
 	rejectUnknownAndMissingFields(report, RUN_REPORT_FIELDS, label, errors);
-	if (report.schema_version !== 9) errors.push(`${label}.schema_version must be 9`);
+	if (report.schema_version !== 10) errors.push(`${label}.schema_version must be 10`);
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	requireSha256(report.corpus_fingerprint, `${label}.corpus_fingerprint`, errors);
+	if (report.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
+		errors.push(`${label}.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
 	if (!isCanonicalTimestamp(report.started_at)) {
 		errors.push(`${label}.started_at must be a canonical ISO-8601 timestamp`);
 	}
@@ -631,6 +639,9 @@ export function validateRunReportsAgainstCorpus(reports, corpus, label = 'report
 	if (!SHA256_PATTERN.test(corpus.corpus_fingerprint ?? '')) {
 		errors.push('corpus.corpus_fingerprint must be a lowercase SHA-256 digest');
 	}
+	if (corpus.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
+		errors.push(`corpus.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
 	if (!Array.isArray(corpus.samples)) {
 		errors.push('corpus.samples must be an array');
 		return errors;
@@ -660,6 +671,12 @@ export function validateRunReportsAgainstCorpus(reports, corpus, label = 'report
 			errors.push(
 				`${reportPrefix}.corpus_fingerprint must match corpus.corpus_fingerprint ` +
 					`'${corpus.corpus_fingerprint}'`,
+			);
+		}
+		if (report.reference_protocol_id !== corpus.reference_protocol_id) {
+			errors.push(
+				`${reportPrefix}.reference_protocol_id must match corpus.reference_protocol_id ` +
+					`'${corpus.reference_protocol_id}'`,
 			);
 		}
 		if (!Array.isArray(report.results)) continue;
@@ -949,6 +966,7 @@ export function aggregateRunReports(reports) {
 	const records = [];
 	let corpusId;
 	let corpusFingerprint;
+	let referenceProtocolId;
 	let werScorer;
 	let evaluatorRevisionCommon;
 	let thresholds;
@@ -967,6 +985,7 @@ export function aggregateRunReports(reports) {
 		if (corpusId === undefined) {
 			corpusId = report.corpus_id;
 			corpusFingerprint = report.corpus_fingerprint;
+			referenceProtocolId = report.reference_protocol_id;
 		} else if (report.corpus_id !== corpusId) {
 			throw new Error(
 				`cannot aggregate different corpora: '${corpusId}' and '${report.corpus_id}'`,
@@ -974,6 +993,9 @@ export function aggregateRunReports(reports) {
 		}
 		if (report.corpus_fingerprint !== corpusFingerprint) {
 			throw new Error('cannot aggregate reports from different corpus revisions');
+		}
+		if (report.reference_protocol_id !== referenceProtocolId) {
+			throw new Error('cannot aggregate reports using different reference protocols');
 		}
 		if (werScorer === undefined) {
 			werScorer = report.wer_scorer;
@@ -1133,10 +1155,11 @@ export function aggregateRunReports(reports) {
 	}));
 
 	return {
-		schema_version: 7,
+		schema_version: 8,
 		generated_at: new Date().toISOString(),
 		corpus_id: corpusId,
 		corpus_fingerprint: corpusFingerprint,
+		reference_protocol_id: referenceProtocolId,
 		wer_scorer: werScorer,
 		evaluator_revision_common: evaluatorRevisionCommon,
 		evaluator_revisions: Object.fromEntries(
@@ -1223,6 +1246,8 @@ export function renderMarkdown(report) {
 		`Corpus: \`${report.corpus_id}\``,
 		'',
 		`Corpus fingerprint: \`${report.corpus_fingerprint}\``,
+		'',
+		`Reference protocol: \`${report.reference_protocol_id}\``,
 		'',
 		`WER scorer: \`${report.wer_scorer}\``,
 		'',

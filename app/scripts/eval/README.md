@@ -14,6 +14,7 @@ Two tiers:
 app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
   corpus-targets.json  # private meeting-corpus coverage floor
+  REFERENCE_TRANSCRIPTION.md # versioned human-reference annotation contract
   corpus.ts            # manifest validation and language normalization
   corpus-prepare.ts    # scaffold the next private consented collection session
   corpus-intake.ts     # consent-gated, atomic local corpus intake
@@ -75,7 +76,9 @@ MUESLY_CORPUS_CONSENT_RECORDS_DIR=/approved/encrypted/muesly-consent-records \
 This creates a gitignored, private-permission session folder, an opaque consent record in the
 explicitly selected external encrypted records directory, a blank reference transcript, and an
 exact single-line intake command for Bash/zsh and Windows PowerShell. It refuses repository-local
-consent storage, never creates fake audio, and never marks consent as granted.
+consent storage, never creates fake audio, and never marks consent as granted. The generated
+command requires explicit affirmation of `muesly-meeting-reference-v1` after an independent second
+listening pass and disagreement resolution.
 
 Plan the complete benchmark campaign without running inference:
 
@@ -157,7 +160,8 @@ each checkpoint's exact name, identity, and content digest.
   identity are bound separately so comparable backends on one machine retain the same profile.
   The prepared provider/model artifact set is SHA-256 fingerprinted before transcription and
   again after the final sample; a report is refused if those bytes changed during the run.
-- Writing a report requires a clean Git worktree. Run schema 9 records a versioned evaluator
+- Writing a report requires a clean Git worktree. Run/checkpoint schema 10 records the versioned
+  `muesly-meeting-reference-v1` annotation contract and a versioned evaluator
   revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
   target triple, exact Cargo features, and a digest of the allowlisted build environment. The
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
@@ -188,7 +192,8 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
 
 Reports contain micro-averaged WER (total word errors divided by total reference words),
 duration-weighted source-audio and model-input inference RTF, sampled evaluator-process host RSS,
-and silence hallucinations. Aggregate schema 7 treats provider, model, and reported backend as one
+and silence hallucinations. Aggregate schema 8 records the reference protocol and treats provider,
+model, and reported backend as one
 indivisible variant. Diagnostic summaries retain every observed sample but are isolated by exact
 variant, with overall, language, noise-condition, and language/noise dimensions. The report emits
 cross-variant tables only when at least two supplied variants contain the identical set of sample
@@ -199,27 +204,28 @@ runs retain clearly labelled per-variant diagnostics plus observed/common/missin
 Comparison rows preserve the full provider/model/backend identity in the variant,
 language/variant, noise-condition/variant, and language/noise/variant dimensions. The comparison
 scope covers only supplied variants and does not certify the target matrix; use
-`eval:coverage --require-complete` for that gate. Inputs must use run-report schema 9 with metrics
+`eval:coverage --require-complete` for that gate. Inputs must use run-report schema 10 with metrics
 schema 7, name the same corpus revision, and use identical pass thresholds and OS/architecture.
 Within each provider/model, all reports must fingerprint identical model bytes; different
 provider/model variants retain their own artifact fingerprints. The aggregator also requires
 matching sample identity, scorer, machine profile, accelerator, evaluator revision, and executable
 context before comparison.
-Schema 9 records the versioned WER scorer
+Schema 10 records the versioned reference protocol and WER scorer
 (`muesly-wer-unicode-v1`);
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 7 records both RTF definitions, measurement and distinct-sample counts, the
+Aggregate schema 8 records both RTF definitions, measurement and distinct-sample counts, the
 comparison status, the common evaluator inputs, the full evaluator
-revision, and exact benchmark-executable digest for every backend. Coverage schema 8 similarly
+revision, and exact benchmark-executable digest for every backend. Coverage schema 9 similarly
 records the corpus
-fingerprint, verified model-artifact map, evaluator-revision digest by backend, and executable
+fingerprint, reference protocol, verified model-artifact map, evaluator-revision digest by backend,
+and executable
 digest by backend, so a saved completeness result remains bound to the exact corpus revision,
 evaluated bytes, source/toolchain inputs, and binary.
 Measurement completeness requires one compatible hardware cohort to satisfy the session floor
 across the entire requested matrix. The operating system, architecture, and machine profile must
-match for every cell, with one consistent accelerator identity per backend. Coverage schema 8
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 9
 retains raw cross-machine counts and the largest compatible count per cell for diagnostics, then
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
 different machines or accelerators remains incomplete.

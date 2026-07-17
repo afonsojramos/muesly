@@ -1,6 +1,7 @@
 {
-	"schema_version": 1,
+	"schema_version": 2,
 	"target_id": "consented-multilingual-meetings-v1",
+	"reference_protocol_id": "muesly-meeting-reference-v1",
 	"description": "Initial coverage floor for evaluating local meeting transcription. This is a product comparison matrix, not a claim of statistical representativeness.",
 	"languages": ["en", "es", "pt", "fr", "de"],
 	"noise_conditions": ["clean", "office", "remote-call", "overlapping-speech"],

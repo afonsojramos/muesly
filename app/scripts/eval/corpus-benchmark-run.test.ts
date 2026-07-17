@@ -24,7 +24,7 @@ import {
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from "./corpus-benchmark-lock.ts";
 import { acquireLocalCorpusLock } from "./corpus-intake.ts";
 import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
-import { loadCorpus } from "./corpus.ts";
+import { loadCorpus, REFERENCE_PROTOCOL_ID } from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
 import { processIdentity } from "./process-identity.ts";
 import { prepareRealRunSession } from "./real-run-session.ts";
@@ -228,9 +228,10 @@ function reportForTask(task, identity = currentIdentity(), overrides = {}) {
     ...overrides.result,
   };
   return {
-    schema_version: 9,
+    schema_version: 10,
     corpus_id: task.corpus_id,
     corpus_fingerprint: task.corpus_fingerprint,
+    reference_protocol_id: task.reference_protocol_id,
     started_at: "2026-07-16T00:00:00.000Z",
     completed_at: "2026-07-16T00:01:00.000Z",
     wer_scorer: task.wer_scorer,
@@ -286,8 +287,9 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
   fs.writeFileSync(
     manifestPath,
     `${JSON.stringify({
-      schema_version: 2,
+      schema_version: 3,
       corpus_id: "consented-meetings-v1",
+      reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Local consented meetings.",
       distribution: "local",
       samples: corpusSamples,
@@ -298,8 +300,9 @@ function fixture(t, { samples = ["sample-b", "sample-a"] } = {}) {
   fs.writeFileSync(
     targetsPath,
     `${JSON.stringify({
-      schema_version: 1,
+      schema_version: 2,
       target_id: "multilingual-v1",
+      reference_protocol_id: REFERENCE_PROTOCOL_ID,
       description: "Test target.",
       languages: ["en"],
       noise_conditions: ["clean"],
@@ -1267,6 +1270,7 @@ test(
               ...sample,
               corpus_id: task.corpus_id,
               corpus_fingerprint: task.corpus_fingerprint,
+              reference_protocol_id: task.reference_protocol_id,
             },
             {
               thresholds: {

@@ -1,15 +1,33 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { TextDecoder } from 'node:util';
 
-export const CORPUS_SCHEMA_VERSION = 2;
+export const CORPUS_SCHEMA_VERSION = 3;
+export const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
 
 const PROVENANCE_BASES = new Set(['participant-consent', 'public-domain', 'synthetic']);
 const REDISTRIBUTION_SCOPES = new Set(['repository', 'local-only']);
 const CONSENTED_USES = new Set(['asr-benchmarking']);
+const CHECKED_IN_SYNTHETIC_SILENCE = Object.freeze({
+	corpus_id: 'muesly-asr-smoke-v1',
+	id: 'und-synthetic-silence',
+	audio_path: 'fixtures/silence.wav',
+	audio_sha256: '45f7237e3e7e243c636a5f7fa63702cd0091cf42ff2ac7af053d241fb96e7fdb',
+	reference_path: 'fixtures/silence-ref.txt',
+	reference_sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+	language: 'und',
+	scenario: 'silence',
+	noise_condition: 'synthetic-silence',
+	speakers: 0,
+	duration_seconds: 20,
+	generation_method:
+		'Deterministic approximately -60 dBFS noise generated for hallucination testing',
+});
 const MANIFEST_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
+	'reference_protocol_id',
 	'description',
 	'distribution',
 	'samples',
@@ -239,14 +257,40 @@ function validateFile(sample, field, hashField, manifestPath, checkFiles, errors
 	}
 }
 
-function validateMeetingReference(sample, manifestPath, checkFiles, errors) {
-	if (sample.scenario !== 'meeting' || !checkFiles || typeof sample.reference_path !== 'string') {
-		return;
-	}
+function isCheckedInSyntheticSilence(document, sample) {
+	return (
+		document.distribution === 'repository' &&
+		document.corpus_id === CHECKED_IN_SYNTHETIC_SILENCE.corpus_id &&
+		sample.id === CHECKED_IN_SYNTHETIC_SILENCE.id &&
+		sample.audio_path === CHECKED_IN_SYNTHETIC_SILENCE.audio_path &&
+		sample.audio_sha256 === CHECKED_IN_SYNTHETIC_SILENCE.audio_sha256 &&
+		sample.reference_path === CHECKED_IN_SYNTHETIC_SILENCE.reference_path &&
+		sample.reference_sha256 === CHECKED_IN_SYNTHETIC_SILENCE.reference_sha256 &&
+		sample.language === CHECKED_IN_SYNTHETIC_SILENCE.language &&
+		sample.scenario === CHECKED_IN_SYNTHETIC_SILENCE.scenario &&
+		sample.noise_condition === CHECKED_IN_SYNTHETIC_SILENCE.noise_condition &&
+		sample.speakers === CHECKED_IN_SYNTHETIC_SILENCE.speakers &&
+		sample.duration_seconds === CHECKED_IN_SYNTHETIC_SILENCE.duration_seconds &&
+		sample.provenance?.basis === 'synthetic' &&
+		sample.provenance?.generation_method === CHECKED_IN_SYNTHETIC_SILENCE.generation_method &&
+		sample.provenance?.redistribution === 'repository'
+	);
+}
+
+function validateReferenceText(document, sample, manifestPath, checkFiles, errors) {
+	if (!checkFiles || typeof sample.reference_path !== 'string') return;
 	const referencePath = resolveSamplePath(manifestPath, sample.reference_path);
 	if (!fs.existsSync(referencePath) || !fs.statSync(referencePath).isFile()) return;
-	if (fs.readFileSync(referencePath, 'utf8').trim().length === 0) {
-		errors.push(`sample '${sample.id ?? '?'}'.reference_path must contain a meeting transcript`);
+	const referenceBytes = fs.readFileSync(referencePath);
+	let reference;
+	try {
+		reference = new TextDecoder('utf-8', { fatal: true }).decode(referenceBytes);
+	} catch {
+		errors.push(`sample '${sample.id ?? '?'}'.reference_path must be valid UTF-8`);
+		return;
+	}
+	if (!isCheckedInSyntheticSilence(document, sample) && reference.trim().length === 0) {
+		errors.push(`sample '${sample.id ?? '?'}'.reference_path must contain a speech reference`);
 	}
 }
 
@@ -352,6 +396,9 @@ export function validateCorpusDocument(document, options = {}) {
 		errors.push(`schema_version must be ${CORPUS_SCHEMA_VERSION}`);
 	}
 	requiredString(document.corpus_id, 'corpus_id', errors);
+	if (document.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
+		errors.push(`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
 	if (!['repository', 'local'].includes(document.distribution)) {
 		errors.push('distribution must be repository or local');
 	}
@@ -410,7 +457,7 @@ export function validateCorpusDocument(document, options = {}) {
 		}
 		validateFile(sample, 'audio_path', 'audio_sha256', manifestPath, checkFiles, errors);
 		validateFile(sample, 'reference_path', 'reference_sha256', manifestPath, checkFiles, errors);
-		validateMeetingReference(sample, manifestPath, checkFiles, errors);
+		validateReferenceText(document, sample, manifestPath, checkFiles, errors);
 		validateProvenance(sample, errors, today);
 		if (document.distribution === 'local' && enforceLocalParticipantCustody) {
 			validateLocalParticipantCustody(sample, manifestPath, checkFiles, errors);

@@ -18,7 +18,22 @@ import {
 	retirePreparedBundleIfMatching,
 	retirePreparedBundleForWithdrawal,
 } from './corpus-prepared-bundle.ts';
-import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
+import { canonicalManifestPath, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
+
+const LEGACY_WITHDRAWAL_CORPUS_SCHEMA_VERSION = 2;
+
+function validateWithdrawalCorpusDocument(document, options) {
+	const validationDocument =
+		document.schema_version === LEGACY_WITHDRAWAL_CORPUS_SCHEMA_VERSION &&
+		document.reference_protocol_id === undefined
+			? {
+					...document,
+					schema_version: 3,
+					reference_protocol_id: REFERENCE_PROTOCOL_ID,
+				}
+			: document;
+	return validateCorpusDocument(validationDocument, options);
+}
 
 function isWithinDirectory(directory, filePath) {
 	const relative = path.relative(directory, filePath);
@@ -56,8 +71,9 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 	if (!fs.existsSync(manifestPath)) {
 		if (!allowMissing) throw new Error(`corpus manifest does not exist: ${manifestPath}`);
 		return {
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
 			distribution: 'local',
 			samples: [],
@@ -69,7 +85,7 @@ function readLocalManifest(manifestPath, allowMissing = false) {
 	} catch (error) {
 		throw new Error(`failed to read corpus manifest ${manifestPath}: ${error.message}`);
 	}
-	const errors = validateCorpusDocument(document, {
+	const errors = validateWithdrawalCorpusDocument(document, {
 		manifestPath,
 		checkFiles: false,
 		enforceLocalParticipantCustody: false,
@@ -427,7 +443,7 @@ export function withdrawConsentedSession(options) {
 			}
 		}
 		const nextDocument = { ...document, samples: remaining };
-		const errors = validateCorpusDocument(nextDocument, {
+		const errors = validateWithdrawalCorpusDocument(nextDocument, {
 			manifestPath,
 			checkFiles: false,
 			enforceLocalParticipantCustody: false,

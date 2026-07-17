@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { corpusFingerprint } from './corpus.ts';
+import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import {
 	aggregateRunReports,
@@ -102,9 +102,10 @@ function result(overrides = {}) {
 function report(results, overrides = {}) {
 	const revision = overrides.evaluator_revision ?? evaluatorRevision();
 	return {
-		schema_version: 9,
+		schema_version: 10,
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		started_at: '2026-07-16T10:00:00.000Z',
 		completed_at: '2026-07-16T10:01:00.000Z',
 		wer_scorer: WER_SCORER_ID,
@@ -220,6 +221,7 @@ function loadedCorpus(samples = [corpusSample()], overrides = {}) {
 	return {
 		corpus_id: 'consented-meetings-v1',
 		corpus_fingerprint: 'a'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		samples,
 		...overrides,
 	};
@@ -271,7 +273,8 @@ test('compares exact provider/model/backend variants only on one identical sampl
 		}),
 	]);
 
-	assert.equal(aggregate.schema_version, 7);
+	assert.equal(aggregate.schema_version, 8);
+	assert.equal(aggregate.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(aggregate.measurement_result_count, 6);
 	assert.equal(aggregate.distinct_sample_count, 2);
 	assert.equal(aggregate.groups, undefined);
@@ -625,6 +628,11 @@ test('validates reports against canonical loaded corpus identity and sample meta
 		corpusErrors,
 		/reports\[0\]\.corpus_fingerprint must match corpus\.corpus_fingerprint/,
 	);
+	const wrongProtocol = report([result()], {
+		reference_protocol_id: 'another-reference-v1',
+	});
+	const protocolErrors = validateRunReportsAgainstCorpus([wrongProtocol], corpus).join('\n');
+	assert.match(protocolErrors, /reference_protocol_id must match corpus\.reference_protocol_id/);
 
 	const mismatchedMetadata = report([
 		result({
@@ -727,16 +735,23 @@ test('allows cross-backend reports on one machine but rejects mixed accelerators
 });
 
 test('rejects legacy reports and missing scorer provenance', () => {
-	const legacy = { ...report([result()]), schema_version: 8 };
-	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 9']);
+	const legacy = { ...report([result()]), schema_version: 9 };
+	assert.deepEqual(validateRunReport(legacy), ['report.schema_version must be 10']);
 	assert.throws(
 		() => aggregateRunReports([report([result()]), legacy]),
-		/schema_version must be 9/,
+		/schema_version must be 10/,
 	);
 
 	const missingScorer = { ...report([result()]), wer_scorer: undefined };
 	assert.deepEqual(validateRunReport(missingScorer), [
 		'report.wer_scorer must be a lowercase versioned identifier ending in -v<number>',
+	]);
+
+	const missingProtocol = { ...report([result()]) };
+	delete missingProtocol.reference_protocol_id;
+	assert.deepEqual(validateRunReport(missingProtocol), [
+		'report.reference_protocol_id is required',
+		`report.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`,
 	]);
 });
 
@@ -812,6 +827,7 @@ test('requires closed report, threshold, result, and metrics schemas without sen
 	malformed.results[0].metadata = { text: 'not safe to persist' };
 	malformed.results[0].metrics.driver_notes = 'not safe to persist';
 	malformed.results[0].transcript_text = 'private words';
+	malformed.results[0].reference_protocol_id = REFERENCE_PROTOCOL_ID;
 	delete malformed.results[0].scenario;
 
 	const errors = validateRunReport(malformed).join('\n');
@@ -820,6 +836,10 @@ test('requires closed report, threshold, result, and metrics schemas without sen
 	assert.match(errors, /report\.results\[0\]\.metadata is not allowed/);
 	assert.match(errors, /report\.results\[0\]\.metrics\.driver_notes is not allowed/);
 	assert.match(errors, /report\.results\[0\]\.transcript_text is a forbidden sensitive report key/);
+	assert.match(
+		errors,
+		/report\.results\[0\]\.reference_protocol_id is a forbidden sensitive report key/,
+	);
 	assert.match(errors, /report\.results\[0\]\.scenario is required/);
 });
 
@@ -1273,8 +1293,9 @@ test('requires a manifest and coordinates aggregate output files with the local 
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.wav'), audioContents);
 	fs.writeFileSync(path.join(sessionDirectory, 'meeting-en-clean.txt'), referenceContents);
 	const document = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'consented-meetings-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
 		distribution: 'local',
 		samples: [

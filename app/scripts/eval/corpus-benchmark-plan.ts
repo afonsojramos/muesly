@@ -7,7 +7,7 @@ import {
 	evaluatorPlatformForTargetTriple,
 } from './benchmark-executable.ts';
 import { validateCoverageTargets } from './coverage.ts';
-import { corpusFingerprint, validateCorpusDocument } from './corpus.ts';
+import { corpusFingerprint, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 import { validateRunReport } from './report.ts';
@@ -31,6 +31,7 @@ const MAX_INFERENCE_AUDIO_OVERRUN_SECONDS = 0.03;
 const PLANNING_CORPUS_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
+	'reference_protocol_id',
 	'description',
 	'distribution',
 	'samples',
@@ -38,10 +39,12 @@ const PLANNING_CORPUS_FIELDS = new Set([
 	'manifest_path',
 ]);
 const SAFE_REFERENCE_WORDS_PATH = /^checkpoint\.results\[\d+\]\.reference_words$/;
+const SAFE_REFERENCE_PROTOCOL_PATH = 'checkpoint.reference_protocol_id';
 const CHECKPOINT_FIELDS = new Set([
 	'schema_version',
 	'corpus_id',
 	'corpus_fingerprint',
+	'reference_protocol_id',
 	'started_at',
 	'completed_at',
 	'wer_scorer',
@@ -336,6 +339,9 @@ function taskIdentity(task) {
 	if (task.wer_scorer !== undefined && task.wer_scorer !== WER_SCORER_ID) {
 		throw new Error(`task.wer_scorer must be '${WER_SCORER_ID}'`);
 	}
+	if (task.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
+		throw new Error(`task.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
 	const accelerator =
 		task.accelerator === null || task.accelerator === undefined
 			? { mode: 'auto' }
@@ -351,6 +357,7 @@ function taskIdentity(task) {
 	return {
 		corpus_id: requiredString(task.corpus_id, 'task.corpus_id'),
 		corpus_fingerprint: requireSha256(task.corpus_fingerprint, 'task.corpus_fingerprint'),
+		reference_protocol_id: task.reference_protocol_id,
 		target_id: requiredString(task.target_id, 'task.target_id'),
 		wer_scorer: WER_SCORER_ID,
 		evaluator_revision: evaluator.revision,
@@ -450,6 +457,7 @@ function planningCorpusDocument(corpus) {
 	const document = {
 		schema_version: corpus.schema_version,
 		corpus_id: corpus.corpus_id,
+		reference_protocol_id: corpus.reference_protocol_id,
 		description: corpus.description,
 		distribution: corpus.distribution,
 		samples,
@@ -488,6 +496,9 @@ export function planCorpusBenchmarkTasks({
 	const targetErrors = validateCoverageTargets(targets);
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
+	}
+	if (targets.reference_protocol_id !== planningCorpus.reference_protocol_id) {
+		throw new Error('targets.reference_protocol_id must match corpus.reference_protocol_id');
 	}
 	const targetId = requiredString(targets.target_id, 'targets.target_id');
 	const normalizedThresholds = normalizeThresholds(thresholds);
@@ -600,6 +611,7 @@ export function planCorpusBenchmarkTasks({
 						variant_index: variantIndex,
 						corpus_id: corpusId,
 						corpus_fingerprint: corpusFingerprintValue,
+						reference_protocol_id: planningCorpus.reference_protocol_id,
 						target_id: targetId,
 						wer_scorer: WER_SCORER_ID,
 						evaluator_revision: copyEvaluatorRevision(evaluator.revision),
@@ -656,6 +668,7 @@ function isSensitiveCheckpointKey(key, path) {
 		return true;
 	}
 	if (!normalized.startsWith('reference')) return false;
+	if (normalized === 'referenceprotocolid' && path === SAFE_REFERENCE_PROTOCOL_PATH) return false;
 	return normalized !== 'referencewords' || !SAFE_REFERENCE_WORDS_PATH.test(path);
 }
 
@@ -905,6 +918,12 @@ export function validateTaskCheckpoint(report, task, { expectedModelArtifactSha2
 		report.corpus_fingerprint,
 		expected.corpus_fingerprint,
 		'checkpoint.corpus_fingerprint',
+	);
+	compareField(
+		errors,
+		report.reference_protocol_id,
+		expected.reference_protocol_id,
+		'checkpoint.reference_protocol_id',
 	);
 	compareField(errors, report.wer_scorer, WER_SCORER_ID, 'checkpoint.wer_scorer');
 	compareField(

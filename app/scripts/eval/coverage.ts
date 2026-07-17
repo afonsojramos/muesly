@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { benchmarkDefinitionForReportedBackend } from './benchmark-executable.ts';
 import { writeCorpusBoundJson } from './corpus-result.ts';
-import { findDuplicateAudioSamples, loadCorpus } from './corpus.ts';
+import { findDuplicateAudioSamples, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 import {
 	modelArtifactBindingKey,
@@ -28,6 +28,7 @@ const EVALUATOR_REVISION_COMMON_FIELDS = Object.freeze([
 const TARGET_FIELDS = new Set([
 	'schema_version',
 	'target_id',
+	'reference_protocol_id',
 	'description',
 	'languages',
 	'noise_conditions',
@@ -61,7 +62,10 @@ export function validateCoverageTargets(targets) {
 	for (const field of Object.keys(targets)) {
 		if (!TARGET_FIELDS.has(field)) errors.push(`targets.${field} is not an allowed field`);
 	}
-	if (targets.schema_version !== 1) errors.push('targets.schema_version must be 1');
+	if (targets.schema_version !== 2) errors.push('targets.schema_version must be 2');
+	if (targets.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
+		errors.push(`targets.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	}
 	if (typeof targets.target_id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(targets.target_id)) {
 		errors.push('targets.target_id must be a lowercase slug');
 	}
@@ -316,6 +320,9 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	if (targetErrors.length > 0) {
 		throw new Error(`invalid coverage targets:\n- ${targetErrors.join('\n- ')}`);
 	}
+	if (corpus.reference_protocol_id !== targets.reference_protocol_id) {
+		throw new Error('coverage targets reference protocol does not match the corpus manifest');
+	}
 	const reportBindingErrors = validateRunReportsAgainstCorpus(reports, corpus);
 	if (reportBindingErrors.length > 0) {
 		throw new Error(
@@ -488,10 +495,11 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	).length;
 
 	return {
-		schema_version: 8,
+		schema_version: 9,
 		target_id: targets.target_id,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
+		reference_protocol_id: corpus.reference_protocol_id,
 		wer_scorer: werScorer ?? null,
 		model_artifacts: sortedMapEntries(modelArtifacts),
 		evaluator_revision_sha256_by_backend: sortedMapEntries(evaluatorRevisions),
@@ -528,6 +536,7 @@ export function formatCoverage(coverage) {
 	};
 	const lines = [
 		`${coverage.target_id} on ${coverage.corpus_id}`,
+		`Reference protocol: ${coverage.reference_protocol_id}`,
 		`Distinct participant meeting sessions: ${coverage.participant_meeting_sessions}`,
 		`Corpus cells: ${coverage.corpus.covered_cells}/${coverage.corpus.required_cells}`,
 		`Measurement cells: ${coverage.measurements.covered_cells}/${coverage.measurements.required_cells} (best compatible cohort per cell)`,

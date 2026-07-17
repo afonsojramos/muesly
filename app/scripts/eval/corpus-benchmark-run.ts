@@ -643,6 +643,7 @@ async function defaultTaskRunner({ task, sample, session, signal }) {
       ...sample,
       corpus_id: task.corpus_id,
       corpus_fingerprint: task.corpus_fingerprint,
+      reference_protocol_id: task.reference_protocol_id,
     },
     {
       thresholds: {

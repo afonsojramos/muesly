@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { artifactTreeRevision } from './artifact-revision.ts';
 import { createPrivateArtifactSnapshotDirectory } from './artifact-snapshot.ts';
+import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import {
 	benchmarkExecutableSha256,
 	benchmarkRuntimeDependenciesSha256,
@@ -111,6 +112,7 @@ function sampleFiles(root, id, referenceText = 'hello world') {
 		provenance: { basis: 'synthetic' },
 		corpus_id: 'test-corpus-v1',
 		corpus_fingerprint: 'e'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 	};
 }
 
@@ -438,7 +440,8 @@ test('prepares once and runs three samples in three fresh exact processes', asyn
 		0o700,
 	);
 	for (const [index, report] of reports.entries()) {
-		assert.equal(report.schema_version, 9);
+		assert.equal(report.schema_version, 10);
+		assert.equal(report.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 		assert.equal(report.results.length, 1);
 		assert.equal(report.results[0].sample_id, ['one', 'two', 'three'][index]);
 		assert.equal(report.results[0].passed, true);
@@ -517,6 +520,26 @@ test('scores an in-memory reference without reopening its corpus path', async (t
 	assert.equal(report.passed, true);
 	assert.equal(Object.hasOwn(report.results[0], 'reference_text'), false);
 	assert.equal(Object.hasOwn(report.results[0], 'hypothesis'), false);
+});
+
+test('rejects invalid UTF-8 in a standalone reference before transcription', async (t) => {
+	const harness = createHarness(t);
+	t.after(() => harness.session.close());
+	const sample = sampleFiles(harness.root, 'invalid-reference');
+	fs.writeFileSync(sample.reference_file, Buffer.from([0xc3, 0x28]));
+	let transcriptionStarted = false;
+
+	await assert.rejects(
+		runRealRunSample(harness.session, sample, {
+			thresholds: { maxWerPercent: 10, maxHallucinatedWords: 2 },
+			runProcess() {
+				transcriptionStarted = true;
+				throw new Error('transcription must not start');
+			},
+		}),
+		/reference_file must contain valid UTF-8/,
+	);
+	assert.equal(transcriptionStarted, false);
 });
 
 test('rejects metrics that attest a different audio digest', async (t) => {
@@ -955,6 +978,7 @@ test('the standalone CLI prepares once and aggregates three one-sample reports',
 	const corpus = {
 		corpus_id: 'test-corpus-v1',
 		corpus_fingerprint: 'e'.repeat(64),
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		samples,
 	};
 	let prepareCalls = 0;
@@ -1015,7 +1039,8 @@ test('the standalone CLI prepares once and aggregates three one-sample reports',
 	}
 	assert.equal(prepareCalls, 1);
 	assert.equal(processCalls, 3);
-	assert.equal(written.value.schema_version, 9);
+	assert.equal(written.value.schema_version, 10);
+	assert.equal(written.value.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(written.value.results.length, 3);
 	assert.deepEqual(
 		written.value.results.map((result) => result.sample_id),

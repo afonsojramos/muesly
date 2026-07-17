@@ -127,6 +127,8 @@ This clean English clip is a regression smoke test, not evidence that one
 engine is generally more accurate. The repository now ships a local-only,
 consent-aware corpus manifest, privacy-preserving intake procedure, coverage
 matrix, real WER/RTF/peak-memory measurement, and transcript-free aggregation.
+Human references are versioned under `muesly-meeting-reference-v1`; the manifest, target matrix,
+benchmark checkpoints, aggregates, and coverage outputs reject missing or different protocol IDs.
 The actual participant corpus is intentionally not in Git; completing it requires
 consented recordings across the target languages and noise conditions. See
 `app/scripts/eval/CONSENTED_CORPUS.md`.

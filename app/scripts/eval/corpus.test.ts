@@ -4,12 +4,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
 	canonicalManifestPath,
 	corpusFingerprint,
 	fileSha256,
 	loadCorpus,
+	REFERENCE_PROTOCOL_ID,
 	validateCorpusDocument,
 	whisperLanguageForSample,
 } from './corpus.ts';
@@ -31,8 +33,9 @@ function fixture() {
 	return {
 		directory,
 		document: {
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'test-corpus',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			distribution: 'local',
 			samples: [
 				{
@@ -115,8 +118,9 @@ test('hashes corpus files incrementally across multiple buffer reads', () => {
 
 test('allows an empty local corpus but not an empty repository corpus', () => {
 	const local = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'consented-meetings-v1',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local-only participant-consented multilingual meeting corpus.',
 		distribution: 'local',
 		samples: [],
@@ -128,7 +132,27 @@ test('allows an empty local corpus but not an empty repository corpus', () => {
 	);
 });
 
-test('rejects meeting samples without a WER reference', () => {
+test('rejects legacy and differently versioned reference manifests without upgrading them', () => {
+	const { document } = fixture();
+	const legacy = { ...document, schema_version: 2 };
+	delete legacy.reference_protocol_id;
+	assert.deepEqual(validateCorpusDocument(legacy, { checkFiles: false }), [
+		'schema_version must be 3',
+		`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`,
+	]);
+	assert.equal(legacy.schema_version, 2);
+	assert.equal(legacy.reference_protocol_id, undefined);
+
+	assert.match(
+		validateCorpusDocument(
+			{ ...document, reference_protocol_id: 'another-reference-v1' },
+			{ checkFiles: false },
+		).join('\n'),
+		/reference_protocol_id must be 'muesly-meeting-reference-v1'/,
+	);
+});
+
+test('rejects empty speech references outside the checked-in synthetic silence fixture', () => {
 	const { directory, document } = fixture();
 	fs.writeFileSync(
 		path.join(
@@ -143,7 +167,58 @@ test('rejects meeting samples without a WER reference', () => {
 	const errors = validateCorpusDocument(document, {
 		manifestPath: path.join(directory, 'manifest.json'),
 	});
-	assert(errors.some((error) => error.includes('must contain a meeting transcript')));
+	assert(errors.some((error) => error.includes('must contain a speech reference')));
+
+	document.samples[0].scenario = 'dictation';
+	const dictationErrors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(dictationErrors.some((error) => error.includes('must contain a speech reference')));
+
+	document.samples[0] = {
+		...document.samples[0],
+		id: 'und-synthetic-silence',
+		scenario: 'silence',
+		provenance: {
+			basis: 'synthetic',
+			generation_method:
+				'Deterministic approximately -60 dBFS noise generated for hallucination testing',
+			redistribution: 'local-only',
+		},
+	};
+	const impostorErrors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(impostorErrors.some((error) => error.includes('must contain a speech reference')));
+
+	const committedManifestPath = path.join(
+		path.dirname(fileURLToPath(import.meta.url)),
+		'corpus-manifest.json',
+	);
+	const committedManifest = JSON.parse(fs.readFileSync(committedManifestPath, 'utf8'));
+	assert.deepEqual(
+		validateCorpusDocument(committedManifest, { manifestPath: committedManifestPath }),
+		[],
+	);
+});
+
+test('rejects invalid UTF-8 in every checked reference', () => {
+	const { directory, document } = fixture();
+	const referencePath = path.join(
+		directory,
+		'local-corpus',
+		'session-example-001',
+		'meeting-en-clean.txt',
+	);
+	const invalidUtf8 = Buffer.from([0xc3, 0x28]);
+	fs.writeFileSync(referencePath, invalidUtf8);
+	document.samples[0].reference_sha256 = hash(invalidUtf8);
+	document.samples[0].scenario = 'dictation';
+
+	const errors = validateCorpusDocument(document, {
+		manifestPath: path.join(directory, 'manifest.json'),
+	});
+	assert(errors.some((error) => error.includes('reference_path must be valid UTF-8')));
 });
 
 test('rejects meeting audio without participant consent', () => {
@@ -371,4 +446,6 @@ test('fingerprints the canonical corpus revision', () => {
 	assert.equal(corpusFingerprint(document), corpusFingerprint(reordered));
 	reordered.samples[0].noise_condition = 'remote-call';
 	assert.notEqual(corpusFingerprint(document), corpusFingerprint(reordered));
+	const otherProtocol = { ...document, reference_protocol_id: 'another-reference-v1' };
+	assert.notEqual(corpusFingerprint(document), corpusFingerprint(otherProtocol));
 });

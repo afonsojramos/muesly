@@ -16,7 +16,7 @@ import {
 	wavDurationSeconds,
 } from './corpus-intake.ts';
 import { acquireCorpusBenchmarkLock, releaseCorpusBenchmarkLock } from './corpus-benchmark-lock.ts';
-import { canonicalManifestPath, validateCorpusDocument } from './corpus.ts';
+import { canonicalManifestPath, REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
 import { processOwnsState } from './process-identity.ts';
 
 function writeWav(filePath, durationSeconds = 2) {
@@ -61,6 +61,7 @@ function intakeFixture() {
 			noiseCondition: 'clean',
 			speakers: 2,
 			affirmConsent: true,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			today: '2026-07-16',
 		},
 	};
@@ -78,6 +79,21 @@ test('requires explicit consent affirmation before writing anything', () => {
 	const { directory, options } = intakeFixture();
 	options.affirmConsent = false;
 	assert.throws(() => intakeConsentedSample(options), /affirm-all-participants-consented/);
+	assert.deepEqual(fs.readdirSync(directory).sort(), [
+		'consent-record.md',
+		'source.txt',
+		'source.wav',
+	]);
+});
+
+test('requires explicit affirmation of the exact reference protocol', () => {
+	const { directory, options } = intakeFixture();
+	delete options.referenceProtocolId;
+	assert.throws(() => intakeConsentedSample(options), /affirm-reference-protocol/);
+	assert(!fs.existsSync(options.manifestPath));
+
+	options.referenceProtocolId = 'another-reference-v1';
+	assert.throws(() => intakeConsentedSample(options), /muesly-meeting-reference-v1/);
 	assert.deepEqual(fs.readdirSync(directory).sort(), [
 		'consent-record.md',
 		'source.txt',
@@ -150,8 +166,9 @@ test('updates the canonical manifest when intake is invoked through a symlink', 
 	fs.writeFileSync(
 		canonicalManifest,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
 			distribution: 'local',
 			samples: [],
@@ -254,6 +271,8 @@ test('atomically imports a consented sample with verified metadata and private f
 	assert.equal(sample.provenance.consent_record_id, 'consent-opaque-001');
 	const document = JSON.parse(fs.readFileSync(options.manifestPath, 'utf8'));
 	assert.deepEqual(validateCorpusDocument(document, { manifestPath: options.manifestPath }), []);
+	assert.equal(document.schema_version, 3);
+	assert.equal(document.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(document.samples.length, 1);
 	assert.equal(
 		fs.readFileSync(
@@ -285,7 +304,8 @@ test('retires a matching prepared source bundle after successful intake', () => 
 	fs.writeFileSync(
 		path.join(bundleDirectory, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: options.sessionId,
 			consentRecordId: options.consentRecordId,
 			sampleId: options.sampleId,
@@ -303,6 +323,40 @@ test('retires a matching prepared source bundle after successful intake', () => 
 	assert(!fs.existsSync(bundleDirectory));
 	assert(fs.existsSync(path.join(directory, 'local-corpus', options.sessionId)));
 	assert(fs.existsSync(options.consentRecord));
+});
+
+test('rejects legacy or differently versioned prepared reference metadata', () => {
+	for (const metadataOverride of [
+		{ schemaVersion: 1 },
+		{ referenceProtocolId: 'another-reference-v1' },
+	]) {
+		const { directory, options } = intakeFixture();
+		const bundleDirectory = path.join(directory, 'intake', options.sessionId);
+		fs.mkdirSync(bundleDirectory, { recursive: true, mode: 0o700 });
+		const audio = path.join(bundleDirectory, 'recording.wav');
+		const reference = path.join(bundleDirectory, 'reference.txt');
+		fs.renameSync(options.audio, audio);
+		fs.renameSync(options.reference, reference);
+		options.audio = audio;
+		options.reference = reference;
+		fs.writeFileSync(
+			path.join(bundleDirectory, 'collection-session.json'),
+			JSON.stringify({
+				schemaVersion: 2,
+				referenceProtocolId: REFERENCE_PROTOCOL_ID,
+				sessionId: options.sessionId,
+				manifestPath: options.manifestPath,
+				...metadataOverride,
+			}),
+		);
+
+		assert.throws(
+			() => intakeConsentedSample(options),
+			/unsupported schema|unsupported reference protocol/,
+		);
+		assert(!fs.existsSync(options.manifestPath));
+		assert(fs.existsSync(bundleDirectory));
+	}
 });
 
 test('rejects duplicate audio without changing the existing corpus', () => {
@@ -633,8 +687,9 @@ test('does not reclaim a durable withdrawal intent for new intake', () => {
 	fs.writeFileSync(
 		options.manifestPath,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
 			distribution: 'local',
 			samples: [],
@@ -721,8 +776,9 @@ test('preserves recordings when stale-lock recovery finds an invalid manifest', 
 	fs.writeFileSync(
 		options.manifestPath,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			distribution: 'local',
 			samples: {},
 		}),
@@ -763,6 +819,8 @@ test('CLI imports through the documented consent-gated path', () => {
 			'--speakers',
 			String(options.speakers),
 			'--affirm-all-participants-consented',
+			'--affirm-reference-protocol',
+			REFERENCE_PROTOCOL_ID,
 		],
 		{ encoding: 'utf8', cwd: fileURLToPath(new URL('../../..', import.meta.url)) },
 	);

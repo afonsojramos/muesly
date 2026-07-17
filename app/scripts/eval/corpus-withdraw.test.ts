@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { intakeConsentedSample } from './corpus-intake.ts';
 import { withdrawConsentedSession } from './corpus-withdraw.ts';
-import { validateCorpusDocument } from './corpus.ts';
+import { REFERENCE_PROTOCOL_ID, validateCorpusDocument } from './corpus.ts';
 
 function writeWav(filePath, durationSeconds) {
 	const sampleRate = 16_000;
@@ -57,6 +57,7 @@ function corpusFixture() {
 			noiseCondition: index === 'two' ? 'office' : 'clean',
 			speakers: 2,
 			affirmConsent: true,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			today: '2026-07-16',
 		});
 	}
@@ -75,7 +76,8 @@ test('withdraws every sample in one session and invalidates derived results', ()
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-withdraw',
 			manifestPath,
 			language: 'en',
@@ -134,7 +136,8 @@ test('withdraws corpus samples without deleting an unrelated prepared bundle', (
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-withdraw',
 			manifestPath: unrelatedManifestPath,
 		}),
@@ -226,8 +229,61 @@ test('requires explicit confirmation and leaves unknown sessions unchanged', () 
 	assert.equal(fs.readFileSync(manifestPath, 'utf8'), before);
 });
 
+test('withdraws from a legacy schema-2 corpus without upgrading the retained manifest', () => {
+	const { directory, manifestPath } = corpusFixture();
+	const legacy = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	legacy.schema_version = 2;
+	delete legacy.reference_protocol_id;
+	fs.writeFileSync(manifestPath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-withdraw',
+		confirmWithdrawal: true,
+	});
+
+	assert.equal(result.removedSamples, 2);
+	const remaining = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+	assert.equal(remaining.schema_version, 2);
+	assert.equal(remaining.reference_protocol_id, undefined);
+	assert.deepEqual(remaining.samples.map((sample) => sample.id), ['es-clean-003']);
+	assert(!fs.existsSync(path.join(directory, 'local-corpus', 'session-withdraw')));
+});
+
 test('withdraws a prepared session before corpus intake', () => {
 	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-prepared-withdraw-'));
+	const manifestPath = path.join(directory, 'corpus-local.json');
+	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
+	fs.mkdirSync(preparedBundle, { recursive: true });
+	fs.writeFileSync(path.join(preparedBundle, 'recording.wav'), 'sensitive source recording');
+	fs.writeFileSync(path.join(preparedBundle, 'reference.txt'), 'sensitive source reference');
+	fs.writeFileSync(
+		path.join(preparedBundle, 'collection-session.json'),
+		JSON.stringify({
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
+			sessionId: 'session-prepared',
+			manifestPath,
+		}),
+	);
+
+	const result = withdrawConsentedSession({
+		manifestPath,
+		sessionId: 'session-prepared',
+		confirmWithdrawal: true,
+	});
+
+	assert.deepEqual(result, {
+		sessionId: 'session-prepared',
+		removedSamples: 0,
+		resumed: false,
+	});
+	assert(!fs.existsSync(preparedBundle));
+	assert(!fs.existsSync(manifestPath));
+});
+
+test('withdraws a legacy schema-1 prepared session without upgrading it', () => {
+	const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-legacy-prepared-withdraw-'));
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	const preparedBundle = path.join(directory, 'intake', 'session-prepared');
 	fs.mkdirSync(preparedBundle, { recursive: true });
@@ -269,7 +325,8 @@ test('holds the corpus mutation lock while retiring a prepared-only session', ()
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-prepared',
 			manifestPath,
 		}),
@@ -310,7 +367,8 @@ test('does not report prepared withdrawal while the manifest still contains the 
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-withdraw',
 			manifestPath,
 		}),
@@ -339,7 +397,8 @@ test('refuses prepared withdrawal through a non-directory corpus path', () => {
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-prepared',
 			manifestPath,
 		}),
@@ -368,7 +427,8 @@ test('withdraws a prepared session after a failed first intake created the corpu
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-prepared',
 			manifestPath,
 		}),
@@ -400,7 +460,8 @@ test('preserves a prepared session when withdrawal names a different manifest', 
 	fs.writeFileSync(
 		path.join(preparedBundle, 'collection-session.json'),
 		JSON.stringify({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			referenceProtocolId: REFERENCE_PROTOCOL_ID,
 			sessionId: 'session-prepared',
 			manifestPath,
 		}),
@@ -751,6 +812,7 @@ test('retains stale-lock evidence until orphan cleanup succeeds', () => {
 				noiseCondition: 'clean',
 				speakers: 2,
 				affirmConsent: true,
+				referenceProtocolId: REFERENCE_PROTOCOL_ID,
 				today: '2026-07-16',
 			}),
 		/corpus withdrawal is pending/,
@@ -841,8 +903,9 @@ test('resumes multiple pending withdrawal markers serially', () => {
 	fs.writeFileSync(
 		manifestPath,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local-only participant-consented multilingual meeting corpus.',
 			distribution: 'local',
 			samples: [],

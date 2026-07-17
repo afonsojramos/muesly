@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { TextDecoder } from 'node:util';
 
 import { createPrivateArtifactSnapshotDirectory } from './artifact-snapshot.ts';
 import { artifactTreeRevision } from './artifact-revision.ts';
@@ -583,17 +584,39 @@ function scoreSample(sample, referenceText, hypothesis, metrics, thresholds) {
 	};
 }
 
+function referenceTextForSample(sample) {
+	if (sample.reference_text !== undefined) {
+		if (typeof sample.reference_text !== 'string') {
+			throw new Error(`${sample.id}: reference_text must be a string when provided`);
+		}
+		return sample.reference_text.trim();
+	}
+	const referenceBytes = fs.readFileSync(sample.reference_file);
+	try {
+		return new TextDecoder('utf-8', { fatal: true }).decode(referenceBytes).trim();
+	} catch {
+		throw new Error(`${sample.id}: reference_file must contain valid UTF-8`);
+	}
+}
+
 function sampleReport(state, sample, thresholds, startedAt, completedAt, result) {
 	if (!state.evaluatorIdentity) {
 		throw new Error('real-run session requires evaluator provenance to create a report');
 	}
-	if (typeof sample.corpus_id !== 'string' || typeof sample.corpus_fingerprint !== 'string') {
-		throw new Error('real-run sample report requires corpus_id and corpus_fingerprint');
+	if (
+		typeof sample.corpus_id !== 'string' ||
+		typeof sample.corpus_fingerprint !== 'string' ||
+		typeof sample.reference_protocol_id !== 'string'
+	) {
+		throw new Error(
+			'real-run sample report requires corpus_id, corpus_fingerprint, and reference_protocol_id',
+		);
 	}
 	const report = {
-		schema_version: 9,
+		schema_version: 10,
 		corpus_id: sample.corpus_id,
 		corpus_fingerprint: sample.corpus_fingerprint,
+		reference_protocol_id: sample.reference_protocol_id,
 		started_at: startedAt,
 		completed_at: completedAt,
 		wer_scorer: WER_SCORER_ID,
@@ -629,15 +652,7 @@ async function executeRealRunSampleLocked(state, sample, options) {
 		`${String(state.sampleCounter++).padStart(6, '0')}.json`,
 	);
 	try {
-		const referenceText =
-			sample.reference_text === undefined
-				? fs.readFileSync(sample.reference_file, 'utf8').trim()
-				: (() => {
-						if (typeof sample.reference_text !== 'string') {
-							throw new Error(`${sample.id}: reference_text must be a string when provided`);
-						}
-						return sample.reference_text.trim();
-					})();
+		const referenceText = referenceTextForSample(sample);
 		const args = [
 			'--provider',
 			state.identity.provider,
@@ -748,6 +763,7 @@ export function aggregateRealRunReports(reports) {
 			'schema_version',
 			'corpus_id',
 			'corpus_fingerprint',
+			'reference_protocol_id',
 			'wer_scorer',
 			'evaluator_revision_sha256',
 			'benchmark_executable_sha256',
@@ -1159,6 +1175,7 @@ export async function runRealRunCli(
 				...fixture,
 				corpus_id: corpus.corpus_id,
 				corpus_fingerprint: corpus.corpus_fingerprint,
+				reference_protocol_id: corpus.reference_protocol_id,
 			};
 			const run = options.outputPath
 				? await runReportedSample(session, sample, {

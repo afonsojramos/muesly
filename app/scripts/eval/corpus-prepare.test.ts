@@ -13,10 +13,12 @@ import {
 	planCollectionCells,
 	prepareCollectionSession,
 } from './corpus-prepare.ts';
+import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
 
 const targets = {
-	schema_version: 1,
+	schema_version: 2,
 	target_id: 'test-targets',
+	reference_protocol_id: REFERENCE_PROTOCOL_ID,
 	languages: ['en', 'es'],
 	noise_conditions: ['clean', 'office'],
 	benchmark_variants: [{ provider: 'whisper', model: 'test', backend: 'cpu' }],
@@ -190,7 +192,8 @@ fs.mkdirSync(pendingSessionDirectory, { mode: 0o700 });
 fs.writeFileSync(
   path.join(pendingSessionDirectory, 'collection-session.json'),
   JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
+    referenceProtocolId: '${REFERENCE_PROTOCOL_ID}',
     sessionId: 'session-concurrent',
     language: 'en',
     noiseCondition: 'clean',
@@ -236,8 +239,9 @@ test('plans from an intake commit completed while waiting for the corpus lock', 
 	fs.writeFileSync(
 		stagedManifestPath,
 		`${JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local test corpus.',
 			distribution: 'local',
 			samples: [
@@ -326,6 +330,8 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.equal(session.sessionId, `session-${id}`);
 	assert.equal(session.consentRecordId, `consent-${id}`);
 	assert.equal(session.sampleId, `en-clean-${id}`);
+	assert.equal(session.schemaVersion, 2);
+	assert.equal(session.referenceProtocolId, REFERENCE_PROTOCOL_ID);
 	assert.equal(session.remainingUnpreparedObservations, 7);
 	assert(!fs.existsSync(session.audioPath));
 	assert.equal(fs.readFileSync(session.referencePath, 'utf8'), '');
@@ -341,6 +347,16 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	);
 	assert.match(readme, /Preparing this bundle does not establish consent/);
 	assert.match(readme, /--affirm-all-participants-consented/);
+	assert.match(readme, /--affirm-reference-protocol 'muesly-meeting-reference-v1'/);
+	assert.match(readme, /REFERENCE_TRANSCRIPTION\.md/);
+	const metadata = JSON.parse(
+		fs.readFileSync(
+			path.join(directory, 'intake', session.sessionId, 'collection-session.json'),
+			'utf8',
+		),
+	);
+	assert.equal(metadata.schemaVersion, 2);
+	assert.equal(metadata.referenceProtocolId, REFERENCE_PROTOCOL_ID);
 	assert(readme.includes(`nub '${session.intakeScriptPath}'`));
 	assert.match(readme, /## Bash \/ zsh/);
 	assert.match(readme, /## PowerShell \(Windows\)/);
@@ -472,8 +488,9 @@ test('rejects incomplete selectors and already-complete cells', () => {
 	fs.writeFileSync(
 		manifestPath,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'consented-meetings-v1',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Local corpus.',
 			distribution: 'local',
 			samples: entries.map((entry, index) => ({
@@ -589,8 +606,9 @@ test('rejects repository-distributed manifests before creating collection files'
 	fs.writeFileSync(
 		current.manifestPath,
 		JSON.stringify({
-			schema_version: 2,
+			schema_version: 3,
 			corpus_id: 'repository-corpus',
+			reference_protocol_id: REFERENCE_PROTOCOL_ID,
 			description: 'Repository fixture.',
 			distribution: 'repository',
 			samples: [

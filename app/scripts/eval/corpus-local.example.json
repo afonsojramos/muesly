@@ -1,6 +1,7 @@
 {
-	"schema_version": 2,
+	"schema_version": 3,
 	"corpus_id": "consented-meetings-v1",
+	"reference_protocol_id": "muesly-meeting-reference-v1",
 	"description": "Local-only participant-consented multilingual meeting corpus.",
 	"distribution": "local",
 	"samples": []

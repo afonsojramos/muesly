@@ -20,7 +20,7 @@ import {
 	writeCorpusBoundJson,
 	writeLeasedCorpusBoundJson,
 } from './corpus-result.ts';
-import { corpusFingerprint, loadCorpus } from './corpus.ts';
+import { corpusFingerprint, loadCorpus, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { WER_SCORER_ID } from './wer.ts';
 
 function sha256(value) {
@@ -50,9 +50,10 @@ function schemaValidCheckpointReport(current) {
 		build_env_sha256: '4'.repeat(64),
 	};
 	const report = {
-		schema_version: 9,
+		schema_version: 10,
 		corpus_id: current.corpus.corpus_id,
 		corpus_fingerprint: current.corpus.corpus_fingerprint,
+		reference_protocol_id: current.corpus.reference_protocol_id,
 		started_at: '2026-07-16T10:00:00.000Z',
 		completed_at: '2026-07-16T10:01:00.000Z',
 		wer_scorer: WER_SCORER_ID,
@@ -116,8 +117,9 @@ function localManifest() {
 	const manifestPath = path.join(directory, 'corpus-local.json');
 	fs.mkdirSync(path.join(directory, 'local-corpus'));
 	const document = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'local-consented-meetings',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
 		distribution: 'local',
 		samples: [],
@@ -140,8 +142,9 @@ function leasedCorpusFixture(t, options = {}) {
 	fs.writeFileSync(audioPath, audio, { mode: 0o600 });
 	fs.writeFileSync(referencePath, reference, { mode: 0o600 });
 	const document = {
-		schema_version: 2,
+		schema_version: 3,
 		corpus_id: 'local-consented-meetings',
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
 		description: 'Local consented corpus.',
 		distribution: 'local',
 		samples: [
