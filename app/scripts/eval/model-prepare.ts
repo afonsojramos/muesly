@@ -23,6 +23,7 @@ export const SILENCE_FIXTURE = path.join(here, 'fixtures', 'silence.wav');
 const MIB = 1024 ** 2;
 const GIB = 1024 ** 3;
 const PREPARATION_LOCK_DIRECTORY = '.muesly-eval-model-prepare.lock';
+const PREPARATION_LOCK_TRANSITION_DIRECTORY = '.muesly-eval-model-prepare.transition';
 const PREPARATION_LOCK_OWNER = 'owner.json';
 const PREPARATION_LOCK_SCHEMA_VERSION = 1;
 const MAX_LOCK_OWNER_BYTES = 64 * 1024;
@@ -264,6 +265,59 @@ function sameLockIdentity(left, right) {
 	return left.dev === right.dev && left.ino === right.ino;
 }
 
+function acquirePreparationLockTransition(modelsDirectory) {
+	const transitionPath = path.join(modelsDirectory, PREPARATION_LOCK_TRANSITION_DIRECTORY);
+	try {
+		fs.mkdirSync(transitionPath, { mode: PRIVATE_DIRECTORY_MODE });
+	} catch (error) {
+		if (error?.code !== 'EEXIST') throw error;
+		const status = entryAt(transitionPath);
+		if (status === undefined || !status.isDirectory() || status.isSymbolicLink()) {
+			throw new Error(
+				`model preparation lock transition must be a real directory: ${transitionPath}`,
+			);
+		}
+		throw new Error(
+			`model preparation lock ownership is already transitioning; if no preparation process is running, remove ${transitionPath}`,
+		);
+	}
+	const status = fs.lstatSync(transitionPath, { bigint: true });
+	if (!status.isDirectory() || status.isSymbolicLink()) {
+		throw new Error(
+			`model preparation lock transition must be a real directory: ${transitionPath}`,
+		);
+	}
+	return { transitionPath, metadata: lockEntryMetadata(status) };
+}
+
+function releasePreparationLockTransition(transition) {
+	const current = fs.lstatSync(transition.transitionPath, { bigint: true });
+	if (!sameLockIdentity(transition.metadata, lockEntryMetadata(current))) {
+		throw new Error('model preparation lock transition changed while it was held');
+	}
+	const tombstone = `${transition.transitionPath}.released-${randomUUID()}`;
+	fs.renameSync(transition.transitionPath, tombstone);
+	const moved = fs.lstatSync(tombstone, { bigint: true });
+	if (!sameLockIdentity(transition.metadata, lockEntryMetadata(moved))) {
+		throw new Error('model preparation lock transition changed while it was released');
+	}
+	fs.rmdirSync(tombstone);
+}
+
+function removeNewLockAfterFailedInitialization(lockPath, createdMetadata) {
+	const current = fs.lstatSync(lockPath, { bigint: true, throwIfNoEntry: false });
+	if (current === undefined || !sameLockIdentity(createdMetadata, lockEntryMetadata(current))) {
+		throw new Error('new model preparation lock changed while it was initialized');
+	}
+	const tombstone = `${lockPath}.initialization-failed-${randomUUID()}`;
+	fs.renameSync(lockPath, tombstone);
+	const moved = fs.lstatSync(tombstone, { bigint: true });
+	if (!sameLockIdentity(createdMetadata, lockEntryMetadata(moved))) {
+		throw new Error('new model preparation lock changed while failed initialization was recovered');
+	}
+	fs.rmSync(tombstone, { recursive: true, force: true });
+}
+
 function readLockOwnerFile(ownerPath) {
 	const before = fs.lstatSync(ownerPath, { bigint: true });
 	if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) {
@@ -383,54 +437,65 @@ export function acquireModelPreparationLock(
 	modelsDirectory,
 	{ currentIdentity = processIdentity(process.pid), isOwnedByLiveProcess = processOwnsState } = {},
 ) {
+	const transition = acquirePreparationLockTransition(modelsDirectory);
 	const lockPath = path.join(modelsDirectory, PREPARATION_LOCK_DIRECTORY);
-	for (let attempt = 0; attempt < 3; attempt += 1) {
-		try {
-			fs.mkdirSync(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
-			const owner = {
-				schema_version: PREPARATION_LOCK_SCHEMA_VERSION,
-				pid: process.pid,
-				process_identity: currentIdentity,
-				token: randomUUID(),
-				created_at: new Date().toISOString(),
-			};
+	try {
+		for (let attempt = 0; attempt < 3; attempt += 1) {
 			try {
-				fs.writeFileSync(
-					path.join(lockPath, PREPARATION_LOCK_OWNER),
-					`${JSON.stringify(owner)}\n`,
-					{ flag: 'wx', mode: PRIVATE_FILE_MODE },
-				);
-				return { lockPath, owner, snapshot: readPreparationLock(lockPath) };
+				fs.mkdirSync(lockPath, { mode: PRIVATE_DIRECTORY_MODE });
+				const createdMetadata = lockEntryMetadata(fs.lstatSync(lockPath, { bigint: true }));
+				const owner = {
+					schema_version: PREPARATION_LOCK_SCHEMA_VERSION,
+					pid: process.pid,
+					process_identity: currentIdentity,
+					token: randomUUID(),
+					created_at: new Date().toISOString(),
+				};
+				try {
+					fs.writeFileSync(
+						path.join(lockPath, PREPARATION_LOCK_OWNER),
+						`${JSON.stringify(owner)}\n`,
+						{ flag: 'wx', mode: PRIVATE_FILE_MODE },
+					);
+					return { lockPath, owner, snapshot: readPreparationLock(lockPath) };
+				} catch (error) {
+					removeNewLockAfterFailedInitialization(lockPath, createdMetadata);
+					throw error;
+				}
 			} catch (error) {
-				fs.rmSync(lockPath, { recursive: true, force: true });
-				throw error;
+				if (error?.code !== 'EEXIST') throw error;
+				const existing = readPreparationLock(lockPath);
+				if (isOwnedByLiveProcess(existing.owner)) {
+					throw new Error(
+						`model preparation is already running for this models directory (pid ${existing.owner.pid})`,
+					);
+				}
+				const stalePath = moveOwnedLockAside(lockPath, existing, 'stale');
+				fs.rmSync(stalePath, { recursive: true, force: true });
 			}
-		} catch (error) {
-			if (error?.code !== 'EEXIST') throw error;
-			const existing = readPreparationLock(lockPath);
-			if (isOwnedByLiveProcess(existing.owner)) {
-				throw new Error(
-					`model preparation is already running for this models directory (pid ${existing.owner.pid})`,
-				);
-			}
-			const stalePath = moveOwnedLockAside(lockPath, existing, 'stale');
-			fs.rmSync(stalePath, { recursive: true, force: true });
 		}
+		throw new Error('could not acquire the model preparation lock');
+	} finally {
+		releasePreparationLockTransition(transition);
 	}
-	throw new Error('could not acquire the model preparation lock');
 }
 
 export function releaseModelPreparationLock(lock) {
-	const current = readPreparationLock(lock.lockPath);
-	if (
-		!standardLockSnapshotMatches(lock.snapshot, current) ||
-		!sameOwner(lock.owner, current.owner) ||
-		current.owner.pid !== process.pid
-	) {
-		throw new Error('the current process no longer owns the model preparation lock');
+	const transition = acquirePreparationLockTransition(path.dirname(lock.lockPath));
+	try {
+		const current = readPreparationLock(lock.lockPath);
+		if (
+			!standardLockSnapshotMatches(lock.snapshot, current) ||
+			!sameOwner(lock.owner, current.owner) ||
+			current.owner.pid !== process.pid
+		) {
+			throw new Error('the current process no longer owns the model preparation lock');
+		}
+		const releasedPath = moveOwnedLockAside(lock.lockPath, current, 'released');
+		fs.rmSync(releasedPath, { recursive: true, force: true });
+	} finally {
+		releasePreparationLockTransition(transition);
 	}
-	const releasedPath = moveOwnedLockAside(lock.lockPath, current, 'released');
-	fs.rmSync(releasedPath, { recursive: true, force: true });
 }
 
 export function modelsForSet(modelSet) {
@@ -449,43 +514,109 @@ export class ModelUnavailableError extends Error {
 	}
 }
 
+function attestDirectModelDirectory(directoryPath, label, expectedParent = null) {
+	const status = entryAt(directoryPath);
+	if (status === undefined || !status.isDirectory() || status.isSymbolicLink()) {
+		throw new Error(`${label} must be a real directory: ${directoryPath}`);
+	}
+	const followed = followedDirectoryAt(directoryPath, label);
+	if (
+		expectedParent !== null &&
+		!sameCanonicalPath(path.dirname(followed.canonicalPath), expectedParent.canonicalPath)
+	) {
+		throw new Error(`${label} escaped its expected parent: ${directoryPath}`);
+	}
+	return {
+		inputPath: directoryPath,
+		canonicalPath: followed.canonicalPath,
+		identity: directoryIdentity(followed.status),
+	};
+}
+
+function attestArtifactFile(filePath, label) {
+	const before = entryAt(filePath);
+	if (before === undefined) return false;
+	if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n) {
+		throw new Error(`${label} must be a regular single-link file: ${filePath}`);
+	}
+	const descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		const after = entryAt(filePath);
+		if (
+			!opened.isFile() ||
+			opened.nlink !== 1n ||
+			after === undefined ||
+			after.isSymbolicLink() ||
+			!sameLockEntry(lockEntryMetadata(before), lockEntryMetadata(opened)) ||
+			!sameLockEntry(lockEntryMetadata(opened), lockEntryMetadata(after))
+		) {
+			throw new Error(`${label} changed while it was attested: ${filePath}`);
+		}
+	} finally {
+		fs.closeSync(descriptor);
+	}
+	return true;
+}
+
 export function modelArtifactAvailability(model, modelsDirectory) {
+	const root = attestDirectModelDirectory(modelsDirectory, 'models directory');
+	const finish = (result) => {
+		assertDirectorySnapshotUnchanged(root, 'models directory');
+		return result;
+	};
 	if (model.provider === 'whisper') {
 		const modelPath = path.join(modelsDirectory, `ggml-${model.model}.bin`);
-		const status = entryAt(modelPath);
-		if (status === undefined) return { available: false, reason: 'model file is missing' };
-		if (!status.isFile() || status.isSymbolicLink()) {
-			throw new Error(`${model.provider}/${model.model} artifact must be a regular file`);
-		}
-		return { available: true };
+		attestArtifactFile(`${modelPath}.part`, `${model.provider}/${model.model} partial artifact`);
+		return finish(
+			attestArtifactFile(modelPath, `${model.provider}/${model.model} artifact`)
+				? { available: true }
+				: { available: false, reason: 'model file is missing' },
+		);
 	}
 	if (model.provider !== 'parakeet') {
 		throw new Error(`unsupported model provider: ${model.provider}`);
 	}
-	const modelDirectory = path.join(modelsDirectory, 'parakeet', model.model);
-	const directoryStatus = entryAt(modelDirectory);
-	if (directoryStatus === undefined) {
-		return { available: false, reason: 'model directory is missing' };
+	const providerPath = path.join(modelsDirectory, 'parakeet');
+	if (entryAt(providerPath) === undefined) {
+		return finish({ available: false, reason: 'model directory is missing' });
 	}
-	if (!directoryStatus.isDirectory() || directoryStatus.isSymbolicLink()) {
-		throw new Error(`${model.provider}/${model.model} artifact must be a real directory`);
+	const provider = attestDirectModelDirectory(providerPath, 'Parakeet provider directory', root);
+	const modelDirectory = path.join(providerPath, model.model);
+	if (entryAt(modelDirectory) === undefined) {
+		return finish({ available: false, reason: 'model directory is missing' });
 	}
+	const modelDirectorySnapshot = attestDirectModelDirectory(
+		modelDirectory,
+		`${model.provider}/${model.model} artifact`,
+		provider,
+	);
 	const missingFiles = [];
 	for (const filename of PARAKEET_ARTIFACT_FILES) {
-		const fileStatus = entryAt(path.join(modelDirectory, filename));
-		if (fileStatus === undefined) {
+		const filePath = path.join(modelDirectory, filename);
+		attestArtifactFile(
+			`${filePath}.part`,
+			`${model.provider}/${model.model} partial artifact file '${filename}'`,
+		);
+		if (
+			!attestArtifactFile(filePath, `${model.provider}/${model.model} artifact file '${filename}'`)
+		) {
 			missingFiles.push(filename);
-			continue;
-		}
-		if (!fileStatus.isFile() || fileStatus.isSymbolicLink()) {
-			throw new Error(
-				`${model.provider}/${model.model} artifact file must be regular: ${filename}`,
-			);
 		}
 	}
-	return missingFiles.length === 0
-		? { available: true }
-		: { available: false, reason: `required files are missing: ${missingFiles.join(', ')}` };
+	assertDirectorySnapshotUnchanged(modelDirectorySnapshot, 'Parakeet model directory');
+	assertDirectorySnapshotUnchanged(provider, 'Parakeet provider directory');
+	return finish(
+		missingFiles.length === 0
+			? { available: true }
+			: { available: false, reason: `required files are missing: ${missingFiles.join(', ')}` },
+	);
+}
+
+export function attestModelStorage(modelsDirectory, models) {
+	const root = attestDirectModelDirectory(modelsDirectory, 'models directory');
+	for (const model of models) modelArtifactAvailability(model, modelsDirectory);
+	assertDirectorySnapshotUnchanged(root, 'models directory');
 }
 
 function requireModelArtifactAvailable(model, modelsDirectory) {
@@ -561,38 +692,46 @@ export function verifyCanonicalModel(
 	{
 		prepareModelImpl = prepareBenchmarkModel,
 		modelArtifactSha256Impl = modelArtifactSha256,
+		attestModelStorageImpl = attestModelStorage,
 		environment = process.env,
 		platform = process.platform,
 		spawnSyncImpl = spawnSync,
 	} = {},
 ) {
-	requireModelArtifactAvailable(model, modelsDirectory);
-	const reportedBackend = reportedBackendFor(model);
-	const prepared = prepareModelImpl(executablePath, {
-		provider: model.provider,
-		model: model.model,
-		modelsDirectory,
-		reportedBackend,
-		environment,
-		platform,
-		spawnSyncImpl,
-	});
-	const canonicalDigest = prepared.model_artifact_sha256;
-	if (typeof canonicalDigest !== 'string') {
-		throw new Error(`${model.provider}/${model.model} did not report a canonical artifact digest`);
-	}
-	const localDigest = modelArtifactSha256Impl(
-		model.provider,
-		model.model,
-		modelsDirectory,
-		reportedBackend,
-	);
-	if (localDigest !== canonicalDigest) {
-		throw new Error(
-			`${model.provider}/${model.model} local artifact digest does not match its canonical pin`,
+	attestModelStorageImpl(modelsDirectory, [model]);
+	try {
+		requireModelArtifactAvailable(model, modelsDirectory);
+		const reportedBackend = reportedBackendFor(model);
+		const prepared = prepareModelImpl(executablePath, {
+			provider: model.provider,
+			model: model.model,
+			modelsDirectory,
+			reportedBackend,
+			environment,
+			platform,
+			spawnSyncImpl,
+		});
+		const canonicalDigest = prepared.model_artifact_sha256;
+		if (typeof canonicalDigest !== 'string') {
+			throw new Error(
+				`${model.provider}/${model.model} did not report a canonical artifact digest`,
+			);
+		}
+		const localDigest = modelArtifactSha256Impl(
+			model.provider,
+			model.model,
+			modelsDirectory,
+			reportedBackend,
 		);
+		if (localDigest !== canonicalDigest) {
+			throw new Error(
+				`${model.provider}/${model.model} local artifact digest does not match its canonical pin`,
+			);
+		}
+		return { canonicalDigest, prepared };
+	} finally {
+		attestModelStorageImpl(modelsDirectory, [model]);
 	}
-	return { canonicalDigest, prepared };
 }
 
 export function downloadModelWithProductPath(
@@ -606,9 +745,11 @@ export function downloadModelWithProductPath(
 		platform = process.platform,
 		benchmarkRuntimeDependenciesSha256Impl = benchmarkRuntimeDependenciesSha256,
 		bindBenchmarkRuntimeDependenciesImpl = bindBenchmarkRuntimeDependencies,
+		attestModelStorageImpl = attestModelStorage,
 		spawnSyncImpl = spawnSync,
 	} = {},
 ) {
+	attestModelStorageImpl(modelsDirectory, [model]);
 	const runtimeDependenciesSha256 = benchmarkRuntimeDependenciesSha256Impl(executablePath, {
 		platform,
 	});
@@ -627,18 +768,22 @@ export function downloadModelWithProductPath(
 		model.model,
 		modelsDirectory,
 	];
-	const run = spawnSyncImpl(executablePath, args, {
-		cwd: repositoryRoot,
-		env: boundEnvironment,
-		encoding: 'utf8',
-		stdio: ['ignore', 'ignore', 'inherit'],
-	});
-	if (run.error || run.status !== 0) {
-		throw new Error(
-			`product model download failed for ${model.provider}/${model.model} (exit ${
-				run.status ?? 'signal'
-			})`,
-		);
+	try {
+		const run = spawnSyncImpl(executablePath, args, {
+			cwd: repositoryRoot,
+			env: boundEnvironment,
+			encoding: 'utf8',
+			stdio: ['ignore', 'ignore', 'inherit'],
+		});
+		if (run.error || run.status !== 0) {
+			throw new Error(
+				`product model download failed for ${model.provider}/${model.model} (exit ${
+					run.status ?? 'signal'
+				})`,
+			);
+		}
+	} finally {
+		attestModelStorageImpl(modelsDirectory, [model]);
 	}
 }
 
@@ -650,6 +795,7 @@ export function prepareModelSet(
 		acquirePreparationLockImpl = acquireModelPreparationLock,
 		releasePreparationLockImpl = releaseModelPreparationLock,
 		modelArtifactAvailabilityImpl = modelArtifactAvailability,
+		attestModelStorageImpl = attestModelStorage,
 		availableDiskBytesImpl = availableDiskBytes,
 		buildExecutableImpl = buildBenchmarkExecutable,
 		verifyModelImpl = verifyCanonicalModel,
@@ -670,6 +816,7 @@ export function prepareModelSet(
 	let result;
 	let primaryError;
 	try {
+		attestModelStorageImpl(modelsDirectory, models);
 		const pendingDownloads = new Map();
 		for (const model of models) {
 			const availability = modelArtifactAvailabilityImpl(model, modelsDirectory);
@@ -677,10 +824,25 @@ export function prepareModelSet(
 				pendingDownloads.set(`${model.provider}/${model.model}`, model);
 			}
 		}
-		let disk = assertModelPreparationDiskSpace(
-			[...pendingDownloads.values()],
-			availableDiskBytesImpl(modelsDirectory),
-		);
+		attestModelStorageImpl(modelsDirectory, models);
+		const checkDiskForPending = () => {
+			if (pendingDownloads.size === 0) {
+				return {
+					availableBytes: null,
+					downloadBytes: 0n,
+					requiredBytes: 0n,
+					reserveBytes: 0n,
+				};
+			}
+			return {
+				...assertModelPreparationDiskSpace(
+					[...pendingDownloads.values()],
+					availableDiskBytesImpl(modelsDirectory),
+				),
+				reserveBytes: BigInt(MODEL_PREPARATION_RESERVE_BYTES),
+			};
+		};
+		let disk = checkDiskForPending();
 		const firstModel = models[0];
 		const build = buildExecutableImpl(repositoryRoot, {
 			provider: firstModel.provider,
@@ -689,6 +851,17 @@ export function prepareModelSet(
 			spawnSyncImpl,
 		});
 		const results = [];
+		const verifyModel = (model) => {
+			attestModelStorageImpl(modelsDirectory, [model]);
+			try {
+				return verifyModelImpl(build.executablePath, model, modelsDirectory, {
+					environment: runtimeEnvironment,
+					spawnSyncImpl,
+				});
+			} finally {
+				attestModelStorageImpl(modelsDirectory, [model]);
+			}
+		};
 
 		for (const [index, model] of models.entries()) {
 			const key = `${model.provider}/${model.model}`;
@@ -697,32 +870,28 @@ export function prepareModelSet(
 			let status = 'already-ready';
 			if (!pendingDownloads.has(key)) {
 				try {
-					verification = verifyModelImpl(build.executablePath, model, modelsDirectory, {
-						environment: runtimeEnvironment,
-						spawnSyncImpl,
-					});
+					verification = verifyModel(model);
 				} catch (error) {
 					if (!isModelUnavailableError(error)) throw error;
 					pendingDownloads.set(key, model);
-					disk = assertModelPreparationDiskSpace(
-						[...pendingDownloads.values()],
-						availableDiskBytesImpl(modelsDirectory),
-					);
+					disk = checkDiskForPending();
 				}
 			}
 			if (pendingDownloads.has(key)) {
 				status = 'downloaded';
 				onProgress({ phase: 'downloading', index, total: models.length, model });
-				downloadModelImpl(build.executablePath, model, modelsDirectory, {
-					repositoryRoot,
-					environment: runtimeEnvironment,
-					spawnSyncImpl,
-				});
+				attestModelStorageImpl(modelsDirectory, [model]);
+				try {
+					downloadModelImpl(build.executablePath, model, modelsDirectory, {
+						repositoryRoot,
+						environment: runtimeEnvironment,
+						spawnSyncImpl,
+					});
+				} finally {
+					attestModelStorageImpl(modelsDirectory, [model]);
+				}
 				onProgress({ phase: 'verifying', index, total: models.length, model });
-				verification = verifyModelImpl(build.executablePath, model, modelsDirectory, {
-					environment: runtimeEnvironment,
-					spawnSyncImpl,
-				});
+				verification = verifyModel(model);
 				pendingDownloads.delete(key);
 			}
 			results.push({
@@ -733,15 +902,16 @@ export function prepareModelSet(
 			});
 			onProgress({ phase: 'ready', index, total: models.length, model });
 		}
+		attestModelStorageImpl(modelsDirectory, models);
 
 		result = {
 			schema_version: 1,
 			model_set: options.modelSet,
 			models_directory: modelsDirectory,
 			disk_preflight: {
-				available_bytes: disk.availableBytes.toString(),
+				available_bytes: disk.availableBytes?.toString() ?? null,
 				required_bytes: disk.requiredBytes.toString(),
-				reserve_bytes: MODEL_PREPARATION_RESERVE_BYTES.toString(),
+				reserve_bytes: disk.reserveBytes.toString(),
 			},
 			models: results,
 		};

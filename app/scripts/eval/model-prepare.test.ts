@@ -30,6 +30,7 @@ function isolatedOrchestration(overrides = {}) {
 		prepareModelsDirectoryImpl: (modelsDirectory) => modelsDirectory,
 		acquirePreparationLockImpl: () => ({ token: 'test-lock' }),
 		releasePreparationLockImpl: () => {},
+		attestModelStorageImpl: () => {},
 		...overrides,
 	};
 }
@@ -172,6 +173,31 @@ test('holds an exclusive owner-attested model preparation lock', (t) => {
 	releaseModelPreparationLock(second);
 });
 
+test('serializes lock replacement behind a fail-closed transition directory', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-transition-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	const first = acquireModelPreparationLock(modelsDirectory, {
+		currentIdentity: 'test:first',
+		isOwnedByLiveProcess: () => true,
+	});
+	const ownerPath = path.join(first.lockPath, 'owner.json');
+	const ownerBefore = fs.readFileSync(ownerPath, 'utf8');
+	const transitionPath = path.join(modelsDirectory, '.muesly-eval-model-prepare.transition');
+	fs.mkdirSync(transitionPath, { mode: 0o700 });
+
+	assert.throws(
+		() =>
+			acquireModelPreparationLock(modelsDirectory, {
+				currentIdentity: 'test:contender',
+				isOwnedByLiveProcess: () => false,
+			}),
+		/ownership is already transitioning/,
+	);
+	assert.equal(fs.readFileSync(ownerPath, 'utf8'), ownerBefore);
+	fs.rmdirSync(transitionPath);
+	releaseModelPreparationLock(first);
+});
+
 test('recovers only a valid stale model preparation lock and fails closed on malformed state', (t) => {
 	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-stale-lock-'));
 	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
@@ -223,6 +249,41 @@ test('classifies only structurally missing model artifacts as unavailable', (t) 
 		fs.writeFileSync(path.join(parakeetDirectory, filename), filename);
 	}
 	assert.deepEqual(modelArtifactAvailability(parakeet, modelsDirectory), { available: true });
+});
+
+test('rejects hardlinked artifacts, partial aliases, and escaped provider directories', (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-aliases-'));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const modelsDirectory = path.join(root, 'models');
+	const outside = path.join(root, 'outside');
+	fs.mkdirSync(modelsDirectory);
+	fs.mkdirSync(outside);
+	const whisper = POLICY_MODELS[0];
+	const whisperPath = path.join(modelsDirectory, 'ggml-base-q5_1.bin');
+	fs.writeFileSync(whisperPath, 'model');
+	fs.linkSync(whisperPath, path.join(outside, 'model-alias.bin'));
+	assert.throws(
+		() => modelArtifactAvailability(whisper, modelsDirectory),
+		/regular single-link file/,
+	);
+	fs.unlinkSync(path.join(outside, 'model-alias.bin'));
+	fs.unlinkSync(whisperPath);
+	fs.symlinkSync(path.join(outside, 'partial.bin'), `${whisperPath}.part`);
+	assert.throws(
+		() => modelArtifactAvailability(whisper, modelsDirectory),
+		/regular single-link file/,
+	);
+	fs.unlinkSync(`${whisperPath}.part`);
+
+	fs.symlinkSync(
+		outside,
+		path.join(modelsDirectory, 'parakeet'),
+		process.platform === 'win32' ? 'junction' : 'dir',
+	);
+	assert.throws(
+		() => modelArtifactAvailability(POLICY_MODELS.at(-1), modelsDirectory),
+		/Parakeet provider directory must be a real directory/,
+	);
 });
 
 test('checks the nearest existing directory for available disk space', (t) => {
@@ -301,6 +362,25 @@ test('verifies the read-only preparation digest against local model bytes', (t) 
 	);
 });
 
+test('re-attests model storage after an external verifier mutates an artifact', (t) => {
+	const modelsDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-model-post-attest-'));
+	t.after(() => fs.rmSync(modelsDirectory, { recursive: true, force: true }));
+	const modelPath = path.join(modelsDirectory, 'ggml-base-q5_1.bin');
+	fs.writeFileSync(modelPath, 'model');
+
+	assert.throws(
+		() =>
+			verifyCanonicalModel('/bin/transcribe-fixture', POLICY_MODELS[0], modelsDirectory, {
+				prepareModelImpl: () => {
+					fs.linkSync(modelPath, path.join(modelsDirectory, 'unexpected-hardlink.bin'));
+					return { model_artifact_sha256: DIGEST };
+				},
+				modelArtifactSha256Impl: () => DIGEST,
+			}),
+		/regular single-link file/,
+	);
+});
+
 test('uses the product downloader through VAD-on-silence with explicit models directory', () => {
 	let invocation;
 	downloadModelWithProductPath('/bin/transcribe-fixture', POLICY_MODELS[0], '/models with spaces', {
@@ -314,6 +394,7 @@ test('uses the product downloader through VAD-on-silence with explicit models di
 			assert.deepEqual(options, { platform: process.platform });
 			return { ...environment, BOUND: '1' };
 		},
+		attestModelStorageImpl: () => {},
 		spawnSyncImpl: (command, args, options) => {
 			invocation = { command, args, options };
 			return { status: 0 };
@@ -339,6 +420,7 @@ test('uses the product downloader through VAD-on-silence with explicit models di
 			downloadModelWithProductPath('/bin/transcribe-fixture', POLICY_MODELS[0], '/models', {
 				benchmarkRuntimeDependenciesSha256Impl: () => DIGEST,
 				bindBenchmarkRuntimeDependenciesImpl: (environment) => environment,
+				attestModelStorageImpl: () => {},
 				spawnSyncImpl: () => ({ status: null, signal: 'SIGTERM' }),
 			}),
 		/product model download failed.*signal/,
@@ -398,12 +480,16 @@ test('is idempotent when every selected model already verifies', () => {
 	const repositoryRoot = path.join(path.parse(process.cwd()).root, 'repo');
 	const modelsDirectory = path.join(path.parse(process.cwd()).root, 'app-data', 'models');
 	let downloads = 0;
+	let diskProbes = 0;
 	const result = prepareModelSet(
 		{ modelsDirectory, modelSet: 'catalog-audit' },
 		isolatedOrchestration({
 			repositoryRoot,
 			modelArtifactAvailabilityImpl: () => ({ available: true }),
-			availableDiskBytesImpl: () => BigInt(MODEL_PREPARATION_RESERVE_BYTES),
+			availableDiskBytesImpl: () => {
+				diskProbes += 1;
+				throw new Error('read-only verification must not probe disk capacity');
+			},
 			buildExecutableImpl: () => ({ executablePath: '/bin/transcribe-fixture' }),
 			verifyModelImpl: () => ({ canonicalDigest: DIGEST }),
 			downloadModelImpl: () => {
@@ -412,9 +498,14 @@ test('is idempotent when every selected model already verifies', () => {
 		}),
 	);
 	assert.equal(downloads, 0);
+	assert.equal(diskProbes, 0);
 	assert.equal(result.models.length, CATALOG_AUDIT_MODELS.length);
 	assert(result.models.every((model) => model.status === 'already-ready'));
-	assert.equal(result.disk_preflight.required_bytes, String(MODEL_PREPARATION_RESERVE_BYTES));
+	assert.deepEqual(result.disk_preflight, {
+		available_bytes: null,
+		required_bytes: '0',
+		reserve_bytes: '0',
+	});
 });
 
 test('charges disk space only for the structurally missing model set', () => {
