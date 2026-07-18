@@ -40,6 +40,7 @@ app/scripts/eval/
   public-corpus-finalize.ts       # verified local public-manifest finalization
   public-corpus-validate.ts       # full reconstruction and provenance validation
   public-corpus-campaign.ts       # fixed-suite campaign wrapper
+  public-corpus-materialize.ts    # checkpoint-to-evidence materialization
   public-corpus-qualification.ts  # fail-closed policy and retention decisions
   model-artifact.ts     # exact evaluated-model artifact fingerprinting
   coverage.ts          # coverage gate across language/noise/model/backend cells
@@ -206,6 +207,17 @@ noise conditions (60 independent session-cell observations) under
 `muesly-meeting-reference-v1`. A qualification report never edits production configuration.
 Catalog-audit evidence is optional for an exploratory candidate ranking but required to emit
 exploratory full-precision retention signals.
+
+Materialize each completed suite's resumable checkpoints into its aggregate and coverage
+evidence. Materialization replays the exact campaign plan, requires every planned task to have
+exactly one checkpoint on one hardware cohort, and rejects incomplete or mixed campaigns (other
+suites, stale corpus or evaluator revisions, drifted thresholds) without writing anything:
+
+```bash
+nub run eval:public:materialize --suite automatic-policy
+nub run eval:public:materialize --suite performance
+nub run eval:public:materialize --suite catalog-audit
+```
 
 After producing aggregate and coverage JSON for the completed suites, generate the reviewable
 decision report on standard output:

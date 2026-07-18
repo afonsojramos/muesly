@@ -212,7 +212,7 @@ function readCanonicalJsonFile(filePath, label) {
   }
 }
 
-function loadTargets(targetsPath) {
+export function loadCorpusBenchmarkTargets(targetsPath) {
   const loaded = readCanonicalJsonFile(targetsPath, "coverage targets");
   const errors = validateCoverageTargets(loaded.document);
   if (errors.length > 0) {
@@ -271,7 +271,7 @@ function selectTargets(targets, selectedVariants) {
   };
 }
 
-function collectEvaluatorContext({ repoRoot, targets }) {
+export function collectEvaluatorContext({ repoRoot, targets }) {
   const hostTriple = attestedRustcVersion(repoRoot, { buildEnv: process.env }).hostTriple;
   const targetTriple = process.env.CARGO_BUILD_TARGET || hostTriple;
   const buildEnvironment = evaluatorBuildEnvironment(process.env, targetTriple, hostTriple);
@@ -758,7 +758,7 @@ function variantKey(task) {
   ]);
 }
 
-function taskFilenamePrefix(task) {
+export function taskFilenamePrefix(task) {
   return task.report_filename.slice(0, -".run.json".length) + "-";
 }
 
@@ -1082,7 +1082,7 @@ function dependenciesWithDefaults(overrides) {
     releaseLock: releaseCorpusBenchmarkLock,
     currentProcessIdentity: () => processIdentity(process.pid),
     loadCorpus,
-    loadTargets,
+    loadTargets: loadCorpusBenchmarkTargets,
     collectEvaluatorContext,
     createResultLease: createCorpusResultLease,
     assertSampleUnchanged: assertLeasedCorpusSampleUnchanged,
