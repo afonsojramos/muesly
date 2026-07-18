@@ -1040,6 +1040,26 @@ test('sanitizes and fingerprints the exact runtime environment', () => {
 	);
 	const runtimeDependenciesSha256 = 'a'.repeat(64);
 	const executablePath = '/private/snapshot/transcribe-fixture';
+	if (process.platform !== 'win32') {
+		const shimmedPath = [
+			path.join(os.tmpdir(), `nub-node-shim-${process.pid}-0123456789abcdef0123456789abcdef`),
+			'/usr/bin',
+			'/bin',
+		].join(path.delimiter);
+		const shimmed = benchmarkRuntimeEnvironment(
+			{ HOME: '/private/home', PATH: shimmedPath, OMP_NUM_THREADS: '4' },
+			{ accelerator: null, forceWhisperCpu: true, requireWhisperAcceleration: false },
+		);
+		const plain = benchmarkRuntimeEnvironment(
+			{ HOME: '/private/home', PATH: ['/usr/bin', '/bin'].join(path.delimiter), OMP_NUM_THREADS: '4' },
+			{ accelerator: null, forceWhisperCpu: true, requireWhisperAcceleration: false },
+		);
+		assert.equal(
+			shimmed.MUESLY_EVAL_RUNTIME_ENV_SHA256,
+			plain.MUESLY_EVAL_RUNTIME_ENV_SHA256,
+		);
+		assert.equal(shimmed.PATH, shimmedPath);
+	}
 	const bound = bindBenchmarkRuntimeDependencies(
 		environment,
 		runtimeDependenciesSha256,

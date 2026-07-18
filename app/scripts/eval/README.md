@@ -379,6 +379,9 @@ each checkpoint's exact name, identity, and content digest.
   Per-process runner shim directories (such as nub's temporary `nub-node-shim-*` PATH entry)
   carry no build tools and are excluded so the digest stays stable across invocations. The
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
+  The hardware profile's `runtime_env_sha256` hashes the allowlisted ambient runtime inputs with
+  the same search-path canonicalization as build provenance, so per-process runner shims never
+  split one machine into multiple apparent hardware cohorts.
   Git, Cargo, and rustc command launchers are resolved only through absolute entries in the
   recorded command environment; relative/current-directory entries are removed, Windows
   shell-script shims are refused, and each launcher's canonical path and bytes are rechecked

@@ -690,12 +690,25 @@ function isVolatileToolShimDirectory(entry, platform) {
 function absoluteCommandSearchDirectories(environment, { platform = process.platform } = {}) {
 	const searchPath = commandEnvironmentValue(environment, 'PATH', { platform });
 	if (typeof searchPath !== 'string') return [];
+	return stableCommandSearchDirectories(searchPath, { platform });
+}
+
+// Canonicalize a raw search-path string into the absolute, non-volatile
+// directory list shared by build-environment and runtime-environment
+// provenance so both digests stay stable across process invocations.
+export function stableCommandSearchDirectories(searchPath, { platform = process.platform } = {}) {
 	const delimiter = commandPathDelimiter(platform);
 	return searchPath
 		.split(delimiter)
 		.map((entry) => unquoteSearchPathEntry(entry, 'PATH entry'))
 		.filter((entry) => fullyQualifiedAbsolutePath(entry, platform))
 		.filter((entry) => !isVolatileToolShimDirectory(entry, platform));
+}
+
+export function stableCommandSearchPath(searchPath, { platform = process.platform } = {}) {
+	return stableCommandSearchDirectories(searchPath, { platform }).join(
+		commandPathDelimiter(platform),
+	);
 }
 
 export function sanitizeAttestedCommandEnvironment(

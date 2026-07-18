@@ -10,6 +10,7 @@ import {
 	resolveAttestedCommand,
 	sanitizeAttestedCommandEnvironment,
 	spawnAttestedCommandSync,
+	stableCommandSearchPath,
 } from './evaluator-revision.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 
@@ -250,8 +251,20 @@ export function benchmarkRuntimeEnvironment(
 	// Hash only the allowlisted ambient runtime inputs. The three MUESLY policy
 	// values below are already bound independently by the reported backend and
 	// accelerator identity; including them here would make the same machine's
-	// CPU and GPU runs appear to have different hardware profiles.
-	const runtimeEnvironmentSha256 = canonicalEnvironmentSha256(environment);
+	// CPU and GPU runs appear to have different hardware profiles. The digest
+	// canonicalizes search paths the same way build provenance does: relative
+	// entries and per-process tool shims (for example nub's `nub-node-shim-*`
+	// temp directory) never reach the hash, so every benchmark process on one
+	// machine reports one stable runtime environment. The live environment
+	// itself keeps the raw PATH so child processes resolve commands unchanged.
+	const digestEnvironment = { ...environment };
+	for (const [name, value] of Object.entries(digestEnvironment)) {
+		if (name.toUpperCase() !== 'PATH') continue;
+		const stablePath = stableCommandSearchPath(value);
+		if (stablePath.length === 0) delete digestEnvironment[name];
+		else digestEnvironment[name] = stablePath;
+	}
+	const runtimeEnvironmentSha256 = canonicalEnvironmentSha256(digestEnvironment);
 	environment.MUESLY_EVAL_ACCELERATOR_ID = accelerator ?? '';
 	environment.MUESLY_WHISPER_FORCE_CPU = forceWhisperCpu ? '1' : '0';
 	environment.MUESLY_WHISPER_REQUIRE_ACCELERATION = requireWhisperAcceleration ? '1' : '0';
