@@ -6,31 +6,27 @@ const features = [
 	{
 		icon: 'lucide:cpu',
 		title: 'Local-first transcription',
-		body: 'Whisper models run on-device with GPU acceleration on Apple Silicon, CUDA, and Vulkan. No cloud round-trip, no usage caps.',
-		wide: true
+		body: 'Whisper models run on-device with GPU acceleration on Apple Silicon, CUDA, and Vulkan. No cloud round-trip, no usage caps.'
 	},
 	{
 		icon: 'lucide:sparkles',
 		title: 'Summaries your way',
-		body: 'A local LLM by default, or bring Ollama, Claude, Groq, OpenRouter, or any OpenAI-compatible endpoint.',
-		wide: false
+		body: 'A local LLM by default, or bring Ollama, Claude, Groq, OpenRouter, or any OpenAI-compatible endpoint.'
 	},
 	{
 		icon: 'lucide:monitor',
 		title: 'Works everywhere',
-		body: 'Native builds for macOS, Windows, and Linux.',
-		wide: false
+		body: 'Native builds for macOS, Windows, and Linux.'
 	},
 	{
 		icon: 'lucide:audio-lines',
 		title: 'Professional audio capture',
-		body: 'Microphone and system audio mixed with smart ducking and clipping prevention, so every voice is clear.',
-		wide: true
+		body: 'Microphone and system audio mixed with smart ducking and clipping prevention, so every voice is clear.'
 	}
 ];
 ---
 
-<Section class="py-16 md:py-24">
+<Section class="py-16 md:py-20">
 	<div class="mx-auto max-w-2xl text-center" data-reveal>
 		<h2 class="font-display text-3xl font-semibold tracking-tight md:text-4xl">
 			Built for real meetings
@@ -40,10 +36,10 @@ const features = [
 		</p>
 	</div>
 
-	<div class="mt-12 grid gap-5 md:grid-cols-3" data-reveal>
+	<div class="mt-12 grid gap-5 md:grid-cols-2" data-reveal>
 		{
 			features.map((feature) => (
-				<div class:list={['rounded-2xl border border-border bg-card p-6 shadow-sm', { 'md:col-span-2': feature.wide }]}>
+				<div class="rounded-2xl border border-border bg-card p-6 shadow-sm transition-[box-shadow,transform] duration-200 ease-out hover:-translate-y-0.5 hover:shadow-card-hover">
 					<span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-accent/10 text-accent">
 						<Icon name={feature.icon} class="h-5 w-5" aria-hidden="true" />
 					</span>
