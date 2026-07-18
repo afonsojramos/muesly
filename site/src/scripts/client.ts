@@ -36,6 +36,23 @@ function initNav() {
 	window.addEventListener('scroll', onScroll, { passive: true });
 }
 
+/** Mobile menu: close after following a link or tapping anywhere outside it. */
+function initMobileMenu() {
+	const menu = document.querySelector<HTMLDetailsElement>('[data-nav] details');
+	if (!menu) return;
+	menu.querySelectorAll('a').forEach((link) => {
+		link.addEventListener('click', () => menu.removeAttribute('open'));
+	});
+	document.addEventListener('click', (event) => {
+		if (menu.open && event.target instanceof Node && !menu.contains(event.target)) {
+			menu.removeAttribute('open');
+		}
+	});
+	document.addEventListener('keydown', (event) => {
+		if (event.key === 'Escape' && menu.open) menu.removeAttribute('open');
+	});
+}
+
 /** Point every download CTA at the visitor's platform. */
 function initOsCta(os: OS) {
 	const cta = osCta(os);
@@ -66,5 +83,6 @@ function initDownloadPromote(os: OS) {
 const os = detectOS({ userAgent: navigator.userAgent, platform: navigator.platform });
 initReveal();
 initNav();
+initMobileMenu();
 initOsCta(os);
 initDownloadPromote(os);
