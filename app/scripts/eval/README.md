@@ -96,7 +96,7 @@ entries before selective extraction, and the command preserves a 20 GiB free-spa
 accounting for missing sources and generated output:
 
 ```bash
-nub run eval:public:prepare -- --download
+nub run eval:public:prepare --download
 ```
 
 Preparation writes draft references but does not create `corpus-local.json`. Listen to every exact
@@ -136,7 +136,7 @@ Run a fixed public benchmark suite through the provenance-revalidating campaign 
 `--run` produces a safe plan; add it only after the required pinned models are present:
 
 ```bash
-nub run eval:public:campaign -- \
+nub run eval:public:campaign \
   --suite automatic-policy \
   --models-dir "$HOME/Library/Application Support/com.muesly/models"
 ```
@@ -184,7 +184,7 @@ After producing aggregate and coverage JSON for the completed suites, generate t
 decision report on standard output:
 
 ```bash
-nub run eval:public:qualify -- \
+nub run eval:public:qualify \
   --automatic-aggregate app/scripts/eval/public-corpus/results/automatic-policy-aggregate.json \
   --automatic-coverage app/scripts/eval/public-corpus/results/automatic-policy-coverage.json \
   --performance-aggregate app/scripts/eval/public-corpus/results/performance-aggregate.json \
@@ -210,7 +210,7 @@ explicit absolute path outside the repository; downloads are sequential and each
 verified against the product integrity pin before the next model starts:
 
 ```bash
-nub run eval:models:prepare -- \
+nub run eval:models:prepare \
   --models-dir "$HOME/Library/Application Support/com.muesly/models" \
   --set policy
 ```

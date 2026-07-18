@@ -108,14 +108,14 @@ can be run directly from an external bundle directory.
    owner remains responsible for confirming that two people performed the reviews.
 
 ```bash
-nub run eval:corpus:attest -- \
+nub run eval:corpus:attest \
   --manifest app/scripts/eval/corpus-local.json \
   --session-id session-00000000-0000-4000-8000-000000000001 \
   --reviewer primary-annotator \
   --accept-reviewed-reference \
   --affirm-reference-protocol muesly-meeting-reference-v1
 
-nub run eval:corpus:attest -- \
+nub run eval:corpus:attest \
   --manifest app/scripts/eval/corpus-local.json \
   --session-id session-00000000-0000-4000-8000-000000000001 \
   --reviewer independent-reviewer \
