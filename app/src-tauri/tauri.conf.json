@@ -1,7 +1,7 @@
 {
     "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName": "muesly",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "identifier": "com.muesly",
     "build": {
         "frontendDist": "../src-svelte/build",
@@ -20,9 +20,9 @@
                 "fullscreen": false,
                 "theme": "Light",
                 "decorations": true,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
-      },
+                "titleBarStyle": "Overlay",
+                "hiddenTitle": true
+            },
             {
                 "label": "pill",
                 "url": "/pill",
