@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 export const EVALUATOR_REVISION_PROTOCOL_ID = 'muesly-real-run-v1';
@@ -671,6 +672,21 @@ function unquoteSearchPathEntry(value, label) {
 	return unquoted;
 }
 
+// Process runners may prepend per-invocation shim directories to PATH (for
+// example nub's `nub-node-shim-<pid>-<random>` temp directory). They contain
+// no build tools and vanish with the process, so attesting them would make
+// the build environment digest change on every invocation and invalidate
+// every checkpoint bound to it. Drop them before canonicalization.
+const VOLATILE_TOOL_SHIM_PATTERN = /^nub-node-shim-/;
+
+function isVolatileToolShimDirectory(entry, platform) {
+	if (platform === 'win32') return false;
+	if (!VOLATILE_TOOL_SHIM_PATTERN.test(path.basename(entry))) return false;
+	const temporaryRoot = path.resolve(os.tmpdir());
+	const resolved = path.resolve(entry);
+	return resolved.startsWith(`${temporaryRoot}${path.sep}`);
+}
+
 function absoluteCommandSearchDirectories(environment, { platform = process.platform } = {}) {
 	const searchPath = commandEnvironmentValue(environment, 'PATH', { platform });
 	if (typeof searchPath !== 'string') return [];
@@ -678,7 +694,8 @@ function absoluteCommandSearchDirectories(environment, { platform = process.plat
 	return searchPath
 		.split(delimiter)
 		.map((entry) => unquoteSearchPathEntry(entry, 'PATH entry'))
-		.filter((entry) => fullyQualifiedAbsolutePath(entry, platform));
+		.filter((entry) => fullyQualifiedAbsolutePath(entry, platform))
+		.filter((entry) => !isVolatileToolShimDirectory(entry, platform));
 }
 
 export function sanitizeAttestedCommandEnvironment(

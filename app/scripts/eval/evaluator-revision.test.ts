@@ -394,6 +394,25 @@ test('sanitizes command PATH entries and restricts Windows automatic executables
 	);
 });
 
+test('excludes volatile per-process tool shim directories from the attested PATH', () => {
+	if (process.platform === 'win32') return;
+	const shimDirectory = path.join(
+		os.tmpdir(),
+		`nub-node-shim-${process.pid}-0123456789abcdef0123456789abcdef`,
+	);
+	const lookalikeDirectory = path.join('/usr', 'nub-node-shim-keep');
+	const searchPath = [shimDirectory, '/usr/bin', lookalikeDirectory, '/bin'].join(path.delimiter);
+	const sanitized = sanitizeAttestedCommandEnvironment({ PATH: searchPath });
+	assert.equal(
+		sanitized.PATH,
+		['/usr/bin', lookalikeDirectory, '/bin'].join(path.delimiter),
+	);
+	const withoutShim = sanitizeAttestedCommandEnvironment({
+		PATH: ['/usr/bin', lookalikeDirectory, '/bin'].join(path.delimiter),
+	});
+	assert.equal(sanitized.PATH, withoutShim.PATH);
+});
+
 test('ignores current-directory command shadows and relative or empty PATH entries', (t) => {
 	const repositoryRoot = createRepository(t);
 	const benignDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'muesly-command-benign-'));

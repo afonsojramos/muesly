@@ -375,7 +375,9 @@ each checkpoint's exact name, identity, and content digest.
   output to the planned benchmark task digest and
   repeat before inference, so a cached report cannot be reused for another repetition. Both record a
   revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
-  target triple, exact Cargo features, and a digest of the allowlisted build environment. The
+  target triple, exact Cargo features, and a digest of the allowlisted build environment.
+  Per-process runner shim directories (such as nub's temporary `nub-node-shim-*` PATH entry)
+  carry no build tools and are excluded so the digest stays stable across invocations. The
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
   Git, Cargo, and rustc command launchers are resolved only through absolute entries in the
   recorded command environment; relative/current-directory entries are removed, Windows
