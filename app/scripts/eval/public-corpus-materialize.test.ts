@@ -198,6 +198,10 @@ function publicFixture(t, { sampleIds = ['sample-b', 'sample-a'] } = {}) {
 		repetitions: 1,
 		benchmark_variants: [{ provider: 'whisper', model: 'whisper-test', backend: 'cpu' }],
 	};
+	const siblingTargets = {
+		...structuredClone(targets),
+		target_id: 'public-test-sibling-v1',
+	};
 	const targetsPath = path.join(directory, 'suite-targets.json');
 	fs.writeFileSync(targetsPath, `${JSON.stringify(targets)}\n`, { mode: 0o600 });
 	return {
@@ -205,6 +209,7 @@ function publicFixture(t, { sampleIds = ['sample-b', 'sample-a'] } = {}) {
 		manifestPath,
 		corpus,
 		targets,
+		siblingTargets,
 		targetsPath,
 		resultsDirectory: path.join(directory, 'results'),
 	};
@@ -266,14 +271,31 @@ function parsedArgs(fixture, overrides = {}) {
 	};
 }
 
+function planSiblingFixtureTasks(fixture, { maxWerPct = 10, maxHallucinatedWords = 2 } = {}) {
+	return planCorpusBenchmarkTasks({
+		corpus: fixture.corpus,
+		targets: fixture.siblingTargets,
+		thresholds: {
+			max_wer_percent: maxWerPct,
+			max_hallucinated_words: maxHallucinatedWords,
+		},
+		accelerators: {},
+		evaluatorRevisions: { cpu: evaluatorEntry() },
+	});
+}
+
 function materializeDependencies(fixture, overrides = {}) {
 	return {
 		loadCorpus: () => fixture.corpus,
-		loadTargets: () => ({
-			targets: fixture.targets,
-			targetsPath: fixture.targetsPath,
-			targetsSha256: sha256(JSON.stringify(fixture.targets)),
-		}),
+		loadTargets: (targetsPath) => {
+			const sibling = !String(targetsPath).includes('automatic-policy');
+			const targets = sibling ? fixture.siblingTargets : fixture.targets;
+			return {
+				targets,
+				targetsPath,
+				targetsSha256: sha256(JSON.stringify(targets)),
+			};
+		},
 		collectEvaluatorContext: () => ({
 			buildEnvironment: {},
 			hostTriple: 'aarch64-apple-darwin',
@@ -354,6 +376,45 @@ test('binding returns one ordered checkpoint per planned task', (t) => {
 	);
 });
 
+test('binding skips checkpoints that fully validate against a sibling fixed suite', (t) => {
+	const fixture = publicFixture(t);
+	const tasks = planFixtureTasks(fixture);
+	const siblingTasks = planSiblingFixtureTasks(fixture);
+	for (const task of tasks) writeCheckpoint(fixture.resultsDirectory, task);
+	writeCheckpoint(fixture.resultsDirectory, siblingTasks[0]);
+	const records = bindMaterializationCheckpoints(
+		readCheckpointEntries(fixture.resultsDirectory),
+		tasks,
+		'automatic-policy',
+		[{ targets: fixture.siblingTargets, tasks: siblingTasks }],
+	);
+	assert.equal(records.length, tasks.length);
+	assert.deepEqual(
+		records.map((record) => record.report.benchmark_task_id),
+		tasks.map((task) => task.task_id),
+	);
+});
+
+test('binding rejects a checkpoint that fails validation against its sibling task', (t) => {
+	const fixture = publicFixture(t);
+	const tasks = planFixtureTasks(fixture);
+	const siblingTasks = planSiblingFixtureTasks(fixture);
+	for (const task of tasks) writeCheckpoint(fixture.resultsDirectory, task);
+	writeCheckpoint(fixture.resultsDirectory, siblingTasks[0], currentIdentity(), {
+		report: { thresholds: { max_wer_percent: 99, max_hallucinated_words: 99 } },
+	});
+	assert.throws(
+		() =>
+			bindMaterializationCheckpoints(
+				readCheckpointEntries(fixture.resultsDirectory),
+				tasks,
+				'automatic-policy',
+				[{ targets: fixture.siblingTargets, tasks: siblingTasks }],
+			),
+		/belongs to no fixed public suite/,
+	);
+});
+
 test('binding rejects a checkpoint that belongs to no planned task', (t) => {
 	const fixture = publicFixture(t);
 	const tasks = planFixtureTasks(fixture);
@@ -367,7 +428,7 @@ test('binding rejects a checkpoint that belongs to no planned task', (t) => {
 				tasks,
 				'automatic-policy',
 			),
-		/does not belong to the current 'automatic-policy' campaign plan/,
+		/belongs to no fixed public suite/,
 	);
 });
 
@@ -469,6 +530,22 @@ test('materialization rejects an incomplete campaign without writing evidence', 
 	assert.equal(fs.existsSync(path.join(fixture.resultsDirectory, 'automatic-policy-coverage.json')), false);
 });
 
+test('materialization tolerates sibling suite checkpoints in the shared results directory', (t) => {
+	const fixture = publicFixture(t);
+	const tasks = planFixtureTasks(fixture);
+	for (const task of tasks) writeCheckpoint(fixture.resultsDirectory, task);
+	for (const task of planSiblingFixtureTasks(fixture)) {
+		writeCheckpoint(fixture.resultsDirectory, task);
+	}
+	const result = materializePublicCampaignEvidence(
+		parsedArgs(fixture),
+		materializeDependencies(fixture),
+	);
+	assert.equal(result.measurementCount, tasks.length);
+	const aggregate = JSON.parse(fs.readFileSync(result.aggregatePath, 'utf8'));
+	assert.equal(aggregate.corpus_fingerprint, fixture.corpus.corpus_fingerprint);
+});
+
 test('materialization rejects mixed campaigns with foreign checkpoints', (t) => {
 	const fixture = publicFixture(t);
 	const tasks = planFixtureTasks(fixture);
@@ -477,7 +554,7 @@ test('materialization rejects mixed campaigns with foreign checkpoints', (t) => 
 	writeCheckpoint(fixture.resultsDirectory, foreignTasks[0]);
 	assert.throws(
 		() => materializePublicCampaignEvidence(parsedArgs(fixture), materializeDependencies(fixture)),
-		/does not belong to the current 'automatic-policy' campaign plan/,
+		/belongs to no fixed public suite/,
 	);
 	assert.equal(fs.existsSync(path.join(fixture.resultsDirectory, 'automatic-policy-aggregate.json')), false);
 });
@@ -490,7 +567,7 @@ test('materialization rejects planning inputs that drifted from the campaign', (
 	drifted.campaignOptions = { ...drifted.campaignOptions, maxWerPct: 5 };
 	assert.throws(
 		() => materializePublicCampaignEvidence(drifted, materializeDependencies(fixture)),
-		/does not belong to the current 'automatic-policy' campaign plan/,
+		/belongs to no fixed public suite/,
 	);
 });
 

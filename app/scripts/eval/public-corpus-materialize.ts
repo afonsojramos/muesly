@@ -114,20 +114,48 @@ export function parsePublicMaterializeArgs(args) {
 // planner ignores checkpoints from other corpus revisions, but evidence
 // materialization must reject them so a stale or foreign measurement can never
 // slip into a suite's aggregate. Every discovered checkpoint must validate
-// against exactly one currently planned task, and every planned task must have
-// exactly one checkpoint identity (one hardware cohort).
-export function bindMaterializationCheckpoints(checkpoints, tasks, suite) {
+// against exactly one currently planned task of the selected suite, and every
+// planned task of that suite must have exactly one checkpoint identity (one
+// hardware cohort). Because all three fixed public suites share one results
+// directory, checkpoints that fully validate against a sibling fixed suite
+// planned with identical corpus, thresholds, accelerators, and evaluator
+// revisions are recognized and skipped; anything else is rejected as mixed or
+// stale evidence.
+export function bindMaterializationCheckpoints(checkpoints, tasks, suite, siblingPlans = []) {
 	const recordsByTask = new Map(tasks.map((task) => [task.task_id, []]));
 	for (const checkpoint of checkpoints) {
 		const candidates = tasks.filter((task) =>
 			checkpoint.name.startsWith(taskFilenamePrefix(task)),
 		);
 		if (candidates.length === 0) {
-			throw new Error(
-				`results contain a checkpoint that does not belong to the current '${suite}' ` +
-					`campaign plan: ${checkpoint.name}; archive other campaigns, corpus revisions, ` +
-					'and evaluator revisions elsewhere before materializing evidence',
-			);
+			const siblingErrors = [];
+			let siblingValid = false;
+			for (const sibling of siblingPlans) {
+				for (const task of sibling.tasks) {
+					if (!checkpoint.name.startsWith(taskFilenamePrefix(task))) continue;
+					const errors = validateTaskCheckpoint(checkpoint.report, task);
+					if (errors.length > 0) {
+						siblingErrors.push(...errors);
+						continue;
+					}
+					const identity = reportIdentityFromCheckpoint(checkpoint.report);
+					if (checkpoint.name !== taskReportFilename(task, identity)) {
+						siblingErrors.push('checkpoint filename does not match its sibling task and identity');
+						continue;
+					}
+					siblingValid = true;
+				}
+			}
+			if (!siblingValid) {
+				const details = siblingErrors.length > 0 ? `\n- ${siblingErrors.join('\n- ')}` : '';
+				throw new Error(
+					`results contain a checkpoint that belongs to no fixed public suite planned ` +
+						`with the current corpus, thresholds, and evaluator revision: ${checkpoint.name}; ` +
+						'archive other campaigns, corpus revisions, and evaluator revisions elsewhere ' +
+						`before materializing evidence${details}`,
+				);
+			}
+			continue;
 		}
 		const valid = [];
 		const candidateErrors = [];
@@ -199,25 +227,33 @@ export function materializePublicCampaignEvidence(parsed, dependencyOverrides = 
 	let materializeError;
 	try {
 		const corpus = dependencies.loadCorpus(parsed.manifestPath);
-		const loadedTargets = dependencies.loadTargets(PUBLIC_CAMPAIGN_SUITES[parsed.suite]);
-		const targets = loadedTargets.targets;
-		const evaluatorContext = dependencies.collectEvaluatorContext({
-			repoRoot: repositoryRoot,
-			targets,
-		});
-		const tasks = dependencies.planTasks({
-			corpus,
-			targets,
-			thresholds: {
-				max_wer_percent: parsed.campaignOptions.maxWerPct,
-				max_hallucinated_words: parsed.campaignOptions.maxHallucinatedWords,
-			},
-			accelerators: parsed.campaignOptions.accelerators,
-			evaluatorRevisions: evaluatorContext.revisions,
-		});
+		const planSuite = (suite) => {
+			const loadedTargets = dependencies.loadTargets(PUBLIC_CAMPAIGN_SUITES[suite]);
+			const evaluatorContext = dependencies.collectEvaluatorContext({
+				repoRoot: repositoryRoot,
+				targets: loadedTargets.targets,
+			});
+			return {
+				targets: loadedTargets.targets,
+				tasks: dependencies.planTasks({
+					corpus,
+					targets: loadedTargets.targets,
+					thresholds: {
+						max_wer_percent: parsed.campaignOptions.maxWerPct,
+						max_hallucinated_words: parsed.campaignOptions.maxHallucinatedWords,
+					},
+					accelerators: parsed.campaignOptions.accelerators,
+					evaluatorRevisions: evaluatorContext.revisions,
+				}),
+			};
+		};
+		const { targets, tasks } = planSuite(parsed.suite);
+		const siblingPlans = Object.keys(PUBLIC_CAMPAIGN_SUITES)
+			.filter((candidate) => candidate !== parsed.suite)
+			.map((candidate) => planSuite(candidate));
 		const resultsDirectory = path.join(parsed.workspace, 'results');
 		const checkpoints = dependencies.discoverCheckpoints(resultsDirectory);
-		const records = bindMaterializationCheckpoints(checkpoints, tasks, parsed.suite);
+		const records = bindMaterializationCheckpoints(checkpoints, tasks, parsed.suite, siblingPlans);
 		const reports = records.map((record) => record.report);
 		const aggregate = dependencies.aggregate(reports, corpus);
 		const coverage = dependencies.evaluateCoverage(corpus, targets, reports);
