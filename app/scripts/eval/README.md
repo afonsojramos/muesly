@@ -14,7 +14,8 @@ Two tiers:
 app/scripts/eval/
   corpus-manifest.json # consent/provenance and grouping metadata for every fixture
   corpus-targets.json  # private meeting-corpus coverage floor
-  REFERENCE_TRANSCRIPTION.md # versioned human-reference annotation contract
+  REFERENCE_TRANSCRIPTION.md # versioned private/corrected-reference annotation contract
+  PUBLIC_REFERENCE_VERIFICATION.md # exact public upstream-gold verification contract
   corpus.ts            # manifest validation and language normalization
   corpus-targets.ts    # shared target validation and exact sample resolution
   corpus-prepare.ts    # scaffold the next private consented collection session
@@ -35,8 +36,8 @@ app/scripts/eval/
   public-corpus-sources.json      # immutable source, license, size, and SHA-256 pins
   public-corpus-selection.json    # deterministic 66-sample construction contract
   public-corpus-prepare.ts        # safe download, extraction, and audio derivation
-  public-corpus-attest.ts         # hash-bound independent reference review
-  public-corpus-finalize.ts       # reviewed local public-manifest finalization
+  public-corpus-attest.ts         # reserved local-correction attestation CLI
+  public-corpus-finalize.ts       # verified local public-manifest finalization
   public-corpus-validate.ts       # full reconstruction and provenance validation
   public-corpus-campaign.ts       # fixed-suite campaign wrapper
   public-corpus-qualification.ts  # fail-closed policy and retention decisions
@@ -75,14 +76,26 @@ files:
 
 - 60 paired FLEURS samples: five languages, three non-reused clean composites of 120–180 seconds,
   and four conditions (clean, deterministic 10 dB office noise, remote-call degradation, and 25%
-  overlap). The overlap transform can shorten an output slightly below 120 seconds;
+  overlap). For these composites, `speakers` records maximum simultaneous speech, not the number
+  of distinct source readers. The overlap transform can shorten an output slightly below 120
+  seconds;
 - three deterministic 180-second natural-meeting excerpts from AMI; and
 - three deterministic 180-second natural remote-call excerpts from Earnings-21.
 
 FLEURS and AMI are CC BY 4.0; Earnings-21 is CC BY-SA 4.0. The committed catalog records the exact
 revision, URL, size, SHA-256, license, attribution, and local-only redistribution policy. Random
 online meetings, podcasts, and videos are not accepted merely because they are publicly reachable.
-FLEURS is read speech and must never be described as natural multilingual meeting evidence.
+FLEURS is read speech and must never be described as natural multilingual meeting evidence. The
+selected FLEURS speakers are also materially imbalanced by the source test splits: selected
+utterances are 28 female/20 male for English, 13/27 for Spanish, 0/33 for Portuguese, 5/36 for
+French, and 0/33 for German. Portuguese and German are all-male in the pinned test split, so this
+bootstrap cannot support gender-robustness claims. It also uses one pinned locale per language, so
+it cannot support accent- or dialect-robustness claims. No sensitive sample-level gender metadata
+is added to the manifest. AMI contributes natural meeting content, but the selected
+`Mix-Headset.wav` files are close-talk headset mixes rather than room or office microphones. Its
+dense 180-second lexical-word windows deliberately overrepresent high speech density rather than
+typical pauses and silence. AMI and Earnings-21 are both English-only here;
+there is no natural Spanish, Portuguese, French, or German speech in this public bootstrap.
 The deterministic selection commits the exact FLEURS member order, AMI windows, FFmpeg executable,
 and generated WAV SHA-256 for all 66 samples. For each Earnings-21 call, it also pins Rev's timed
 Kaldi output as an alignment hypothesis. The hypothesis contributes timestamps only: preparation
@@ -99,38 +112,43 @@ accounting for missing sources and generated output:
 nub run eval:public:prepare --download
 ```
 
-Preparation writes draft references but does not create `corpus-local.json`. Listen to every exact
-generated WAV and review its reference under [REFERENCE_TRANSCRIPTION.md](REFERENCE_TRANSCRIPTION.md).
-Earnings-21 excerpt drafts are seeded from the aligned public human reference, using exact matched
-tokens at both time boundaries and excluding words that cross either boundary. Reviewers must fix
-any alignment or transcription issue they hear; the automatic hypothesis is never used as reference
-text. Two different reviewers must each record an acceptance bound to the current audio and
-reference hashes:
+Preparation rederives exact human-reference bytes from the pinned public artifacts and requires
+them to match the reference hashes committed in the selection; it does not create
+`corpus-local.json`. FLEURS uses its source transcript field, AMI uses its manual word annotations,
+and Earnings-21 slices only Rev's human reference after using the separate timed hypothesis to
+locate unique exact boundary contexts. The full fail-closed contract lives in
+[PUBLIC_REFERENCE_VERIFICATION.md](PUBLIC_REFERENCE_VERIFICATION.md). When that contract passes,
+the references are reproducible upstream human gold and do not need a second local two-person
+review.
+
+Do not edit a prepared upstream-gold reference, even by one byte. Preparation and finalization
+reject local changes instead of accepting a newly computed hash; restore the exact source-derived
+bytes. No corrected-public-reference path is implemented. Locally edited public text is excluded
+from these suites until a separately versioned correction protocol, preparation/review workflow,
+manifest binding, and fresh measurements exist; the private two-person contract alone does not
+make it eligible.
+
+Finalize and revalidate the exact verified projection. Finalization first replays all 66 audio and
+reference derivations from the pinned cache with the approved FFmpeg under the shared corpus lock.
+Every regenerated artifact must byte-match both the existing prepared file and its committed hash
+before `corpus-local.json` can be published:
 
 ```bash
-nub run eval:public:attest -- \
-  --sample en-fleurs-01-clean-read \
-  --reviewer reviewer-one \
-  --accept-reviewed-reference \
-  --affirm-reference-protocol muesly-meeting-reference-v1
-```
-
-After every sample has two independent acceptances, finalize and revalidate the exact reviewed
-projection. Finalization first replays all 66 derivations from the pinned cache with the approved
-FFmpeg under the shared corpus lock. Every regenerated temporary WAV must byte-match both the
-existing prepared WAV and its committed output hash before `corpus-local.json` can be published:
-
-```bash
-nub run eval:public:finalize -- \
-  --affirm-reference-protocol muesly-meeting-reference-v1
+nub run eval:public:finalize \
+  --affirm-reference-protocol muesly-public-upstream-gold-v1
 nub run eval:public:validate
 ```
 
-Audio, references, review attestations, the finalized manifest, checkpoints, and reports stay under
-the ignored `app/scripts/eval/public-corpus/` workspace. Finalization fails if a source pin,
-selection, generated file, duration, reference, review hash, or manifest field has drifted.
-Distinct reviewer IDs enforce procedural separation; they are not cryptographic identities, so the
-campaign owner remains responsible for confirming the two reviews came from different people.
+Audio, references, verification metadata, the finalized manifest, checkpoints, and reports stay
+under the ignored `app/scripts/eval/public-corpus/` workspace. Finalization fails if a source pin,
+selection, generated file, duration, reference digest, verification recipe, or manifest field has
+drifted.
+
+Every fixed public suite uses coverage-target schema 4 and binds the exact committed source-catalog
+SHA-256, selection SHA-256, corpus ID, and finalized corpus fingerprint. Planning, coverage, and
+qualification all reject a custom or stale corpus even when its catalog and selection are
+self-consistent. Updating the public corpus therefore requires deliberately updating every fixed
+binding and rerunning all measurements.
 
 Run a fixed public benchmark suite through the provenance-revalidating campaign wrapper. Omitting
 `--run` produces a safe plan; add it only after the required pinned models are present:
@@ -141,14 +159,16 @@ nub run eval:public:campaign \
   --models-dir "$HOME/Library/Application Support/com.muesly/models"
 ```
 
-- `automatic-policy` measures every reviewed public sample against the primary non-translation
+- `automatic-policy` measures every verified public sample against the primary non-translation
   tier recommendations, a Turbo CPU comparison, selected higher-capability Whisper fallbacks, and
   the Parakeet fallback. It intentionally keeps the accepted seven-variant policy matrix: 66
   samples × 7 variants = 462 tasks.
 - `catalog-audit` runs the remaining shipped Whisper artifacts, including Tiny Q5_1 and other
-  fallback-only models, on a fixed ten-sample CPU slice. Those audit-only artifacts are not primary
-  Automatic tier recommendations and do not expand the policy matrix: 10 samples × 7 variants =
-  70 tasks.
+  fallback-only models, on a fixed ten-sample CPU slice. The slice retains all five languages,
+  both natural sources, and all four transformed/read conditions while selecting a distinct source
+  session for every sample; paired transformed samples use composite 02 rather than reusing each
+  composite 01 clean source. Those audit-only artifacts are not primary Automatic tier
+  recommendations and do not expand the policy matrix: 10 samples × 7 variants = 70 tasks.
 - `performance` repeats that fixed slice three times against the Automatic-policy matrix: 10
   samples × 7 variants × 3 repeats = 210 tasks.
 
@@ -159,26 +179,33 @@ every evaluator platform supported by the benchmark harness. A complete suite mu
 one compatible hardware cohort; do not combine CPU results from one machine with Metal results
 from another to claim completion.
 
-Treat model-policy changes as a separate, fail-closed decision step. Qualification policy v2
-(`muesly-public-asr-qualification-v2`, qualification schema 2) requires aggregate schema 11 and
-uses only its session/singleton-unit-balanced headline metrics for quality, speed, and memory.
+Treat model-policy changes as a separate, fail-closed decision step. Provisional qualification
+policy v3 (`muesly-public-asr-qualification-v3`, qualification schema 3) requires aggregate schema
+12 and uses only its session/singleton-unit-balanced headline metrics for quality, speed, and
+memory.
 Automatic-policy and performance coverage must both be complete, every input measurement must be
 task-bound schema 11, and all evidence must come from one macOS/arm64 hardware cohort. A candidate
-is eligible only when its performance `unit_balanced.p95_inference_rtf` is below 1.0. Among eligible
-candidates, its automatic-policy `unit_balanced.wer_percent` must be within 2 percentage points of
-the best result and its worst language/noise slice must be within 5 points of the best worst-slice
-result. Prefer the smallest qualifying artifact; when measured inference speed differs by less than
-10%, use lower `unit_balanced.max_peak_rss_mb` and then download size as the deterministic
-tie-breakers.
+is exploratorily eligible only when its performance `unit_balanced.p95_inference_rtf` is below 1.0.
+Among such candidates, its `hard_wer_overall.unit_balanced.wer_percent` must be within 2 points of
+the best result and its worst decision-eligible language/noise slice must be within 5 points of the
+best worst-slice result. `hard_wer_overall` first removes `synthetic-overlap` records, whose mixed
+audio has no unambiguous serial reference order, and then reruns the exact
+session-ID-or-singleton-sample reduction. The 15 paired FLEURS sources therefore remain 15 units,
+not 45 condition units; with three AMI and three Earnings units, the public bootstrap has only 21
+independent analysis units. Overlap results remain diagnostic quality evidence and remain included
+in performance and memory evidence. Prefer the smallest exploratory candidate; when measured
+inference speed differs by less than 10%, use lower `unit_balanced.max_peak_rss_mb` and then download
+size as deterministic tie-breakers.
 
-The first Apple qualification may change only the non-translation High and Ultra recommendations.
-Low remains Base Q5_1, Medium remains Small Q5_1, and translation selection is a separate phase-two
-decision. Tiny Q5_1 remains fallback/catalog-audit-only. Full-precision artifacts remain supported
-for existing downloads, but become visible as new downloads only when they improve unit-balanced
-WER by at least 1 percentage point or a unit-balanced critical language/noise slice by at least 3
-points over their quantized peer. A qualification report proposes decisions for review; it never
-edits production configuration automatically. Catalog-audit evidence is optional for the tier
-proposal but required to emit full-precision retention decisions.
+This 21-unit public bootstrap is provisional. Its candidate and full-precision retention rankings
+are exploratory only: `may_update_tiers` is empty, catalog visibility changes are forbidden, and
+Low, Medium, High, Ultra, translation behavior, and download visibility remain unchanged. Promotion
+requires corroboration from the separate `consented-multilingual-meetings-v1` target: at least
+three genuinely consented natural meeting sessions in every combination of five languages and four
+noise conditions (60 independent session-cell observations) under
+`muesly-meeting-reference-v1`. A qualification report never edits production configuration.
+Catalog-audit evidence is optional for an exploratory candidate ranking but required to emit
+exploratory full-precision retention signals.
 
 After producing aggregate and coverage JSON for the completed suites, generate the reviewable
 decision report on standard output:
@@ -330,8 +357,10 @@ each checkpoint's exact name, identity, and content digest.
   The prepared provider/model artifact set is SHA-256 fingerprinted before transcription and
   again after the final sample; a report is refused if those bytes changed during the run.
 - Writing a report requires a clean Git worktree. Standalone run schema 10 and campaign checkpoint
-  schema 11 record the versioned `muesly-meeting-reference-v1` annotation contract and a versioned
-  evaluator. Schema 11 also binds the evaluator output to the planned benchmark task digest and
+  schema 11 record the manifest's versioned reference protocol: `muesly-meeting-reference-v1` for
+  private or locally corrected references, or `muesly-public-upstream-gold-v1` for exact public
+  source-native references. They also record a versioned evaluator. Schema 11 binds the evaluator
+  output to the planned benchmark task digest and
   repeat before inference, so a cached report cannot be reused for another repetition. Both record a
   revision containing the Git commit, `Cargo.lock` digest, full `rustc -vV`, release profile,
   target triple, exact Cargo features, and a digest of the allowlisted build environment. The
@@ -363,7 +392,7 @@ nub run eval:report app/scripts/eval/results/whisper-metal.json \
   --markdown app/scripts/eval/results/aggregate.md
 ```
 
-Aggregate schema 11 records the reference protocol and
+Aggregate schema 12 records the reference protocol and
 `aggregation_unit_policy: "session-id-or-singleton-sample-v1"`, and treats provider, model, and
 reported backend as one indivisible variant. It derives a session unit for samples that share a
 manifest `session_id`; every public or non-meeting sample without one becomes its own explicit
@@ -387,6 +416,9 @@ maximum; treat such a p95 as a low-resolution diagnostic rather than a stable ta
 Language, scenario, and noise summaries rebuild units from the samples in each slice, so one
 multilingual or mixed-noise session can contribute once to multiple slice rows; those row counts do
 not partition the overall unit count.
+Schema 12 also emits `hard_wer_overall`: it excludes `synthetic-overlap` measurements before
+repeating the same sample/session reduction, so ambiguous serial ordering cannot influence hard WER
+decisions and paired FLEURS derivatives cannot be mistaken for independent sessions.
 
 Diagnostic summaries retain every observed sample but are isolated by exact variant, with overall,
 public-dataset, language, scenario, noise-condition, and language/noise dimensions. Public samples
@@ -418,10 +450,10 @@ Run-report schemas 10 and 11 record the versioned reference protocol and WER sco
 coverage and aggregation reject reports with missing or different scoring semantics. CPU and GPU
 reports from one machine can be combined; reports using different accelerators for the same
 backend cannot.
-Aggregate schema 11 records both diagnostic and unit-balanced RTF definitions, measurement,
+Aggregate schema 12 records both diagnostic and unit-balanced RTF definitions, measurement,
 distinct-sample, session-unit, and singleton-unit counts, the aggregation-unit policy, comparison
 status, common evaluator inputs, the full evaluator
-revision, and exact benchmark-executable digest for every backend. Coverage schema 11 similarly
+revision, and exact benchmark-executable digest for every backend. Coverage schema 12 similarly
 records the corpus
 fingerprint, reference protocol, verified model-artifact map, evaluator-revision digest by backend,
 and executable
@@ -429,7 +461,7 @@ digest by backend, so a saved completeness result remains bound to the exact cor
 evaluated bytes, source/toolchain inputs, and binary.
 Measurement completeness requires one compatible hardware cohort to satisfy the session floor
 across the entire requested matrix. The operating system, architecture, and machine profile must
-match for every cell, with one consistent accelerator identity per backend. Coverage schema 11
+match for every cell, with one consistent accelerator identity per backend. Coverage schema 12
 retains raw cross-machine counts and the largest compatible distinct-unit count per cell for
 diagnostics, then
 enumerates matrix-wide cohorts separately. A matrix assembled from individually complete cells on
@@ -437,14 +469,15 @@ different machines or accelerators remains incomplete.
 
 Corpus schema 4 adds source-catalog-bound `public-license` provenance without weakening private
 custody: participant recordings still require local-only consent records and opaque sessions.
-Coverage-target schema 3 is discriminated by `coverage_mode`. The existing
+Coverage-target schema 4 is discriminated by `coverage_mode`. The existing
 `language-noise-matrix` mode retains the consented-meeting session floor; `explicit-samples` names
 the exact sample IDs in one benchmark suite. An optional `repetitions` value from 1 through 10
 creates distinct, resumable task identities for every sample/variant/repeat and requires every
 repeat on one compatible hardware cohort. Hardware-cohort entries report `distinct_units`: a unit
-is a consented session in matrix mode and an exact sample in explicit-sample mode. Existing valid
-schema-2 matrix target files are normalized in memory to schema 3; newly committed targets remain
-schema 3.
+is a consented session in matrix mode and an exact sample in explicit-sample mode. Schema 4 can
+bind an exact corpus ID, corpus fingerprint, source-catalog digest, and selection digest as one
+all-or-nothing revision contract. Existing valid schema-2 matrix and schema-3 target files are
+normalized in memory to schema 4; fixed public targets are committed as schema 4.
 
 Metrics schema 7 reports source-audio duration, exact ASR-input audio duration, decode, VAD,
 model-download, model-load, inference, and measured-total timings. `inference_rtf` remains the

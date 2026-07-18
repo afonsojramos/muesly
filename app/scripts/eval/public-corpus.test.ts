@@ -7,17 +7,19 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { fileSha256, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { fileSha256, PUBLIC_REFERENCE_PROTOCOL_ID, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import {
 	acquirePreparationLock,
 	assertWorkspaceIsUntracked,
 	calculatePreparationDiskRequirement,
+	groupAmiSamplesByReferenceArchive,
 	noiseGainForSnr,
 	parsePublicPrepareArgs,
 	publishExtractedDirectory,
 	publishNoClobber,
 	releasePreparationLock,
 	writeDraftReference,
+	writePinnedReference,
 } from './public-corpus-prepare.ts';
 import { parsePublicAttestArgs } from './public-corpus-attest.ts';
 import { parsePublicFinalizeArgs } from './public-corpus-finalize.ts';
@@ -27,6 +29,8 @@ import {
 	createReviewTemplate,
 	deriveEarningsReferenceExcerpt,
 	downloadPinnedArtifact,
+	EARNINGS_MAX_ADJACENT_OVERLAP_SECONDS,
+	EARNINGS_MAX_START_REGRESSION_SECONDS,
 	ensurePrivateDirectory,
 	expectedPublicSampleIds,
 	extractArchiveMembers,
@@ -34,9 +38,14 @@ import {
 	listArchiveEntries,
 	loadPublicCorpusConfig,
 	parseAmiWordDocuments,
+	parseEarningsTimedHypothesis,
 	parseFleursTsv,
 	planOverlapTimings,
 	PUBLIC_PREPARED_SCHEMA_VERSION,
+	PUBLIC_REFERENCE_RECIPES,
+	PUBLIC_REVIEW_SCHEMA_VERSION,
+	PUBLIC_SOURCE_CATALOG_ID,
+	readPinnedArtifactFile,
 	recordPublicReviewAttestation,
 	renderTimedReference,
 	selectDensestTimedWindow,
@@ -47,6 +56,8 @@ import {
 	validateFinalizedPublicCorpus,
 	validatePublicSelection,
 	validateSourceCatalog,
+	withPinnedArtifactPath,
+	writePreparedBundle,
 } from './public-corpus.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -59,9 +70,9 @@ function temporaryDirectory(prefix = 'muesly-public-corpus-') {
 
 test('committed public source pins and deterministic selection are internally complete', () => {
 	const { catalog, selection } = loadPublicCorpusConfig(catalogPath, selectionPath);
-	assert.equal(catalog.schema_version, 2);
-	assert.equal(catalog.catalog_id, 'muesly-public-asr-sources-v2');
-	assert.equal(selection.schema_version, 2);
+	assert.equal(catalog.schema_version, 3);
+	assert.equal(catalog.catalog_id, 'muesly-public-asr-sources-v3');
+	assert.equal(selection.schema_version, 3);
 	assert.equal(selection.corpus_id, 'muesly-public-asr-v2');
 	assert.equal(catalog.artifacts.length, 23);
 	assert.equal(catalog.sources.length, 11);
@@ -71,12 +82,17 @@ test('committed public source pins and deterministic selection are internally co
 	assert.equal(alignmentArtifacts.length, 3);
 	assert(
 		alignmentArtifacts.every(
-			(artifact) => artifact.revision === 'c05ab6fd8b4b627d123c922a22a39e993dd37635',
+			(artifact) =>
+				artifact.revision === 'c05ab6fd8b4b627d123c922a22a39e993dd37635' &&
+				artifact.role === 'timing-only',
 		),
 	);
+	assert.deepEqual(
+		new Set(catalog.sources.map((source) => source.reference_verification)),
+		new Set(Object.values(PUBLIC_REFERENCE_RECIPES)),
+	);
 	const earningsReferences = catalog.artifacts.filter(
-		(artifact) =>
-			artifact.kind === 'reference' && artifact.id.startsWith('earnings21-'),
+		(artifact) => artifact.kind === 'reference' && artifact.id.startsWith('earnings21-'),
 	);
 	const earningsRevision = 'c05ab6fd8b4b627d123c922a22a39e993dd37635';
 	assert.deepEqual(
@@ -100,10 +116,22 @@ test('committed public source pins and deterministic selection are internally co
 	assert.equal(selection.fleurs.inter_utterance_gap_seconds, 0.4);
 	const missingPins = structuredClone(selection);
 	delete missingPins.fleurs.sources[0].composites[0].audio_sha256['clean-read'];
+	delete missingPins.fleurs.sources[0].composites[0].reference_sha256;
 	delete missingPins.natural_samples[0].audio_sha256;
+	delete missingPins.natural_samples[0].reference_sha256;
 	const missingPinErrors = validatePublicSelection(missingPins, catalog).join('\n');
 	assert.match(missingPinErrors, /audio_sha256\.clean-read must be a non-placeholder/);
+	assert.match(missingPinErrors, /composites\[0\]\.reference_sha256 must be a non-placeholder/);
 	assert.match(missingPinErrors, /natural_samples\[0\]\.audio_sha256 must be a non-placeholder/);
+	assert.match(missingPinErrors, /natural_samples\[0\]\.reference_sha256 must pin/);
+	const mismatchedEarningsReference = structuredClone(selection);
+	mismatchedEarningsReference.natural_samples.find((sample) =>
+		sample.source_id.startsWith('earnings21-'),
+	).reference_sha256 = '0123456789abcdef'.repeat(4);
+	assert.match(
+		validatePublicSelection(mismatchedEarningsReference, catalog).join('\n'),
+		/reference_sha256 must match window\.expected_reference_seed_sha256/,
+	);
 	assert.deepEqual(
 		{
 			fleurs:
@@ -129,10 +157,24 @@ test('committed public source pins and deterministic selection are internally co
 					alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
 					alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
 					alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+					alignment_paired_tokens: sample.window.expected_alignment_paired_tokens,
+					alignment_exact_pairs: sample.window.expected_alignment_exact_pairs,
 					reference_start_token_index: sample.window.expected_reference_start_token_index,
 					reference_end_token_index: sample.window.expected_reference_end_token_index,
 					reference_token_count: sample.window.expected_reference_token_count,
+					anchor_context_tokens: sample.window.expected_anchor_context_tokens,
+					start_anchor_hypothesis_token_index:
+						sample.window.expected_start_anchor_hypothesis_token_index,
+					start_anchor_start_seconds: sample.window.expected_start_anchor_start_seconds,
+					start_anchor_end_seconds: sample.window.expected_start_anchor_end_seconds,
+					start_anchor_context_sha256: sample.window.expected_start_anchor_context_sha256,
+					end_anchor_hypothesis_token_index:
+						sample.window.expected_end_anchor_hypothesis_token_index,
+					end_anchor_start_seconds: sample.window.expected_end_anchor_start_seconds,
+					end_anchor_end_seconds: sample.window.expected_end_anchor_end_seconds,
+					end_anchor_context_sha256: sample.window.expected_end_anchor_context_sha256,
 					reference_seed_sha256: sample.window.expected_reference_seed_sha256,
+					reference_sha256: sample.reference_sha256,
 				},
 			]),
 		[
@@ -145,11 +187,24 @@ test('committed public source pins and deterministic selection are internally co
 					alignment_hypothesis_tokens: 697,
 					alignment_reference_tokens: 681,
 					alignment_edit_distance: 62,
+					alignment_paired_tokens: 678,
+					alignment_exact_pairs: 638,
 					reference_start_token_index: 159,
 					reference_end_token_index: 603,
 					reference_token_count: 445,
-					reference_seed_sha256:
-						'20dd94b992cff0bd5cb067de8e6d53fa2028c3c248be19b19ad1fee036069211',
+					anchor_context_tokens: 2,
+					start_anchor_hypothesis_token_index: 167,
+					start_anchor_start_seconds: 62.03,
+					start_anchor_end_seconds: 62.21,
+					start_anchor_context_sha256:
+						'eb3eb3e4b66cbe2ba6b59473991f8e7dec5c5c5c368823b1253ecea30081cf93',
+					end_anchor_hypothesis_token_index: 613,
+					end_anchor_start_seconds: 238.99,
+					end_anchor_end_seconds: 239.53,
+					end_anchor_context_sha256:
+						'9e0f88feb31951d1c10272cf7d4450e762e84a427879f9be48947510a48227ea',
+					reference_seed_sha256: '20dd94b992cff0bd5cb067de8e6d53fa2028c3c248be19b19ad1fee036069211',
+					reference_sha256: '20dd94b992cff0bd5cb067de8e6d53fa2028c3c248be19b19ad1fee036069211',
 				},
 			],
 			[
@@ -161,11 +216,24 @@ test('committed public source pins and deterministic selection are internally co
 					alignment_hypothesis_tokens: 703,
 					alignment_reference_tokens: 694,
 					alignment_edit_distance: 67,
+					alignment_paired_tokens: 689,
+					alignment_exact_pairs: 641,
 					reference_start_token_index: 152,
 					reference_end_token_index: 616,
 					reference_token_count: 465,
-					reference_seed_sha256:
-						'2d599dbc4df2cccce13bb7fd1df69f34d1815803e0ce0a091d7ff3e0c00db776',
+					anchor_context_tokens: 2,
+					start_anchor_hypothesis_token_index: 156,
+					start_anchor_start_seconds: 60.33,
+					start_anchor_end_seconds: 60.51,
+					start_anchor_context_sha256:
+						'ace2000c45af6a9f55d0eca72d0665dbcd9acfdb5b1352ce18fe589c1f1ddcc4',
+					end_anchor_hypothesis_token_index: 624,
+					end_anchor_start_seconds: 238.84,
+					end_anchor_end_seconds: 239.26,
+					end_anchor_context_sha256:
+						'd508e5013603201bbe596c1537da80bb379b6080996982549bf829f3956d5dd6',
+					reference_seed_sha256: '2d599dbc4df2cccce13bb7fd1df69f34d1815803e0ce0a091d7ff3e0c00db776',
+					reference_sha256: '2d599dbc4df2cccce13bb7fd1df69f34d1815803e0ce0a091d7ff3e0c00db776',
 				},
 			],
 			[
@@ -177,20 +245,211 @@ test('committed public source pins and deterministic selection are internally co
 					alignment_hypothesis_tokens: 704,
 					alignment_reference_tokens: 695,
 					alignment_edit_distance: 42,
+					alignment_paired_tokens: 694,
+					alignment_exact_pairs: 663,
 					reference_start_token_index: 174,
 					reference_end_token_index: 628,
 					reference_token_count: 455,
-					reference_seed_sha256:
-						'68867517f725b954e7d9940b47c2d137b7aa48049374aad15e140980d37f65ea',
+					anchor_context_tokens: 2,
+					start_anchor_hypothesis_token_index: 178,
+					start_anchor_start_seconds: 60.18,
+					start_anchor_end_seconds: 60.36,
+					start_anchor_context_sha256:
+						'2957a1ea411b7772421c44e5bd704fd25daf1d48ec5d48cd88ee444ec7cd0064',
+					end_anchor_hypothesis_token_index: 637,
+					end_anchor_start_seconds: 238.93,
+					end_anchor_end_seconds: 239.65,
+					end_anchor_context_sha256:
+						'04555da5583aebb71550e28aa11d5532d3ae313bdd783697f8e7a74eaa6d4775',
+					reference_seed_sha256: '68867517f725b954e7d9940b47c2d137b7aa48049374aad15e140980d37f65ea',
+					reference_sha256: '68867517f725b954e7d9940b47c2d137b7aa48049374aad15e140980d37f65ea',
 				},
 			],
 		],
 	);
 });
 
+test('public source reference recipes are closed and bind the exact artifact roles', () => {
+	const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+
+	const missingRecipe = structuredClone(catalog);
+	delete missingRecipe.sources[0].reference_verification;
+	assert.match(
+		validateSourceCatalog(missingRecipe).join('\n'),
+		/reference_verification is not a supported closed recipe/,
+	);
+
+	const unknownRecipe = structuredClone(catalog);
+	unknownRecipe.sources[0].reference_verification = 'trust-whatever-is-there-v1';
+	assert.match(
+		validateSourceCatalog(unknownRecipe).join('\n'),
+		/reference_verification is not a supported closed recipe/,
+	);
+
+	const wrongRecipe = structuredClone(catalog);
+	wrongRecipe.sources[0].reference_verification = PUBLIC_REFERENCE_RECIPES.AMI;
+	assert.match(
+		validateSourceCatalog(wrongRecipe).join('\n'),
+		/dataset is incompatible|artifact_ids must contain exactly/,
+	);
+
+	const wrongArtifactKinds = structuredClone(catalog);
+	const fleursIndexId = wrongArtifactKinds.sources[0].artifact_ids.find(
+		(artifactId) =>
+			wrongArtifactKinds.artifacts.find((artifact) => artifact.id === artifactId).kind === 'index',
+	);
+	wrongArtifactKinds.artifacts.find((artifact) => artifact.id === fleursIndexId).kind = 'audio';
+	assert.match(
+		validateSourceCatalog(wrongArtifactKinds).join('\n'),
+		/artifact_ids must contain exactly audio-archive, index/,
+	);
+
+	const nonTimingAlignment = structuredClone(catalog);
+	delete nonTimingAlignment.artifacts.find((artifact) => artifact.kind === 'alignment-hypothesis')
+		.role;
+	const nonTimingErrors = validateSourceCatalog(nonTimingAlignment).join('\n');
+	assert.match(nonTimingErrors, /role must be timing-only/);
+	assert.match(nonTimingErrors, /must bind a timing-only alignment hypothesis/);
+});
+
+test('public source catalog identity, licenses, and revisions are closed production inputs', () => {
+	const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+	const wrongCatalogId = structuredClone(catalog);
+	wrongCatalogId.catalog_id = 'muesly-public-asr-sources-custom';
+	assert.match(
+		validateSourceCatalog(wrongCatalogId).join('\n'),
+		new RegExp(`catalog_id must be '${PUBLIC_SOURCE_CATALOG_ID}'`),
+	);
+
+	for (const recipe of Object.values(PUBLIC_REFERENCE_RECIPES)) {
+		const sourceIndex = catalog.sources.findIndex(
+			(source) => source.reference_verification === recipe,
+		);
+		for (const [field, replacement] of [
+			['license_id', 'not-a-vetted-license'],
+			['license_url', 'https://example.invalid/license'],
+			['revision', 'unreviewed-revision'],
+		]) {
+			const mutated = structuredClone(catalog);
+			mutated.sources[sourceIndex][field] = replacement;
+			assert.match(
+				validateSourceCatalog(mutated).join('\n'),
+				new RegExp(`${field} must be .* for ${recipe}`),
+			);
+		}
+	}
+});
+
+test('natural sample identities and recording-specific artifacts cannot cross recordings', () => {
+	const { catalog, selection } = loadPublicCorpusConfig(catalogPath, selectionPath);
+	for (const sourcePrefix of ['ami-', 'earnings21-']) {
+		const crossed = structuredClone(selection);
+		const samples = crossed.natural_samples.filter((sample) => sample.source_id.startsWith(sourcePrefix));
+		samples[0].source_item_id = samples[1].source_item_id;
+		assert.match(
+			validatePublicSelection(crossed, catalog).join('\n'),
+			/source_item_id must identify the (meeting|recording) bound by source_id/,
+		);
+	}
+
+	const crossedAmiAudio = structuredClone(catalog);
+	const amiSources = crossedAmiAudio.sources.filter(
+		(source) => source.reference_verification === PUBLIC_REFERENCE_RECIPES.AMI,
+	);
+	const firstAmiAudio = amiSources[0].artifact_ids.find((id) => id.endsWith('-headset-mix'));
+	const secondAmiAudio = amiSources[1].artifact_ids.find((id) => id.endsWith('-headset-mix'));
+	amiSources[0].artifact_ids = amiSources[0].artifact_ids.map((id) =>
+		id === firstAmiAudio ? secondAmiAudio : id,
+	);
+	amiSources[1].artifact_ids = amiSources[1].artifact_ids.map((id) =>
+		id === secondAmiAudio ? firstAmiAudio : id,
+	);
+	assert.match(
+		validateSourceCatalog(crossedAmiAudio).join('\n'),
+		/must bind its AMI meeting id to its headset-mix artifact/,
+	);
+
+	const crossedEarningsReference = structuredClone(catalog);
+	const earningsSources = crossedEarningsReference.sources.filter(
+		(source) => source.reference_verification === PUBLIC_REFERENCE_RECIPES.EARNINGS21,
+	);
+	const references = earningsSources.slice(0, 2).map((source) =>
+		source.artifact_ids.find((id) => id.endsWith('-reference')),
+	);
+	for (const [index, source] of earningsSources.slice(0, 2).entries()) {
+		source.artifact_ids = source.artifact_ids.map((id) =>
+			id === references[index] ? references[1 - index] : id,
+		);
+	}
+	assert.match(
+		validateSourceCatalog(crossedEarningsReference).join('\n'),
+		/must bind its Earnings-21 recording id to its reference artifact/,
+	);
+});
+
+test('AMI preparation groups each source by its catalog-bound reference archive', () => {
+	const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+	const selection = JSON.parse(fs.readFileSync(selectionPath, 'utf8'));
+	const originalArtifactId = 'ami-manual-annotations-v1-6-2';
+	const remappedArtifactId = 'ami-reviewed-annotations-remapped';
+	const annotation = catalog.artifacts.find((artifact) => artifact.id === originalArtifactId);
+	annotation.id = remappedArtifactId;
+	for (const source of catalog.sources.filter(
+		(candidate) => candidate.reference_verification === PUBLIC_REFERENCE_RECIPES.AMI,
+	)) {
+		source.artifact_ids = source.artifact_ids.map((id) =>
+			id === originalArtifactId ? remappedArtifactId : id,
+		);
+	}
+	assert.deepEqual(validateSourceCatalog(catalog), []);
+	const groups = groupAmiSamplesByReferenceArchive(
+		selection.natural_samples.filter((sample) => sample.source_id.startsWith('ami-')),
+		catalog,
+		'/tmp/remapped-public-corpus-cache',
+	);
+	assert.equal(groups.length, 1);
+	assert.equal(groups[0].annotationEntry.artifact.id, remappedArtifactId);
+	assert.equal(groups[0].samples.length, 3);
+	assert(groups[0].samples.every(({ source }) => source.artifact_ids.includes(remappedArtifactId)));
+});
+
+test('selection rejects weak committed Earnings alignment proof', () => {
+	const { catalog, selection } = loadPublicCorpusConfig(catalogPath, selectionPath);
+	const weakExactRatio = structuredClone(selection);
+	const weakExactWindow = weakExactRatio.natural_samples.find((sample) =>
+		sample.source_id.startsWith('earnings21-'),
+	).window;
+	weakExactWindow.expected_alignment_exact_pairs = Math.floor(
+		weakExactWindow.expected_alignment_paired_tokens * 0.89,
+	);
+	assert.match(
+		validatePublicSelection(weakExactRatio, catalog).join('\n'),
+		/alignment.*exact|exact.*ratio|alignment quality|alignment proof.*safety gate/i,
+	);
+
+	const weakEditRatio = structuredClone(selection);
+	const weakEditWindow = weakEditRatio.natural_samples.find((sample) =>
+		sample.source_id.startsWith('earnings21-'),
+	).window;
+	weakEditWindow.expected_alignment_edit_distance = Math.ceil(
+		Math.max(
+			weakEditWindow.expected_alignment_hypothesis_tokens,
+			weakEditWindow.expected_alignment_reference_tokens,
+		) * 0.11,
+	);
+	assert.match(
+		validatePublicSelection(weakEditRatio, catalog).join('\n'),
+		/alignment.*edit|edit.*ratio|alignment quality|alignment proof.*safety gate/i,
+	);
+});
+
 test('prepare argument parsing rejects missing values and keeps network opt-in', () => {
 	assert.equal(parsePublicPrepareArgs([]).allowNetwork, false);
 	assert.equal(parsePublicPrepareArgs(['--download']).allowNetwork, true);
+	assert.equal(
+		parsePublicFinalizeArgs(['--minimum-free-gib', '14']).minimumFreeBytes,
+		14 * 1024 ** 3,
+	);
 	for (const flag of [
 		'--catalog',
 		'--selection',
@@ -214,7 +473,13 @@ test('prepare argument parsing rejects missing values and keeps network opt-in',
 		],
 		[
 			parsePublicFinalizeArgs,
-			['--catalog', '--selection', '--workspace', '--affirm-reference-protocol'],
+			[
+				'--catalog',
+				'--selection',
+				'--workspace',
+				'--minimum-free-gib',
+				'--affirm-reference-protocol',
+			],
 		],
 		[parsePublicValidateArgs, ['--catalog', '--selection', '--workspace']],
 	]) {
@@ -400,6 +665,72 @@ test('resumable downloads require a matching Content-Range and verify the final 
 	assert.equal(result.resumed, true);
 	assert.deepEqual(fs.readFileSync(destination), bytes);
 	assert(!fs.existsSync(`${destination}.part`));
+});
+
+test('pinned artifact reads stay descriptor-bound across a pathname replacement race', (t) => {
+	if (process.platform === 'win32') {
+		t.skip('open-file replacement semantics differ on Windows');
+		return;
+	}
+	const directory = temporaryDirectory('muesly-public-pinned-read-race-');
+	const artifactPath = path.join(directory, 'index.tsv');
+	const displaced = path.join(directory, 'index.displaced.tsv');
+	const bytes = Buffer.from('pinned descriptor contents\n');
+	fs.writeFileSync(artifactPath, bytes, { mode: 0o600 });
+	const artifact = {
+		id: 'pinned-read-fixture',
+		size_bytes: bytes.length,
+		sha256: createHash('sha256').update(bytes).digest('hex'),
+	};
+	assert.deepEqual(readPinnedArtifactFile(artifactPath, artifact), bytes);
+	assert.throws(
+		() =>
+			readPinnedArtifactFile(artifactPath, artifact, {
+				beforeRead() {
+					fs.renameSync(artifactPath, displaced);
+					fs.writeFileSync(artifactPath, bytes, { mode: 0o600 });
+				},
+			}),
+		/changed while open/,
+	);
+});
+
+test('pathname-only pinned artifact consumers fail closed on pre-use and in-use replacement', (t) => {
+	if (process.platform === 'win32') {
+		t.skip('open-file replacement semantics differ on Windows');
+		return;
+	}
+	const bytes = Buffer.from('pinned pathname consumer\n');
+	const artifact = {
+		id: 'pinned-path-fixture',
+		size_bytes: bytes.length,
+		sha256: createHash('sha256').update(bytes).digest('hex'),
+	};
+	for (const racePoint of ['before-use', 'during-use']) {
+		const directory = temporaryDirectory(`muesly-public-pinned-path-${racePoint}-`);
+		const artifactPath = path.join(directory, 'source.bin');
+		const displaced = path.join(directory, 'source.displaced.bin');
+		fs.writeFileSync(artifactPath, bytes, { mode: 0o600 });
+		let consumerCalled = false;
+		const replace = () => {
+			fs.renameSync(artifactPath, displaced);
+			fs.writeFileSync(artifactPath, bytes, { mode: 0o600 });
+		};
+		assert.throws(
+			() =>
+				withPinnedArtifactPath(
+					artifactPath,
+					artifact,
+					() => {
+						consumerCalled = true;
+						if (racePoint === 'during-use') replace();
+					},
+					racePoint === 'before-use' ? { beforeUse: replace } : {},
+				),
+			/changed while open/,
+		);
+		assert.equal(consumerCalled, racePoint === 'during-use');
+	}
 });
 
 test('pinned downloads reject oversized bodies before writing beyond the byte ceiling', async () => {
@@ -760,6 +1091,47 @@ test('generated reference seeding is recoverable without replacing reviewer text
 	assert.equal(fs.readFileSync(displaced, 'utf8'), '');
 });
 
+test('pinned references publish exact bytes and never overwrite local drift', () => {
+	const directory = temporaryDirectory('muesly-public-reference-pinned-');
+	const exactReference = 'Exact source-derived public reference.\n';
+	const exactSha256 = sha256Text(exactReference);
+	const missing = path.join(directory, 'missing.txt');
+	assert.equal(writePinnedReference(missing, exactReference, exactSha256), true);
+	assert.equal(fs.readFileSync(missing, 'utf8'), exactReference);
+	assert.equal(writePinnedReference(missing, exactReference, exactSha256), false);
+
+	const badCommitment = path.join(directory, 'bad-commitment.txt');
+	assert.throws(
+		() => writePinnedReference(badCommitment, exactReference, sha256Text('different bytes\n')),
+		/does not match its committed SHA-256/,
+	);
+	assert(!fs.existsSync(badCommitment));
+
+	const drifted = path.join(directory, 'drifted.txt');
+	fs.writeFileSync(drifted, 'Locally edited reference.\n', { mode: 0o600 });
+	assert.throws(
+		() => writePinnedReference(drifted, exactReference, exactSha256),
+		/differs from the committed source-derived bytes/,
+	);
+	assert.equal(fs.readFileSync(drifted, 'utf8'), 'Locally edited reference.\n');
+
+	const raced = path.join(directory, 'raced.txt');
+	const displaced = path.join(directory, 'raced-displaced.txt');
+	fs.writeFileSync(raced, exactReference, { mode: 0o600 });
+	assert.throws(
+		() =>
+			writePinnedReference(raced, exactReference, exactSha256, {
+				beforeExistingOpen() {
+					fs.renameSync(raced, displaced);
+					fs.writeFileSync(raced, exactReference, { mode: 0o600 });
+				},
+			}),
+		/changed while opening/,
+	);
+	assert.equal(fs.readFileSync(raced, 'utf8'), exactReference);
+	assert.equal(fs.readFileSync(displaced, 'utf8'), exactReference);
+});
+
 test('FLEURS selection includes deterministic 400 ms gaps in every duration bound', () => {
 	const lines = Array.from({ length: 8 }, (_, index) =>
 		[
@@ -804,33 +1176,155 @@ test('AMI word parsing is Latin-1 aware and excludes boundary-crossing words', (
 	assert(window.words.every((word) => word.start >= window.start && word.end <= window.end));
 });
 
+test('AMI dense-window scoring counts lexical words only while retaining selected punctuation', () => {
+	const lexical = (text, start, end) => ({ text, start, end, punctuation: false });
+	const punctuation = (text, start) => ({ text, start, end: start, punctuation: true });
+	const words = [
+		lexical('early', 1, 1.1),
+		lexical('window', 2, 2.1),
+		punctuation('.', 3),
+		punctuation(',', 4),
+		punctuation('?', 5),
+		punctuation('!', 6),
+		lexical('later', 11, 11.5),
+		lexical('lexical', 12, 12.5),
+		punctuation('.', 12.5),
+		lexical('window', 19, 20),
+	];
+	const window = selectDensestTimedWindow(words, 10, 10);
+	assert.equal(window.start, 10);
+	assert.equal(window.wordCount, 3);
+	assert.equal(window.words.length, 4);
+	assert.equal(renderTimedReference(window.words, window.start, window.end), 'later lexical. window\n');
+});
+
+test('Earnings-21 timing tolerances admit the pinned edge cases and reject severe zig-zags', () => {
+	assert.equal(EARNINGS_MAX_START_REGRESSION_SECONDS, 0.04);
+	assert.equal(EARNINGS_MAX_ADJACENT_OVERLAP_SECONDS, 0.35);
+	const hypothesis = (rows) =>
+		[
+			'token|speaker|ts|endTs|punctuation|case|tags',
+			...rows.map(
+				([token, start, end]) => `${token}|1|${String(start)}|${String(end)}|||`,
+			),
+		].join('\n');
+	assert.equal(
+		parseEarningsTimedHypothesis(
+			hypothesis([
+				['alpha', 1, 1.1],
+				['bravo', 0.96, 1.2],
+				['charlie', 1.2, 2],
+				['delta', 1.65, 2.1],
+			]),
+		).length,
+		4,
+	);
+	assert.throws(
+		() =>
+			parseEarningsTimedHypothesis(
+				hypothesis([
+					['alpha', 1, 1.1],
+					['bravo', 0.959, 1.2],
+				]),
+			),
+		/regresses more than 0\.04 seconds/,
+	);
+	assert.throws(
+		() =>
+			parseEarningsTimedHypothesis(
+				hypothesis([
+					['alpha', 1, 1.1],
+					['bravo', 0.97, 1.2],
+					['charlie', 0.94, 1.3],
+				]),
+			),
+		/regresses more than 0\.04 seconds/,
+	);
+	assert.throws(
+		() =>
+			parseEarningsTimedHypothesis(
+				hypothesis([
+					['alpha', 1, 2],
+					['bravo', 1.9, 1.99],
+				]),
+			),
+		/decreasing end timestamp/,
+	);
+	assert.throws(
+		() =>
+			parseEarningsTimedHypothesis(
+				hypothesis([
+					['alpha', 1, 2],
+					['bravo', 1.649, 2.1],
+				]),
+			),
+		/overlaps its predecessor by more than 0\.35 seconds/,
+	);
+});
+
 test('Earnings-21 alignment slices the public human reference on exact timed anchors', () => {
+	const referenceTokens = [
+		'Before',
+		'alpha',
+		'preserved',
+		'bravo',
+		'charlie',
+		'delta',
+		'echo',
+		'foxtrot',
+		'golf',
+		'hotel',
+		'india',
+		'juliet',
+		'after',
+	];
+	const hypothesisTokens = referenceTokens.filter((token) => token !== 'preserved');
 	const reference = [
 		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
-		'Before|1||||UC|[]|[]',
-		'alpha|1||||LC|[]|[]',
-		'preserved|1||||LC|[]|[]',
-		'bravo|1|||.|LC|[]|[]',
-		'after|1||||LC|[]|[]',
+		...referenceTokens.map(
+			(token, index) =>
+				`${token}|1|||${token === 'juliet' ? '.' : ''}|${index === 0 ? 'UC' : 'LC'}|[]|[]`,
+		),
 	].join('\n');
+	const hypothesisTimes = [
+		[8, 8.2],
+		[10.2, 10.5],
+		[11, 11.3],
+		[12, 12.3],
+		[13, 13.3],
+		[14, 14.3],
+		[15, 15.3],
+		[16, 16.3],
+		[17, 17.3],
+		[18, 18.3],
+		[19, 19.5],
+		[20.1, 20.4],
+	];
 	const hypothesis = [
 		'token|speaker|ts|endTs|punctuation|case|tags',
-		'before|1|8|10.2|||',
-		'alpha|1|10.2|11|||',
-		'bravo|1|19|19.5|||',
-		'after|1|20.1|20.4|||',
+		...hypothesisTokens.map(
+			(token, index) =>
+				`${token.toLowerCase()}|1|${hypothesisTimes[index][0]}|${hypothesisTimes[index][1]}|||`,
+		),
 	].join('\n');
 	const aligned = deriveEarningsReferenceExcerpt(reference, hypothesis, {
 		startSeconds: 10,
 		endSeconds: 20,
 		contextSeconds: 5,
 	});
-	assert.equal(aligned.text, 'alpha preserved bravo.\n');
+	assert.equal(
+		aligned.text,
+		'alpha preserved bravo charlie delta echo foxtrot golf hotel india juliet.\n',
+	);
 	assert.equal(aligned.referenceStartTokenIndex, 1);
-	assert.equal(aligned.referenceEndTokenIndex, 3);
-	assert.equal(aligned.referenceTokenCount, 3);
+	assert.equal(aligned.referenceEndTokenIndex, 11);
+	assert.equal(aligned.referenceTokenCount, 11);
 	assert.equal(aligned.editDistance, 1);
-	assert.equal(aligned.exactPairs, 4);
+	assert.equal(aligned.exactPairs, 12);
+	assert.equal(aligned.startAnchor.context.tokenCount, 2);
+	assert.equal(aligned.endAnchor.context.tokenCount, 2);
+	assert(aligned.startEdgeSeconds <= 2.5);
+	assert(aligned.endEdgeSeconds <= 2.5);
 
 	const shortReference = [
 		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
@@ -850,6 +1344,45 @@ test('Earnings-21 alignment slices the public human reference on exact timed anc
 				contextSeconds: 5,
 			}),
 		/alignment quality is unsafe/,
+	);
+
+	const ambiguousReference = [
+		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
+		...Array.from({ length: 12 }, () => 'repeat|1||||LC|[]|[]'),
+	].join('\n');
+	const ambiguousHypothesis = [
+		'token|speaker|ts|endTs|punctuation|case|tags',
+		...Array.from({ length: 12 }, (_, index) => `repeat|1|${index}|${index + 0.4}|||`),
+	].join('\n');
+	assert.throws(
+		() =>
+			deriveEarningsReferenceExcerpt(ambiguousReference, ambiguousHypothesis, {
+				startSeconds: 2,
+				endSeconds: 9,
+				contextSeconds: 2,
+			}),
+		/unique exact multi-token boundary anchors/,
+	);
+
+	const edgeReferenceTokens = Array.from({ length: 12 }, (_, index) => `unique${index}`);
+	const edgeReference = [
+		'token|speaker|ts|endTs|punctuation|case|tags|wer_tags',
+		...edgeReferenceTokens.map((token) => `${token}|1||||LC|[]|[]`),
+	].join('\n');
+	const edgeHypothesis = [
+		'token|speaker|ts|endTs|punctuation|case|tags',
+		...edgeReferenceTokens.map(
+			(token, index) => `${token}|1|${13 + index * 0.35}|${13.2 + index * 0.35}|||`,
+		),
+	].join('\n');
+	assert.throws(
+		() =>
+			deriveEarningsReferenceExcerpt(edgeReference, edgeHypothesis, {
+				startSeconds: 10,
+				endSeconds: 20,
+				contextSeconds: 5,
+			}),
+		/boundary anchors are too far from the excerpt edges/,
 	);
 	assert.throws(
 		() =>
@@ -889,6 +1422,11 @@ function writeFixtureWav(filePath, marker, durationSeconds = 1) {
 }
 
 function writePreparedFixture(workspace) {
+	const catalogDocument = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+	const catalogSourceById = new Map(catalogDocument.sources.map((source) => [source.id, source]));
+	const catalogArtifactById = new Map(
+		catalogDocument.artifacts.map((artifact) => [artifact.id, artifact]),
+	);
 	const baseSelection = JSON.parse(fs.readFileSync(selectionPath, 'utf8'));
 	const fixtureFfmpegPath = path.join(workspace, 'ffmpeg-fixture');
 	fs.writeFileSync(fixtureFfmpegPath, '#!/bin/sh\necho "ffmpeg version fixture"\n', {
@@ -915,6 +1453,9 @@ function writePreparedFixture(workspace) {
 			composite.ordered_members_sha256 = sha256Text(JSON.stringify([filename]));
 			composite.clean_duration_seconds = compositeOrdinal === 1 ? 150 : 1;
 			composite.overlap_duration_seconds = composite.clean_duration_seconds;
+			const baseId = `${source.whisper_language}-fleurs-${String(composite.index).padStart(2, '0')}`;
+			composite.fixture_reference_text = `Pinned fixture reference for ${baseId}.\n`;
+			composite.reference_sha256 = sha256Text(composite.fixture_reference_text);
 			composite.audio_sha256 = Object.fromEntries(
 				baseSelection.fleurs.conditions.map((condition) => [
 					condition.id,
@@ -925,18 +1466,26 @@ function writePreparedFixture(workspace) {
 		}
 	}
 	for (const [index, sample] of baseSelection.natural_samples.entries()) {
-		sample.duration_seconds = index === 0 ? 180 : 1;
+		sample.duration_seconds = sample.window.strategy === 'fixed' || index === 0 ? 180 : 1;
 		sample.audio_sha256 = sha256Text(`fixture-${sample.id}`);
+		sample.fixture_reference_text = `Pinned fixture reference for ${sample.id}.\n`;
+		sample.reference_sha256 = sha256Text(sample.fixture_reference_text);
 		if (sample.window.strategy === 'densest-timed-words') {
 			sample.window.expected_end_seconds =
 				sample.window.expected_start_seconds + sample.duration_seconds;
+		} else {
+			sample.window.expected_reference_seed_sha256 = sample.reference_sha256;
 		}
 	}
 	const fixtureSelectionPath = path.join(workspace, 'selection-fixture.json');
 	const selectionForDisk = structuredClone(baseSelection);
 	for (const source of selectionForDisk.fleurs.sources) {
-		for (const composite of source.composites) delete composite.fixture_filename;
+		for (const composite of source.composites) {
+			delete composite.fixture_filename;
+			delete composite.fixture_reference_text;
+		}
 	}
+	for (const sample of selectionForDisk.natural_samples) delete sample.fixture_reference_text;
 	atomicWriteJson(fixtureSelectionPath, selectionForDisk);
 	const { catalog, selection } = loadPublicCorpusConfig(catalogPath, fixtureSelectionPath);
 	fs.mkdirSync(path.join(workspace, 'audio'));
@@ -950,13 +1499,17 @@ function writePreparedFixture(workspace) {
 		const referencePath = path.join(workspace, definition.reference_path);
 		writeFixtureWav(audioPath, marker, definition.duration_seconds);
 		if (!fs.existsSync(referencePath)) {
-			fs.writeFileSync(referencePath, `Reviewed fixture reference for ${id}.\n`);
+			fs.writeFileSync(referencePath, definition.reference_text, { mode: 0o600 });
 		}
+		assert.equal(fileSha256(referencePath), definition.reference_sha256);
 		samples.push({
 			id,
+			...(definition.session_id ? { session_id: definition.session_id } : {}),
 			audio_path: `audio/${id}.wav`,
 			audio_sha256: fileSha256(audioPath),
 			reference_path: definition.reference_path,
+			reference_sha256: definition.reference_sha256,
+			reference_verification: definition.reference_verification,
 			language: definition.language,
 			whisper_language: definition.whisper_language,
 			scenario: definition.scenario,
@@ -965,8 +1518,6 @@ function writePreparedFixture(workspace) {
 			duration_seconds: definition.duration_seconds,
 			dataset: definition.dataset,
 			source_window: definition.source_window,
-			...(definition.session_id ? { session_id: definition.session_id } : {}),
-			...(definition.requires_manual_reference ? { requires_manual_reference: true } : {}),
 			provenance: {
 				basis: 'public-license',
 				redistribution: 'local-only',
@@ -977,12 +1528,14 @@ function writePreparedFixture(workspace) {
 		});
 	};
 	for (const source of selection.fleurs.sources) {
+		const catalogSource = catalogSourceById.get(source.source_id);
 		for (let index = 1; index <= selection.fleurs.composites_per_language; index += 1) {
 			const baseId = `${source.whisper_language}-fleurs-${String(index).padStart(2, '0')}`;
 			const composite = source.composites[index - 1];
-			const filename = baseSelection.fleurs.sources.find(
+			const fixtureComposite = baseSelection.fleurs.sources.find(
 				(candidate) => candidate.source_id === source.source_id,
-			).composites[index - 1].fixture_filename;
+			).composites[index - 1];
+			const filename = fixtureComposite.fixture_filename;
 			for (const condition of selection.fleurs.conditions) {
 				const durationSeconds =
 					condition.id === 'synthetic-overlap'
@@ -990,7 +1543,11 @@ function writePreparedFixture(workspace) {
 						: composite.clean_duration_seconds;
 				addSample({
 					id: `${baseId}-${condition.id}`,
+					session_id: `session-${baseId}`,
 					reference_path: `references/${baseId}.txt`,
+					reference_text: fixtureComposite.fixture_reference_text,
+					reference_sha256: composite.reference_sha256,
+					reference_verification: catalogSource.reference_verification,
 					language: source.language,
 					whisper_language: source.whisper_language,
 					scenario: 'read-speech',
@@ -1005,6 +1562,8 @@ function writePreparedFixture(workspace) {
 						member_count: 1,
 						ordered_members_sha256: composite.ordered_members_sha256,
 						expected_duration_seconds: durationSeconds,
+						reference_order_policy: 'source-item-onset',
+						monotonic_onsets: true,
 					},
 					source_item_ids: [`${source.source_id}:${filename}`],
 					transform_id: condition.transform_id,
@@ -1013,7 +1572,21 @@ function writePreparedFixture(workspace) {
 		}
 	}
 	for (const sample of selection.natural_samples) {
-		const dataset = sample.source_id.startsWith('ami-') ? 'ami' : 'earnings21';
+		const catalogSource = catalogSourceById.get(sample.source_id);
+		const dataset =
+			catalogSource.reference_verification === PUBLIC_REFERENCE_RECIPES.AMI ? 'ami' : 'earnings21';
+		const referenceArtifactId = catalogSource.artifact_ids.find(
+			(artifactId) => catalogArtifactById.get(artifactId).kind === 'reference',
+		);
+		const alignmentArtifactId = catalogSource.artifact_ids.find(
+			(artifactId) => catalogArtifactById.get(artifactId).kind === 'alignment-hypothesis',
+		);
+		const annotationArtifactId = catalogSource.artifact_ids.find(
+			(artifactId) => catalogArtifactById.get(artifactId).kind === 'reference-archive',
+		);
+		const referenceArtifact = catalogArtifactById.get(referenceArtifactId);
+		const alignmentArtifact = catalogArtifactById.get(alignmentArtifactId);
+		const annotationArtifact = catalogArtifactById.get(annotationArtifactId);
 		const sourceWindow =
 			sample.window.strategy === 'densest-timed-words'
 				? {
@@ -1022,6 +1595,11 @@ function writePreparedFixture(workspace) {
 						end_seconds: sample.window.expected_end_seconds,
 						boundary_policy: 'exclude-crossing-words',
 						word_count: sample.window.expected_word_count,
+						start_crossing_word_count: sample.window.expected_start_crossing_word_count,
+						end_crossing_word_count: sample.window.expected_end_crossing_word_count,
+						annotation_artifact_id: annotationArtifactId,
+						annotation_source_revision: catalogSource.revision,
+						annotation_artifact_sha256: annotationArtifact.sha256,
 						annotation_member_count: sample.window.annotation_member_count,
 						ordered_annotation_members_sha256: sample.window.ordered_annotation_members_sha256,
 					}
@@ -1031,21 +1609,44 @@ function writePreparedFixture(workspace) {
 						end_seconds: sample.window.start_seconds + sample.duration_seconds,
 						boundary_policy: 'exclude-crossing-anchor-words',
 						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
-						alignment_artifact_id: `${sample.source_id}-alignment`,
+						reference_artifact_id: referenceArtifactId,
+						reference_artifact_revision: referenceArtifact.revision,
+						alignment_artifact_id: alignmentArtifactId,
+						alignment_artifact_revision: alignmentArtifact.revision,
+						alignment_role: alignmentArtifact.role,
 						alignment_context_seconds: sample.window.alignment_context_seconds,
 						alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
 						alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
 						alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+						alignment_paired_tokens: sample.window.expected_alignment_paired_tokens,
+						alignment_exact_pairs: sample.window.expected_alignment_exact_pairs,
 						reference_start_token_index: sample.window.expected_reference_start_token_index,
 						reference_end_token_index: sample.window.expected_reference_end_token_index,
 						reference_token_count: sample.window.expected_reference_token_count,
+						anchor_context_tokens: sample.window.expected_anchor_context_tokens,
+						start_anchor_hypothesis_token_index:
+							sample.window.expected_start_anchor_hypothesis_token_index,
+						start_anchor_start_seconds: sample.window.expected_start_anchor_start_seconds,
+						start_anchor_end_seconds: sample.window.expected_start_anchor_end_seconds,
+						start_anchor_context_sha256: sample.window.expected_start_anchor_context_sha256,
+						end_anchor_hypothesis_token_index:
+							sample.window.expected_end_anchor_hypothesis_token_index,
+						end_anchor_start_seconds: sample.window.expected_end_anchor_start_seconds,
+						end_anchor_end_seconds: sample.window.expected_end_anchor_end_seconds,
+						end_anchor_context_sha256: sample.window.expected_end_anchor_context_sha256,
 						reference_seed_sha256: sample.window.expected_reference_seed_sha256,
 					};
+		const fixtureSample = baseSelection.natural_samples.find(
+			(candidate) => candidate.id === sample.id,
+		);
 		addSample({
 			...sample,
 			dataset,
 			source_window: sourceWindow,
 			reference_path: `references/${sample.id}.txt`,
+			reference_text: fixtureSample.fixture_reference_text,
+			reference_sha256: sample.reference_sha256,
+			reference_verification: catalogSource.reference_verification,
 			source_item_ids: [sample.source_item_id],
 			...(sample.scenario === 'meeting' ? { session_id: `session-${sample.source_id}` } : {}),
 		});
@@ -1073,7 +1674,7 @@ function writePreparedFixture(workspace) {
 		source_catalog_id: catalog.catalog_id,
 		source_catalog_sha256: fileSha256(catalogPath),
 		selection_sha256: fileSha256(fixtureSelectionPath),
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
 		ffmpeg: {
 			id: fixtureFfmpeg.id,
 			executable_path: fixtureFfmpegPath,
@@ -1087,7 +1688,7 @@ function writePreparedFixture(workspace) {
 	return prepared;
 }
 
-test('review attestation records exact audio and reference hashes for two distinct reviewers', () => {
+test('pinned upstream-gold samples reject local review attestations', () => {
 	const workspace = temporaryDirectory('muesly-public-attest-');
 	const prepared = writePreparedFixture(workspace);
 	atomicWriteJson(
@@ -1100,54 +1701,56 @@ test('review attestation records exact audio and reference hashes for two distin
 		catalogPath,
 		selectionPath: prepared.fixtureSelectionPath,
 		sampleId: firstSample.id,
-		affirmReferenceProtocol: REFERENCE_PROTOCOL_ID,
+		affirmReferenceProtocol: PUBLIC_REFERENCE_PROTOCOL_ID,
 		acceptReviewedReference: true,
+		reviewerId: 'reviewer-one',
 	};
+	assert.throws(
+		() => recordPublicReviewAttestation(baseOptions),
+		/pinned upstream gold; restore its exact source-derived bytes/,
+	);
 	assert.throws(
 		() =>
 			recordPublicReviewAttestation({
 				...baseOptions,
-				reviewerId: 'reviewer-one',
-				acceptReviewedReference: false,
+				affirmReferenceProtocol: REFERENCE_PROTOCOL_ID,
 			}),
-		/--accept-reviewed-reference/,
-	);
-	const first = recordPublicReviewAttestation({
-		...baseOptions,
-		reviewerId: 'reviewer-one',
-		reviewedAt: '2026-07-17T00:00:00.000Z',
-	});
-	assert.equal(first.reviewCount, 1);
-	assert.equal(first.audioSha256, firstSample.audio_sha256);
-	assert.equal(first.referenceSha256, fileSha256(path.join(workspace, firstSample.reference_path)));
-	assert.throws(
-		() => recordPublicReviewAttestation({ ...baseOptions, reviewerId: 'reviewer-one' }),
-		/already attested/,
-	);
-	const second = recordPublicReviewAttestation({
-		...baseOptions,
-		reviewerId: 'reviewer-two',
-		reviewedAt: '2026-07-17T01:00:00.000Z',
-	});
-	assert.equal(second.reviewCount, 2);
-	assert.throws(
-		() => recordPublicReviewAttestation({ ...baseOptions, reviewerId: 'reviewer-three' }),
-		/already has the required two reviews/,
+		new RegExp(`review requires --affirm-reference-protocol ${PUBLIC_REFERENCE_PROTOCOL_ID}`),
 	);
 	const recorded = JSON.parse(
 		fs.readFileSync(path.join(workspace, 'review-attestations.json'), 'utf8'),
-	).samples.find((sample) => sample.sample_id === firstSample.id);
-	assert.deepEqual(
-		recorded.reviewers.map((reviewer) => reviewer.reviewer_id),
-		['reviewer-one', 'reviewer-two'],
 	);
-	assert(recorded.reviewers.every((reviewer) => reviewer.audio_sha256 === first.audioSha256));
-	assert(
-		recorded.reviewers.every((reviewer) => reviewer.reference_sha256 === first.referenceSha256),
-	);
+	assert.equal(recorded.reference_protocol_id, PUBLIC_REFERENCE_PROTOCOL_ID);
+	assert(recorded.samples.every((sample) => sample.reviewers.length === 0));
 });
 
-test('finalization is blocked until all 66 references have two independent hash-bound reviews', async () => {
+test('untouched legacy empty review templates migrate without accepting legacy evidence', () => {
+	assert.equal(PUBLIC_REVIEW_SCHEMA_VERSION, 1);
+	const workspace = temporaryDirectory('muesly-public-review-migration-');
+	const prepared = writePreparedFixture(workspace);
+	const reviewsPath = path.join(workspace, 'review-attestations.json');
+	const legacy = {
+		schema_version: 1,
+		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		samples: prepared.samples.map((sample) => ({ sample_id: sample.id, reviewers: [] })),
+	};
+	atomicWriteJson(reviewsPath, legacy);
+	writePreparedBundle(workspace, prepared);
+	const migrated = JSON.parse(fs.readFileSync(reviewsPath, 'utf8'));
+	assert.equal(migrated.schema_version, PUBLIC_REVIEW_SCHEMA_VERSION);
+	assert.equal(migrated.reference_protocol_id, PUBLIC_REFERENCE_PROTOCOL_ID);
+	assert(migrated.samples.every((sample) => sample.reviewers.length === 0));
+
+	legacy.samples[0].reviewers.push({ reviewer_id: 'legacy-evidence-must-not-be-rewritten' });
+	atomicWriteJson(reviewsPath, legacy);
+	assert.throws(
+		() => writePreparedBundle(workspace, prepared),
+		/retired protocol.*audit evidence|legacy.*audit evidence/i,
+	);
+	assert.deepEqual(JSON.parse(fs.readFileSync(reviewsPath, 'utf8')), legacy);
+});
+
+test('empty exact-upstream review templates finalize all 66 pinned references', async () => {
 	const workspace = temporaryDirectory('muesly-public-finalize-');
 	const prepared = writePreparedFixture(workspace);
 	const reviews = createReviewTemplate(prepared.samples);
@@ -1156,33 +1759,46 @@ test('finalization is blocked until all 66 references have two independent hash-
 		workspace,
 		catalogPath,
 		selectionPath: prepared.fixtureSelectionPath,
-		affirmReferenceProtocol: REFERENCE_PROTOCOL_ID,
+		affirmReferenceProtocol: PUBLIC_REFERENCE_PROTOCOL_ID,
 	};
 	const dependencies = { rebuildPreparedOutputs: async () => {} };
+	assert.equal(prepared.schema_version, PUBLIC_PREPARED_SCHEMA_VERSION);
+	assert.equal(prepared.reference_protocol_id, PUBLIC_REFERENCE_PROTOCOL_ID);
+	assert(
+		prepared.samples.every(
+			(sample) =>
+				/^[a-f0-9]{64}$/.test(sample.reference_sha256) &&
+				Object.values(PUBLIC_REFERENCE_RECIPES).includes(sample.reference_verification),
+		),
+	);
+	const firstSample = prepared.samples[0];
+	const changedReference = path.join(workspace, firstSample.reference_path);
+	const originalReference = fs.readFileSync(changedReference);
+	fs.appendFileSync(changedReference, 'locally mutated before finalization\n');
 	await assert.rejects(
 		finalizePublicCorpus(options, dependencies),
-		/requires two independent accepted reviews/,
+		/reference_sha256 does not match the committed source-derived reference/,
 	);
-	const preparedById = new Map(prepared.samples.map((sample) => [sample.id, sample]));
-	for (const review of reviews.samples) {
-		const sample = preparedById.get(review.sample_id);
-		const referenceHash = fileSha256(path.join(workspace, sample.reference_path));
-		review.reviewers = ['reviewer-one', 'reviewer-two'].map((reviewerId, index) => ({
-			reviewer_id: reviewerId,
-			reviewed_at: `2026-07-17T0${index}:00:00.000Z`,
-			decision: 'accepted',
-			affirmed_reference_protocol_id: REFERENCE_PROTOCOL_ID,
-			audio_sha256: 'f'.repeat(64),
-			reference_sha256: referenceHash,
-		}));
-	}
-	atomicWriteJson(path.join(workspace, 'review-attestations.json'), reviews);
-	await assert.rejects(finalizePublicCorpus(options, dependencies), /audio_sha256 does not match/);
-	for (const review of reviews.samples) {
-		const sample = preparedById.get(review.sample_id);
-		for (const reviewer of review.reviewers) reviewer.audio_sha256 = sample.audio_sha256;
-	}
-	atomicWriteJson(path.join(workspace, 'review-attestations.json'), reviews);
+	fs.writeFileSync(changedReference, originalReference);
+
+	const originalReferenceSha256 = firstSample.reference_sha256;
+	firstSample.reference_sha256 = 'f'.repeat(64);
+	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
+	await assert.rejects(
+		finalizePublicCorpus(options, dependencies),
+		/reference_sha256 does not match the committed source-derived reference/,
+	);
+	firstSample.reference_sha256 = originalReferenceSha256;
+	const originalRecipe = firstSample.reference_verification;
+	firstSample.reference_verification = 'untrusted-local-file-v1';
+	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
+	await assert.rejects(
+		finalizePublicCorpus(options, dependencies),
+		/reference_verification must be a supported source recipe|does not match the source catalog recipe/,
+	);
+	firstSample.reference_verification = originalRecipe;
+	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
+
 	const replacedSample = prepared.samples[0];
 	const replacedAudio = path.join(workspace, replacedSample.audio_path);
 	const displacedAudio = `${replacedAudio}.displaced`;
@@ -1202,13 +1818,10 @@ test('finalization is blocked until all 66 references have two independent hash-
 	assert.equal(finalized.sampleCount, 66);
 	assert.equal(validateFinalizedPublicCorpus(options).length, 0);
 
-	const firstSample = preparedById.get(reviews.samples[0].sample_id);
-	const changedReference = path.join(workspace, firstSample.reference_path);
-	const originalReference = fs.readFileSync(changedReference);
-	fs.appendFileSync(changedReference, 'changed after review\n');
+	fs.appendFileSync(changedReference, 'changed after finalization\n');
 	assert.match(
 		validateFinalizedPublicCorpus(options).join('\n'),
-		/does not match the current reference/,
+		/reference_sha256 does not match the committed source-derived reference/,
 	);
 	fs.writeFileSync(changedReference, originalReference);
 
@@ -1227,10 +1840,11 @@ test('finalization is blocked until all 66 references have two independent hash-
 	);
 	fs.writeFileSync(manifestPath, originalManifest);
 
-	firstSample.duration_seconds = 2;
+	const originalDurationSeconds = firstSample.duration_seconds;
+	firstSample.duration_seconds = originalDurationSeconds + 1;
 	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
 	await assert.rejects(finalizePublicCorpus(options, dependencies), /committed selection/);
-	firstSample.duration_seconds = 1;
+	firstSample.duration_seconds = originalDurationSeconds;
 	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
 
 	const longSample = prepared.samples.find((sample) => sample.duration_seconds === 180);
@@ -1239,10 +1853,7 @@ test('finalization is blocked until all 66 references have two independent hash-
 	const regeneratedBytes = fs.readFileSync(longAudioPath);
 	writeFixtureWav(longAudioPath, 31_337, 180);
 	longSample.audio_sha256 = fileSha256(longAudioPath);
-	const longReview = reviews.samples.find((review) => review.sample_id === longSample.id);
-	for (const reviewer of longReview.reviewers) reviewer.audio_sha256 = longSample.audio_sha256;
 	atomicWriteJson(path.join(workspace, 'prepared-samples.json'), prepared);
-	atomicWriteJson(path.join(workspace, 'review-attestations.json'), reviews);
 	await assert.rejects(
 		finalizePublicCorpus(options, {
 			rebuildPreparedOutputs: async () => {

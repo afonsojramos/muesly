@@ -1,6 +1,6 @@
 {
-	"schema_version": 2,
-	"catalog_id": "muesly-public-asr-sources-v2",
+	"schema_version": 3,
+	"catalog_id": "muesly-public-asr-sources-v3",
 	"description": "Immutable, open-licensed source files used to reconstruct the local public ASR corpus.",
 	"artifacts": [
 		{
@@ -141,6 +141,7 @@
 		{
 			"id": "earnings21-4320211-alignment",
 			"kind": "alignment-hypothesis",
+			"role": "timing-only",
 			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
 			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4320211.nlp",
 			"cache_path": "earnings21/4320211.rev-kaldi.nlp",
@@ -167,6 +168,7 @@
 		{
 			"id": "earnings21-4330115-alignment",
 			"kind": "alignment-hypothesis",
+			"role": "timing-only",
 			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
 			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4330115.nlp",
 			"cache_path": "earnings21/4330115.rev-kaldi.nlp",
@@ -193,6 +195,7 @@
 		{
 			"id": "earnings21-4341191-alignment",
 			"kind": "alignment-hypothesis",
+			"role": "timing-only",
 			"revision": "c05ab6fd8b4b627d123c922a22a39e993dd37635",
 			"url": "https://raw.githubusercontent.com/revdotcom/speech-datasets/c05ab6fd8b4b627d123c922a22a39e993dd37635/earnings21/output/rev/kaldi/nlp/4341191.nlp",
 			"cache_path": "earnings21/4341191.rev-kaldi.nlp",
@@ -210,6 +213,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "fleurs-tsv-composite-v1",
 			"artifact_ids": ["fleurs-en-us-test-audio", "fleurs-en-us-test-index"]
 		},
 		{
@@ -221,6 +225,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "fleurs-tsv-composite-v1",
 			"artifact_ids": ["fleurs-es-419-test-audio", "fleurs-es-419-test-index"]
 		},
 		{
@@ -232,6 +237,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "fleurs-tsv-composite-v1",
 			"artifact_ids": ["fleurs-pt-br-test-audio", "fleurs-pt-br-test-index"]
 		},
 		{
@@ -243,6 +249,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "fleurs-tsv-composite-v1",
 			"artifact_ids": ["fleurs-fr-fr-test-audio", "fleurs-fr-fr-test-index"]
 		},
 		{
@@ -254,6 +261,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "FLEURS by Google, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "fleurs-tsv-composite-v1",
 			"artifact_ids": ["fleurs-de-de-test-audio", "fleurs-de-de-test-index"]
 		},
 		{
@@ -265,6 +273,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "ami-manual-words-window-v1",
 			"artifact_ids": ["ami-en2001a-headset-mix", "ami-manual-annotations-v1-6-2"]
 		},
 		{
@@ -276,6 +285,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "ami-manual-words-window-v1",
 			"artifact_ids": ["ami-in1001-headset-mix", "ami-manual-annotations-v1-6-2"]
 		},
 		{
@@ -287,6 +297,7 @@
 			"license_url": "https://creativecommons.org/licenses/by/4.0/",
 			"attribution": "AMI Meeting Corpus, licensed under CC BY 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "ami-manual-words-window-v1",
 			"artifact_ids": ["ami-in1005-headset-mix", "ami-manual-annotations-v1-6-2"]
 		},
 		{
@@ -298,6 +309,7 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "earnings21-human-reference-aligned-v1",
 			"artifact_ids": [
 				"earnings21-4320211-audio",
 				"earnings21-4320211-reference",
@@ -313,6 +325,7 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "earnings21-human-reference-aligned-v1",
 			"artifact_ids": [
 				"earnings21-4330115-audio",
 				"earnings21-4330115-reference",
@@ -328,6 +341,7 @@
 			"license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
 			"attribution": "Earnings-21 by Rev, licensed under CC BY-SA 4.0.",
 			"redistribution": "local-only",
+			"reference_verification": "earnings21-human-reference-aligned-v1",
 			"artifact_ids": [
 				"earnings21-4341191-audio",
 				"earnings21-4341191-reference",

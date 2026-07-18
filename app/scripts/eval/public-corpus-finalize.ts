@@ -2,13 +2,19 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { PUBLIC_REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { finalizePublicCorpus } from './public-corpus.ts';
 import {
 	DEFAULT_PUBLIC_CATALOG,
 	DEFAULT_PUBLIC_SELECTION,
 	DEFAULT_PUBLIC_WORKSPACE,
 } from './public-corpus-prepare.ts';
+
+function parseNonNegativeNumber(value, flag) {
+	const number = Number(value);
+	if (!Number.isFinite(number) || number < 0) throw new Error(`${flag} must be non-negative`);
+	return number;
+}
 
 export function parsePublicFinalizeArgs(args) {
 	const options = {
@@ -34,6 +40,10 @@ export function parsePublicFinalizeArgs(args) {
 			options.workspace = path.resolve(value());
 		} else if (argument === '--affirm-reference-protocol') {
 			options.affirmReferenceProtocol = value();
+		} else if (argument === '--minimum-free-gib') {
+			options.minimumFreeBytes = Math.floor(
+				parseNonNegativeNumber(value(), '--minimum-free-gib') * 1024 ** 3,
+			);
 		} else if (argument === '--help') {
 			options.help = true;
 		} else {
@@ -46,14 +56,15 @@ export function parsePublicFinalizeArgs(args) {
 function usage() {
 	return `Usage: nub app/scripts/eval/public-corpus-finalize.ts [options]
 
-Finalization verifies every generated file and requires two distinct, accepted,
-hash-bound reviews for every reference before creating corpus-local.json.
+Finalization rederives every generated file from pinned public sources and requires
+the exact human-reference bytes derived from them before creating corpus-local.json.
 
 Options:
   --catalog <path>           Source catalog
   --selection <path>         Deterministic selection
   --workspace <path>         Prepared public-corpus workspace
-  --affirm-reference-protocol ${REFERENCE_PROTOCOL_ID}
+  --minimum-free-gib <GiB>   Override the 20 GiB reconstruction reserve
+  --affirm-reference-protocol ${PUBLIC_REFERENCE_PROTOCOL_ID}
   --help                     Show this help
 `;
 }
@@ -67,7 +78,7 @@ async function main() {
 		}
 		const result = await finalizePublicCorpus(options);
 		process.stdout.write(
-			`Finalized ${result.sampleCount} reviewed public ASR samples at ${result.manifestPath}.\n`,
+			`Finalized ${result.sampleCount} verified public upstream-gold ASR samples at ${result.manifestPath}.\n`,
 		);
 	} catch (error) {
 		process.stderr.write(`${error.message}\n`);

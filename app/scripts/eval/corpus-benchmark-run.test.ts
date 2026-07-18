@@ -27,6 +27,7 @@ import { assertLeasedCorpusSampleUnchanged } from "./corpus-result.ts";
 import {
   loadCorpus,
   PUBLIC_PREPARATION_PROTOCOL_ID,
+  PUBLIC_REFERENCE_PROTOCOL_ID,
   REFERENCE_PROTOCOL_ID,
 } from "./corpus.ts";
 import { evaluatorRevisionSha256 } from "./evaluator-revision.ts";
@@ -306,7 +307,8 @@ function fixture(t, { samples = ["sample-b", "sample-a"], dataset } = {}) {
     `${JSON.stringify({
       schema_version: 4,
       corpus_id: "consented-meetings-v1",
-      reference_protocol_id: REFERENCE_PROTOCOL_ID,
+      reference_protocol_id:
+        dataset === undefined ? REFERENCE_PROTOCOL_ID : PUBLIC_REFERENCE_PROTOCOL_ID,
       description: "Local consented meetings.",
       distribution: "local",
       ...(dataset === undefined
@@ -332,7 +334,8 @@ function fixture(t, { samples = ["sample-b", "sample-a"], dataset } = {}) {
     `${JSON.stringify({
       schema_version: 3,
       target_id: "multilingual-v1",
-      reference_protocol_id: REFERENCE_PROTOCOL_ID,
+      reference_protocol_id:
+        dataset === undefined ? REFERENCE_PROTOCOL_ID : PUBLIC_REFERENCE_PROTOCOL_ID,
       description: "Test target.",
       coverage_mode: dataset === undefined ? "language-noise-matrix" : "explicit-samples",
       ...(dataset === undefined

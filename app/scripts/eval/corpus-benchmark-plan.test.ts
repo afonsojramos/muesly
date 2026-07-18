@@ -19,6 +19,7 @@ import {
 	corpusFingerprint,
 	loadCorpus,
 	PUBLIC_PREPARATION_PROTOCOL_ID,
+	PUBLIC_REFERENCE_PROTOCOL_ID,
 	REFERENCE_PROTOCOL_ID,
 } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
@@ -98,7 +99,7 @@ function corpus(samples) {
 	const document = {
 		schema_version: 4,
 		corpus_id: 'consented-meetings-v1',
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: hasPublicSamples ? PUBLIC_REFERENCE_PROTOCOL_ID : REFERENCE_PROTOCOL_ID,
 		description: 'Validated local consented meetings.',
 		distribution: 'local',
 		...(hasPublicSamples
@@ -467,22 +468,28 @@ test('plans exact samples and repetitions as distinct resumable task identities'
 });
 
 test('binds a public dataset and preparation contract into task and checkpoint identity', () => {
+	const publicCorpus = corpus([
+		sample({ id: 'meeting-en-fleurs', basis: 'public-license', dataset: 'fleurs' }),
+	]);
 	const publicTargets = {
-		schema_version: 3,
+		schema_version: 4,
 		target_id: 'public-samples-v1',
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
+		corpus_id: publicCorpus.corpus_id,
+		corpus_fingerprint: publicCorpus.corpus_fingerprint,
+		source_catalog_sha256: publicCorpus.source_catalog_sha256,
+		selection_sha256: publicCorpus.preparation.selection_sha256,
 		coverage_mode: 'explicit-samples',
 		sample_ids: ['meeting-en-fleurs'],
 		benchmark_variants: [{ provider: 'whisper', model: 'whisper-test', backend: 'metal' }],
 		repetitions: 1,
 	};
 	const task = plannedTask({
-		corpus: corpus([
-			sample({ id: 'meeting-en-fleurs', basis: 'public-license', dataset: 'fleurs' }),
-		]),
+		corpus: publicCorpus,
 		targets: publicTargets,
 	});
 	assert.equal(task.dataset, 'fleurs');
+	assert.equal(task.reference_protocol_id, PUBLIC_REFERENCE_PROTOCOL_ID);
 	assert.deepEqual(validateTaskCheckpoint(checkpoint(task), task), []);
 
 	assert.throws(
@@ -495,6 +502,19 @@ test('binds a public dataset and preparation contract into task and checkpoint i
 		validateTaskCheckpoint(mismatched, task).join('\n'),
 		/checkpoint\.results\[0\]\.dataset must equal "fleurs"/,
 	);
+
+	for (const [field, value] of [
+		['corpus_id', 'another-corpus'],
+		['corpus_fingerprint', 'a'.repeat(64)],
+		['source_catalog_sha256', 'b'.repeat(64)],
+		['selection_sha256', 'c'.repeat(64)],
+	]) {
+		assert.throws(
+			() => plannedTask({ corpus: publicCorpus, targets: { ...publicTargets, [field]: value } }),
+			new RegExp(`coverage targets ${field} does not match`),
+			field,
+		);
+	}
 });
 
 test('preserves schema-10 checkpoint compatibility only for an unambiguous first repeat', () => {
@@ -704,7 +724,7 @@ test('rejects duplicate target cells, variants, and unsafe accelerators', () => 
 
 test('requires the complete coverage target schema before planning', () => {
 	for (const [name, overrides, expected] of [
-		['schema version', { schema_version: 1 }, /targets\.schema_version must be 3/],
+		['schema version', { schema_version: 1 }, /targets\.schema_version must be 4/],
 		[
 			'reference protocol',
 			{ reference_protocol_id: 'another-reference-v1' },

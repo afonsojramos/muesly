@@ -383,12 +383,18 @@ export function evaluateCoverage(corpus, targets, reports = []) {
 	).length;
 
 	return {
-		schema_version: 11,
+		schema_version: 12,
 		target_id: targets.target_id,
 		coverage_mode: resolvedTarget.coverage_mode,
 		repetitions: resolvedTarget.repetitions,
 		corpus_id: corpus.corpus_id,
 		corpus_fingerprint: corpus.corpus_fingerprint,
+		...(targets.source_catalog_sha256 === undefined
+			? {}
+			: { source_catalog_sha256: corpus.source_catalog_sha256 }),
+		...(targets.selection_sha256 === undefined
+			? {}
+			: { selection_sha256: corpus.preparation.selection_sha256 }),
 		reference_protocol_id: corpus.reference_protocol_id,
 		wer_scorer: werScorer ?? null,
 		model_artifacts: sortedMapEntries(modelArtifacts),

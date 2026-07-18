@@ -310,8 +310,8 @@ Check that at least one matrix-wide hardware cohort has three distinct sessions 
 language/noise/provider/model/backend cell. A cohort fixes the OS, architecture, and machine
 profile across the whole matrix and uses one consistent accelerator identity per backend. Raw and
 best-per-cell counts remain visible for diagnostics, but stitching individually complete cells
-from different machines or accelerator identities does not satisfy coverage schema 11. Coverage
-schema 11 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
+from different machines or accelerator identities does not satisfy coverage schema 12. Coverage
+schema 12 also pins the reference protocol, evaluator-revision, and benchmark-executable digest for
 every backend. The
 command fails with `--require-complete` until the corpus cells and one full-matrix cohort are
 complete:
@@ -335,7 +335,7 @@ The explicit `eval:real` commands above remain useful for one-off diagnostics. T
 is the canonical way to fill and resume the target matrix; use `eval:report` afterward to create
 reviewable aggregate JSON and Markdown. Every aggregation requires `--manifest`, even when only
 printing to standard output, because the authoritative manifest supplies the grouping metadata.
-Aggregate schema 11 keeps the reference protocol and each provider/model/reported-backend variant
+Aggregate schema 12 keeps the reference protocol and each provider/model/reported-backend variant
 separate and records
 `aggregation_unit_policy: "session-id-or-singleton-sample-v1"`. It emits comparison tables only
 when every supplied variant measured the identical sample-and-repeat measurement cohort. Unequal or
@@ -352,11 +352,13 @@ uses opaque session IDs only in memory to group samples; it emits unit counts an
 session IDs.
 
 Existing flat summary fields remain measurement-weighted diagnostics. The nested `unit_balanced`
-metrics are the headline quality and speed results and the inputs to public qualification policy v2
-(`muesly-public-asr-qualification-v2`, qualification schema 2). Within each unit, peak RSS and
-peak-minus-baseline RSS use the maximum sample value before the equal-weight unit distribution is
-calculated. Unit-balanced p95 uses nearest rank; with 1–19 eligible units it resolves to the
-observed maximum and must not be presented as a stable tail estimate.
+metrics are the headline quality and speed results. Provisional public qualification policy v3
+(`muesly-public-asr-qualification-v3`, qualification schema 3) uses them, but its 21-unit public
+bootstrap authorizes no tier or catalog change. Public-corpus rankings remain exploratory until
+corroborated by this genuinely consented multilingual natural-meeting target. Within each unit,
+peak RSS and peak-minus-baseline RSS use the maximum sample value before the equal-weight unit
+distribution is calculated. Unit-balanced p95 uses nearest rank; with 1–19 eligible units it
+resolves to the observed maximum and must not be presented as a stable tail estimate.
 Language and noise summaries rebuild units inside each slice. A multilingual or mixed-noise
 session can therefore contribute once to multiple rows, so slice unit counts do not partition the
 overall count.

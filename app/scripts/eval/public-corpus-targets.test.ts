@@ -5,6 +5,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { validateCoverageTargets } from './corpus-targets.ts';
+import { fileSha256, PUBLIC_REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { CATALOG_AUDIT_MODELS, POLICY_MODELS } from './model-prepare.ts';
 import {
 	createPublicCampaignCorpusLoader,
@@ -24,13 +25,13 @@ const fixedSubset = [
 	'en-ami-en2001a-natural-office',
 	'en-earnings21-4320211-natural-remote-call',
 	'es-fleurs-01-clean-read',
-	'es-fleurs-01-synthetic-office',
+	'es-fleurs-02-synthetic-office',
 	'pt-fleurs-01-clean-read',
-	'pt-fleurs-01-synthetic-remote-call',
+	'pt-fleurs-02-synthetic-remote-call',
 	'fr-fleurs-01-clean-read',
-	'fr-fleurs-01-synthetic-overlap',
+	'fr-fleurs-02-synthetic-overlap',
 	'de-fleurs-01-clean-read',
-	'de-fleurs-01-synthetic-office',
+	'de-fleurs-02-synthetic-office',
 ];
 
 function readJson(filePath) {
@@ -63,9 +64,33 @@ function policyVariantKeys() {
 }
 
 test('all committed public benchmark suites satisfy the strict target contract', () => {
+	const bindings = [];
 	for (const [suite, targetPath] of Object.entries(targetPaths)) {
-		assert.deepEqual(validateCoverageTargets(readJson(targetPath)), [], suite);
+		const targets = readJson(targetPath);
+		assert.deepEqual(validateCoverageTargets(targets), [], suite);
+		assert.equal(targets.schema_version, 4, suite);
+		assert.equal(targets.reference_protocol_id, PUBLIC_REFERENCE_PROTOCOL_ID, suite);
+		bindings.push({
+			corpus_id: targets.corpus_id,
+			corpus_fingerprint: targets.corpus_fingerprint,
+			source_catalog_sha256: targets.source_catalog_sha256,
+			selection_sha256: targets.selection_sha256,
+		});
 	}
+	assert(bindings.every((binding) => JSON.stringify(binding) === JSON.stringify(bindings[0])));
+	assert.equal(bindings[0].corpus_id, 'muesly-public-asr-v2');
+	assert.equal(
+		bindings[0].corpus_fingerprint,
+		'74fbd0bc89435defd0ac630d85ef2e588d2bcf565ab08b4689f3934eb6ea6ddb',
+	);
+	assert.equal(
+		bindings[0].source_catalog_sha256,
+		fileSha256(path.join(here, 'public-corpus-sources.json')),
+	);
+	assert.equal(
+		bindings[0].selection_sha256,
+		fileSha256(path.join(here, 'public-corpus-selection.json')),
+	);
 });
 
 test('automatic-policy qualifies every public sample against the product candidate matrix', () => {
@@ -93,6 +118,11 @@ test('catalog audit is a fixed ten-sample multilingual and natural-speech slice'
 	for (const condition of ['clean-read', 'synthetic-office', 'synthetic-remote-call', 'synthetic-overlap']) {
 		assert(targets.sample_ids.some((sampleId) => sampleId.endsWith(condition)), condition);
 	}
+	const sourceSessions = targets.sample_ids.map((sampleId) => {
+		const fleurs = sampleId.match(/^([a-z]{2}-fleurs-\d{2})-/);
+		return fleurs?.[1] ?? sampleId;
+	});
+	assert.equal(new Set(sourceSessions).size, targets.sample_ids.length);
 });
 
 test('performance qualification repeats the same fixed slice and policy matrix three times', () => {

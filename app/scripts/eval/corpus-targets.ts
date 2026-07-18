@@ -1,8 +1,9 @@
 import { benchmarkDefinitionForReportedBackend } from './benchmark-executable.ts';
-import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { isReferenceProtocolId, REFERENCE_PROTOCOL_IDS } from './corpus.ts';
 import { validateBenchmarkModelName } from './model-artifact.ts';
 
-export const COVERAGE_TARGET_SCHEMA_VERSION = 3;
+export const COVERAGE_TARGET_SCHEMA_VERSION = 4;
+const LEGACY_COVERAGE_TARGET_SCHEMA_VERSION = 3;
 const LEGACY_MATRIX_TARGET_SCHEMA_VERSION = 2;
 
 const COVERAGE_MODES = new Set(['language-noise-matrix', 'explicit-samples']);
@@ -14,7 +15,20 @@ const COMMON_TARGET_FIELDS = new Set([
 	'coverage_mode',
 	'benchmark_variants',
 	'repetitions',
+	'corpus_id',
+	'corpus_fingerprint',
+	'source_catalog_sha256',
+	'selection_sha256',
 ]);
+const CORPUS_BINDING_FIELDS = Object.freeze([
+	'corpus_id',
+	'corpus_fingerprint',
+	'source_catalog_sha256',
+	'selection_sha256',
+]);
+const LEGACY_COMMON_TARGET_FIELDS = new Set(
+	[...COMMON_TARGET_FIELDS].filter((field) => !CORPUS_BINDING_FIELDS.includes(field)),
+);
 const MODE_TARGET_FIELDS = {
 	'language-noise-matrix': new Set([
 		'languages',
@@ -33,6 +47,10 @@ const LEGACY_MATRIX_TARGET_FIELDS = new Set([
 	'benchmark_variants',
 	'min_sessions_per_language_noise_cell',
 ]);
+
+function allowedFieldsForMode(commonFields, coverageMode) {
+	return new Set([...commonFields, ...(MODE_TARGET_FIELDS[coverageMode] ?? [])]);
+}
 
 function isObject(value) {
 	return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -104,16 +122,17 @@ function validateBenchmarkVariants(value, errors) {
 function validateCurrentCoverageTargets(targets) {
 	const errors = [];
 	if (!isObject(targets)) return ['coverage targets must be a JSON object'];
-	const modeFields = MODE_TARGET_FIELDS[targets.coverage_mode] ?? new Set();
-	const allowedFields = new Set([...COMMON_TARGET_FIELDS, ...modeFields]);
+	const allowedFields = allowedFieldsForMode(COMMON_TARGET_FIELDS, targets.coverage_mode);
 	for (const field of Object.keys(targets)) {
 		if (!allowedFields.has(field)) errors.push(`targets.${field} is not an allowed field`);
 	}
 	if (targets.schema_version !== COVERAGE_TARGET_SCHEMA_VERSION) {
 		errors.push(`targets.schema_version must be ${COVERAGE_TARGET_SCHEMA_VERSION}`);
 	}
-	if (targets.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`targets.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (!isReferenceProtocolId(targets.reference_protocol_id)) {
+		errors.push(
+			`targets.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
 	}
 	if (typeof targets.target_id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(targets.target_id)) {
 		errors.push('targets.target_id must be a lowercase slug');
@@ -132,6 +151,27 @@ function validateCurrentCoverageTargets(targets) {
 		(!Number.isSafeInteger(targets.repetitions) || targets.repetitions < 1 || targets.repetitions > 10)
 	) {
 		errors.push('targets.repetitions must be a safe integer from 1 through 10');
+	}
+	const presentBindingFields = CORPUS_BINDING_FIELDS.filter((field) =>
+		Object.hasOwn(targets, field),
+	);
+	if (presentBindingFields.length > 0 && presentBindingFields.length !== CORPUS_BINDING_FIELDS.length) {
+		for (const field of CORPUS_BINDING_FIELDS) {
+			if (!Object.hasOwn(targets, field)) {
+				errors.push(`targets.${field} is required when the target binds a corpus revision`);
+			}
+		}
+	}
+	if (
+		Object.hasOwn(targets, 'corpus_id') &&
+		(typeof targets.corpus_id !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(targets.corpus_id))
+	) {
+		errors.push('targets.corpus_id must be a lowercase slug');
+	}
+	for (const field of ['corpus_fingerprint', 'source_catalog_sha256', 'selection_sha256']) {
+		if (Object.hasOwn(targets, field) && !/^[a-f0-9]{64}$/.test(targets[field] ?? '')) {
+			errors.push(`targets.${field} must be a lowercase SHA-256 digest`);
+		}
 	}
 	validateBenchmarkVariants(targets.benchmark_variants, errors);
 
@@ -156,27 +196,44 @@ function validateCurrentCoverageTargets(targets) {
 }
 
 export function normalizeCoverageTargets(targets) {
-	if (!isObject(targets) || targets.schema_version !== LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
-		return targets;
+	if (!isObject(targets)) return targets;
+	if (targets.schema_version === LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
+		return {
+			...targets,
+			schema_version: COVERAGE_TARGET_SCHEMA_VERSION,
+			coverage_mode: 'language-noise-matrix',
+		};
 	}
-	return {
-		...targets,
-		schema_version: COVERAGE_TARGET_SCHEMA_VERSION,
-		coverage_mode: 'language-noise-matrix',
-	};
+	if (targets.schema_version === LEGACY_COVERAGE_TARGET_SCHEMA_VERSION) {
+		return { ...targets, schema_version: COVERAGE_TARGET_SCHEMA_VERSION };
+	}
+	return targets;
 }
 
 export function validateCoverageTargets(targets) {
-	if (!isObject(targets) || targets.schema_version !== LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
-		return validateCurrentCoverageTargets(targets);
-	}
+	if (!isObject(targets)) return validateCurrentCoverageTargets(targets);
 	const errors = [];
-	for (const field of Object.keys(targets)) {
-		if (!LEGACY_MATRIX_TARGET_FIELDS.has(field)) {
-			errors.push(`targets.${field} is not an allowed field in schema 2`);
+	if (targets.schema_version === LEGACY_MATRIX_TARGET_SCHEMA_VERSION) {
+		for (const field of Object.keys(targets)) {
+			if (!LEGACY_MATRIX_TARGET_FIELDS.has(field)) {
+				errors.push(`targets.${field} is not an allowed field in schema 2`);
+			}
 		}
+		return [...errors, ...validateCurrentCoverageTargets(normalizeCoverageTargets(targets))];
 	}
-	return [...errors, ...validateCurrentCoverageTargets(normalizeCoverageTargets(targets))];
+	if (targets.schema_version === LEGACY_COVERAGE_TARGET_SCHEMA_VERSION) {
+		const allowedFields = allowedFieldsForMode(
+			LEGACY_COMMON_TARGET_FIELDS,
+			targets.coverage_mode,
+		);
+		for (const field of Object.keys(targets)) {
+			if (!allowedFields.has(field)) {
+				errors.push(`targets.${field} is not an allowed field in schema 3`);
+			}
+		}
+		return [...errors, ...validateCurrentCoverageTargets(normalizeCoverageTargets(targets))];
+	}
+	return validateCurrentCoverageTargets(targets);
 }
 
 export function primaryLanguage(language) {
@@ -227,6 +284,27 @@ export function resolveCoverageTarget(corpus, targets) {
 	}
 	if (corpus.reference_protocol_id !== targets.reference_protocol_id) {
 		throw new Error('coverage targets reference protocol does not match the corpus manifest');
+	}
+	if (targets.corpus_id !== undefined && corpus.corpus_id !== targets.corpus_id) {
+		throw new Error('coverage targets corpus_id does not match the corpus manifest');
+	}
+	if (
+		targets.corpus_fingerprint !== undefined &&
+		corpus.corpus_fingerprint !== targets.corpus_fingerprint
+	) {
+		throw new Error('coverage targets corpus_fingerprint does not match the corpus manifest');
+	}
+	if (
+		targets.source_catalog_sha256 !== undefined &&
+		corpus.source_catalog_sha256 !== targets.source_catalog_sha256
+	) {
+		throw new Error('coverage targets source_catalog_sha256 does not match the corpus manifest');
+	}
+	if (
+		targets.selection_sha256 !== undefined &&
+		corpus.preparation?.selection_sha256 !== targets.selection_sha256
+	) {
+		throw new Error('coverage targets selection_sha256 does not match the corpus manifest');
 	}
 	const samplesById = new Map();
 	for (const sample of corpus.samples) {

@@ -13,15 +13,16 @@ import { writeCorpusBoundFiles } from './corpus-result.ts';
 import {
 	corpusFingerprint as calculateCorpusFingerprint,
 	isPublicDatasetId,
+	isReferenceProtocolId,
 	loadCorpus,
-	REFERENCE_PROTOCOL_ID,
+	REFERENCE_PROTOCOL_IDS,
 } from './corpus.ts';
 import { evaluatorRevisionSha256, validateEvaluatorRevision } from './evaluator-revision.ts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 export const STANDALONE_RUN_REPORT_SCHEMA_VERSION = 10;
 export const CAMPAIGN_RUN_REPORT_SCHEMA_VERSION = 11;
-export const AGGREGATE_REPORT_SCHEMA_VERSION = 11;
+export const AGGREGATE_REPORT_SCHEMA_VERSION = 12;
 export const AGGREGATION_UNIT_POLICY = 'session-id-or-singleton-sample-v1';
 // The VAD flush pads one final 16 kHz processing block, so model input can
 // legitimately exceed decoded source duration by less than one 30 ms block.
@@ -488,8 +489,10 @@ export function validateRunReport(report, label = 'report') {
 	}
 	requireString(report.corpus_id, `${label}.corpus_id`, errors);
 	requireSha256(report.corpus_fingerprint, `${label}.corpus_fingerprint`, errors);
-	if (report.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`${label}.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (!isReferenceProtocolId(report.reference_protocol_id)) {
+		errors.push(
+			`${label}.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
 	}
 	if (!isCanonicalTimestamp(report.started_at)) {
 		errors.push(`${label}.started_at must be a canonical ISO-8601 timestamp`);
@@ -776,8 +779,10 @@ export function validateRunReportsAgainstCorpus(reports, corpus, label = 'report
 	if (!SHA256_PATTERN.test(corpus.corpus_fingerprint ?? '')) {
 		errors.push('corpus.corpus_fingerprint must be a lowercase SHA-256 digest');
 	}
-	if (corpus.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`corpus.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (!isReferenceProtocolId(corpus.reference_protocol_id)) {
+		errors.push(
+			`corpus.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
 	}
 	if (!Array.isArray(corpus.samples)) {
 		errors.push('corpus.samples must be an array');
@@ -1108,12 +1113,16 @@ function summarizeVariant(identity, records) {
 		(left, right) =>
 			compareText(left.sample_id, right.sample_id) || left.repeat_index - right.repeat_index,
 	);
+	const hardWerRecords = orderedRecords.filter(
+		(record) => record.noise_condition !== 'synthetic-overlap',
+	);
 	return {
 		...identity,
 		observed_sample_count: new Set(orderedRecords.map((record) => record.sample_id)).size,
 		measurement_result_count: orderedRecords.length,
 		groups: {
 			overall: summarize(orderedRecords),
+			hard_wer_overall: hardWerRecords.length === 0 ? null : summarize(hardWerRecords),
 			dataset: groupedSummaries(
 				orderedRecords.filter((record) => record.dataset !== undefined),
 				[['dataset', (record) => record.dataset]],
@@ -1661,9 +1670,21 @@ export function renderMarkdown(report) {
 		'',
 		"RSS is evaluator-process host memory sampled every 10 ms from immediately before model load through the end of inference. It includes the evaluator process and runtime, excludes accelerator VRAM, and may miss peaks between samples. RSS increase is the sampled peak minus that process's pre-model-load baseline; it is not model-only memory.",
 		'',
-		'## Comparison status',
+		'## Session-balanced hard WER',
+		'',
+		'`synthetic-overlap` is excluded before repeats and manifest sessions are reduced. These rows are the decision-safe serial-WER view; overlap remains in the other diagnostic and performance summaries.',
 		'',
 	];
+	appendSummaryTable(
+		lines,
+		report.diagnostics.variants
+			.filter((diagnostic) => diagnostic.groups.hard_wer_overall !== null)
+			.map((diagnostic) => ({
+				label: variantLabel(diagnostic),
+				summary: diagnostic.groups.hard_wer_overall,
+			})),
+	);
+	lines.push('', '## Comparison status', '');
 	if (report.comparison.status === 'comparable') {
 		lines.push(
 			`Comparable across ${report.comparison.variant_count} supplied exact variants on an identical ${report.comparison.common_sample_count}-sample, ${report.comparison.common_measurement_count}-measurement cohort.`,

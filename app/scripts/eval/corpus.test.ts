@@ -14,7 +14,10 @@ import {
 	loadCorpus,
 	PUBLIC_DATASET_IDS,
 	PUBLIC_PREPARATION_PROTOCOL_ID,
+	PUBLIC_REFERENCE_PROTOCOL_ID,
 	REFERENCE_PROTOCOL_ID,
+	REFERENCE_PROTOCOL_IDS,
+	isReferenceProtocolId,
 	validateCorpusDocument,
 	whisperLanguageForSample,
 } from './corpus.ts';
@@ -63,6 +66,7 @@ function fixture() {
 }
 
 function addPublicPreparation(document, sourceCatalogId = 'ami') {
+	document.reference_protocol_id = PUBLIC_REFERENCE_PROTOCOL_ID;
 	document.source_catalog_sha256 = 'a'.repeat(64);
 	document.preparation = {
 		protocol_id: PUBLIC_PREPARATION_PROTOCOL_ID,
@@ -162,7 +166,7 @@ test('rejects legacy and differently versioned reference manifests without upgra
 	delete legacy.reference_protocol_id;
 	assert.deepEqual(validateCorpusDocument(legacy, { checkFiles: false }), [
 		'schema_version must be 4',
-		`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`,
+		`reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
 	]);
 	assert.equal(legacy.schema_version, 2);
 	assert.equal(legacy.reference_protocol_id, undefined);
@@ -172,8 +176,11 @@ test('rejects legacy and differently versioned reference manifests without upgra
 			{ ...document, reference_protocol_id: 'another-reference-v1' },
 			{ checkFiles: false },
 		).join('\n'),
-		/reference_protocol_id must be 'muesly-meeting-reference-v1'/,
+		/reference_protocol_id must be one of/,
 	);
+	assert(isReferenceProtocolId(REFERENCE_PROTOCOL_ID));
+	assert(isReferenceProtocolId(PUBLIC_REFERENCE_PROTOCOL_ID));
+	assert(!isReferenceProtocolId('another-reference-v1'));
 });
 
 test('rejects empty speech references outside the checked-in synthetic silence fixture', () => {
@@ -278,6 +285,64 @@ test('accepts open-licensed meeting audio only when it is bound to a source cata
 		validateCorpusDocument(document, {
 			manifestPath: path.join(directory, 'manifest.json'),
 		}).includes('source_catalog_sha256 is required for public-license samples'),
+	);
+});
+
+test('binds incompatible corpus provenance to distinct reference protocols', () => {
+	const { document } = fixture();
+	document.reference_protocol_id = PUBLIC_REFERENCE_PROTOCOL_ID;
+	assert(
+		validateCorpusDocument(document, { checkFiles: false }).includes(
+			`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}' for this manifest's provenance`,
+		),
+	);
+
+	addPublicPreparation(document);
+	document.samples.push({
+		...structuredClone(document.samples[0]),
+		id: 'public-meeting',
+		audio_path: 'public-meeting.wav',
+		audio_sha256: hash('public-audio'),
+		reference_path: 'public-meeting.txt',
+		reference_sha256: hash('public-reference'),
+		dataset: 'ami',
+		provenance: {
+			basis: 'public-license',
+			redistribution: 'local-only',
+			source_catalog_id: 'ami',
+			source_item_ids: ['public-meeting'],
+			transform_id: 'clean',
+		},
+	});
+	assert(
+		validateCorpusDocument(document, { checkFiles: false }).includes(
+			'manifest cannot mix public-license samples with any other provenance basis because they require different reference protocols',
+		),
+	);
+
+	document.samples[0] = structuredClone(document.samples[1]);
+	document.samples[0].id = 'synthetic-read-speech';
+	document.samples[0].audio_path = 'synthetic-read-speech.wav';
+	document.samples[0].audio_sha256 = hash('synthetic-audio');
+	document.samples[0].reference_path = 'synthetic-read-speech.txt';
+	document.samples[0].reference_sha256 = hash('synthetic-reference');
+	document.samples[0].scenario = 'read-speech';
+	delete document.samples[0].session_id;
+	document.samples[0].provenance = {
+		basis: 'synthetic',
+		generation_method: 'test generator',
+		redistribution: 'repository',
+	};
+	const mixedSyntheticErrors = validateCorpusDocument(document, { checkFiles: false });
+	assert(
+		mixedSyntheticErrors.includes(
+			'manifest cannot mix public-license samples with any other provenance basis because they require different reference protocols',
+		),
+	);
+	assert(
+		mixedSyntheticErrors.includes(
+			`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}' for this manifest's provenance`,
+		),
 	);
 });
 

@@ -8,6 +8,7 @@ import {
 	CORPUS_SCHEMA_VERSION,
 	fileSha256,
 	PUBLIC_PREPARATION_PROTOCOL_ID,
+	PUBLIC_REFERENCE_PROTOCOL_ID,
 	REFERENCE_PROTOCOL_ID,
 	validateCorpusDocument,
 } from './corpus.ts';
@@ -17,10 +18,17 @@ import {
 	releasePublicCorpusLock,
 } from './public-corpus-lock.ts';
 
-export const PUBLIC_CATALOG_SCHEMA_VERSION = 2;
-export const PUBLIC_SELECTION_SCHEMA_VERSION = 2;
-export const PUBLIC_PREPARED_SCHEMA_VERSION = 3;
+export const PUBLIC_CATALOG_SCHEMA_VERSION = 3;
+export const PUBLIC_SELECTION_SCHEMA_VERSION = 3;
+export const PUBLIC_PREPARED_SCHEMA_VERSION = 4;
 export const PUBLIC_REVIEW_SCHEMA_VERSION = 1;
+export const PUBLIC_SOURCE_CATALOG_ID = 'muesly-public-asr-sources-v3';
+
+export const PUBLIC_REFERENCE_RECIPES = Object.freeze({
+	FLEURS: 'fleurs-tsv-composite-v1',
+	AMI: 'ami-manual-words-window-v1',
+	EARNINGS21: 'earnings21-human-reference-aligned-v1',
+});
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
@@ -33,6 +41,38 @@ const ARTIFACT_KINDS = new Set([
 	'reference-archive',
 ]);
 const ARCHIVE_FORMATS = new Set(['tar.gz', 'zip']);
+const REFERENCE_RECIPE_CONTRACTS = new Map([
+	[
+		PUBLIC_REFERENCE_RECIPES.FLEURS,
+		{
+			dataset: 'FLEURS',
+			artifactKinds: ['audio-archive', 'index'],
+			licenseId: 'CC-BY-4.0',
+			licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+			revision: '4683b04af03d2d9549064c7d72060a9a94bb6046',
+		},
+	],
+	[
+		PUBLIC_REFERENCE_RECIPES.AMI,
+		{
+			dataset: 'AMI Meeting Corpus',
+			artifactKinds: ['audio', 'reference-archive'],
+			licenseId: 'CC-BY-4.0',
+			licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+			revision: 'manual-annotations-1.6.2',
+		},
+	],
+	[
+		PUBLIC_REFERENCE_RECIPES.EARNINGS21,
+		{
+			dataset: 'Earnings-21',
+			artifactKinds: ['alignment-hypothesis', 'audio', 'reference'],
+			licenseId: 'CC-BY-SA-4.0',
+			licenseUrl: 'https://creativecommons.org/licenses/by-sa/4.0/',
+			revision: '33b26fbc8bb1e1ab1815d89867c65f13ffdb7422',
+		},
+	],
+]);
 const CONDITION_IDS = new Set([
 	'clean-read',
 	'synthetic-office',
@@ -72,6 +112,11 @@ function isSafeRelativePath(value) {
 	return parts.every((part) => part.length > 0 && part !== '.' && part !== '..');
 }
 
+function amiMeetingIdForSourceId(sourceId) {
+	const match = /^ami-([a-z]{2})(\d{4})([a-z]?)$/.exec(sourceId ?? '');
+	return match ? `${match[1].toUpperCase()}${match[2]}${match[3]}` : null;
+}
+
 export function readJsonFile(filePath, label = 'JSON file') {
 	const entry = fs.lstatSync(filePath, { throwIfNoEntry: false });
 	if (!entry?.isFile() || entry.isSymbolicLink()) {
@@ -96,11 +141,8 @@ export function validateSourceCatalog(document, options = {}) {
 	if (document.schema_version !== PUBLIC_CATALOG_SCHEMA_VERSION) {
 		errors.push(`catalog.schema_version must be ${PUBLIC_CATALOG_SCHEMA_VERSION}`);
 	}
-	if (
-		!requiredString(document.catalog_id, 'catalog.catalog_id', errors) ||
-		!SLUG_PATTERN.test(document.catalog_id)
-	) {
-		errors.push('catalog.catalog_id must be a lowercase slug');
+	if (document.catalog_id !== PUBLIC_SOURCE_CATALOG_ID) {
+		errors.push(`catalog.catalog_id must be '${PUBLIC_SOURCE_CATALOG_ID}'`);
 	}
 	requiredString(document.description, 'catalog.description', errors);
 
@@ -126,6 +168,7 @@ export function validateSourceCatalog(document, options = {}) {
 					'size_bytes',
 					'archive_format',
 					'revision',
+					'role',
 				]),
 				prefix,
 				errors,
@@ -139,10 +182,17 @@ export function validateSourceCatalog(document, options = {}) {
 			if (!ARTIFACT_KINDS.has(artifact.kind)) {
 				errors.push(`${prefix}.kind is not supported`);
 			}
-			if (artifact.kind === 'alignment-hypothesis') {
+			if (artifact.kind === 'alignment-hypothesis' || artifact.kind === 'reference') {
 				requiredString(artifact.revision, `${prefix}.revision`, errors);
 			} else if (artifact.revision !== undefined) {
 				requiredString(artifact.revision, `${prefix}.revision`, errors);
+			}
+			if (artifact.kind === 'alignment-hypothesis') {
+				if (artifact.role !== 'timing-only') {
+					errors.push(`${prefix}.role must be timing-only for alignment hypotheses`);
+				}
+			} else if (artifact.role !== undefined) {
+				errors.push(`${prefix}.role is only valid for alignment hypotheses`);
 			}
 			if (requiredString(artifact.url, `${prefix}.url`, errors)) {
 				let url;
@@ -184,6 +234,11 @@ export function validateSourceCatalog(document, options = {}) {
 
 	const sourceIds = new Set();
 	const usedArtifacts = new Set();
+	const artifactById = new Map(
+		(document.artifacts ?? [])
+			.filter((artifact) => isObject(artifact) && typeof artifact.id === 'string')
+			.map((artifact) => [artifact.id, artifact]),
+	);
 	if (!Array.isArray(document.sources) || document.sources.length === 0) {
 		errors.push('catalog.sources must be a non-empty array');
 	} else {
@@ -205,6 +260,7 @@ export function validateSourceCatalog(document, options = {}) {
 					'attribution',
 					'redistribution',
 					'artifact_ids',
+					'reference_verification',
 				]),
 				prefix,
 				errors,
@@ -237,6 +293,28 @@ export function validateSourceCatalog(document, options = {}) {
 			if (source.redistribution !== 'local-only') {
 				errors.push(`${prefix}.redistribution must be local-only`);
 			}
+			const recipeContract = REFERENCE_RECIPE_CONTRACTS.get(source.reference_verification);
+			if (!recipeContract) {
+				errors.push(`${prefix}.reference_verification is not a supported closed recipe`);
+			} else if (source.dataset !== recipeContract.dataset) {
+				errors.push(`${prefix}.dataset is incompatible with ${source.reference_verification}`);
+			} else {
+				if (source.license_id !== recipeContract.licenseId) {
+					errors.push(
+						`${prefix}.license_id must be '${recipeContract.licenseId}' for ${source.reference_verification}`,
+					);
+				}
+				if (source.license_url !== recipeContract.licenseUrl) {
+					errors.push(
+						`${prefix}.license_url must be '${recipeContract.licenseUrl}' for ${source.reference_verification}`,
+					);
+				}
+				if (source.revision !== recipeContract.revision) {
+					errors.push(
+						`${prefix}.revision must be '${recipeContract.revision}' for ${source.reference_verification}`,
+					);
+				}
+			}
 			if (!Array.isArray(source.artifact_ids) || source.artifact_ids.length === 0) {
 				errors.push(`${prefix}.artifact_ids must be a non-empty array`);
 			} else {
@@ -250,6 +328,50 @@ export function validateSourceCatalog(document, options = {}) {
 					}
 					localIds.add(artifactId);
 					usedArtifacts.add(artifactId);
+				}
+				if (recipeContract) {
+					const actualKinds = source.artifact_ids
+						.map((artifactId) => artifactById.get(artifactId)?.kind)
+						.filter(Boolean)
+						.sort();
+					if (JSON.stringify(actualKinds) !== JSON.stringify(recipeContract.artifactKinds)) {
+						errors.push(
+							`${prefix}.artifact_ids must contain exactly ${recipeContract.artifactKinds.join(', ')} for ${source.reference_verification}`,
+						);
+					}
+					if (
+						source.reference_verification === PUBLIC_REFERENCE_RECIPES.EARNINGS21 &&
+						!source.artifact_ids.some(
+							(artifactId) =>
+								artifactById.get(artifactId)?.kind === 'alignment-hypothesis' &&
+								artifactById.get(artifactId)?.role === 'timing-only',
+						)
+					) {
+						errors.push(`${prefix} must bind a timing-only alignment hypothesis`);
+					}
+					if (source.reference_verification === PUBLIC_REFERENCE_RECIPES.AMI) {
+						const meeting = amiMeetingIdForSourceId(source.id);
+						const audioArtifactId = source.artifact_ids.find(
+							(artifactId) => artifactById.get(artifactId)?.kind === 'audio',
+						);
+						if (!meeting || audioArtifactId !== `${source.id}-headset-mix`) {
+							errors.push(`${prefix} must bind its AMI meeting id to its headset-mix artifact`);
+						}
+					}
+					if (source.reference_verification === PUBLIC_REFERENCE_RECIPES.EARNINGS21) {
+						const recording = /^earnings21-(\d+)$/.exec(source.id)?.[1];
+						for (const kind of ['audio', 'reference', 'alignment-hypothesis']) {
+							const artifactId = source.artifact_ids.find(
+								(candidate) => artifactById.get(candidate)?.kind === kind,
+							);
+							const suffix = kind === 'alignment-hypothesis' ? 'alignment' : kind;
+							if (!recording || artifactId !== `${source.id}-${suffix}`) {
+								errors.push(
+									`${prefix} must bind its Earnings-21 recording id to its ${suffix} artifact`,
+								);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -324,7 +446,8 @@ export function validatePublicSelection(document, catalog) {
 		}
 	}
 
-	const sourceIds = new Set(catalog?.sources?.map((source) => source.id) ?? []);
+	const sourceById = new Map(catalog?.sources?.map((source) => [source.id, source]) ?? []);
+	const sourceIds = new Set(sourceById.keys());
 	if (!isObject(document.fleurs)) {
 		errors.push('selection.fleurs must be an object');
 	} else {
@@ -383,6 +506,11 @@ export function validatePublicSelection(document, catalog) {
 				errors,
 			);
 			if (!sourceIds.has(source.source_id)) errors.push(`${prefix}.source_id is unknown`);
+			if (
+				sourceById.get(source.source_id)?.reference_verification !== PUBLIC_REFERENCE_RECIPES.FLEURS
+			) {
+				errors.push(`${prefix}.source_id must use ${PUBLIC_REFERENCE_RECIPES.FLEURS}`);
+			}
 			if (!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/.test(source.language ?? '')) {
 				errors.push(`${prefix}.language must be a BCP-47-style tag`);
 			}
@@ -411,6 +539,7 @@ export function validatePublicSelection(document, catalog) {
 							'ordered_members_sha256',
 							'clean_duration_seconds',
 							'overlap_duration_seconds',
+							'reference_sha256',
 							'audio_sha256',
 						]),
 						compositePrefix,
@@ -424,6 +553,14 @@ export function validatePublicSelection(document, catalog) {
 					}
 					if (!SHA256_PATTERN.test(composite.ordered_members_sha256 ?? '')) {
 						errors.push(`${compositePrefix}.ordered_members_sha256 must be a SHA-256 digest`);
+					}
+					if (
+						!SHA256_PATTERN.test(composite.reference_sha256 ?? '') ||
+						/^([a-f0-9])\1{63}$/.test(composite.reference_sha256)
+					) {
+						errors.push(
+							`${compositePrefix}.reference_sha256 must be a non-placeholder SHA-256 digest`,
+						);
 					}
 					if (
 						typeof composite.clean_duration_seconds !== 'number' ||
@@ -515,8 +652,8 @@ export function validatePublicSelection(document, catalog) {
 					'duration_seconds',
 					'window',
 					'transform_id',
-					'requires_manual_reference',
 					'audio_sha256',
+					'reference_sha256',
 				]),
 				prefix,
 				errors,
@@ -525,8 +662,22 @@ export function validatePublicSelection(document, catalog) {
 			if (sampleIds.has(sample.id)) errors.push(`${prefix}.id is duplicated`);
 			sampleIds.add(sample.id);
 			if (!sourceIds.has(sample.source_id)) errors.push(`${prefix}.source_id is unknown`);
+			const selectedSource = sourceById.get(sample.source_id);
+			const sourceRecipe = selectedSource?.reference_verification;
 			for (const field of ['source_item_id', 'scenario', 'noise_condition']) {
 				requiredString(sample[field], `${prefix}.${field}`, errors);
+			}
+			if (sourceRecipe === PUBLIC_REFERENCE_RECIPES.AMI) {
+				const meeting = amiMeetingIdForSourceId(selectedSource.id);
+				if (!meeting || sample.source_item_id !== `ami:${meeting}`) {
+					errors.push(`${prefix}.source_item_id must identify the meeting bound by source_id`);
+				}
+			}
+			if (sourceRecipe === PUBLIC_REFERENCE_RECIPES.EARNINGS21) {
+				const recording = /^earnings21-(\d+)$/.exec(selectedSource.id)?.[1];
+				if (!recording || sample.source_item_id !== `earnings21:${recording}`) {
+					errors.push(`${prefix}.source_item_id must identify the recording bound by source_id`);
+				}
 			}
 			if (!SLUG_PATTERN.test(sample.noise_condition ?? '')) {
 				errors.push(`${prefix}.noise_condition must be a lowercase slug`);
@@ -555,9 +706,20 @@ export function validatePublicSelection(document, catalog) {
 						'expected_alignment_hypothesis_tokens',
 						'expected_alignment_reference_tokens',
 						'expected_alignment_edit_distance',
+						'expected_alignment_paired_tokens',
+						'expected_alignment_exact_pairs',
 						'expected_reference_start_token_index',
 						'expected_reference_end_token_index',
 						'expected_reference_token_count',
+						'expected_anchor_context_tokens',
+						'expected_start_anchor_hypothesis_token_index',
+						'expected_start_anchor_start_seconds',
+						'expected_start_anchor_end_seconds',
+						'expected_start_anchor_context_sha256',
+						'expected_end_anchor_hypothesis_token_index',
+						'expected_end_anchor_start_seconds',
+						'expected_end_anchor_end_seconds',
+						'expected_end_anchor_context_sha256',
 						'expected_reference_seed_sha256',
 					]),
 					`${prefix}.window`,
@@ -566,7 +728,10 @@ export function validatePublicSelection(document, catalog) {
 				if (typeof sample.window.start_seconds !== 'number' || sample.window.start_seconds < 0) {
 					errors.push(`${prefix}.window.start_seconds must be non-negative`);
 				}
-				if (sample.source_id?.startsWith('earnings21-')) {
+				if (sourceRecipe !== PUBLIC_REFERENCE_RECIPES.EARNINGS21) {
+					errors.push(`${prefix}.source_id must use ${PUBLIC_REFERENCE_RECIPES.EARNINGS21}`);
+				}
+				if (sourceRecipe === PUBLIC_REFERENCE_RECIPES.EARNINGS21) {
 					if (
 						typeof sample.window.alignment_context_seconds !== 'number' ||
 						sample.window.alignment_context_seconds <= 0
@@ -576,7 +741,10 @@ export function validatePublicSelection(document, catalog) {
 					for (const field of [
 						'expected_alignment_hypothesis_tokens',
 						'expected_alignment_reference_tokens',
+						'expected_alignment_paired_tokens',
+						'expected_alignment_exact_pairs',
 						'expected_reference_token_count',
+						'expected_anchor_context_tokens',
 					]) {
 						if (!Number.isInteger(sample.window[field]) || sample.window[field] < 1) {
 							errors.push(`${prefix}.window.${field} must be a positive integer`);
@@ -586,6 +754,8 @@ export function validatePublicSelection(document, catalog) {
 						'expected_alignment_edit_distance',
 						'expected_reference_start_token_index',
 						'expected_reference_end_token_index',
+						'expected_start_anchor_hypothesis_token_index',
+						'expected_end_anchor_hypothesis_token_index',
 					]) {
 						if (!Number.isInteger(sample.window[field]) || sample.window[field] < 0) {
 							errors.push(`${prefix}.window.${field} must be a non-negative integer`);
@@ -605,8 +775,61 @@ export function validatePublicSelection(document, catalog) {
 					if (!SHA256_PATTERN.test(sample.window.expected_reference_seed_sha256 ?? '')) {
 						errors.push(`${prefix}.window.expected_reference_seed_sha256 must be a SHA-256 digest`);
 					}
-					if (sample.requires_manual_reference === true) {
-						errors.push(`${prefix}.requires_manual_reference must be false for aligned references`);
+					for (const field of [
+						'expected_start_anchor_context_sha256',
+						'expected_end_anchor_context_sha256',
+					]) {
+						if (!SHA256_PATTERN.test(sample.window[field] ?? '')) {
+							errors.push(`${prefix}.window.${field} must be a SHA-256 digest`);
+						}
+					}
+					if (sample.window.expected_anchor_context_tokens !== EARNINGS_BOUNDARY_CONTEXT_TOKENS) {
+						errors.push(
+							`${prefix}.window.expected_anchor_context_tokens must be ${EARNINGS_BOUNDARY_CONTEXT_TOKENS}`,
+						);
+					}
+					if (
+						sample.window.expected_alignment_exact_pairs >
+						sample.window.expected_alignment_paired_tokens
+					) {
+						errors.push(`${prefix}.window exact pairs cannot exceed paired tokens`);
+					}
+					if (
+						sample.window.expected_alignment_exact_pairs /
+							sample.window.expected_alignment_paired_tokens <
+							0.9 ||
+						sample.window.expected_alignment_edit_distance /
+							Math.max(
+								sample.window.expected_alignment_hypothesis_tokens,
+								sample.window.expected_alignment_reference_tokens,
+							) >
+							0.1
+					) {
+						errors.push(`${prefix}.window committed alignment proof is below the safety gate`);
+					}
+					const windowEnd = sample.window.start_seconds + sample.duration_seconds;
+					for (const edge of ['start', 'end']) {
+						const anchorStart = sample.window[`expected_${edge}_anchor_start_seconds`];
+						const anchorEnd = sample.window[`expected_${edge}_anchor_end_seconds`];
+						if (
+							typeof anchorStart !== 'number' ||
+							typeof anchorEnd !== 'number' ||
+							anchorStart < sample.window.start_seconds ||
+							anchorEnd < anchorStart ||
+							anchorEnd > windowEnd
+						) {
+							errors.push(
+								`${prefix}.window expected ${edge} anchor times must be inside the excerpt`,
+							);
+						}
+					}
+					if (
+						sample.window.expected_start_anchor_start_seconds - sample.window.start_seconds > 2.5 ||
+						windowEnd - sample.window.expected_end_anchor_end_seconds > 2.5
+					) {
+						errors.push(
+							`${prefix}.window expected anchors must be within 2.5 seconds of each edge`,
+						);
 					}
 				}
 			} else {
@@ -618,6 +841,8 @@ export function validatePublicSelection(document, catalog) {
 						'expected_start_seconds',
 						'expected_end_seconds',
 						'expected_word_count',
+						'expected_start_crossing_word_count',
+						'expected_end_crossing_word_count',
 						'annotation_member_count',
 						'ordered_annotation_members_sha256',
 					]),
@@ -640,10 +865,21 @@ export function validatePublicSelection(document, catalog) {
 						errors.push(`${prefix}.window.${field} must be positive`);
 					}
 				}
+				for (const field of [
+					'expected_start_crossing_word_count',
+					'expected_end_crossing_word_count',
+				]) {
+					if (!Number.isInteger(sample.window[field]) || sample.window[field] < 0) {
+						errors.push(`${prefix}.window.${field} must be non-negative`);
+					}
+				}
 				if (!SHA256_PATTERN.test(sample.window.ordered_annotation_members_sha256 ?? '')) {
 					errors.push(
 						`${prefix}.window.ordered_annotation_members_sha256 must be a SHA-256 digest`,
 					);
+				}
+				if (sourceRecipe !== PUBLIC_REFERENCE_RECIPES.AMI) {
+					errors.push(`${prefix}.source_id must use ${PUBLIC_REFERENCE_RECIPES.AMI}`);
 				}
 			}
 			if (
@@ -651,6 +887,18 @@ export function validatePublicSelection(document, catalog) {
 				/^([a-f0-9])\1{63}$/.test(sample.audio_sha256)
 			) {
 				errors.push(`${prefix}.audio_sha256 must be a non-placeholder SHA-256 digest`);
+			}
+			if (
+				!SHA256_PATTERN.test(sample.reference_sha256 ?? '') ||
+				/^([a-f0-9])\1{63}$/.test(sample.reference_sha256)
+			) {
+				errors.push(`${prefix}.reference_sha256 must pin the source-derived reference`);
+			}
+			if (
+				sourceRecipe === PUBLIC_REFERENCE_RECIPES.EARNINGS21 &&
+				sample.reference_sha256 !== sample.window?.expected_reference_seed_sha256
+			) {
+				errors.push(`${prefix}.reference_sha256 must match window.expected_reference_seed_sha256`);
 			}
 		}
 	}
@@ -689,8 +937,10 @@ export function expectedPublicSampleIds(selection) {
 	return ids.sort();
 }
 
-function expectedPreparedContracts(selection) {
+function expectedPreparedContracts(selection, catalog) {
 	const contracts = new Map();
+	const sourceById = new Map(catalog.sources.map((source) => [source.id, source]));
+	const artifactById = new Map(catalog.artifacts.map((artifact) => [artifact.id, artifact]));
 	for (const source of selection.fleurs.sources) {
 		for (let index = 1; index <= selection.fleurs.composites_per_language; index += 1) {
 			const baseId = `${source.whisper_language}-fleurs-${String(index).padStart(2, '0')}`;
@@ -702,6 +952,7 @@ function expectedPreparedContracts(selection) {
 						? composite.overlap_duration_seconds
 						: composite.clean_duration_seconds;
 				contracts.set(id, {
+					session_id: `session-${baseId}`,
 					audio_path: `audio/${id}.wav`,
 					reference_path: `references/${baseId}.txt`,
 					dataset: 'fleurs',
@@ -712,7 +963,8 @@ function expectedPreparedContracts(selection) {
 					speakers: condition.speakers,
 					source_id: source.source_id,
 					transform_id: condition.transform_id,
-					requires_manual_reference: false,
+					reference_sha256: composite.reference_sha256,
+					reference_verification: sourceById.get(source.source_id)?.reference_verification,
 					duration_seconds: durationSeconds,
 					audio_sha256: composite.audio_sha256[condition.id],
 					source_window: {
@@ -722,6 +974,8 @@ function expectedPreparedContracts(selection) {
 						member_count: composite.member_count,
 						ordered_members_sha256: composite.ordered_members_sha256,
 						expected_duration_seconds: durationSeconds,
+						reference_order_policy: 'source-item-onset',
+						monotonic_onsets: true,
 					},
 					source_member_count: composite.member_count,
 					ordered_members_sha256: composite.ordered_members_sha256,
@@ -730,7 +984,21 @@ function expectedPreparedContracts(selection) {
 		}
 	}
 	for (const sample of selection.natural_samples) {
-		const dataset = sample.source_id.startsWith('ami-') ? 'ami' : 'earnings21';
+		const source = sourceById.get(sample.source_id);
+		const dataset =
+			source?.reference_verification === PUBLIC_REFERENCE_RECIPES.AMI ? 'ami' : 'earnings21';
+		const alignmentArtifactId = source?.artifact_ids.find(
+			(artifactId) => artifactById.get(artifactId)?.kind === 'alignment-hypothesis',
+		);
+		const referenceArtifactId = source?.artifact_ids.find(
+			(artifactId) => artifactById.get(artifactId)?.kind === 'reference',
+		);
+		const annotationArtifactId = source?.artifact_ids.find(
+			(artifactId) => artifactById.get(artifactId)?.kind === 'reference-archive',
+		);
+		const alignmentArtifact = artifactById.get(alignmentArtifactId);
+		const referenceArtifact = artifactById.get(referenceArtifactId);
+		const annotationArtifact = artifactById.get(annotationArtifactId);
 		const sourceWindow =
 			sample.window.strategy === 'densest-timed-words'
 				? {
@@ -739,6 +1007,11 @@ function expectedPreparedContracts(selection) {
 						end_seconds: sample.window.expected_end_seconds,
 						boundary_policy: 'exclude-crossing-words',
 						word_count: sample.window.expected_word_count,
+						start_crossing_word_count: sample.window.expected_start_crossing_word_count,
+						end_crossing_word_count: sample.window.expected_end_crossing_word_count,
+						annotation_artifact_id: annotationArtifactId,
+						annotation_source_revision: source?.revision,
+						annotation_artifact_sha256: annotationArtifact?.sha256,
 						annotation_member_count: sample.window.annotation_member_count,
 						ordered_annotation_members_sha256: sample.window.ordered_annotation_members_sha256,
 					}
@@ -748,14 +1021,31 @@ function expectedPreparedContracts(selection) {
 						end_seconds: sample.window.start_seconds + sample.duration_seconds,
 						boundary_policy: 'exclude-crossing-anchor-words',
 						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
-						alignment_artifact_id: `${sample.source_id}-alignment`,
+						reference_artifact_id: referenceArtifactId,
+						reference_artifact_revision: referenceArtifact?.revision,
+						alignment_artifact_id: alignmentArtifactId,
+						alignment_artifact_revision: alignmentArtifact?.revision,
+						alignment_role: alignmentArtifact?.role,
 						alignment_context_seconds: sample.window.alignment_context_seconds,
 						alignment_hypothesis_tokens: sample.window.expected_alignment_hypothesis_tokens,
 						alignment_reference_tokens: sample.window.expected_alignment_reference_tokens,
 						alignment_edit_distance: sample.window.expected_alignment_edit_distance,
+						alignment_paired_tokens: sample.window.expected_alignment_paired_tokens,
+						alignment_exact_pairs: sample.window.expected_alignment_exact_pairs,
 						reference_start_token_index: sample.window.expected_reference_start_token_index,
 						reference_end_token_index: sample.window.expected_reference_end_token_index,
 						reference_token_count: sample.window.expected_reference_token_count,
+						anchor_context_tokens: sample.window.expected_anchor_context_tokens,
+						start_anchor_hypothesis_token_index:
+							sample.window.expected_start_anchor_hypothesis_token_index,
+						start_anchor_start_seconds: sample.window.expected_start_anchor_start_seconds,
+						start_anchor_end_seconds: sample.window.expected_start_anchor_end_seconds,
+						start_anchor_context_sha256: sample.window.expected_start_anchor_context_sha256,
+						end_anchor_hypothesis_token_index:
+							sample.window.expected_end_anchor_hypothesis_token_index,
+						end_anchor_start_seconds: sample.window.expected_end_anchor_start_seconds,
+						end_anchor_end_seconds: sample.window.expected_end_anchor_end_seconds,
+						end_anchor_context_sha256: sample.window.expected_end_anchor_context_sha256,
 						reference_seed_sha256: sample.window.expected_reference_seed_sha256,
 					};
 		contracts.set(sample.id, {
@@ -770,7 +1060,8 @@ function expectedPreparedContracts(selection) {
 			source_id: sample.source_id,
 			source_item_id: sample.source_item_id,
 			transform_id: sample.transform_id,
-			requires_manual_reference: sample.requires_manual_reference === true,
+			reference_sha256: sample.reference_sha256,
+			reference_verification: source?.reference_verification,
 			duration_seconds: sample.duration_seconds,
 			audio_sha256: sample.audio_sha256,
 			source_window: sourceWindow,
@@ -816,8 +1107,11 @@ function validatePreparedSampleContract(sample, contract, catalog, errors) {
 	if (sample.audio_sha256 !== contract.audio_sha256) {
 		errors.push(`${prefix}.audio_sha256 does not match the committed deterministic output`);
 	}
-	if ((sample.requires_manual_reference === true) !== contract.requires_manual_reference) {
-		errors.push(`${prefix}.requires_manual_reference does not match the committed selection`);
+	if (sample.reference_sha256 !== contract.reference_sha256) {
+		errors.push(`${prefix}.reference_sha256 does not match the committed source-derived reference`);
+	}
+	if (sample.reference_verification !== contract.reference_verification) {
+		errors.push(`${prefix}.reference_verification does not match the source catalog recipe`);
 	}
 	const provenance = sample.provenance;
 	if (
@@ -913,12 +1207,14 @@ export function resolveInside(root, relativePath, label = 'path') {
 	return resolved;
 }
 
-function assertRegularFile(filePath, label) {
+function assertRegularFile(filePath, label, options = {}) {
 	const entry = fs.lstatSync(filePath, { throwIfNoEntry: false });
 	if (!entry?.isFile() || entry.isSymbolicLink()) {
 		throw new Error(`${label} must be a regular file: ${filePath}`);
 	}
-	if (entry.nlink !== 1) throw new Error(`${label} must not be hard-linked: ${filePath}`);
+	if (entry.nlink !== 1 && !(options.allowPinnedSnapshot === true && entry.nlink === 2)) {
+		throw new Error(`${label} must not be hard-linked: ${filePath}`);
+	}
 	return entry;
 }
 
@@ -1132,6 +1428,124 @@ export function verifyPinnedArtifactFile(filePath, artifact) {
 	}
 }
 
+export function readPinnedArtifactFile(filePath, artifact, options = {}) {
+	const opened = openExistingStableFile(filePath, `artifact '${artifact.id}'`);
+	try {
+		verifyOpenedPinnedArtifact(opened, artifact);
+		options.beforeRead?.();
+		const status = attestStableFile(opened, { requireUnchangedContents: true });
+		const contents = descriptorContents(
+			opened.descriptor,
+			Number(status.size),
+			`artifact '${artifact.id}'`,
+			options.maximumBytes ?? 64 * 1024 * 1024,
+		);
+		attestStableFile(opened, { requireUnchangedContents: true });
+		if (createHash('sha256').update(contents).digest('hex') !== artifact.sha256) {
+			throw new Error(`artifact '${artifact.id}' changed while being read`);
+		}
+		return contents;
+	} finally {
+		fs.closeSync(opened.descriptor);
+	}
+}
+
+// Some consumers (FFmpeg, tar, and unzip) only accept pathnames. Give them a unique
+// same-filesystem hard-link snapshot of the verified inode, keep its descriptor open,
+// and fully re-hash/re-attest it before accepting output. A name or content swap fails.
+export function withPinnedArtifactPath(filePath, artifact, consumer, options = {}) {
+	if (typeof consumer !== 'function') throw new Error('pinned artifact consumer must be a function');
+	const opened = openExistingStableFile(filePath, `artifact '${artifact.id}'`);
+	try {
+		verifyOpenedPinnedArtifact(opened, artifact);
+		const snapshotDirectory = ensurePrivateDirectory(
+			path.join(path.dirname(filePath), '.muesly-pinned-snapshots'),
+			`artifact '${artifact.id}' snapshot directory`,
+		);
+		const snapshotPath = path.join(
+			snapshotDirectory,
+			`${path.basename(filePath)}.${process.pid}.${randomUUID()}`,
+		);
+		let linked = false;
+		let baseline;
+		try {
+			attestStableFile(opened, { requireUnchangedContents: true });
+			fs.linkSync(filePath, snapshotPath);
+			linked = true;
+			const assertSnapshot = (expected) => {
+				const descriptorStatus = fs.fstatSync(opened.descriptor, { bigint: true });
+				const sourceStatus = fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
+				const snapshotStatus = fs.lstatSync(snapshotPath, {
+					bigint: true,
+					throwIfNoEntry: false,
+				});
+				if (
+					!descriptorStatus.isFile() ||
+					descriptorStatus.nlink !== 2n ||
+					!sourceStatus?.isFile() ||
+					sourceStatus.isSymbolicLink() ||
+					!snapshotStatus?.isFile() ||
+					snapshotStatus.isSymbolicLink() ||
+					!sameOpenedIdentity(descriptorStatus, sourceStatus) ||
+					!sameOpenedIdentity(descriptorStatus, snapshotStatus)
+				) {
+					throw new Error(`artifact '${artifact.id}' changed while open: ${filePath}`);
+				}
+				if (
+					expected &&
+					(descriptorStatus.size !== expected.size ||
+						descriptorStatus.mtimeNs !== expected.mtimeNs ||
+						descriptorStatus.ctimeNs !== expected.ctimeNs)
+				) {
+					throw new Error(`artifact '${artifact.id}' contents changed while open: ${filePath}`);
+				}
+				return descriptorStatus;
+			};
+			baseline = assertSnapshot();
+			options.beforeUse?.({ sourcePath: filePath, snapshotPath });
+			assertSnapshot(baseline);
+			const result = consumer(snapshotPath);
+			if (result && typeof result.then === 'function') {
+				throw new Error('pinned artifact pathname consumers must be synchronous');
+			}
+			const afterUse = assertSnapshot(baseline);
+			if (
+				Number(afterUse.size) !== artifact.size_bytes ||
+				sha256Descriptor(opened.descriptor, Number(afterUse.size)) !== artifact.sha256
+			) {
+				throw new Error(`artifact '${artifact.id}' contents changed while open: ${filePath}`);
+			}
+			return result;
+		} finally {
+			if (linked) {
+				const snapshotStatus = fs.lstatSync(snapshotPath, {
+					bigint: true,
+					throwIfNoEntry: false,
+				});
+				const descriptorStatus = fs.fstatSync(opened.descriptor, { bigint: true });
+				if (!snapshotStatus || !sameOpenedIdentity(snapshotStatus, descriptorStatus)) {
+					throw new Error(`artifact '${artifact.id}' snapshot changed while open: ${snapshotPath}`);
+				}
+				fs.unlinkSync(snapshotPath);
+				const unlinked = fs.fstatSync(opened.descriptor, { bigint: true });
+				const named = fs.lstatSync(filePath, { bigint: true, throwIfNoEntry: false });
+				if (
+					unlinked.nlink !== 1n ||
+					!named?.isFile() ||
+					named.isSymbolicLink() ||
+					!sameOpenedIdentity(unlinked, named)
+				) {
+					throw new Error(`artifact '${artifact.id}' changed while open: ${filePath}`);
+				}
+				opened.identity = unlinked;
+				verifyOpenedPinnedArtifact(opened, artifact);
+			}
+		}
+	} finally {
+		fs.closeSync(opened.descriptor);
+	}
+}
+
 export async function downloadPinnedArtifact(artifact, cacheRoot, options = {}) {
 	const fetchImpl = options.fetchImpl ?? globalThis.fetch;
 	if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable in this runtime');
@@ -1334,7 +1748,7 @@ function verboseEntryTypes(output) {
 }
 
 export function listArchiveEntries(archivePath, archiveFormat, options = {}) {
-	assertRegularFile(archivePath, 'archive');
+	assertRegularFile(archivePath, 'archive', options);
 	const execFileSyncImpl = options.execFileSyncImpl ?? execFileSync;
 	let namesOutput;
 	let verboseOutput;
@@ -1631,6 +2045,10 @@ export function selectDensestTimedWindow(words, durationSeconds, gridSeconds) {
 		(word) => Number.isFinite(word.start) && Number.isFinite(word.end) && word.end >= word.start,
 	);
 	if (timedWords.length === 0) throw new Error('cannot choose a dense window without timed words');
+	const lexicalTimedWords = timedWords.filter((word) => !word.punctuation);
+	if (lexicalTimedWords.length === 0) {
+		throw new Error('cannot choose a dense window without timed lexical words');
+	}
 	const finalEnd = Math.max(...timedWords.map((word) => word.end));
 	const finalStart = Math.max(0, finalEnd - durationSeconds);
 	const candidates = new Set([0, finalStart]);
@@ -1639,11 +2057,20 @@ export function selectDensestTimedWindow(words, durationSeconds, gridSeconds) {
 	for (const start of [...candidates].sort((left, right) => left - right)) {
 		const end = start + durationSeconds;
 		const selected = timedWords.filter((word) => word.start >= start && word.end <= end);
-		const speechSeconds = selected.reduce(
+		const selectedLexical = lexicalTimedWords.filter(
+			(word) => word.start >= start && word.end <= end,
+		);
+		const speechSeconds = selectedLexical.reduce(
 			(total, word) => total + Math.max(0, Math.min(end, word.end) - Math.max(start, word.start)),
 			0,
 		);
-		const score = { start, end, words: selected, wordCount: selected.length, speechSeconds };
+		const score = {
+			start,
+			end,
+			words: selected,
+			wordCount: selectedLexical.length,
+			speechSeconds,
+		};
 		if (
 			!best ||
 			score.wordCount > best.wordCount ||
@@ -1675,6 +2102,11 @@ export function renderTimedReference(words, startSeconds, endSeconds) {
 
 const EARNINGS_REFERENCE_HEADER = 'token|speaker|ts|endTs|punctuation|case|tags|wer_tags';
 const EARNINGS_HYPOTHESIS_HEADER = 'token|speaker|ts|endTs|punctuation|case|tags';
+// The pinned 4320211 alignment has one 0.04 s start regression, while the largest
+// adjacent overlap across all three pinned hypotheses is 0.35 s (in 4341191).
+export const EARNINGS_MAX_START_REGRESSION_SECONDS = 0.04;
+export const EARNINGS_MAX_ADJACENT_OVERLAP_SECONDS = 0.35;
+const EARNINGS_TIMESTAMP_EPSILON_SECONDS = 0.000001;
 
 function earningsText(input, label) {
 	if (typeof input === 'string') return input;
@@ -1714,6 +2146,7 @@ export function parseEarningsTimedHypothesis(input) {
 		throw new Error('Earnings-21 alignment hypothesis has an unexpected header');
 	}
 	const tokens = [];
+	let maximumStart = Number.NEGATIVE_INFINITY;
 	for (const [index, line] of lines.slice(1).entries()) {
 		const columns = line.split('|');
 		if (columns.length !== 7) {
@@ -1733,7 +2166,31 @@ export function parseEarningsTimedHypothesis(input) {
 		) {
 			throw new Error(`Earnings-21 alignment hypothesis line ${index + 2} is invalid`);
 		}
+		const previous = tokens.at(-1);
+		if (
+			maximumStart - start >
+				EARNINGS_MAX_START_REGRESSION_SECONDS + EARNINGS_TIMESTAMP_EPSILON_SECONDS
+		) {
+			throw new Error(
+				`Earnings-21 alignment hypothesis line ${index + 2} regresses more than ${EARNINGS_MAX_START_REGRESSION_SECONDS} seconds`,
+			);
+		}
+		if (previous && previous.end - end > EARNINGS_TIMESTAMP_EPSILON_SECONDS) {
+			throw new Error(
+				`Earnings-21 alignment hypothesis line ${index + 2} has a decreasing end timestamp`,
+			);
+		}
+		if (
+			previous &&
+			previous.end - start >
+				EARNINGS_MAX_ADJACENT_OVERLAP_SECONDS + EARNINGS_TIMESTAMP_EPSILON_SECONDS
+		) {
+			throw new Error(
+				`Earnings-21 alignment hypothesis line ${index + 2} overlaps its predecessor by more than ${EARNINGS_MAX_ADJACENT_OVERLAP_SECONDS} seconds`,
+			);
+		}
 		tokens.push({ text, start, end });
+		maximumStart = Math.max(maximumStart, start);
 	}
 	if (tokens.length === 0) throw new Error('Earnings-21 alignment hypothesis contains no tokens');
 	return tokens;
@@ -1744,6 +2201,66 @@ function normalizedEarningsToken(value) {
 		.normalize('NFKC')
 		.toLowerCase()
 		.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+const EARNINGS_BOUNDARY_CONTEXT_TOKENS = 2;
+
+function ngramOccurrenceCount(tokens, expected) {
+	let matches = 0;
+	for (let index = 0; index <= tokens.length - expected.length; index += 1) {
+		if (expected.every((token, offset) => token === tokens[index + offset])) matches += 1;
+	}
+	return matches;
+}
+
+function exactBoundaryContext(
+	referenceIndex,
+	hypothesisIndex,
+	boundary,
+	hypothesisByReference,
+	normalizedReference,
+	normalizedHypothesis,
+) {
+	const candidateOffsets = boundary === 'start' ? [0, 1] : [1, 0];
+	for (const candidateOffset of candidateOffsets) {
+		const startReferenceIndex = referenceIndex - candidateOffset;
+		const startHypothesisIndex = hypothesisIndex - candidateOffset;
+		if (startReferenceIndex < 0 || startHypothesisIndex < 0) continue;
+		const context = normalizedReference.slice(
+			startReferenceIndex,
+			startReferenceIndex + EARNINGS_BOUNDARY_CONTEXT_TOKENS,
+		);
+		if (
+			context.length !== EARNINGS_BOUNDARY_CONTEXT_TOKENS ||
+			context.some((token) => token.length === 0)
+		) {
+			continue;
+		}
+		let exact = true;
+		for (let offset = 0; offset < EARNINGS_BOUNDARY_CONTEXT_TOKENS; offset += 1) {
+			const candidateReferenceIndex = startReferenceIndex + offset;
+			const candidateHypothesisIndex = startHypothesisIndex + offset;
+			if (
+				hypothesisByReference[candidateReferenceIndex] !== candidateHypothesisIndex ||
+				normalizedHypothesis[candidateHypothesisIndex] !== context[offset]
+			) {
+				exact = false;
+				break;
+			}
+		}
+		if (
+			!exact ||
+			ngramOccurrenceCount(normalizedReference, context) !== 1 ||
+			ngramOccurrenceCount(normalizedHypothesis, context) !== 1
+		) {
+			continue;
+		}
+		return {
+			tokenCount: EARNINGS_BOUNDARY_CONTEXT_TOKENS,
+			sha256: sha256Text(JSON.stringify(context)),
+		};
+	}
+	return null;
 }
 
 function renderEarningsTokens(tokens) {
@@ -1872,8 +2389,8 @@ export function deriveEarningsReferenceExcerpt(referenceInput, hypothesisInput, 
 	if (
 		!Number.isFinite(exactPairRatio) ||
 		!Number.isFinite(normalizedEditDistance) ||
-		exactPairRatio < 0.8 ||
-		normalizedEditDistance > 0.25
+		exactPairRatio < 0.9 ||
+		normalizedEditDistance > 0.1
 	) {
 		throw new Error(
 			`Earnings-21 alignment quality is unsafe: exact=${exactPairRatio.toFixed(4)}, edit=${normalizedEditDistance.toFixed(4)}`,
@@ -1892,17 +2409,38 @@ export function deriveEarningsReferenceExcerpt(referenceInput, hypothesisInput, 
 		) {
 			continue;
 		}
+		const forwardContext = exactBoundaryContext(
+			index,
+			mappedIndex,
+			'start',
+			hypothesisByReference,
+			normalizedReference,
+			normalizedHypothesis,
+		);
+		const backwardContext = exactBoundaryContext(
+			index,
+			mappedIndex,
+			'end',
+			hypothesisByReference,
+			normalizedReference,
+			normalizedHypothesis,
+		);
 		const anchor = {
 			referenceTokenIndex: index,
 			hypothesisTokenIndex: mappedIndex,
 			start: timedToken.start,
 			end: timedToken.end,
 		};
-		if (!startAnchor && timedToken.start >= startSeconds && timedToken.end <= endSeconds) {
-			startAnchor = anchor;
+		if (
+			!startAnchor &&
+			forwardContext &&
+			timedToken.start >= startSeconds &&
+			timedToken.end <= endSeconds
+		) {
+			startAnchor = { ...anchor, context: forwardContext };
 		}
-		if (timedToken.start >= startSeconds && timedToken.end <= endSeconds) {
-			endAnchor = anchor;
+		if (backwardContext && timedToken.start >= startSeconds && timedToken.end <= endSeconds) {
+			endAnchor = { ...anchor, context: backwardContext };
 		}
 	}
 	if (
@@ -1910,7 +2448,16 @@ export function deriveEarningsReferenceExcerpt(referenceInput, hypothesisInput, 
 		!endAnchor ||
 		endAnchor.referenceTokenIndex < startAnchor.referenceTokenIndex
 	) {
-		throw new Error('Earnings-21 alignment could not resolve exact excerpt boundary anchors');
+		throw new Error(
+			'Earnings-21 alignment could not resolve unique exact multi-token boundary anchors',
+		);
+	}
+	const startEdgeSeconds = startAnchor.start - startSeconds;
+	const endEdgeSeconds = endSeconds - endAnchor.end;
+	if (startEdgeSeconds > 2.5 || endEdgeSeconds > 2.5) {
+		throw new Error(
+			`Earnings-21 alignment boundary anchors are too far from the excerpt edges: start=${startEdgeSeconds.toFixed(3)}s, end=${endEdgeSeconds.toFixed(3)}s`,
+		);
 	}
 
 	const referenceTokens = reference.slice(
@@ -1931,6 +2478,8 @@ export function deriveEarningsReferenceExcerpt(referenceInput, hypothesisInput, 
 		referenceStartTokenIndex: startAnchor.referenceTokenIndex,
 		referenceEndTokenIndex: endAnchor.referenceTokenIndex,
 		referenceTokenCount: referenceTokens.length,
+		startEdgeSeconds,
+		endEdgeSeconds,
 		startAnchor,
 		endAnchor,
 	};
@@ -2019,7 +2568,7 @@ function publishJsonNoClobber(filePath, document, options = {}) {
 export function createReviewTemplate(samples) {
 	return {
 		schema_version: PUBLIC_REVIEW_SCHEMA_VERSION,
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
 		samples: samples.map((sample) => ({ sample_id: sample.id, reviewers: [] })),
 	};
 }
@@ -2032,7 +2581,8 @@ export function writePreparedBundle(workspace, prepared) {
 		atomicWriteJson(reviewsPath, createReviewTemplate(prepared.samples));
 	} else {
 		const reviews = readJsonFile(reviewsPath, 'public reference review attestations');
-		const existingIds = new Set(reviews.samples?.map((sample) => sample.sample_id) ?? []);
+		const reviewSamples = Array.isArray(reviews.samples) ? reviews.samples : [];
+		const existingIds = new Set(reviewSamples.map((sample) => sample.sample_id));
 		const expectedIds = new Set(prepared.samples.map((sample) => sample.id));
 		if (
 			existingIds.size !== expectedIds.size ||
@@ -2041,6 +2591,27 @@ export function writePreparedBundle(workspace, prepared) {
 			throw new Error(
 				'review-attestations.json does not match the prepared sample set; preserve it for audit and start a fresh workspace',
 			);
+		}
+		const untouchedTemplate =
+			Object.keys(reviews).length === 3 &&
+			reviews.schema_version === PUBLIC_REVIEW_SCHEMA_VERSION &&
+			[REFERENCE_PROTOCOL_ID, PUBLIC_REFERENCE_PROTOCOL_ID].includes(
+				reviews.reference_protocol_id,
+			) &&
+			reviewSamples.every(
+				(sample) =>
+					isObject(sample) &&
+					Object.keys(sample).length === 2 &&
+					Array.isArray(sample.reviewers) &&
+					sample.reviewers.length === 0,
+			);
+		if (reviews.reference_protocol_id !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+			if (!untouchedTemplate) {
+				throw new Error(
+					'review-attestations.json uses the retired protocol and contains audit evidence; preserve it and start a fresh workspace',
+				);
+			}
+			atomicWriteJson(reviewsPath, createReviewTemplate(prepared.samples));
 		}
 		atomicWriteJson(preparedPath, prepared);
 	}
@@ -2082,8 +2653,8 @@ function loadPreparedDocument(workspace, catalogPath, selectionPath, catalog, se
 	if (prepared.selection_sha256 !== fileSha256(selectionPath)) {
 		errors.push('prepared.selection_sha256 does not match the selection file');
 	}
-	if (prepared.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`prepared.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (prepared.reference_protocol_id !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+		errors.push(`prepared.reference_protocol_id must be '${PUBLIC_REFERENCE_PROTOCOL_ID}'`);
 	}
 	if (!isObject(prepared.ffmpeg)) {
 		errors.push('prepared.ffmpeg must identify the approved executable');
@@ -2138,7 +2709,7 @@ function loadPreparedDocument(workspace, catalogPath, selectionPath, catalog, se
 		errors.push('prepared.samples must be a non-empty array');
 	} else {
 		const ids = new Set();
-		const contracts = expectedPreparedContracts(selection);
+		const contracts = expectedPreparedContracts(selection, catalog);
 		for (const [index, sample] of prepared.samples.entries()) {
 			const prefix = `prepared.samples[${index}]`;
 			if (!isObject(sample)) {
@@ -2153,6 +2724,8 @@ function loadPreparedDocument(workspace, catalogPath, selectionPath, catalog, se
 					'audio_path',
 					'audio_sha256',
 					'reference_path',
+					'reference_sha256',
+					'reference_verification',
 					'dataset',
 					'language',
 					'whisper_language',
@@ -2161,7 +2734,6 @@ function loadPreparedDocument(workspace, catalogPath, selectionPath, catalog, se
 					'speakers',
 					'duration_seconds',
 					'provenance',
-					'requires_manual_reference',
 					'source_window',
 				]),
 				prefix,
@@ -2176,6 +2748,12 @@ function loadPreparedDocument(workspace, catalogPath, selectionPath, catalog, se
 			}
 			if (!SHA256_PATTERN.test(sample.audio_sha256 ?? '')) {
 				errors.push(`${prefix}.audio_sha256 must be a lowercase SHA-256 digest`);
+			}
+			if (!SHA256_PATTERN.test(sample.reference_sha256 ?? '')) {
+				errors.push(`${prefix}.reference_sha256 must be a lowercase SHA-256 digest`);
+			}
+			if (!REFERENCE_RECIPE_CONTRACTS.has(sample.reference_verification)) {
+				errors.push(`${prefix}.reference_verification must be a supported source recipe`);
 			}
 			if (
 				sample.provenance?.basis !== 'public-license' ||
@@ -2273,10 +2851,7 @@ function snapshotOpenedSample(workspace, sample) {
 			throw new Error(`sample '${sample.id}' reference must be valid UTF-8`);
 		}
 		if (referenceText.trim().length === 0) {
-			const explanation = sample.requires_manual_reference
-				? 'the upstream transcript has no excerpt timestamps, so transcribe the excerpt by listening first'
-				: 'complete the two-pass reference transcription first';
-			throw new Error(`sample '${sample.id}' reference is empty; ${explanation}`);
+			throw new Error(`sample '${sample.id}' pinned upstream reference is empty`);
 		}
 		const durationSeconds = wavDurationDescriptor(audioOpened.descriptor, audioSize);
 		attestStableFile(audioOpened, { requireUnchangedContents: true });
@@ -2292,6 +2867,12 @@ function snapshotOpenedSample(workspace, sample) {
 				`sample '${sample.id}' duration_seconds does not match the recomputed WAV duration`,
 			);
 		}
+		const referenceSha256 = createHash('sha256').update(referenceBytes).digest('hex');
+		if (referenceSha256 !== sample.reference_sha256) {
+			throw new Error(
+				`sample '${sample.id}' reference_sha256 does not match the committed source-derived reference`,
+			);
+		}
 		return {
 			sample,
 			audio: { opened: audioOpened, path: audioPath, sha256: audioSha256, durationSeconds },
@@ -2299,7 +2880,7 @@ function snapshotOpenedSample(workspace, sample) {
 				opened: referenceOpened,
 				path: referencePath,
 				text: referenceText,
-				sha256: createHash('sha256').update(referenceBytes).digest('hex'),
+				sha256: referenceSha256,
 			},
 		};
 	} catch (error) {
@@ -2362,8 +2943,8 @@ export function validateReviewAttestations(document, preparedSamples, workspace,
 	if (document.schema_version !== PUBLIC_REVIEW_SCHEMA_VERSION) {
 		errors.push(`reviews.schema_version must be ${PUBLIC_REVIEW_SCHEMA_VERSION}`);
 	}
-	if (document.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`reviews.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (document.reference_protocol_id !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+		errors.push(`reviews.reference_protocol_id must be '${PUBLIC_REFERENCE_PROTOCOL_ID}'`);
 	}
 	if (!Array.isArray(document.samples)) {
 		errors.push('reviews.samples must be an array');
@@ -2391,13 +2972,23 @@ export function validateReviewAttestations(document, preparedSamples, workspace,
 			errors.push(`sample '${sample.id}' is missing review attestations`);
 			continue;
 		}
-		if (!Array.isArray(review.reviewers) || review.reviewers.length < 2) {
-			errors.push(`sample '${sample.id}' requires two independent accepted reviews`);
-			continue;
-		}
 		const snapshot = snapshots.get(sample.id);
 		if (!snapshot) {
 			errors.push(`sample '${sample.id}' has no stable file snapshot`);
+			continue;
+		}
+		if (REFERENCE_RECIPE_CONTRACTS.has(sample.reference_verification)) {
+			if (!Array.isArray(review.reviewers) || review.reviewers.length !== 0) {
+				errors.push(
+					`sample '${sample.id}' is pinned upstream gold and must not contain local review attestations`,
+				);
+			}
+			continue;
+		}
+		if (!Array.isArray(review.reviewers) || review.reviewers.length !== 2) {
+			errors.push(
+				`sample '${sample.id}' requires exactly two independent accepted reviews when it is not pinned upstream gold`,
+			);
 			continue;
 		}
 		const currentReferenceHash = snapshot.reference.sha256;
@@ -2436,8 +3027,10 @@ export function validateReviewAttestations(document, preparedSamples, workspace,
 				errors.push(`${prefix}.reviewed_at must be an ISO-8601 timestamp`);
 			}
 			if (reviewer.decision !== 'accepted') errors.push(`${prefix}.decision must be accepted`);
-			if (reviewer.affirmed_reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-				errors.push(`${prefix}.affirmed_reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+			if (reviewer.affirmed_reference_protocol_id !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+				errors.push(
+					`${prefix}.affirmed_reference_protocol_id must be '${PUBLIC_REFERENCE_PROTOCOL_ID}'`,
+				);
 			}
 			if (reviewer.reference_sha256 !== currentReferenceHash) {
 				errors.push(`${prefix}.reference_sha256 does not match the current reference`);
@@ -2452,8 +3045,8 @@ export function validateReviewAttestations(document, preparedSamples, workspace,
 }
 
 export function recordPublicReviewAttestation(options) {
-	if (options.affirmReferenceProtocol !== REFERENCE_PROTOCOL_ID) {
-		throw new Error(`review requires --affirm-reference-protocol ${REFERENCE_PROTOCOL_ID}`);
+	if (options.affirmReferenceProtocol !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+		throw new Error(`review requires --affirm-reference-protocol ${PUBLIC_REFERENCE_PROTOCOL_ID}`);
 	}
 	if (options.acceptReviewedReference !== true) {
 		throw new Error(
@@ -2485,6 +3078,11 @@ export function recordPublicReviewAttestation(options) {
 		}
 		const sample = prepared.samples.find((candidate) => candidate.id === options.sampleId);
 		if (!sample) throw new Error(`prepared public corpus has no sample '${options.sampleId}'`);
+		if (REFERENCE_RECIPE_CONTRACTS.has(sample.reference_verification)) {
+			throw new Error(
+				`sample '${sample.id}' is pinned upstream gold; restore its exact source-derived bytes instead of adding a local review`,
+			);
+		}
 		snapshots = openSampleSnapshots(workspace, [sample]);
 		const snapshot = snapshots.get(sample.id);
 		const audio = snapshot.audio;
@@ -2493,7 +3091,7 @@ export function recordPublicReviewAttestation(options) {
 		const reviews = readJsonFile(reviewsPath, 'public reference review attestations');
 		if (
 			reviews.schema_version !== PUBLIC_REVIEW_SCHEMA_VERSION ||
-			reviews.reference_protocol_id !== REFERENCE_PROTOCOL_ID ||
+			reviews.reference_protocol_id !== PUBLIC_REFERENCE_PROTOCOL_ID ||
 			!Array.isArray(reviews.samples)
 		) {
 			throw new Error('review-attestations.json has an invalid envelope');
@@ -2526,7 +3124,7 @@ export function recordPublicReviewAttestation(options) {
 			reviewer_id: options.reviewerId,
 			reviewed_at: reviewedAt,
 			decision: 'accepted',
-			affirmed_reference_protocol_id: REFERENCE_PROTOCOL_ID,
+			affirmed_reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
 			audio_sha256: audio.sha256,
 			reference_sha256: reference.sha256,
 		});
@@ -2582,7 +3180,7 @@ function buildPublicManifest(catalogPath, selection, prepared, snapshots) {
 	return {
 		schema_version: CORPUS_SCHEMA_VERSION,
 		corpus_id: selection.corpus_id,
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
 		description:
 			'Reproducible local-only public ASR corpus from pinned FLEURS, AMI, and Earnings-21 sources.',
 		distribution: 'local',
@@ -2600,8 +3198,10 @@ function buildPublicManifest(catalogPath, selection, prepared, snapshots) {
 }
 
 export async function finalizePublicCorpus(options, dependencies = {}) {
-	if (options.affirmReferenceProtocol !== REFERENCE_PROTOCOL_ID) {
-		throw new Error(`finalization requires --affirm-reference-protocol ${REFERENCE_PROTOCOL_ID}`);
+	if (options.affirmReferenceProtocol !== PUBLIC_REFERENCE_PROTOCOL_ID) {
+		throw new Error(
+			`finalization requires --affirm-reference-protocol ${PUBLIC_REFERENCE_PROTOCOL_ID}`,
+		);
 	}
 	const workspace = ensurePrivateDirectory(options.workspace, 'public corpus workspace');
 	const lock = acquirePublicCorpusLock(workspace);
@@ -2622,6 +3222,9 @@ export async function finalizePublicCorpus(options, dependencies = {}) {
 			catalogPath: options.catalogPath,
 			selectionPath: options.selectionPath,
 			...(options.ffmpegPath ? { ffmpegPath: options.ffmpegPath } : {}),
+			...(options.minimumFreeBytes !== undefined
+				? { minimumFreeBytes: options.minimumFreeBytes }
+				: {}),
 		});
 		const { catalog, selection } = loadPublicCorpusConfig(
 			options.catalogPath,
@@ -2649,7 +3252,7 @@ export async function finalizePublicCorpus(options, dependencies = {}) {
 			snapshots,
 		);
 		if (reviewErrors.length > 0) {
-			throw new Error(`public reference review is incomplete:\n- ${reviewErrors.join('\n- ')}`);
+			throw new Error(`public reference verification failed:\n- ${reviewErrors.join('\n- ')}`);
 		}
 		const manifestPath = path.join(workspace, 'corpus-local.json');
 		const manifest = buildPublicManifest(options.catalogPath, selection, prepared, snapshots);

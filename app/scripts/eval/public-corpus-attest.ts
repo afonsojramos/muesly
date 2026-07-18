@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { PUBLIC_REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { recordPublicReviewAttestation } from './public-corpus.ts';
 import {
 	DEFAULT_PUBLIC_CATALOG,
@@ -53,14 +53,16 @@ export function parsePublicAttestArgs(args) {
 function usage() {
 	return `Usage: nub app/scripts/eval/public-corpus-attest.ts [options]
 
-Run only after listening to the exact generated sample and reviewing its reference
-under ${REFERENCE_PROTOCOL_ID}. Each sample requires two distinct reviewers.
+Reserved for a future, separately specified local-correction recipe in this tooling.
+Pinned upstream human gold under ${PUBLIC_REFERENCE_PROTOCOL_ID} does not accept local
+attestations: restore the exact source-derived bytes or move the sample to a deliberate
+private or separately versioned local-correction workflow.
 
 Options:
   --sample <id>              Prepared sample ID
   --reviewer <opaque-id>     Lowercase reviewer identifier
   --accept-reviewed-reference
-  --affirm-reference-protocol ${REFERENCE_PROTOCOL_ID}
+  --affirm-reference-protocol ${PUBLIC_REFERENCE_PROTOCOL_ID}
   --catalog <path>           Source catalog
   --selection <path>         Deterministic selection
   --workspace <path>         Prepared public-corpus workspace

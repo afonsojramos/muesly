@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { execFileSync, spawnSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { fileSha256, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import { fileSha256, PUBLIC_REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { wavDurationSeconds } from './corpus-intake.ts';
 import {
 	acquirePreparationLock,
@@ -24,15 +24,17 @@ import {
 	parseAmiWordDocuments,
 	parseFleursTsv,
 	planOverlapTimings,
+	readPinnedArtifactFile,
 	renderEarningsContext,
 	renderTimedReference,
 	resolveInside,
 	selectDensestTimedWindow,
 	selectFleursComposites,
 	sha256Text,
-	verifyPinnedArtifactFile,
+	withPinnedArtifactPath,
 	writePreparedBundle,
 	PUBLIC_PREPARED_SCHEMA_VERSION,
+	PUBLIC_REFERENCE_RECIPES,
 } from './public-corpus.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -586,6 +588,59 @@ export function writeDraftReference(referencePath, draft, options = {}) {
 	return seedExistingEmptyReference(referencePath, expected, contents, options);
 }
 
+export function writePinnedReference(referencePath, reference, expectedSha256, options = {}) {
+	ensurePrivateDirectory(path.dirname(referencePath), 'public reference directory');
+	const contents = Buffer.from(reference, 'utf8');
+	const derivedSha256 = createHash('sha256').update(contents).digest('hex');
+	if (derivedSha256 !== expectedSha256) {
+		throw new Error(
+			`derived public reference does not match its committed SHA-256: ${referencePath}`,
+		);
+	}
+	if (publishNewDraftReference(referencePath, contents)) return true;
+	const expected = fs.lstatSync(referencePath, { bigint: true, throwIfNoEntry: false });
+	if (!expected || !safeReferenceStatus(expected)) {
+		throw new Error(`existing pinned public reference must be a regular file: ${referencePath}`);
+	}
+	options.beforeExistingOpen?.();
+	const descriptor = fs.openSync(
+		referencePath,
+		fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0),
+	);
+	try {
+		const opened = fs.fstatSync(descriptor, { bigint: true });
+		const named = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			!safeReferenceStatus(opened) ||
+			!sameReferenceIdentity(expected, opened) ||
+			!sameReferenceIdentity(opened, named)
+		) {
+			throw new Error(`pinned public reference changed while opening: ${referencePath}`);
+		}
+		const existing = readStableReference(descriptor, opened, referencePath);
+		const afterRead = fs.fstatSync(descriptor, { bigint: true });
+		const namedAfterRead = fs.lstatSync(referencePath, { bigint: true });
+		if (
+			!sameReferenceIdentity(opened, afterRead) ||
+			!sameReferenceIdentity(afterRead, namedAfterRead) ||
+			afterRead.size !== opened.size ||
+			afterRead.mtimeNs !== opened.mtimeNs ||
+			afterRead.ctimeNs !== opened.ctimeNs ||
+			!readStableReference(descriptor, afterRead, referencePath).equals(existing)
+		) {
+			throw new Error(`pinned public reference changed while reading: ${referencePath}`);
+		}
+		if (!existing.equals(contents)) {
+			throw new Error(
+				`existing pinned public reference differs from the committed source-derived bytes: ${referencePath}`,
+			);
+		}
+		return false;
+	} finally {
+		fs.closeSync(descriptor);
+	}
+}
+
 function artifactMaps(catalog, cacheRoot) {
 	const artifactById = new Map(catalog.artifacts.map((artifact) => [artifact.id, artifact]));
 	const sourceById = new Map(catalog.sources.map((source) => [source.id, source]));
@@ -640,19 +695,26 @@ export function publishExtractedDirectory(staging, destination, expectedMembers)
 }
 
 function extractPinnedMembers(artifact, archivePath, members, extractionRoot, options = {}) {
-	verifyPinnedArtifactFile(archivePath, artifact);
-	const entries = listArchiveEntries(archivePath, artifact.archive_format);
-	verifyPinnedArtifactFile(archivePath, artifact);
 	const normalizedMembers = [...new Set(members)].sort();
 	const staging = `${extractionRoot}.staging-${process.pid}-${randomUUID()}`;
 	ensurePrivateDirectory(path.dirname(extractionRoot), 'public source extraction root');
 	try {
-		extractArchiveMembers(archivePath, artifact.archive_format, staging, normalizedMembers, {
-			entries,
-			maximumExtractedBytes: options.maximumExtractedBytes,
-			maximumMemberBytes: options.maximumMemberBytes,
+		withPinnedArtifactPath(archivePath, artifact, (stableArchivePath) => {
+			const entries = listArchiveEntries(stableArchivePath, artifact.archive_format, {
+				allowPinnedSnapshot: true,
+			});
+			extractArchiveMembers(
+				stableArchivePath,
+				artifact.archive_format,
+				staging,
+				normalizedMembers,
+				{
+					entries,
+					maximumExtractedBytes: options.maximumExtractedBytes,
+					maximumMemberBytes: options.maximumMemberBytes,
+				},
+			);
 		});
-		verifyPinnedArtifactFile(archivePath, artifact);
 		return publishExtractedDirectory(staging, extractionRoot, normalizedMembers);
 	} catch (error) {
 		if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true });
@@ -853,12 +915,22 @@ function relativeWorkspacePath(workspace, absolutePath) {
 }
 
 function preparedSample(sample, workspace, audioPath, referencePath, provenance, extra = {}) {
+	if (fileSha256(referencePath) !== extra.reference_sha256) {
+		throw new Error(
+			`prepared reference '${sample.id}' does not match its committed source-derived SHA-256`,
+		);
+	}
+	if (!Object.values(PUBLIC_REFERENCE_RECIPES).includes(extra.reference_verification)) {
+		throw new Error(`prepared reference '${sample.id}' has no supported verification recipe`);
+	}
 	return {
 		id: sample.id,
 		...(sample.session_id ? { session_id: sample.session_id } : {}),
 		audio_path: relativeWorkspacePath(workspace, audioPath),
 		audio_sha256: fileSha256(audioPath),
 		reference_path: relativeWorkspacePath(workspace, referencePath),
+		reference_sha256: extra.reference_sha256,
+		reference_verification: extra.reference_verification,
 		language: sample.language,
 		whisper_language: sample.whisper_language,
 		scenario: sample.scenario,
@@ -866,7 +938,11 @@ function preparedSample(sample, workspace, audioPath, referencePath, provenance,
 		speakers: sample.speakers,
 		duration_seconds: wavDurationSeconds(audioPath),
 		provenance,
-		...extra,
+		...Object.fromEntries(
+			Object.entries(extra).filter(
+				([field]) => !['reference_sha256', 'reference_verification'].includes(field),
+			),
+		),
 	};
 }
 
@@ -875,14 +951,16 @@ function prepareFleursSources(context) {
 	const fleurs = context.selection.fleurs;
 	for (const sourceSelection of fleurs.sources) {
 		const source = context.maps.sourceById.get(sourceSelection.source_id);
+		if (source.reference_verification !== PUBLIC_REFERENCE_RECIPES.FLEURS) {
+			throw new Error(`FLEURS source '${source.id}' must use ${PUBLIC_REFERENCE_RECIPES.FLEURS}`);
+		}
 		const artifacts = sourceArtifacts(source, context.maps);
 		const archiveEntry = artifacts.find(({ artifact }) => artifact.kind === 'audio-archive');
 		const indexEntry = artifacts.find(({ artifact }) => artifact.kind === 'index');
 		if (!archiveEntry || !indexEntry) {
 			throw new Error(`FLEURS source '${source.id}' must have one audio archive and one index`);
 		}
-		verifyPinnedArtifactFile(indexEntry.path, indexEntry.artifact);
-		const rows = parseFleursTsv(fs.readFileSync(indexEntry.path));
+		const rows = parseFleursTsv(readPinnedArtifactFile(indexEntry.path, indexEntry.artifact));
 		const composites = selectFleursComposites(rows, {
 			count: fleurs.composites_per_language,
 			minimumSeconds: fleurs.minimum_seconds,
@@ -893,6 +971,14 @@ function prepareFleursSources(context) {
 		for (const [index, composite] of composites.entries()) {
 			const commitment = sourceSelection.composites[index];
 			const overlap = planOverlapTimings(composite.items);
+			if (
+				overlap.some(
+					(item, itemIndex) =>
+						itemIndex > 0 && item.onsetSeconds <= overlap[itemIndex - 1].onsetSeconds,
+				)
+			) {
+				throw new Error(`FLEURS source '${source.id}' overlap onsets must be strictly increasing`);
+			}
 			const overlapDuration = overlap.at(-1).onsetSeconds + overlap.at(-1).durationSeconds;
 			if (
 				commitment.member_count !== composite.items.length ||
@@ -906,12 +992,14 @@ function prepareFleursSources(context) {
 				);
 			}
 		}
-		verifyPinnedArtifactFile(archiveEntry.path, archiveEntry.artifact);
-		const archiveEntries = listArchiveEntries(
+		const archiveEntries = withPinnedArtifactPath(
 			archiveEntry.path,
-			archiveEntry.artifact.archive_format,
+			archiveEntry.artifact,
+			(stableArchivePath) =>
+				listArchiveEntries(stableArchivePath, archiveEntry.artifact.archive_format, {
+					allowPinnedSnapshot: true,
+				}),
 		);
-		verifyPinnedArtifactFile(archiveEntry.path, archiveEntry.artifact);
 		const memberByFilename = new Map();
 		for (const composite of composites) {
 			for (const item of composite.items) {
@@ -941,9 +1029,10 @@ function prepareFleursSources(context) {
 				resolveInside(extractionRoot, memberByFilename.get(item.filename), 'FLEURS audio member'),
 			);
 			const referencePath = path.join(context.workspace, 'references', `${baseId}.txt`);
-			writeDraftReference(
+			writePinnedReference(
 				referencePath,
 				`${composite.items.map((item) => item.transcript.trim()).join(' ')}\n`,
+				commitment.reference_sha256,
 			);
 			const cleanPath = path.join(context.workspace, 'audio', `${baseId}-clean-read.wav`);
 			concatFleursAudio(
@@ -982,6 +1071,7 @@ function prepareFleursSources(context) {
 						: commitment.clean_duration_seconds;
 				const sampleDefinition = {
 					id: `${baseId}-${condition.id}`,
+					session_id: `session-${baseId}`,
 					language: sourceSelection.language,
 					whisper_language: sourceSelection.whisper_language,
 					scenario: 'read-speech',
@@ -1008,6 +1098,8 @@ function prepareFleursSources(context) {
 							transform_id: condition.transform_id,
 						},
 						{
+							reference_sha256: commitment.reference_sha256,
+							reference_verification: source.reference_verification,
 							dataset: 'fleurs',
 							source_window: {
 								strategy: 'committed-fleurs-composite',
@@ -1016,6 +1108,8 @@ function prepareFleursSources(context) {
 								member_count: commitment.member_count,
 								ordered_members_sha256: commitment.ordered_members_sha256,
 								expected_duration_seconds: expectedDurationSeconds,
+								reference_order_policy: 'source-item-onset',
+								monotonic_onsets: true,
 							},
 						},
 					),
@@ -1032,129 +1126,197 @@ function amiMeetingId(sample) {
 	return match[1];
 }
 
-function prepareAmiSources(context, amiSamples) {
-	if (amiSamples.length === 0) return [];
-	const annotationArtifact = context.catalog.artifacts.find(
-		(artifact) => artifact.id === 'ami-manual-annotations-v1-6-2',
-	);
-	const annotationPath = context.maps.pathByArtifactId.get(annotationArtifact.id);
-	verifyPinnedArtifactFile(annotationPath, annotationArtifact);
-	const entries = listArchiveEntries(annotationPath, annotationArtifact.archive_format);
-	verifyPinnedArtifactFile(annotationPath, annotationArtifact);
-	const membersByMeeting = new Map();
+function groupAmiSamplesWithMaps(amiSamples, maps) {
+	const groups = new Map();
+	const meetings = new Set();
 	for (const sample of amiSamples) {
+		const source = maps.sourceById.get(sample.source_id);
+		if (!source || source.reference_verification !== PUBLIC_REFERENCE_RECIPES.AMI) {
+			throw new Error(`AMI sample '${sample.id}' must use ${PUBLIC_REFERENCE_RECIPES.AMI}`);
+		}
 		const meetingId = amiMeetingId(sample);
-		const expression = new RegExp(`^words/${meetingId}\\.([A-Z])\\.words\\.xml$`);
-		const members = entries
-			.filter((entry) => entry.type === 'file' && expression.test(entry.path))
-			.map((entry) => entry.path)
-			.sort();
-		if (members.length < 2) {
-			throw new Error(`AMI annotations contain too few speakers for ${meetingId}`);
+		if (source.id !== `ami-${meetingId.toLowerCase()}`) {
+			throw new Error(`AMI sample '${sample.id}' claims a meeting outside source '${source.id}'`);
 		}
-		membersByMeeting.set(meetingId, members);
-	}
-	const extractionRoot = path.join(context.workspace, 'sources', 'ami-manual-annotations-v1-6-2');
-	extractPinnedMembers(
-		annotationArtifact,
-		annotationPath,
-		[...membersByMeeting.values()].flat(),
-		extractionRoot,
-		{ maximumExtractedBytes: 256 * 1024 * 1024, maximumMemberBytes: 32 * 1024 * 1024 },
-	);
-
-	const prepared = [];
-	for (const sample of amiSamples) {
-		const source = context.maps.sourceById.get(sample.source_id);
-		const audioEntry = sourceArtifacts(source, context.maps).find(
-			({ artifact }) => artifact.kind === 'audio',
+		if (meetings.has(meetingId)) throw new Error(`AMI meeting '${meetingId}' is selected more than once`);
+		meetings.add(meetingId);
+		const artifacts = sourceArtifacts(source, maps);
+		const audioEntry = artifacts.find(({ artifact }) => artifact?.kind === 'audio');
+		const annotationEntry = artifacts.find(
+			({ artifact }) => artifact?.kind === 'reference-archive',
 		);
-		if (!audioEntry) throw new Error(`AMI source '${source.id}' is missing its audio artifact`);
-		verifyPinnedArtifactFile(audioEntry.path, audioEntry.artifact);
-		const meetingId = amiMeetingId(sample);
-		const documents = membersByMeeting.get(meetingId).map((member) => {
-			const match = /\.([A-Z])\.words\.xml$/.exec(member);
-			return {
-				speakerId: match[1],
-				content: fs.readFileSync(resolveInside(extractionRoot, member, 'AMI word document')),
-			};
-		});
-		const words = parseAmiWordDocuments(documents);
-		const window = selectDensestTimedWindow(
-			words,
-			sample.duration_seconds,
-			sample.window.grid_seconds,
-		);
-		const reference = renderTimedReference(words, window.start, window.end);
-		if (reference.trim().length === 0) {
-			throw new Error(`AMI dense window for ${meetingId} produced an empty draft reference`);
+		if (!audioEntry || !annotationEntry) {
+			throw new Error(`AMI source '${source.id}' must bind audio and a reference archive`);
 		}
-		const activeSpeakers = new Set(
-			window.words.filter((word) => !word.punctuation).map((word) => word.speakerId),
-		).size;
-		if (activeSpeakers < 2) {
-			throw new Error(`AMI dense window for ${meetingId} must contain at least two speakers`);
+		if (audioEntry.artifact.id !== `${source.id}-headset-mix`) {
+			throw new Error(`AMI source '${source.id}' audio artifact does not match its meeting`);
 		}
-		const annotationMembers = membersByMeeting.get(meetingId);
-		if (
-			window.start !== sample.window.expected_start_seconds ||
-			window.end !== sample.window.expected_end_seconds ||
-			window.wordCount !== sample.window.expected_word_count ||
-			activeSpeakers !== sample.speakers ||
-			annotationMembers.length !== sample.window.annotation_member_count ||
-			sha256Text(JSON.stringify(annotationMembers)) !==
-				sample.window.ordered_annotation_members_sha256
+		let group = groups.get(annotationEntry.artifact.id);
+		if (!group) {
+			group = { annotationEntry, samples: [] };
+			groups.set(annotationEntry.artifact.id, group);
+		} else if (
+			group.annotationEntry.artifact.sha256 !== annotationEntry.artifact.sha256 ||
+			group.annotationEntry.path !== annotationEntry.path
 		) {
-			throw new Error(
-				`AMI dense window for ${meetingId} does not match the committed window, speaker, or annotation selection`,
-			);
+			throw new Error(`AMI annotation artifact '${annotationEntry.artifact.id}' is ambiguous`);
 		}
-		const referencePath = path.join(context.workspace, 'references', `${sample.id}.txt`);
-		writeDraftReference(referencePath, reference);
-		const audioPath = path.join(context.workspace, 'audio', `${sample.id}.wav`);
-		excerptAudio(
-			context.ffmpegPath,
-			audioEntry.path,
-			window.start,
-			sample.duration_seconds,
-			audioPath,
+		group.samples.push({ sample, source, audioEntry, meetingId });
+	}
+	return [...groups.values()]
+		.map((group) => ({
+			...group,
+			samples: group.samples.sort((left, right) => left.meetingId.localeCompare(right.meetingId)),
+		}))
+		.sort((left, right) =>
+			left.annotationEntry.artifact.id.localeCompare(right.annotationEntry.artifact.id),
 		);
-		if (fileSha256(audioPath) !== sample.audio_sha256) {
-			throw new Error(
-				`generated ${sample.id} does not match its committed deterministic output hash`,
-			);
+}
+
+export function groupAmiSamplesByReferenceArchive(amiSamples, catalog, cacheRoot = '.') {
+	return groupAmiSamplesWithMaps(amiSamples, artifactMaps(catalog, cacheRoot));
+}
+
+function prepareAmiSources(context, amiSamples) {
+	const prepared = [];
+	for (const group of groupAmiSamplesWithMaps(amiSamples, context.maps)) {
+		const { annotationEntry } = group;
+		const entries = withPinnedArtifactPath(
+			annotationEntry.path,
+			annotationEntry.artifact,
+			(stableArchivePath) =>
+				listArchiveEntries(stableArchivePath, annotationEntry.artifact.archive_format, {
+					allowPinnedSnapshot: true,
+				}),
+		);
+		const membersByMeeting = new Map();
+		for (const { meetingId } of group.samples) {
+			const expression = new RegExp(`^words/${meetingId}\\.([A-Z])\\.words\\.xml$`);
+			const members = entries
+				.filter((entry) => entry.type === 'file' && expression.test(entry.path))
+				.map((entry) => entry.path)
+				.sort();
+			if (members.length < 2) {
+				throw new Error(`AMI annotations contain too few speakers for ${meetingId}`);
+			}
+			membersByMeeting.set(meetingId, members);
 		}
-		prepared.push(
-			preparedSample(
-				{
-					...sample,
-					session_id: `session-${source.id}`,
-					speakers: activeSpeakers,
-				},
-				context.workspace,
-				audioPath,
-				referencePath,
-				{
-					basis: 'public-license',
-					redistribution: 'local-only',
-					source_catalog_id: context.catalog.catalog_id,
-					source_item_ids: [sample.source_item_id],
-					transform_id: sample.transform_id,
-				},
-				{
-					dataset: 'ami',
-					source_window: {
-						strategy: sample.window.strategy,
-						start_seconds: window.start,
-						end_seconds: window.end,
-						boundary_policy: 'exclude-crossing-words',
-						word_count: window.wordCount,
-						annotation_member_count: annotationMembers.length,
-						ordered_annotation_members_sha256: sample.window.ordered_annotation_members_sha256,
+		const extractionRoot = path.join(
+			context.workspace,
+			'sources',
+			annotationEntry.artifact.id,
+		);
+		extractPinnedMembers(
+			annotationEntry.artifact,
+			annotationEntry.path,
+			[...membersByMeeting.values()].flat(),
+			extractionRoot,
+			{ maximumExtractedBytes: 256 * 1024 * 1024, maximumMemberBytes: 32 * 1024 * 1024 },
+		);
+
+		for (const { sample, source, audioEntry, meetingId } of group.samples) {
+			const documents = membersByMeeting.get(meetingId).map((member) => {
+				const match = /\.([A-Z])\.words\.xml$/.exec(member);
+				return {
+					speakerId: match[1],
+					content: fs.readFileSync(resolveInside(extractionRoot, member, 'AMI word document')),
+				};
+			});
+			const words = parseAmiWordDocuments(documents);
+			const window = selectDensestTimedWindow(
+				words,
+				sample.duration_seconds,
+				sample.window.grid_seconds,
+			);
+			const reference = renderTimedReference(words, window.start, window.end);
+			if (reference.trim().length === 0) {
+				throw new Error(`AMI dense window for ${meetingId} produced an empty draft reference`);
+			}
+			const activeSpeakers = new Set(
+				window.words.filter((word) => !word.punctuation).map((word) => word.speakerId),
+			).size;
+			const startCrossingWordCount = words.filter(
+				(word) => !word.punctuation && word.start < window.start && word.end > window.start,
+			).length;
+			const endCrossingWordCount = words.filter(
+				(word) => !word.punctuation && word.start < window.end && word.end > window.end,
+			).length;
+			if (activeSpeakers < 2) {
+				throw new Error(`AMI dense window for ${meetingId} must contain at least two speakers`);
+			}
+			const annotationMembers = membersByMeeting.get(meetingId);
+			if (
+				window.start !== sample.window.expected_start_seconds ||
+				window.end !== sample.window.expected_end_seconds ||
+				window.wordCount !== sample.window.expected_word_count ||
+				startCrossingWordCount !== sample.window.expected_start_crossing_word_count ||
+				endCrossingWordCount !== sample.window.expected_end_crossing_word_count ||
+				activeSpeakers !== sample.speakers ||
+				annotationMembers.length !== sample.window.annotation_member_count ||
+				sha256Text(JSON.stringify(annotationMembers)) !==
+					sample.window.ordered_annotation_members_sha256
+			) {
+				throw new Error(
+					`AMI dense window for ${meetingId} does not match the committed window, speaker, or annotation selection`,
+				);
+			}
+			const referencePath = path.join(context.workspace, 'references', `${sample.id}.txt`);
+			writePinnedReference(referencePath, reference, sample.reference_sha256);
+			const audioPath = path.join(context.workspace, 'audio', `${sample.id}.wav`);
+			withPinnedArtifactPath(audioEntry.path, audioEntry.artifact, (stableAudioPath) =>
+				excerptAudio(
+					context.ffmpegPath,
+					stableAudioPath,
+					window.start,
+					sample.duration_seconds,
+					audioPath,
+				),
+			);
+			if (fileSha256(audioPath) !== sample.audio_sha256) {
+				throw new Error(
+					`generated ${sample.id} does not match its committed deterministic output hash`,
+				);
+			}
+			prepared.push(
+				preparedSample(
+					{
+						...sample,
+						session_id: `session-${source.id}`,
+						speakers: activeSpeakers,
 					},
-				},
-			),
-		);
+					context.workspace,
+					audioPath,
+					referencePath,
+					{
+						basis: 'public-license',
+						redistribution: 'local-only',
+						source_catalog_id: context.catalog.catalog_id,
+						source_item_ids: [sample.source_item_id],
+						transform_id: sample.transform_id,
+					},
+					{
+						reference_sha256: sample.reference_sha256,
+						reference_verification: source.reference_verification,
+						dataset: 'ami',
+						source_window: {
+							strategy: sample.window.strategy,
+							start_seconds: window.start,
+							end_seconds: window.end,
+							boundary_policy: 'exclude-crossing-words',
+							word_count: window.wordCount,
+							start_crossing_word_count: startCrossingWordCount,
+							end_crossing_word_count: endCrossingWordCount,
+							annotation_artifact_id: annotationEntry.artifact.id,
+							annotation_source_revision: source.revision,
+							annotation_artifact_sha256: annotationEntry.artifact.sha256,
+							annotation_member_count: annotationMembers.length,
+							ordered_annotation_members_sha256:
+								sample.window.ordered_annotation_members_sha256,
+						},
+					},
+				),
+			);
+		}
 	}
 	return prepared;
 }
@@ -1163,6 +1325,11 @@ function prepareEarningsSources(context, earningsSamples) {
 	const prepared = [];
 	for (const sample of earningsSamples) {
 		const source = context.maps.sourceById.get(sample.source_id);
+		if (source.reference_verification !== PUBLIC_REFERENCE_RECIPES.EARNINGS21) {
+			throw new Error(
+				`Earnings-21 source '${source.id}' must use ${PUBLIC_REFERENCE_RECIPES.EARNINGS21}`,
+			);
+		}
 		const artifacts = sourceArtifacts(source, context.maps);
 		const audioEntry = artifacts.find(({ artifact }) => artifact.kind === 'audio');
 		const referenceEntry = artifacts.find(({ artifact }) => artifact.kind === 'reference');
@@ -1174,18 +1341,38 @@ function prepareEarningsSources(context, earningsSamples) {
 				`Earnings-21 source '${source.id}' must have audio, a human reference, and a timed alignment hypothesis`,
 			);
 		}
-		verifyPinnedArtifactFile(audioEntry.path, audioEntry.artifact);
-		verifyPinnedArtifactFile(referenceEntry.path, referenceEntry.artifact);
-		verifyPinnedArtifactFile(alignmentEntry.path, alignmentEntry.artifact);
+		if (
+			alignmentEntry.artifact.role !== 'timing-only' ||
+			typeof alignmentEntry.artifact.revision !== 'string' ||
+			typeof referenceEntry.artifact.revision !== 'string'
+		) {
+			throw new Error(
+				`Earnings-21 source '${source.id}' must separately pin a human reference and timing-only alignment revision`,
+			);
+		}
+		const recordingId = /^earnings21:(\d+)$/.exec(sample.source_item_id)?.[1];
+		if (
+			!recordingId ||
+			source.id !== `earnings21-${recordingId}` ||
+			audioEntry.artifact.id !== `${source.id}-audio` ||
+			referenceEntry.artifact.id !== `${source.id}-reference` ||
+			alignmentEntry.artifact.id !== `${source.id}-alignment`
+		) {
+			throw new Error(`Earnings-21 sample '${sample.id}' has cross-recording source claims`);
+		}
+		const referenceInput = readPinnedArtifactFile(referenceEntry.path, referenceEntry.artifact);
+		const alignmentInput = readPinnedArtifactFile(alignmentEntry.path, alignmentEntry.artifact);
 		const startSeconds = sample.window.start_seconds;
 		const endSeconds = startSeconds + sample.duration_seconds;
 		const audioPath = path.join(context.workspace, 'audio', `${sample.id}.wav`);
-		excerptAudio(
-			context.ffmpegPath,
-			audioEntry.path,
-			startSeconds,
-			sample.duration_seconds,
-			audioPath,
+		withPinnedArtifactPath(audioEntry.path, audioEntry.artifact, (stableAudioPath) =>
+			excerptAudio(
+				context.ffmpegPath,
+				stableAudioPath,
+				startSeconds,
+				sample.duration_seconds,
+				audioPath,
+			),
 		);
 		if (fileSha256(audioPath) !== sample.audio_sha256) {
 			throw new Error(
@@ -1193,8 +1380,8 @@ function prepareEarningsSources(context, earningsSamples) {
 			);
 		}
 		const alignedReference = deriveEarningsReferenceExcerpt(
-			fs.readFileSync(referenceEntry.path),
-			fs.readFileSync(alignmentEntry.path),
+			referenceInput,
+			alignmentInput,
 			{
 				startSeconds,
 				endSeconds,
@@ -1205,6 +1392,8 @@ function prepareEarningsSources(context, earningsSamples) {
 			hypothesisTokens: sample.window.expected_alignment_hypothesis_tokens,
 			alignedReferenceTokens: sample.window.expected_alignment_reference_tokens,
 			editDistance: sample.window.expected_alignment_edit_distance,
+			pairedTokens: sample.window.expected_alignment_paired_tokens,
+			exactPairs: sample.window.expected_alignment_exact_pairs,
 			referenceStartTokenIndex: sample.window.expected_reference_start_token_index,
 			referenceEndTokenIndex: sample.window.expected_reference_end_token_index,
 			referenceTokenCount: sample.window.expected_reference_token_count,
@@ -1217,14 +1406,43 @@ function prepareEarningsSources(context, earningsSamples) {
 				);
 			}
 		}
+		const expectedAnchors = {
+			anchorContextTokens: sample.window.expected_anchor_context_tokens,
+			startAnchorHypothesisTokenIndex: sample.window.expected_start_anchor_hypothesis_token_index,
+			startAnchorStartSeconds: sample.window.expected_start_anchor_start_seconds,
+			startAnchorEndSeconds: sample.window.expected_start_anchor_end_seconds,
+			startAnchorContextSha256: sample.window.expected_start_anchor_context_sha256,
+			endAnchorHypothesisTokenIndex: sample.window.expected_end_anchor_hypothesis_token_index,
+			endAnchorStartSeconds: sample.window.expected_end_anchor_start_seconds,
+			endAnchorEndSeconds: sample.window.expected_end_anchor_end_seconds,
+			endAnchorContextSha256: sample.window.expected_end_anchor_context_sha256,
+		};
+		const observedAnchors = {
+			anchorContextTokens: alignedReference.startAnchor.context.tokenCount,
+			startAnchorHypothesisTokenIndex: alignedReference.startAnchor.hypothesisTokenIndex,
+			startAnchorStartSeconds: alignedReference.startAnchor.start,
+			startAnchorEndSeconds: alignedReference.startAnchor.end,
+			startAnchorContextSha256: alignedReference.startAnchor.context.sha256,
+			endAnchorHypothesisTokenIndex: alignedReference.endAnchor.hypothesisTokenIndex,
+			endAnchorStartSeconds: alignedReference.endAnchor.start,
+			endAnchorEndSeconds: alignedReference.endAnchor.end,
+			endAnchorContextSha256: alignedReference.endAnchor.context.sha256,
+		};
+		for (const [field, expected] of Object.entries(expectedAnchors)) {
+			if (observedAnchors[field] !== expected) {
+				throw new Error(
+					`Earnings-21 aligned reference '${sample.id}' ${field} drifted: expected ${expected}, got ${observedAnchors[field]}`,
+				);
+			}
+		}
 		const referencePath = path.join(context.workspace, 'references', `${sample.id}.txt`);
-		writeDraftReference(referencePath, alignedReference.text, { seedEmpty: true });
+		writePinnedReference(referencePath, alignedReference.text, sample.reference_sha256);
 		const contextPath = path.join(
 			context.workspace,
 			'review-context',
 			`${sample.id}-upstream-full-transcript.txt`,
 		);
-		writeDraftReference(contextPath, renderEarningsContext(fs.readFileSync(referenceEntry.path)));
+		writeDraftReference(contextPath, renderEarningsContext(referenceInput));
 		prepared.push(
 			preparedSample(
 				{ ...sample, dataset: 'earnings21' },
@@ -1239,6 +1457,8 @@ function prepareEarningsSources(context, earningsSamples) {
 					transform_id: sample.transform_id,
 				},
 				{
+					reference_sha256: sample.reference_sha256,
+					reference_verification: source.reference_verification,
 					dataset: 'earnings21',
 					source_window: {
 						strategy: 'fixed',
@@ -1246,14 +1466,29 @@ function prepareEarningsSources(context, earningsSamples) {
 						end_seconds: endSeconds,
 						boundary_policy: 'exclude-crossing-anchor-words',
 						reference_policy: 'public-human-reference-aligned-to-pinned-timed-hypothesis',
+						reference_artifact_id: referenceEntry.artifact.id,
+						reference_artifact_revision: referenceEntry.artifact.revision,
 						alignment_artifact_id: alignmentEntry.artifact.id,
+						alignment_artifact_revision: alignmentEntry.artifact.revision,
+						alignment_role: alignmentEntry.artifact.role,
 						alignment_context_seconds: sample.window.alignment_context_seconds,
 						alignment_hypothesis_tokens: alignedReference.hypothesisTokens,
 						alignment_reference_tokens: alignedReference.alignedReferenceTokens,
 						alignment_edit_distance: alignedReference.editDistance,
+						alignment_paired_tokens: alignedReference.pairedTokens,
+						alignment_exact_pairs: alignedReference.exactPairs,
 						reference_start_token_index: alignedReference.referenceStartTokenIndex,
 						reference_end_token_index: alignedReference.referenceEndTokenIndex,
 						reference_token_count: alignedReference.referenceTokenCount,
+						anchor_context_tokens: alignedReference.startAnchor.context.tokenCount,
+						start_anchor_hypothesis_token_index: alignedReference.startAnchor.hypothesisTokenIndex,
+						start_anchor_start_seconds: alignedReference.startAnchor.start,
+						start_anchor_end_seconds: alignedReference.startAnchor.end,
+						start_anchor_context_sha256: alignedReference.startAnchor.context.sha256,
+						end_anchor_hypothesis_token_index: alignedReference.endAnchor.hypothesisTokenIndex,
+						end_anchor_start_seconds: alignedReference.endAnchor.start,
+						end_anchor_end_seconds: alignedReference.endAnchor.end,
+						end_anchor_context_sha256: alignedReference.endAnchor.context.sha256,
 						reference_seed_sha256: alignedReference.referenceSeedSha256,
 					},
 				},
@@ -1292,15 +1527,16 @@ export async function preparePublicCorpusUnlocked(options) {
 		ffmpegPath,
 		maps: artifactMaps(catalog, cacheRoot),
 	};
+	const naturalSamplesForRecipe = (recipe) =>
+		selection.natural_samples.filter(
+			(sample) => context.maps.sourceById.get(sample.source_id)?.reference_verification === recipe,
+		);
 	const samples = [
 		...prepareFleursSources(context),
-		...prepareAmiSources(
-			context,
-			selection.natural_samples.filter((sample) => sample.source_id.startsWith('ami-')),
-		),
+		...prepareAmiSources(context, naturalSamplesForRecipe(PUBLIC_REFERENCE_RECIPES.AMI)),
 		...prepareEarningsSources(
 			context,
-			selection.natural_samples.filter((sample) => sample.source_id.startsWith('earnings21-')),
+			naturalSamplesForRecipe(PUBLIC_REFERENCE_RECIPES.EARNINGS21),
 		),
 	].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
 	if (samples.length !== 66) {
@@ -1317,7 +1553,7 @@ export async function preparePublicCorpusUnlocked(options) {
 		source_catalog_id: catalog.catalog_id,
 		source_catalog_sha256: fileSha256(options.catalogPath),
 		selection_sha256: fileSha256(options.selectionPath),
-		reference_protocol_id: REFERENCE_PROTOCOL_ID,
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
 		ffmpeg: {
 			id: ffmpeg.id,
 			executable_path: ffmpeg.executablePath,
@@ -1358,8 +1594,8 @@ async function main() {
 		const result = await preparePublicCorpus(options);
 		process.stdout.write(
 			`Prepared ${result.sampleCount} public ASR samples in ${result.workspace}.\n` +
-				`Seeded ${result.alignedReferenceSeedCount} Earnings-21 drafts from aligned public human references.\n` +
-				`Complete two independent reviews in ${result.reviewsPath}, then run public-corpus-finalize.ts.\n`,
+				`Verified ${result.alignedReferenceSeedCount} Earnings-21 excerpts against pinned public human references.\n` +
+				`All references match committed upstream-gold hashes; run public-corpus-finalize.ts.\n`,
 		);
 	} catch (error) {
 		process.stderr.write(`${error.message}\n`);

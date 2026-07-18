@@ -1,20 +1,24 @@
 {
-	"schema_version": 3,
+	"schema_version": 4,
 	"target_id": "public-asr-performance-v1",
-	"reference_protocol_id": "muesly-meeting-reference-v1",
-	"description": "Three-run performance qualification on the fixed multilingual, transformed, meeting, and remote-call subset used for catalog auditing.",
+	"reference_protocol_id": "muesly-public-upstream-gold-v1",
+	"corpus_id": "muesly-public-asr-v2",
+	"corpus_fingerprint": "74fbd0bc89435defd0ac630d85ef2e588d2bcf565ab08b4689f3934eb6ea6ddb",
+	"source_catalog_sha256": "c8a15f05d51a5e6cf0e0006a3f355b630551d219eab24d9c36adf5079a5ba9e4",
+	"selection_sha256": "ebff93b35876a3e982f9c1792c902e612b20bed3c311e2f482317db7fc0d5fdf",
+	"description": "Three-run provisional performance evidence on a fixed ten-source multilingual, transformed, meeting, and remote-call subset used for exploratory catalog auditing.",
 	"coverage_mode": "explicit-samples",
 	"sample_ids": [
 		"en-ami-en2001a-natural-office",
 		"en-earnings21-4320211-natural-remote-call",
 		"es-fleurs-01-clean-read",
-		"es-fleurs-01-synthetic-office",
+		"es-fleurs-02-synthetic-office",
 		"pt-fleurs-01-clean-read",
-		"pt-fleurs-01-synthetic-remote-call",
+		"pt-fleurs-02-synthetic-remote-call",
 		"fr-fleurs-01-clean-read",
-		"fr-fleurs-01-synthetic-overlap",
+		"fr-fleurs-02-synthetic-overlap",
 		"de-fleurs-01-clean-read",
-		"de-fleurs-01-synthetic-office"
+		"de-fleurs-02-synthetic-office"
 	],
 	"benchmark_variants": [
 		{

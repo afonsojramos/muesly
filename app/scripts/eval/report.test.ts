@@ -7,7 +7,12 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { corpusFingerprint, REFERENCE_PROTOCOL_ID } from './corpus.ts';
+import {
+	corpusFingerprint,
+	PUBLIC_REFERENCE_PROTOCOL_ID,
+	REFERENCE_PROTOCOL_ID,
+	REFERENCE_PROTOCOL_IDS,
+} from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import {
 	aggregateRunReports as aggregateRunReportsWithCorpus,
@@ -343,7 +348,7 @@ test('compares exact provider/model/backend variants only on one identical sampl
 		}),
 	]);
 
-	assert.equal(aggregate.schema_version, 11);
+	assert.equal(aggregate.schema_version, 12);
 	assert.equal(aggregate.aggregation_unit_policy, 'session-id-or-singleton-sample-v1');
 	assert.equal(aggregate.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(aggregate.measurement_result_count, 6);
@@ -647,6 +652,45 @@ test('rebalances shared sessions independently inside language and noise slices'
 			{ unit_count: 1, session_count: 1, wer_percent: 100 },
 		],
 	);
+});
+
+test('excludes synthetic overlap before rebuilding the exact session-balanced hard-WER summary', () => {
+	const scored = (sampleId, noiseCondition, wordErrors) =>
+		resultForSample(sampleId, {
+			noise_condition: noiseCondition,
+			reference_words: 10,
+			word_errors: wordErrors,
+			wer_percent: wordErrors * 10,
+			passed: wordErrors <= 1,
+		});
+	const aggregate = aggregateRunReports(
+		[
+			report([
+				scored('paired-clean', 'clean-read', 0),
+				scored('paired-office', 'synthetic-office', 0),
+				scored('paired-remote', 'synthetic-remote-call', 0),
+				scored('paired-overlap', 'synthetic-overlap', 10),
+				scored('natural-meeting', 'natural-office', 2),
+			]),
+		],
+		{
+			sessionIds: {
+				'paired-clean': 'session-paired',
+				'paired-office': 'session-paired',
+				'paired-remote': 'session-paired',
+				'paired-overlap': 'session-paired',
+				'natural-meeting': 'session-natural',
+			},
+		},
+	);
+	const groups = aggregate.diagnostics.variants[0].groups;
+	assert.equal(groups.overall.unit_balanced.unit_count, 2);
+	assert.equal(groups.overall.unit_balanced.wer_percent, 22.5);
+	assert.equal(groups.hard_wer_overall.unit_balanced.unit_count, 2);
+	assert.equal(groups.hard_wer_overall.unit_balanced.wer_percent, 10);
+	assert.equal(groups.hard_wer_overall.samples, 4);
+	assert.match(renderMarkdown(aggregate), /Session-balanced hard WER/);
+	assert.match(renderMarkdown(aggregate), /synthetic-overlap.*excluded/);
 });
 
 test('collapses repeats by sample before computing unit-balanced statistics', () => {
@@ -1367,8 +1411,41 @@ test('rejects legacy reports and missing scorer provenance', () => {
 	delete missingProtocol.reference_protocol_id;
 	assert.deepEqual(validateRunReport(missingProtocol), [
 		'report.reference_protocol_id is required',
-		`report.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`,
+		`report.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
 	]);
+});
+
+test('accepts public upstream-gold reports and preserves corpus protocol equality', () => {
+	const publicResult = result({
+		dataset: 'fleurs',
+		provenance_basis: 'public-license',
+		scenario: 'read-speech',
+		speakers: 1,
+	});
+	const publicReport = report([publicResult], {
+		reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID,
+	});
+	assert.deepEqual(validateRunReport(publicReport), []);
+
+	const publicCorpus = loadedCorpus(
+		[
+			corpusSample({
+				dataset: 'fleurs',
+				scenario: 'read-speech',
+				speakers: 1,
+				provenance: { basis: 'public-license' },
+			}),
+		],
+		{ reference_protocol_id: PUBLIC_REFERENCE_PROTOCOL_ID },
+	);
+	assert.deepEqual(validateRunReportsAgainstCorpus([publicReport], publicCorpus), []);
+	assert.match(
+		validateRunReportsAgainstCorpus(
+			[{ ...publicReport, reference_protocol_id: REFERENCE_PROTOCOL_ID }],
+			publicCorpus,
+		).join('\n'),
+		/reference_protocol_id must match corpus\.reference_protocol_id/,
+	);
 });
 
 test('rejects aggregation across WER scoring semantics', () => {

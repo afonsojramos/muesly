@@ -1,8 +1,12 @@
 {
-	"schema_version": 3,
+	"schema_version": 4,
 	"target_id": "public-asr-automatic-policy-v1",
-	"reference_protocol_id": "muesly-meeting-reference-v1",
-	"description": "Quality qualification for every product-relevant quantized transcription candidate across the complete reproducible public ASR corpus.",
+	"reference_protocol_id": "muesly-public-upstream-gold-v1",
+	"corpus_id": "muesly-public-asr-v2",
+	"corpus_fingerprint": "74fbd0bc89435defd0ac630d85ef2e588d2bcf565ab08b4689f3934eb6ea6ddb",
+	"source_catalog_sha256": "c8a15f05d51a5e6cf0e0006a3f355b630551d219eab24d9c36adf5079a5ba9e4",
+	"selection_sha256": "ebff93b35876a3e982f9c1792c902e612b20bed3c311e2f482317db7fc0d5fdf",
+	"description": "Provisional exploratory quality ranking for every product-relevant quantized transcription candidate across the complete reproducible public ASR corpus; synthetic overlap is diagnostic-only for WER decisions.",
 	"coverage_mode": "explicit-samples",
 	"sample_ids": [
 		"en-fleurs-01-clean-read",

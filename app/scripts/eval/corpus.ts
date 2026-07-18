@@ -5,8 +5,19 @@ import { TextDecoder } from 'node:util';
 
 export const CORPUS_SCHEMA_VERSION = 4;
 export const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
-export const PUBLIC_PREPARATION_PROTOCOL_ID = 'muesly-public-asr-preparation-v2';
+export const PUBLIC_REFERENCE_PROTOCOL_ID = 'muesly-public-upstream-gold-v1';
+export const REFERENCE_PROTOCOL_IDS = Object.freeze([
+	REFERENCE_PROTOCOL_ID,
+	PUBLIC_REFERENCE_PROTOCOL_ID,
+]);
+export const PUBLIC_PREPARATION_PROTOCOL_ID = 'muesly-public-asr-preparation-v3';
 export const PUBLIC_DATASET_IDS = Object.freeze(['fleurs', 'ami', 'earnings21']);
+
+const REFERENCE_PROTOCOL_ID_SET = new Set(REFERENCE_PROTOCOL_IDS);
+
+export function isReferenceProtocolId(value) {
+	return typeof value === 'string' && REFERENCE_PROTOCOL_ID_SET.has(value);
+}
 
 export function isPublicDatasetId(value) {
 	return typeof value === 'string' && PUBLIC_DATASET_IDS.includes(value);
@@ -507,8 +518,10 @@ export function validateCorpusDocument(document, options = {}) {
 		errors.push(`schema_version must be ${CORPUS_SCHEMA_VERSION}`);
 	}
 	requiredString(document.corpus_id, 'corpus_id', errors);
-	if (document.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		errors.push(`reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (!isReferenceProtocolId(document.reference_protocol_id)) {
+		errors.push(
+			`reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
 	}
 	if (!['repository', 'local'].includes(document.distribution)) {
 		errors.push('distribution must be repository or local');
@@ -597,6 +610,22 @@ export function validateCorpusDocument(document, options = {}) {
 	const publicSamples = document.samples.filter(
 		(sample) => sample?.provenance?.basis === 'public-license',
 	);
+	const allSamplesArePublic =
+		document.samples.length > 0 && publicSamples.length === document.samples.length;
+	if (publicSamples.length > 0 && !allSamplesArePublic) {
+		errors.push(
+			'manifest cannot mix public-license samples with any other provenance basis because they require different reference protocols',
+		);
+	}
+	if (isReferenceProtocolId(document.reference_protocol_id)) {
+		const expectedReferenceProtocol =
+			allSamplesArePublic ? PUBLIC_REFERENCE_PROTOCOL_ID : REFERENCE_PROTOCOL_ID;
+		if (document.reference_protocol_id !== expectedReferenceProtocol) {
+			errors.push(
+				`reference_protocol_id must be '${expectedReferenceProtocol}' for this manifest's provenance`,
+			);
+		}
+	}
 	if (publicSamples.length > 0) {
 		if (!/^[a-f0-9]{64}$/.test(document.source_catalog_sha256 ?? '')) {
 			errors.push('source_catalog_sha256 is required for public-license samples');

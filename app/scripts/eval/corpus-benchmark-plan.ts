@@ -9,7 +9,8 @@ import {
 import {
 	corpusFingerprint,
 	isPublicDatasetId,
-	REFERENCE_PROTOCOL_ID,
+	isReferenceProtocolId,
+	REFERENCE_PROTOCOL_IDS,
 	validateCorpusDocument,
 } from './corpus.ts';
 import { resolveCoverageTarget } from './corpus-targets.ts';
@@ -358,8 +359,10 @@ function taskIdentity(task) {
 	if (task.wer_scorer !== undefined && task.wer_scorer !== WER_SCORER_ID) {
 		throw new Error(`task.wer_scorer must be '${WER_SCORER_ID}'`);
 	}
-	if (task.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		throw new Error(`task.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (!isReferenceProtocolId(task.reference_protocol_id)) {
+		throw new Error(
+			`task.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
 	}
 	const accelerator =
 		task.accelerator === null || task.accelerator === undefined
@@ -528,7 +531,10 @@ export function planCorpusBenchmarkTasks({
 	if (corpusFingerprintValue !== corpusFingerprint(planningCorpus)) {
 		throw new Error('corpus.corpus_fingerprint does not match the validated planning corpus');
 	}
-	const resolvedTarget = resolveCoverageTarget(planningCorpus, targets);
+	const resolvedTarget = resolveCoverageTarget(
+		{ ...planningCorpus, corpus_fingerprint: corpusFingerprintValue },
+		targets,
+	);
 	const targetId = requiredString(targets.target_id, 'targets.target_id');
 	const normalizedThresholds = normalizeThresholds(thresholds);
 	const normalizedAccelerators = normalizeAccelerators(accelerators);

@@ -6,6 +6,7 @@ import {
 	loadPublicQualificationTargets,
 	parseQualificationArgs,
 } from './public-corpus-qualification.ts';
+import { PUBLIC_REFERENCE_PROTOCOL_ID, REFERENCE_PROTOCOL_ID } from './corpus.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 
 const SHA = 'a'.repeat(64);
@@ -47,6 +48,8 @@ function summary(samples, overrides = {}, unitCount = samples) {
 	const summaryOverrides = { ...overrides };
 	delete summaryOverrides.worst_wer_percent;
 	delete summaryOverrides.worst_unit_wer_percent;
+	delete summaryOverrides.synthetic_overlap_wer_percent;
+	delete summaryOverrides.synthetic_overlap_unit_wer_percent;
 	delete summaryOverrides.unit_balanced;
 	return {
 		samples,
@@ -110,24 +113,29 @@ function summary(samples, overrides = {}, unitCount = samples) {
 	};
 }
 
-function diagnostic(variant, samples, repetitions, metrics = {}) {
+function diagnostic(variant, target, metrics = {}) {
+	const samples = target.sample_ids.length;
+	const repetitions = target.repetitions ?? 1;
 	const measurements = samples * repetitions;
-	const overall = summary(measurements, metrics, samples);
+	const overallUnitCount = target.target_id === 'public-asr-automatic-policy-v1' ? 21 : 6;
+	const overall = summary(measurements, metrics, overallUnitCount);
 	const grouped = (
 		dimension,
 		value,
 		macro = overall.macro_wer_percent,
 		unitWer = overall.unit_balanced.wer_percent,
+		groupMeasurements = measurements,
+		groupUnitCount = overallUnitCount,
 	) => ({
 		[dimension]: value,
 		summary: summary(
-			measurements,
+			groupMeasurements,
 			{
 				...metrics,
 				macro_wer_percent: macro,
 				unit_balanced: { ...metrics.unit_balanced, wer_percent: unitWer },
 			},
-			samples,
+			groupUnitCount,
 		),
 	});
 	const worstMacro = metrics.worst_wer_percent ?? overall.macro_wer_percent;
@@ -136,23 +144,78 @@ function diagnostic(variant, samples, repetitions, metrics = {}) {
 		metrics.unit_balanced?.wer_percent ??
 		metrics.worst_wer_percent ??
 		overall.unit_balanced.wer_percent;
+	const overlapSamples = target.sample_ids.filter((sampleId) =>
+		sampleId.endsWith('synthetic-overlap'),
+	).length;
+	const overlapMeasurements = overlapSamples * repetitions;
+	const nonOverlapMeasurements = measurements - overlapMeasurements;
+	const overlapMacro = metrics.synthetic_overlap_wer_percent ?? overall.macro_wer_percent;
+	const overlapUnitWer =
+		metrics.synthetic_overlap_unit_wer_percent ?? overall.unit_balanced.wer_percent;
+	const noiseRows = [
+		grouped(
+			'noise_condition',
+			'clean',
+			overall.macro_wer_percent,
+			overall.unit_balanced.wer_percent,
+			nonOverlapMeasurements,
+			samples - overlapSamples,
+		),
+	];
+	const languageNoiseRows = [
+		{
+			language: 'en',
+			noise_condition: 'clean',
+			summary: grouped(
+				'language',
+				'en',
+				worstMacro,
+				worstUnitWer,
+				nonOverlapMeasurements,
+				samples - overlapSamples,
+			).summary,
+		},
+	];
+	if (overlapSamples > 0) {
+		noiseRows.push(
+			grouped(
+				'noise_condition',
+				'synthetic-overlap',
+				overlapMacro,
+				overlapUnitWer,
+				overlapMeasurements,
+				overlapSamples,
+			),
+		);
+		languageNoiseRows.push({
+			language: 'en',
+			noise_condition: 'synthetic-overlap',
+			summary: grouped(
+				'language',
+				'en',
+				overlapMacro,
+				overlapUnitWer,
+				overlapMeasurements,
+				overlapSamples,
+			).summary,
+		});
+	}
+	const hardWerUnitCount =
+		target.target_id === 'public-asr-automatic-policy-v1'
+			? 21
+			: target.sample_ids.length - overlapSamples;
 	return {
 		...variant,
 		observed_sample_count: samples,
 		measurement_result_count: measurements,
 		groups: {
 			overall,
+			hard_wer_overall: summary(nonOverlapMeasurements, metrics, hardWerUnitCount),
 			dataset: [grouped('dataset', 'fleurs')],
 			language: [grouped('language', 'en')],
 			scenario: [grouped('scenario', 'read-speech')],
-			noise_condition: [grouped('noise_condition', 'clean')],
-			language_noise: [
-				{
-					language: 'en',
-					noise_condition: 'clean',
-					summary: grouped('language', 'en', worstMacro, worstUnitWer).summary,
-				},
-			],
+			noise_condition: noiseRows,
+			language_noise: languageNoiseRows,
 		},
 	};
 }
@@ -190,12 +253,7 @@ function aggregate(target, overrides = {}) {
 	const metricOverrides = overrides.metrics ?? {};
 	const diagnostics = target.benchmark_variants
 		.map((variant) =>
-			diagnostic(
-				variant,
-				target.sample_ids.length,
-				repetitions,
-				metricOverrides[key(variant)] ?? {},
-			),
+				diagnostic(variant, target, metricOverrides[key(variant)] ?? {}),
 		)
 		.sort((left, right) => key(left).localeCompare(key(right)));
 	const backends = [...new Set(target.benchmark_variants.map((variant) => variant.backend))].sort();
@@ -223,11 +281,11 @@ function aggregate(target, overrides = {}) {
 			})),
 		);
 	return {
-		schema_version: 11,
+		schema_version: 12,
 		generated_at: '2026-07-17T00:00:00.000Z',
-		corpus_id: 'muesly-public-asr-v2',
-		corpus_fingerprint: SHA,
-		reference_protocol_id: 'muesly-meeting-reference-v1',
+		corpus_id: target.corpus_id,
+		corpus_fingerprint: target.corpus_fingerprint,
+		reference_protocol_id: target.reference_protocol_id,
 		aggregation_unit_policy: 'session-id-or-singleton-sample-v1',
 		wer_scorer: 'muesly-wer-v1',
 		evaluator_revision_common: revision(),
@@ -312,12 +370,14 @@ function coverage(target, report) {
 		}),
 	);
 	return {
-		schema_version: 11,
+		schema_version: 12,
 		target_id: target.target_id,
 		coverage_mode: 'explicit-samples',
 		repetitions: target.repetitions ?? 1,
 		corpus_id: report.corpus_id,
 		corpus_fingerprint: report.corpus_fingerprint,
+		source_catalog_sha256: target.source_catalog_sha256,
+		selection_sha256: target.selection_sha256,
 		reference_protocol_id: report.reference_protocol_id,
 		wer_scorer: report.wer_scorer,
 		model_artifacts: report.model_artifacts,
@@ -408,21 +468,29 @@ test('qualifies the smallest artifact inside the complete quality and speed enve
 		},
 	};
 	const result = evaluatePublicCorpusQualification(fixture({ automaticMetrics, catalog: false }));
-	assert.equal(result.schema_version, 2);
-	assert.equal(result.policy_id, 'muesly-public-asr-qualification-v2');
-	assert.equal(result.decision.status, 'qualified');
-	assert.deepEqual(result.decision.selected_candidate, {
+	assert.equal(result.schema_version, 3);
+	assert.equal(result.policy_id, 'muesly-public-asr-qualification-v3');
+	assert.equal(result.decision.status, 'provisional-exploratory-ranking');
+	assert.deepEqual(result.decision.exploratory_candidate, {
 		provider: 'whisper',
 		model: 'base-q5_1',
 		backend: 'cpu',
 		model_artifact_sha256: SHA,
 	});
-	assert.deepEqual(result.phase_boundary.may_update_tiers, ['high', 'ultra']);
-	assert.deepEqual(result.phase_boundary.unchanged_tiers, ['low', 'medium']);
-	assert.equal(result.phase_boundary.translation_policy, 'unchanged-until-phase-2');
+	assert.equal(result.decision.production_tier_change_authorized, false);
+	assert.deepEqual(result.phase_boundary.may_update_tiers, []);
+	assert.deepEqual(result.phase_boundary.unchanged_tiers, ['low', 'medium', 'high', 'ultra']);
+	assert.equal(result.phase_boundary.translation_policy, 'unchanged');
 	assert.deepEqual(result.phase_boundary.catalog_audit_only_models, ['tiny-q5_1']);
+	assert.equal(result.phase_boundary.may_update_catalog_visibility, false);
 	assert.equal(result.phase_boundary.production_configuration_mutated, false);
+	assert.equal(result.phase_boundary.evidence_status, 'provisional');
+	assert.equal(result.phase_boundary.public_bootstrap_unit_count, 21);
+	assert.equal(result.phase_boundary.candidate_ranking_use, 'exploratory-only');
+	assert.equal(result.phase_boundary.required_corroboration.status, 'missing');
+	assert.equal(result.phase_boundary.required_corroboration.minimum_independent_sessions, 60);
 	assert.equal(result.catalog_retention.status, 'not-evaluated');
+	assert.equal(result.catalog_retention.production_catalog_change_authorized, false);
 });
 
 test('bases qualification decisions on unit-balanced metrics when flat diagnostics disagree', () => {
@@ -457,16 +525,20 @@ test('bases qualification decisions on unit-balanced metrics when flat diagnosti
 	assert.equal(base.worst_language_noise_slice.macro_wer_percent, 12);
 	assert.equal(base.p95_inference_rtf, 1.1);
 	assert.equal(base.peak_rss_mb, 123);
-	assert(base.ineligibility_reasons.includes('p95-inference-rtf-not-below-1'));
+	assert(base.exploratory_ineligibility_reasons.includes('p95-inference-rtf-not-below-1'));
 
 	const medium = result.candidates.find((candidate) => candidate.model === 'medium-q5_0');
-	assert(medium.ineligibility_reasons.includes('macro-wer-more-than-2-points-from-best'));
 	assert(
-		medium.ineligibility_reasons.includes(
+		medium.exploratory_ineligibility_reasons.includes(
+			'macro-wer-more-than-2-points-from-best',
+		),
+	);
+	assert(
+		medium.exploratory_ineligibility_reasons.includes(
 			'worst-language-noise-slice-more-than-5-points-from-best',
 		),
 	);
-	assert.equal(result.decision.selected_candidate.model, 'small-q5_1');
+	assert.equal(result.decision.exploratory_candidate.model, 'small-q5_1');
 });
 
 test('requires p95 inference RTF to be strictly below one', () => {
@@ -479,9 +551,11 @@ test('requires p95 inference RTF to be strictly below one', () => {
 		}),
 	);
 	const base = result.candidates.find((candidate) => candidate.model === 'base-q5_1');
-	assert.equal(base.eligible, false);
-	assert(base.ineligibility_reasons.includes('p95-inference-rtf-not-below-1'));
-	assert.equal(result.decision.selected_candidate.model, 'small-q5_1');
+	assert.equal(base.exploratory_eligible, false);
+	assert(
+		base.exploratory_ineligibility_reasons.includes('p95-inference-rtf-not-below-1'),
+	);
+	assert.equal(result.decision.exploratory_candidate.model, 'small-q5_1');
 });
 
 test('uses lower RSS for equal-size backends whose speed differs by less than ten percent', () => {
@@ -510,8 +584,8 @@ test('uses lower RSS for equal-size backends whose speed differs by less than te
 			},
 		}),
 	);
-	assert.equal(result.decision.selected_candidate.model, 'large-v3-turbo-q5_0');
-	assert.equal(result.decision.selected_candidate.backend, 'metal');
+	assert.equal(result.decision.exploratory_candidate.model, 'large-v3-turbo-q5_0');
+	assert.equal(result.decision.exploratory_candidate.backend, 'metal');
 	assert.deepEqual(result.decision.tie_break.resource_preference_candidates, [
 		'whisper/large-v3-turbo-q5_0/cpu',
 		'whisper/large-v3-turbo-q5_0/metal',
@@ -544,7 +618,7 @@ test('does not treat an exact ten-percent speed difference as a resource tie', (
 			},
 		}),
 	);
-	assert.equal(result.decision.selected_candidate.backend, 'cpu');
+	assert.equal(result.decision.exploratory_candidate.backend, 'cpu');
 });
 
 test('applies the exact catalog retention improvement thresholds', () => {
@@ -571,11 +645,15 @@ test('applies the exact catalog retention improvement thresholds', () => {
 		]),
 	);
 	assert.equal(byModel.get('base').macro_wer_improvement_points, 1);
-	assert.equal(byModel.get('base').retain_new_download_visibility, true);
+	assert.equal(byModel.get('base').exploratory_retention_signal, true);
+	assert.equal(byModel.get('base').retain_new_download_visibility, false);
 	assert.equal(byModel.get('small').critical_slice_improvement_points, 3);
-	assert.equal(byModel.get('small').retain_new_download_visibility, true);
+	assert.equal(byModel.get('small').exploratory_retention_signal, true);
+	assert.equal(byModel.get('small').retain_new_download_visibility, false);
+	assert.equal(byModel.get('medium').exploratory_retention_signal, false);
 	assert.equal(byModel.get('medium').retain_new_download_visibility, false);
-	assert.equal(result.catalog_retention.status, 'evaluated');
+	assert.equal(result.catalog_retention.status, 'provisional-exploratory');
+	assert.equal(result.catalog_retention.production_catalog_change_authorized, false);
 });
 
 test('bases catalog retention on unit-balanced WER when flat diagnostics disagree', () => {
@@ -604,6 +682,7 @@ test('bases catalog retention on unit-balanced WER when flat diagnostics disagre
 	);
 	assert.equal(base.macro_wer_improvement_points, 0.5);
 	assert.equal(base.critical_slice_improvement_points, 2);
+	assert.equal(base.exploratory_retention_signal, false);
 	assert.equal(base.retain_new_download_visibility, false);
 });
 
@@ -624,6 +703,104 @@ test('rejects incomplete and wrong-target coverage', () => {
 	const wrongTarget = fixture({ catalog: false });
 	wrongTarget.automatic_policy.coverage.target_id = 'public-asr-performance-v1';
 	assert.throws(() => evaluatePublicCorpusQualification(wrongTarget), /target_id does not match/);
+});
+
+test('requires public evidence to match the committed reference protocol', () => {
+	const input = fixture({ catalog: false });
+	assert.equal(
+		input.automatic_policy.aggregate.reference_protocol_id,
+		PUBLIC_REFERENCE_PROTOCOL_ID,
+	);
+	input.automatic_policy.aggregate.reference_protocol_id = REFERENCE_PROTOCOL_ID;
+	assert.throws(
+		() => evaluatePublicCorpusQualification(input),
+		/reference_protocol_id must match the committed target/,
+	);
+});
+
+test('rejects self-consistent evidence for any corpus or source revision outside the fixed target', () => {
+	const corpusDrift = fixture({ catalog: false });
+	for (const suite of ['automatic_policy', 'performance']) {
+		corpusDrift[suite].aggregate.corpus_fingerprint = OTHER_SHA;
+		corpusDrift[suite].coverage.corpus_fingerprint = OTHER_SHA;
+	}
+	assert.throws(
+		() => evaluatePublicCorpusQualification(corpusDrift),
+		/corpus_fingerprint must match the committed target/,
+	);
+
+	const sourceDrift = fixture({ catalog: false });
+	for (const suite of ['automatic_policy', 'performance']) {
+		sourceDrift[suite].coverage.source_catalog_sha256 = OTHER_SHA;
+		sourceDrift[suite].coverage.selection_sha256 = OTHER_SHA;
+	}
+	assert.throws(
+		() => evaluatePublicCorpusQualification(sourceDrift),
+		/source_catalog_sha256 must match the committed target/,
+	);
+});
+
+test('keeps synthetic-overlap WER diagnostic while excluding it from candidate decisions', () => {
+	const result = evaluatePublicCorpusQualification(
+		fixture({
+			catalog: false,
+			automaticMetrics: {
+				'whisper/base-q5_1/cpu': {
+					macro_wer_percent: 10,
+					worst_unit_wer_percent: 12,
+					synthetic_overlap_wer_percent: 100,
+					synthetic_overlap_unit_wer_percent: 100,
+				},
+				'whisper/small-q5_1/cpu': {
+					macro_wer_percent: 20,
+					worst_unit_wer_percent: 20,
+					synthetic_overlap_wer_percent: 0,
+					synthetic_overlap_unit_wer_percent: 0,
+				},
+			},
+		}),
+	);
+	const base = result.candidates.find((candidate) => candidate.model === 'base-q5_1');
+	const small = result.candidates.find((candidate) => candidate.model === 'small-q5_1');
+	assert.equal(base.macro_wer_percent, 10);
+	assert.equal(base.worst_language_noise_slice.macro_wer_percent, 12);
+	assert.equal(base.synthetic_overlap_diagnostic.macro_wer_percent, 100);
+	assert.equal(base.synthetic_overlap_diagnostic.decision_use, 'diagnostic-only');
+	assert.equal(small.macro_wer_percent, 20);
+	assert.equal(small.synthetic_overlap_diagnostic.macro_wer_percent, 0);
+	assert.equal(result.decision.exploratory_candidate.model, 'base-q5_1');
+	assert.deepEqual(result.quality_policy.excluded_noise_conditions, ['synthetic-overlap']);
+	assert.equal(result.quality_policy.synthetic_overlap_use, 'diagnostic-and-performance-only');
+});
+
+test('excludes synthetic-overlap disagreement from catalog-retention signals', () => {
+	const result = evaluatePublicCorpusQualification(
+		fixture({
+			performanceMetrics: {
+				'whisper/base-q5_1/cpu': {
+					macro_wer_percent: 10,
+					worst_unit_wer_percent: 10,
+					synthetic_overlap_wer_percent: 0,
+					synthetic_overlap_unit_wer_percent: 0,
+				},
+			},
+			catalogMetrics: {
+				'whisper/base/cpu': {
+					macro_wer_percent: 10,
+					worst_unit_wer_percent: 10,
+					synthetic_overlap_wer_percent: 100,
+					synthetic_overlap_unit_wer_percent: 100,
+				},
+			},
+		}),
+	);
+	const base = result.catalog_retention.decisions.find(
+		(decision) => decision.full_precision_variant.model === 'base',
+	);
+	assert.equal(base.macro_wer_improvement_points, 0);
+	assert.equal(base.critical_slice_improvement_points, 0);
+	assert.equal(base.exploratory_retention_signal, false);
+	assert.equal(base.retain_new_download_visibility, false);
 });
 
 test('rejects unknown nested fields under the closed aggregate schema', () => {
@@ -683,11 +860,15 @@ test('rejects more overall aggregation units than observed samples', () => {
 	const input = fixture({ catalog: false });
 	const diagnostic = input.performance.aggregate.diagnostics.variants[0];
 	const unitBalanced = diagnostic.groups.overall.unit_balanced;
-	unitBalanced.unit_count += 1;
-	unitBalanced.singleton_sample_count += 1;
-	unitBalanced.passed_unit_count += 1;
-	unitBalanced.wer_unit_count += 1;
-	unitBalanced.model_rtf_unit_count += 1;
+	const excessiveUnits = diagnostic.observed_sample_count + 1;
+	Object.assign(unitBalanced, {
+		unit_count: excessiveUnits,
+		session_count: 0,
+		singleton_sample_count: excessiveUnits,
+		passed_unit_count: excessiveUnits,
+		wer_unit_count: excessiveUnits,
+		model_rtf_unit_count: excessiveUnits,
+	});
 	assert.throws(
 		() => evaluatePublicCorpusQualification(input),
 		/unit_count cannot exceed observed_sample_count/,
@@ -941,7 +1122,8 @@ test('catalog retention compares the same language/noise slice instead of indepe
 		quantized_macro_wer_percent: 15,
 		improvement_points: 5,
 	});
-	assert.equal(medium.retain_new_download_visibility, true);
+	assert.equal(medium.exploratory_retention_signal, true);
+	assert.equal(medium.retain_new_download_visibility, false);
 });
 
 test('strictly parses the qualification CLI evidence pairs', () => {

@@ -5,17 +5,26 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { validateHardwareProfile } from './benchmark-executable.ts';
+import { fileSha256, isReferenceProtocolId, REFERENCE_PROTOCOL_IDS } from './corpus.ts';
 import { validateCoverageTargets } from './corpus-targets.ts';
 import { evaluatorRevisionSha256 } from './evaluator-revision.ts';
 import { CATALOG_AUDIT_MODELS, POLICY_MODELS } from './model-prepare.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
-const REFERENCE_PROTOCOL_ID = 'muesly-meeting-reference-v1';
 const MAX_INPUT_BYTES = 64 * 1024 * 1024;
 
-export const PUBLIC_QUALIFICATION_POLICY_ID = 'muesly-public-asr-qualification-v2';
-export const PUBLIC_QUALIFICATION_SCHEMA_VERSION = 2;
+export const PUBLIC_QUALIFICATION_POLICY_ID = 'muesly-public-asr-qualification-v3';
+export const PUBLIC_QUALIFICATION_SCHEMA_VERSION = 3;
+
+const HARD_WER_EXCLUDED_NOISE_CONDITIONS = Object.freeze(['synthetic-overlap']);
+const PUBLIC_BOOTSTRAP_UNIT_COUNT = 21;
+const TARGET_CORPUS_BINDING_FIELDS = Object.freeze([
+	'corpus_id',
+	'corpus_fingerprint',
+	'source_catalog_sha256',
+	'selection_sha256',
+]);
 
 const SUITES = Object.freeze({
 	automatic_policy: {
@@ -78,6 +87,8 @@ const COVERAGE_FIELDS = new Set([
 	'repetitions',
 	'corpus_id',
 	'corpus_fingerprint',
+	'source_catalog_sha256',
+	'selection_sha256',
 	'reference_protocol_id',
 	'wer_scorer',
 	'model_artifacts',
@@ -258,7 +269,7 @@ function readJson(filePath, label) {
 }
 
 export function loadPublicQualificationTargets() {
-	return Object.fromEntries(
+	const targets = Object.fromEntries(
 		Object.entries(SUITES).map(([suite, definition]) => {
 			const target = readJson(path.join(here, definition.file), `${suite} target`);
 			const errors = validateCoverageTargets(target);
@@ -286,6 +297,35 @@ export function loadPublicQualificationTargets() {
 			return [suite, target];
 		}),
 	);
+	const automatic = targets.automatic_policy;
+	for (const [suite, target] of Object.entries(targets)) {
+		for (const field of TARGET_CORPUS_BINDING_FIELDS) {
+			if (target[field] !== automatic[field]) {
+				fail(`${suite} target ${field} must match the automatic_policy target`);
+			}
+		}
+	}
+	assertSame(
+		targets.performance.sample_ids,
+		targets.catalog_audit.sample_ids,
+		'performance and catalog_audit fixed sample slices',
+	);
+	const fixedSliceSourceUnits = targets.performance.sample_ids.map((sampleId) => {
+		const fleurs = sampleId.match(/^([a-z]{2}-fleurs-\d{2})-/);
+		return fleurs?.[1] ?? sampleId;
+	});
+	if (new Set(fixedSliceSourceUnits).size !== fixedSliceSourceUnits.length) {
+		fail('performance and catalog_audit samples must bind ten distinct source sessions');
+	}
+	const currentCatalogSha256 = fileSha256(path.join(here, 'public-corpus-sources.json'));
+	if (automatic.source_catalog_sha256 !== currentCatalogSha256) {
+		fail('fixed public targets do not bind the current committed source catalog');
+	}
+	const currentSelectionSha256 = fileSha256(path.join(here, 'public-corpus-selection.json'));
+	if (automatic.selection_sha256 !== currentSelectionSha256) {
+		fail('fixed public targets do not bind the current committed selection');
+	}
+	return targets;
 }
 
 function expectedMeasurementKeys(target) {
@@ -504,10 +544,26 @@ function validateVariantDiagnostic(value, label, target, expectedMeasurements) {
 	}
 	assertClosed(
 		value.groups,
-		new Set(['overall', 'dataset', 'language', 'scenario', 'noise_condition', 'language_noise']),
+		new Set([
+			'overall',
+			'hard_wer_overall',
+			'dataset',
+			'language',
+			'scenario',
+			'noise_condition',
+			'language_noise',
+		]),
 		`${label}.groups`,
 	);
 	validateSummary(value.groups.overall, `${label}.groups.overall`, expectedMeasurements);
+	const hardWerMeasurements =
+		target.sample_ids.filter((sampleId) => !sampleId.endsWith('synthetic-overlap')).length *
+		(target.repetitions ?? 1);
+	validateSummary(
+		value.groups.hard_wer_overall,
+		`${label}.groups.hard_wer_overall`,
+		hardWerMeasurements,
+	);
 	if (value.groups.overall.unit_balanced.unit_count > value.observed_sample_count) {
 		fail(`${label}.groups.overall.unit_balanced.unit_count cannot exceed observed_sample_count`);
 	}
@@ -655,7 +711,7 @@ function validateComparison(value, label, diagnostics, target, totalMeasurements
 function validateAggregate(document, suite, target) {
 	const label = `${suite}.aggregate`;
 	assertClosed(document, AGGREGATE_FIELDS, label);
-	if (document.schema_version !== 11) fail(`${label}.schema_version must be 11`);
+	if (document.schema_version !== 12) fail(`${label}.schema_version must be 12`);
 	const generatedAt = Date.parse(document.generated_at);
 	if (
 		!Number.isFinite(generatedAt) ||
@@ -666,8 +722,19 @@ function validateAggregate(document, suite, target) {
 	for (const field of ['corpus_id', 'wer_scorer'])
 		assertString(document[field], `${label}.${field}`);
 	assertSha256(document.corpus_fingerprint, `${label}.corpus_fingerprint`);
-	if (document.reference_protocol_id !== REFERENCE_PROTOCOL_ID) {
-		fail(`${label}.reference_protocol_id must be '${REFERENCE_PROTOCOL_ID}'`);
+	if (document.corpus_id !== target.corpus_id) {
+		fail(`${label}.corpus_id must match the committed target`);
+	}
+	if (document.corpus_fingerprint !== target.corpus_fingerprint) {
+		fail(`${label}.corpus_fingerprint must match the committed target`);
+	}
+	if (!isReferenceProtocolId(document.reference_protocol_id)) {
+		fail(
+			`${label}.reference_protocol_id must be one of ${REFERENCE_PROTOCOL_IDS.map((id) => `'${id}'`).join(', ')}`,
+		);
+	}
+	if (document.reference_protocol_id !== target.reference_protocol_id) {
+		fail(`${label}.reference_protocol_id must match the committed target`);
 	}
 	if (document.aggregation_unit_policy !== 'session-id-or-singleton-sample-v1') {
 		fail(`${label}.aggregation_unit_policy must be 'session-id-or-singleton-sample-v1'`);
@@ -806,7 +873,7 @@ function validateAggregate(document, suite, target) {
 function validateCoverage(document, suite, target, aggregate) {
 	const label = `${suite}.coverage`;
 	assertClosed(document, COVERAGE_FIELDS, label);
-	if (document.schema_version !== 11) fail(`${label}.schema_version must be 11`);
+	if (document.schema_version !== 12) fail(`${label}.schema_version must be 12`);
 	if (document.target_id !== target.target_id)
 		fail(`${label}.target_id does not match the committed target`);
 	if (document.coverage_mode !== 'explicit-samples')
@@ -815,6 +882,11 @@ function validateCoverage(document, suite, target, aggregate) {
 	for (const field of ['corpus_id', 'corpus_fingerprint', 'reference_protocol_id', 'wer_scorer']) {
 		if (document[field] !== aggregate[field])
 			fail(`${label}.${field} must match ${suite}.aggregate`);
+	}
+	for (const field of ['source_catalog_sha256', 'selection_sha256']) {
+		if (document[field] !== target[field]) {
+			fail(`${label}.${field} must match the committed target`);
+		}
 	}
 	assertSame(document.model_artifacts, aggregate.model_artifacts, `${label}.model_artifacts`);
 	const backends = new Set(target.benchmark_variants.map((variant) => variant.backend));
@@ -992,8 +1064,55 @@ function diagnosticMap(aggregate) {
 	return new Map(aggregate.diagnostics.variants.map((variant) => [variantKey(variant), variant]));
 }
 
+function isHardWerEligibleNoiseCondition(noiseCondition) {
+	return !HARD_WER_EXCLUDED_NOISE_CONDITIONS.includes(noiseCondition);
+}
+
+function decisionWerRows(diagnostic, group) {
+	const rows = diagnostic.groups[group].filter((row) =>
+		isHardWerEligibleNoiseCondition(row.noise_condition),
+	);
+	if (rows.length === 0) {
+		fail(`variant '${variantKey(diagnostic)}' has no non-overlap WER evidence`);
+	}
+	return rows;
+}
+
+function unitBalancedWerAcross(rows, label) {
+	const unitCount = rows.reduce((total, row) => total + row.summary.unit_balanced.unit_count, 0);
+	if (unitCount === 0) fail(`${label} has no decision-eligible WER units`);
+	const weightedWer = rows.reduce(
+		(total, row) =>
+			total + row.summary.unit_balanced.wer_percent * row.summary.unit_balanced.unit_count,
+		0,
+	);
+	return { unit_count: unitCount, wer_percent: weightedWer / unitCount };
+}
+
+function decisionMacroWer(diagnostic) {
+	const summary = diagnostic.groups.hard_wer_overall?.unit_balanced;
+	if (!summary || summary.wer_percent === null || summary.unit_count === 0) {
+		fail(`variant '${variantKey(diagnostic)}' has no session-balanced non-overlap WER evidence`);
+	}
+	return { unit_count: summary.unit_count, wer_percent: summary.wer_percent };
+}
+
+function syntheticOverlapDiagnostic(diagnostic) {
+	const rows = diagnostic.groups.noise_condition.filter(
+		(row) => row.noise_condition === 'synthetic-overlap',
+	);
+	if (rows.length === 0) return null;
+	const summary = unitBalancedWerAcross(rows, `variant '${variantKey(diagnostic)}' overlap diagnostic`);
+	return {
+		noise_condition: 'synthetic-overlap',
+		unit_count: summary.unit_count,
+		macro_wer_percent: summary.wer_percent,
+		decision_use: 'diagnostic-only',
+	};
+}
+
 function worstLanguageNoiseSlice(diagnostic) {
-	return diagnostic.groups.language_noise
+	return decisionWerRows(diagnostic, 'language_noise')
 		.map((row) => ({
 			language: row.language,
 			noise_condition: row.noise_condition,
@@ -1009,9 +1128,11 @@ function worstLanguageNoiseSlice(diagnostic) {
 
 function alignedCriticalSliceImprovement(full, quantized) {
 	const sliceKey = (row) => `${row.language}\0${row.noise_condition}`;
-	const fullSlices = new Map(full.groups.language_noise.map((row) => [sliceKey(row), row]));
+	const fullSlices = new Map(
+		decisionWerRows(full, 'language_noise').map((row) => [sliceKey(row), row]),
+	);
 	const quantizedSlices = new Map(
-		quantized.groups.language_noise.map((row) => [sliceKey(row), row]),
+		decisionWerRows(quantized, 'language_noise').map((row) => [sliceKey(row), row]),
 	);
 	if (
 		fullSlices.size !== quantizedSlices.size ||
@@ -1065,14 +1186,17 @@ function candidateMetrics(automatic, performance, target) {
 		if (!Number.isSafeInteger(downloadBytes) || downloadBytes <= 0) {
 			fail(`known download bytes are missing for '${artifactKey(variant)}'`);
 		}
+		const hardWer = decisionMacroWer(qualityDiagnostic);
 		return {
 			provider: variant.provider,
 			model: variant.model,
 			backend: variant.backend,
 			model_artifact_sha256: automatic.aggregate.model_artifacts[artifactKey(variant)],
 			known_download_bytes: downloadBytes,
-			macro_wer_percent: qualityDiagnostic.groups.overall.unit_balanced.wer_percent,
+			macro_wer_percent: hardWer.wer_percent,
+			hard_wer_independent_unit_count: hardWer.unit_count,
 			worst_language_noise_slice: worstLanguageNoiseSlice(qualityDiagnostic),
+			synthetic_overlap_diagnostic: syntheticOverlapDiagnostic(qualityDiagnostic),
 			p95_inference_rtf: performanceDiagnostic.groups.overall.unit_balanced.p95_inference_rtf,
 			peak_rss_mb: performanceDiagnostic.groups.overall.unit_balanced.max_peak_rss_mb,
 		};
@@ -1085,9 +1209,14 @@ function speedDifferenceFromFastest(candidate, fastest) {
 }
 
 function selectCandidate(candidates) {
-	const eligible = candidates.filter((candidate) => candidate.eligible);
+	const eligible = candidates.filter((candidate) => candidate.exploratory_eligible);
 	if (eligible.length === 0)
-		return { status: 'no-eligible-candidate', selected_candidate: null, tie_break: null };
+		return {
+			status: 'provisional-no-exploratory-candidate',
+			exploratory_candidate: null,
+			production_tier_change_authorized: false,
+			tie_break: null,
+		};
 	const smallestDownload = Math.min(...eligible.map((candidate) => candidate.known_download_bytes));
 	const smallest = eligible.filter(
 		(candidate) => candidate.known_download_bytes === smallestDownload,
@@ -1103,13 +1232,14 @@ function selectCandidate(candidates) {
 			compareVariant(left, right),
 	)[0];
 	return {
-		status: 'qualified',
-		selected_candidate: {
+		status: 'provisional-exploratory-ranking',
+		exploratory_candidate: {
 			provider: selected.provider,
 			model: selected.model,
 			backend: selected.backend,
 			model_artifact_sha256: selected.model_artifact_sha256,
 		},
+		production_tier_change_authorized: false,
 		tie_break: {
 			smallest_eligible_download_bytes: smallestDownload,
 			fastest_p95_inference_rtf_at_smallest_size: fastest,
@@ -1130,7 +1260,13 @@ const RETENTION_PAIRS = Object.freeze([
 ]);
 
 function evaluateCatalogRetention(catalog, performance) {
-	if (!catalog) return { status: 'not-evaluated', decisions: [] };
+	if (!catalog) {
+		return {
+			status: 'not-evaluated',
+			production_catalog_change_authorized: false,
+			decisions: [],
+		};
+	}
 	const catalogMetrics = diagnosticMap(catalog.aggregate);
 	const performanceMetrics = diagnosticMap(performance.aggregate);
 	const find = (model, maps) => {
@@ -1143,10 +1279,12 @@ function evaluateCatalogRetention(catalog, performance) {
 	const decisions = RETENTION_PAIRS.map(([fullModel, quantizedModel]) => {
 		const full = find(fullModel, [catalogMetrics]);
 		const quantized = find(quantizedModel, [catalogMetrics, performanceMetrics]);
-		const macroImprovement =
-			quantized.groups.overall.unit_balanced.wer_percent -
-			full.groups.overall.unit_balanced.wer_percent;
+		const fullMacro = decisionMacroWer(full);
+		const quantizedMacro = decisionMacroWer(quantized);
+		const macroImprovement = quantizedMacro.wer_percent - fullMacro.wer_percent;
 		const criticalSlice = alignedCriticalSliceImprovement(full, quantized);
+		const exploratoryRetentionSignal =
+			macroImprovement >= 1 || criticalSlice.improvement_points >= 3;
 		return {
 			full_precision_variant: {
 				provider: full.provider,
@@ -1159,13 +1297,21 @@ function evaluateCatalogRetention(catalog, performance) {
 				backend: quantized.backend,
 			},
 			macro_wer_improvement_points: macroImprovement,
+			hard_wer_independent_unit_counts: {
+				full_precision: fullMacro.unit_count,
+				quantized: quantizedMacro.unit_count,
+			},
 			critical_slice: criticalSlice,
 			critical_slice_improvement_points: criticalSlice.improvement_points,
-			retain_new_download_visibility:
-				macroImprovement >= 1 || criticalSlice.improvement_points >= 3,
+			exploratory_retention_signal: exploratoryRetentionSignal,
+			retain_new_download_visibility: false,
 		};
 	});
-	return { status: 'evaluated', decisions };
+	return {
+		status: 'provisional-exploratory',
+		production_catalog_change_authorized: false,
+		decisions,
+	};
 }
 
 function bindSuiteProvenance(name, evidence, automatic) {
@@ -1238,6 +1384,18 @@ export function evaluatePublicCorpusQualification(input) {
 	const catalog = input.catalog_audit
 		? loadSuiteEvidence(input.catalog_audit, 'catalog_audit', targets.catalog_audit)
 		: null;
+	for (const diagnostic of automatic.aggregate.diagnostics.variants) {
+		if (
+			diagnostic.groups.overall.unit_balanced.unit_count !== PUBLIC_BOOTSTRAP_UNIT_COUNT ||
+			diagnostic.groups.hard_wer_overall.unit_balanced.unit_count !==
+				PUBLIC_BOOTSTRAP_UNIT_COUNT
+		) {
+			fail(
+				`automatic_policy variant '${variantKey(diagnostic)}' must contain exactly ` +
+					`${PUBLIC_BOOTSTRAP_UNIT_COUNT} public bootstrap units`,
+			);
+		}
+	}
 	for (const [name, evidence] of [
 		['performance', performance],
 		...(catalog ? [['catalog_audit', catalog]] : []),
@@ -1269,8 +1427,8 @@ export function evaluatePublicCorpusQualification(input) {
 			macro_wer_delta_from_best_points: candidate.macro_wer_percent - bestMacro,
 			worst_slice_delta_from_best_points:
 				candidate.worst_language_noise_slice.macro_wer_percent - bestWorst,
-			eligible: failures.length === 0,
-			ineligibility_reasons: failures,
+			exploratory_eligible: failures.length === 0,
+			exploratory_ineligibility_reasons: failures,
 		};
 	});
 	const decision = selectCandidate(candidates);
@@ -1292,13 +1450,35 @@ export function evaluatePublicCorpusQualification(input) {
 			full_precision_macro_improvement_points: 1,
 			full_precision_worst_slice_improvement_points: 3,
 		},
+		quality_policy: {
+			hard_wer_scope: 'non-overlap-session-id-or-singleton-sample-units',
+			excluded_noise_conditions: [...HARD_WER_EXCLUDED_NOISE_CONDITIONS],
+			exclusion_reason:
+				'synthetic overlap has no unambiguous serial reference order for hard WER decisions',
+			synthetic_overlap_use: 'diagnostic-and-performance-only',
+		},
 		phase_boundary: {
-			phase: 'phase-1-transcription-only',
-			may_update_tiers: ['high', 'ultra'],
-			unchanged_tiers: ['low', 'medium'],
-			translation_policy: 'unchanged-until-phase-2',
+			phase: 'public-bootstrap-provisional',
+			evidence_status: 'provisional',
+			public_bootstrap_unit_count: PUBLIC_BOOTSTRAP_UNIT_COUNT,
+			candidate_ranking_use: 'exploratory-only',
+			may_update_tiers: [],
+			unchanged_tiers: ['low', 'medium', 'high', 'ultra'],
+			translation_policy: 'unchanged',
 			catalog_audit_only_models: ['tiny-q5_1'],
+			may_update_catalog_visibility: false,
 			production_configuration_mutated: false,
+			required_corroboration: {
+				status: 'missing',
+				target_id: 'consented-multilingual-meetings-v1',
+				provenance_basis: 'participant-consent',
+				scenario: 'natural-meeting',
+				reference_protocol_id: 'muesly-meeting-reference-v1',
+				languages: ['en', 'es', 'pt', 'fr', 'de'],
+				noise_conditions: ['clean', 'office', 'remote-call', 'overlapping-speech'],
+				minimum_sessions_per_language_noise_cell: 3,
+				minimum_independent_sessions: 60,
+			},
 		},
 		evidence: {
 			automatic_policy: {

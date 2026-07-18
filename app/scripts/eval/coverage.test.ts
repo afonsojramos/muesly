@@ -49,15 +49,16 @@ test('accepts the committed multilingual benchmark target', () => {
 	assert.equal(committed.benchmark_variants.length, 3);
 });
 
-test('normalizes valid schema-2 matrix targets before strict schema-3 validation', () => {
+test('normalizes legacy matrix targets before strict schema-4 validation', () => {
 	const legacy = { ...targets, schema_version: 2 };
 	delete legacy.coverage_mode;
 	assert.deepEqual(validateCoverageTargets(legacy), []);
 	assert.deepEqual(normalizeCoverageTargets(legacy), {
 		...legacy,
-		schema_version: 3,
+		schema_version: 4,
 		coverage_mode: 'language-noise-matrix',
 	});
+	assert.deepEqual(normalizeCoverageTargets(targets), { ...targets, schema_version: 4 });
 	assert.match(
 		validateCoverageTargets({ ...legacy, repetitions: 2 }).join('\n'),
 		/targets\.repetitions is not an allowed field in schema 2/,
@@ -296,6 +297,51 @@ test('evaluates a schema-2 matrix target through the compatibility boundary', ()
 	assert.equal(coverage.corpus.covered_cells, 4);
 });
 
+test('binds schema-4 targets to one exact corpus, catalog, and selection revision', () => {
+	const corpus = {
+		...completeCorpus(),
+		source_catalog_sha256: 'b'.repeat(64),
+		preparation: { selection_sha256: 'c'.repeat(64) },
+	};
+	const boundTargets = {
+		...targets,
+		schema_version: 4,
+		corpus_id: corpus.corpus_id,
+		corpus_fingerprint: corpus.corpus_fingerprint,
+		source_catalog_sha256: corpus.source_catalog_sha256,
+		selection_sha256: corpus.preparation.selection_sha256,
+	};
+	assert.deepEqual(validateCoverageTargets(boundTargets), []);
+	const coverage = evaluateCoverage(corpus, boundTargets);
+	assert.equal(coverage.source_catalog_sha256, corpus.source_catalog_sha256);
+	assert.equal(coverage.selection_sha256, corpus.preparation.selection_sha256);
+
+	for (const field of [
+		'corpus_id',
+		'corpus_fingerprint',
+		'source_catalog_sha256',
+		'selection_sha256',
+	]) {
+		const drifted = { ...boundTargets, [field]: field === 'corpus_id' ? 'other-corpus' : 'd'.repeat(64) };
+		assert.throws(
+			() => evaluateCoverage(corpus, drifted),
+			new RegExp(`coverage targets ${field} does not match`),
+			field,
+		);
+	}
+
+	const partial = { ...boundTargets };
+	delete partial.selection_sha256;
+	assert.match(
+		validateCoverageTargets(partial).join('\n'),
+		/selection_sha256 is required when the target binds a corpus revision/,
+	);
+	assert.match(
+		validateCoverageTargets({ ...targets, source_catalog_sha256: 'b'.repeat(64) }).join('\n'),
+		/source_catalog_sha256 is not an allowed field in schema 3/,
+	);
+});
+
 test('requires every explicit sample, variant, and repeat on one compatible hardware cohort', () => {
 	const corpus = completeCorpus();
 	const selectedSample = corpus.samples[0];
@@ -413,7 +459,7 @@ test('requires every measurement cell and accepts a same-machine multi-backend m
 	]);
 	assert.equal(complete.measurements.covered_cells, 8);
 	assert.equal(complete.complete, true);
-	assert.equal(complete.schema_version, 11);
+	assert.equal(complete.schema_version, 12);
 	assert.equal(complete.corpus_fingerprint, corpus.corpus_fingerprint);
 	assert.equal(complete.reference_protocol_id, REFERENCE_PROTOCOL_ID);
 	assert.equal(complete.wer_scorer, WER_SCORER_ID);

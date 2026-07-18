@@ -3,11 +3,21 @@
 Protocol ID: `muesly-meeting-reference-v1`
 
 This document is the normative annotation contract for every reference used by the Muesly
-meeting benchmark. The protocol ID is part of the corpus manifest, target matrix, prepared intake
-metadata, review attestations, benchmark task identity, run/checkpoint reports, aggregates, and
-coverage output. A change to a normative rule requires a new protocol ID and fresh review and
-measurement; legacy private corpora, prepared bundles, checkpoints, reports, and aggregates are
-never upgraded implicitly.
+private consented-meeting benchmark and for any locally authored or corrected reference. The
+protocol ID is part of the corpus manifest, target matrix, prepared intake metadata, review
+attestations, benchmark task identity, run/checkpoint reports, aggregates, and coverage output. A
+change to a normative rule requires a new protocol ID and fresh review and measurement; legacy
+private corpora, prepared bundles, checkpoints, reports, and aggregates are never upgraded
+implicitly.
+
+References reconstructed byte-for-byte from pinned, publicly licensed human transcripts use the
+separate [`muesly-public-upstream-gold-v1`](PUBLIC_REFERENCE_VERIFICATION.md) protocol. That route
+waives local review only while its complete fail-closed provenance and exact-byte contract passes.
+It never applies to consented private collection, locally authored text, or a locally corrected
+public reference. No corrected-public-reference workflow is currently implemented: locally edited
+public text is excluded from the public suites until a separately versioned correction protocol
+and preparation/review path exists. This private two-person contract alone does not make an edited
+public reference eligible for the current public tooling.
 
 The protocol controls the reference text, not the corpus language stratum. `language` remains a
 human-assigned collection label. Preserve code-switching exactly; do not infer a different stratum
