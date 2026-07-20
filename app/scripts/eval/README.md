@@ -32,6 +32,7 @@ app/scripts/eval/
   corpus-benchmark-run.ts         # resumable consented-corpus campaign runner
   evaluator-revision.ts           # clean source/toolchain provenance
   benchmark-executable.ts         # exact build, hardware probe, and binary identity
+  benchmark-build-cache.ts        # one attested executable build per cohort revision
   model-prepare.ts                  # product-path model download + canonical verification
   public-corpus-sources.json      # immutable source, license, size, and SHA-256 pins
   public-corpus-selection.json    # deterministic 66-sample construction contract
@@ -384,7 +385,11 @@ each checkpoint's exact name, identity, and content digest.
   revision is checked before and after the run so source or toolchain drift cannot be mislabeled.
   The hardware profile's `runtime_env_sha256` hashes the allowlisted ambient runtime inputs with
   the same search-path canonicalization as build provenance, so per-process runner shims never
-  split one machine into multiple apparent hardware cohorts.
+  split one machine into multiple apparent hardware cohorts. Native relinks are not
+  byte-reproducible across Cargo invocations, so each campaign builds the benchmark executable
+  once per evaluator revision through the machine-local cohort cache in
+  `target/eval-benchmark-executables/`; every fixed suite in the cohort then stages snapshots of
+  the exact same bytes, which is what makes cross-suite executable identity enforceable.
   Git, Cargo, and rustc command launchers are resolved only through absolute entries in the
   recorded command environment; relative/current-directory entries are removed, Windows
   shell-script shims are refused, and each launcher's canonical path and bytes are rechecked
