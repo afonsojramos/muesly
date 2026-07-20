@@ -388,20 +388,22 @@ test('runs the generated intake entrypoint from an external bundle directory', (
 			idFactory: () => '00000000-0000-4000-8000-000000000013',
 		}),
 	);
-	const result = spawnSync('nub', [session.intakeScriptPath], {
+	// Run the entrypoints with the same Node that runs this suite: resolving a
+	// bare `nub` shim is platform- and shell-dependent (mise shims do not resolve
+	// outside the login shell on Windows), while the generated README commands
+	// only need a TS-capable Node.
+	const result = spawnSync(process.execPath, [session.intakeScriptPath], {
 		cwd: path.dirname(session.referencePath),
 		encoding: 'utf8',
 	});
 	assert.equal(result.status, 2, result.stderr);
 	assert.match(result.stderr, /--audio is required/);
-	assert.doesNotMatch(result.stderr, /ERR_NUB_NO_MANIFEST/);
-	const attestResult = spawnSync('nub', [session.attestScriptPath], {
+	const attestResult = spawnSync(process.execPath, [session.attestScriptPath], {
 		cwd: path.dirname(session.referencePath),
 		encoding: 'utf8',
 	});
 	assert.equal(attestResult.status, 2, attestResult.stderr);
 	assert.match(attestResult.stderr, /--session-id is required/);
-	assert.doesNotMatch(attestResult.stderr, /ERR_NUB_NO_MANIFEST/);
 });
 
 test('quotes generated Bash and PowerShell commands independently', () => {
