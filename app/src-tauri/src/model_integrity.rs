@@ -42,6 +42,16 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(digest)
 }
 
+/// Hash a benchmark executable, accepting the recognized Cargo example
+/// hard-link pair that the single-link model-artifact rule rejects.
+pub fn sha256_benchmark_executable(path: &Path) -> Result<String> {
+    let mut file = crate::model_storage::open_attested_benchmark_executable_for_read(path)
+        .with_context(|| format!("open {} for hashing", path.display()))?;
+    let digest = sha256_opened_file(&mut file)?;
+    crate::model_storage::attest_benchmark_executable(path, &file)?;
+    Ok(digest)
+}
+
 /// Verify in-memory bytes against a pinned hex digest. Empty pin fails closed.
 pub fn verify_sha256(bytes: &[u8], expected_hex: &str) -> bool {
     !expected_hex.is_empty() && sha256_hex(bytes).eq_ignore_ascii_case(expected_hex)

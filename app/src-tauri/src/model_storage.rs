@@ -310,6 +310,99 @@ pub(crate) fn open_attested_file_for_read(path: &Path, label: &str) -> Result<Fi
     Ok(file)
 }
 
+/// Cargo emits `target/<profile>/examples/transcribe-fixture` and then
+/// link-or-copies it to the unhashed path it reports, leaving a two-name
+/// hard-link pair on most filesystems. The benchmark fixture hashes its own
+/// executable, so accept exactly that recognized pair while keeping every
+/// other artifact on the single-link rule. Returns the twin path when found.
+fn cargo_example_twin(path: &Path, opened: &FileIdentity) -> Result<Option<PathBuf>> {
+    let executable_name = if cfg!(windows) {
+        "transcribe-fixture.exe"
+    } else {
+        "transcribe-fixture"
+    };
+    if path.file_name().and_then(|name| name.to_str()) != Some(executable_name) {
+        return Ok(None);
+    }
+    let Some(examples_dir) = path.parent() else {
+        return Ok(None);
+    };
+    if examples_dir.file_name().and_then(|name| name.to_str()) != Some("examples") {
+        return Ok(None);
+    }
+    let source_suffix = if cfg!(windows) { ".exe" } else { "" };
+    let mut matches = Vec::new();
+    for entry in std::fs::read_dir(examples_dir).context("list Cargo example artifacts")? {
+        let entry = entry.context("inspect Cargo example artifact")?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        let Some(hash) = name
+            .strip_prefix("transcribe_fixture-")
+            .and_then(|rest| rest.strip_suffix(source_suffix))
+        else {
+            continue;
+        };
+        if hash.len() != 16 || !hash.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            continue;
+        }
+        let metadata = entry
+            .metadata()
+            .context("inspect Cargo example artifact metadata")?;
+        if !metadata.is_file() || metadata_is_alias(&metadata) {
+            continue;
+        }
+        if metadata_identity(&metadata)?.same_object(*opened) {
+            matches.push(entry.path());
+        }
+    }
+    if matches.len() == 1 {
+        Ok(matches.pop())
+    } else {
+        Ok(None)
+    }
+}
+
+/// Attest a benchmark executable, permitting only the recognized Cargo
+/// example hard-link pair in addition to the regular single-link rule.
+pub(crate) fn attest_benchmark_executable(path: &Path, file: &File) -> Result<()> {
+    let opened = opened_file_identity(file)?;
+    if opened.links == 1 {
+        return attest_opened_file(path, file, "benchmark executable");
+    }
+    if opened.links != 2 {
+        bail!(
+            "benchmark executable must be a single-link file or a Cargo example pair: {}",
+            path.display()
+        );
+    }
+    let path_metadata = symlink_metadata(path, "benchmark executable")?;
+    if !path_metadata.is_file() || metadata_is_alias(&path_metadata) {
+        bail!(
+            "benchmark executable must be a regular non-link file: {}",
+            path.display()
+        );
+    }
+    if !metadata_identity(&path_metadata)?.same_object(opened) {
+        bail!(
+            "benchmark executable changed while it was opened: {}",
+            path.display()
+        );
+    }
+    if cargo_example_twin(path, &opened)?.is_none() {
+        bail!(
+            "benchmark executable hard link is not a recognized Cargo example pair: {}",
+            path.display()
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn open_attested_benchmark_executable_for_read(path: &Path) -> Result<File> {
+    let file = open_existing_no_follow(path, false)?;
+    attest_benchmark_executable(path, &file)?;
+    Ok(file)
+}
+
 fn confined_child(parent: &Path, filename: &str, label: &str) -> Result<(PathBuf, PathBuf)> {
     validate_component(filename, label)?;
     let canonical_parent = attest_real_directory(parent, "model artifact parent")?;

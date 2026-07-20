@@ -648,7 +648,7 @@ fn benchmark_hardware(provider: &str, verify_gpu: bool) -> Result<BenchmarkHardw
 fn benchmark_executable_sha256() -> Result<String, String> {
     let executable = std::env::current_exe()
         .map_err(|_| "could not locate the current benchmark executable".to_string())?;
-    app_lib::model_integrity::sha256_file(&executable)
+    app_lib::model_integrity::sha256_benchmark_executable(&executable)
         .map_err(|_| "could not hash the current benchmark executable".to_string())
 }
 
