@@ -163,6 +163,14 @@ mod tests {
         reference_protocol_id: String,
         coverage_mode: String,
         #[serde(default)]
+        corpus_id: Option<String>,
+        #[serde(default)]
+        corpus_fingerprint: Option<String>,
+        #[serde(default)]
+        source_catalog_sha256: Option<String>,
+        #[serde(default)]
+        selection_sha256: Option<String>,
+        #[serde(default)]
         sample_ids: Vec<String>,
         #[serde(default)]
         repetitions: Option<u8>,
@@ -322,11 +330,43 @@ mod tests {
             "../../scripts/eval/public-corpus-targets-automatic-policy.json"
         ))
         .expect("committed public Automatic-policy targets must be valid JSON");
-        assert_eq!(targets.schema_version, 3);
-        assert_eq!(targets.reference_protocol_id, "muesly-meeting-reference-v1");
+        assert_eq!(targets.schema_version, 4);
+        assert_eq!(
+            targets.reference_protocol_id,
+            "muesly-public-upstream-gold-v1"
+        );
         assert_eq!(targets.coverage_mode, "explicit-samples");
         assert_eq!(targets.sample_ids.len(), 66);
         assert_eq!(targets.repetitions.unwrap_or(1), 1);
+        assert_eq!(targets.corpus_id.as_deref(), Some("muesly-public-asr-v2"));
+        let sha256_hex = |bytes: &[u8]| {
+            use sha2::Digest as _;
+            sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        assert_eq!(
+            targets.source_catalog_sha256.as_deref(),
+            Some(sha256_hex(include_bytes!("../../scripts/eval/public-corpus-sources.json")).as_str()),
+            "public policy targets must bind the committed source catalog"
+        );
+        assert_eq!(
+            targets.selection_sha256.as_deref(),
+            Some(sha256_hex(include_bytes!("../../scripts/eval/public-corpus-selection.json")).as_str()),
+            "public policy targets must bind the committed selection contract"
+        );
+        let fingerprint = targets
+            .corpus_fingerprint
+            .as_deref()
+            .expect("public policy targets must pin the finalized corpus fingerprint");
+        assert!(
+            fingerprint.len() == 64
+                && fingerprint
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()),
+            "corpus fingerprint must be a lowercase SHA-256 digest"
+        );
 
         let available_whisper = WHISPER_MODEL_CATALOG
             .iter()
