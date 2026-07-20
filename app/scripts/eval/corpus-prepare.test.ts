@@ -370,9 +370,12 @@ test('creates a private, consent-neutral collection bundle for the next cell', (
 	assert.match(readme, /## PowerShell \(Windows\)/);
 	assert.doesNotMatch(readme, / \\\n/);
 	assert.doesNotMatch(readme, /nub run eval:corpus:intake/);
-	assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
-	assert.equal(fs.statSync(metadata.reviewAttestationsPath).mode & 0o777, 0o700);
-	assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
+	if (process.platform !== 'win32') {
+		// POSIX permission bits are not enforceable on Windows.
+		assert.equal(fs.statSync(path.join(directory, 'intake')).mode & 0o777, 0o700);
+		assert.equal(fs.statSync(metadata.reviewAttestationsPath).mode & 0o777, 0o700);
+		assert.equal(fs.statSync(session.consentRecordPath).mode & 0o777, 0o600);
+	}
 	assert(!fs.existsSync(manifestPath));
 	assert(fs.statSync(path.join(directory, 'local-corpus')).isDirectory());
 	assert(!fs.existsSync(path.join(directory, 'local-corpus', '.intake.lock')));
@@ -389,14 +392,14 @@ test('runs the generated intake entrypoint from an external bundle directory', (
 		cwd: path.dirname(session.referencePath),
 		encoding: 'utf8',
 	});
-	assert.equal(result.status, 2);
+	assert.equal(result.status, 2, result.stderr);
 	assert.match(result.stderr, /--audio is required/);
 	assert.doesNotMatch(result.stderr, /ERR_NUB_NO_MANIFEST/);
 	const attestResult = spawnSync('nub', [session.attestScriptPath], {
 		cwd: path.dirname(session.referencePath),
 		encoding: 'utf8',
 	});
-	assert.equal(attestResult.status, 2);
+	assert.equal(attestResult.status, 2, attestResult.stderr);
 	assert.match(attestResult.stderr, /--session-id is required/);
 	assert.doesNotMatch(attestResult.stderr, /ERR_NUB_NO_MANIFEST/);
 });
