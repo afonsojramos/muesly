@@ -13,10 +13,12 @@ import {
   benchmarkRuntimeEnvironment,
   bindBenchmarkRuntimeDependencies,
   buildBenchmarkExecutable,
+  cargoFeaturesForBenchmark,
   prepareBenchmarkModel,
   probeBenchmarkExecutable,
   stageBenchmarkExecutableSnapshot,
 } from "./benchmark-executable.ts";
+import { createCohortBenchmarkBuild } from "./benchmark-build-cache.ts";
 import { createPrivateArtifactSnapshotDirectory } from "./artifact-snapshot.ts";
 import {
   discoverCorpusBenchmarkCheckpoints,
@@ -622,20 +624,33 @@ export async function runRealRunCommand(
 
 function defaultPrepareSession({ task, modelsDirectory, repoRoot, evaluatorContext }) {
   ensureSidecarStubs(repoRoot, evaluatorContext.hostTriple);
-  return prepareRealRunSession({
-    provider: task.provider,
-    model: task.model,
-    backend: task.real_run_backend,
-    accelerator: task.accelerator,
-    modelsDirectory,
-    repoRoot,
-    buildEnvironment: evaluatorContext.buildEnvironment,
-    runtimeEnvironment: process.env,
-    evaluatorRevision: {
-      revision: task.evaluator_revision,
-      sha256: task.evaluator_revision_sha256,
+  return prepareRealRunSession(
+    {
+      provider: task.provider,
+      model: task.model,
+      backend: task.real_run_backend,
+      accelerator: task.accelerator,
+      modelsDirectory,
+      repoRoot,
+      buildEnvironment: evaluatorContext.buildEnvironment,
+      runtimeEnvironment: process.env,
+      evaluatorRevision: {
+        revision: task.evaluator_revision,
+        sha256: task.evaluator_revision_sha256,
+      },
     },
-  });
+    {
+      // Build once per evaluator revision so every suite in the hardware
+      // cohort stages snapshots of the exact same executable bytes.
+      buildBenchmarkExecutable: createCohortBenchmarkBuild({
+        repoRoot,
+        revisionSha256: task.evaluator_revision_sha256,
+        buildBenchmarkExecutable,
+        benchmarkExecutableSha256,
+        cargoFeaturesForBenchmark,
+      }),
+    },
+  );
 }
 
 async function defaultTaskRunner({ task, sample, session, signal }) {

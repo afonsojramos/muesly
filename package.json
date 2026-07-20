@@ -18,7 +18,7 @@
 		"eval:wer:test": "nub --node --test app/scripts/eval/wer.test.ts",
 		"eval:rubric": "nub app/scripts/eval/summary-rubric.ts",
 		"eval:real": "nub app/scripts/eval/real-run.ts",
-		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.ts app/scripts/eval/benchmark-executable.test.ts app/scripts/eval/real-run-options.test.ts app/scripts/eval/real-run-session.test.ts",
+		"eval:real:test": "nub --node --test app/scripts/eval/backend.test.ts app/scripts/eval/benchmark-executable.test.ts app/scripts/eval/benchmark-build-cache.test.ts app/scripts/eval/real-run-options.test.ts app/scripts/eval/real-run-session.test.ts",
 		"eval:models:prepare": "nub app/scripts/eval/model-prepare.ts",
 		"eval:models:test": "nub --node --test app/scripts/eval/model-prepare.test.ts",
 		"eval:public:prepare": "nub app/scripts/eval/public-corpus-prepare.ts",
