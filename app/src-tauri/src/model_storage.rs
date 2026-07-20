@@ -315,6 +315,17 @@ pub(crate) fn open_attested_file_for_read(path: &Path, label: &str) -> Result<Fi
 /// hard-link pair on most filesystems. The benchmark fixture hashes its own
 /// executable, so accept exactly that recognized pair while keeping every
 /// other artifact on the single-link rule. Returns the twin path when found.
+#[cfg(unix)]
+fn path_identity(path: &Path, label: &str) -> Result<FileIdentity> {
+    metadata_identity(&symlink_metadata(path, label)?)
+}
+
+#[cfg(windows)]
+fn path_identity(path: &Path, label: &str) -> Result<FileIdentity> {
+    let file = open_existing_no_follow(path, false).with_context(|| format!("open {label}"))?;
+    opened_file_identity(&file)
+}
+
 fn cargo_example_twin(path: &Path, opened: &FileIdentity) -> Result<Option<PathBuf>> {
     let executable_name = if cfg!(windows) {
         "transcribe-fixture.exe"
@@ -351,7 +362,7 @@ fn cargo_example_twin(path: &Path, opened: &FileIdentity) -> Result<Option<PathB
         if !metadata.is_file() || metadata_is_alias(&metadata) {
             continue;
         }
-        if metadata_identity(&metadata)?.same_object(*opened) {
+        if path_identity(&entry.path(), "Cargo example artifact")?.same_object(*opened) {
             matches.push(entry.path());
         }
     }
@@ -382,7 +393,7 @@ pub(crate) fn attest_benchmark_executable(path: &Path, file: &File) -> Result<()
             path.display()
         );
     }
-    if !metadata_identity(&path_metadata)?.same_object(opened) {
+    if !path_identity(path, "benchmark executable")?.same_object(opened) {
         bail!(
             "benchmark executable changed while it was opened: {}",
             path.display()
