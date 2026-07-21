@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 
 	import { navigate, goHome } from '$lib/navigation';
+	import FolderContext from '$lib/components/FolderContext.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
@@ -154,6 +155,10 @@
 						</p>
 					</div>
 				</header>
+
+				{#if folderId}
+					<FolderContext {folderId} />
+				{/if}
 
 				{#if meetings.length === 0}
 					<div class="flex flex-col items-center gap-2 py-20 text-center">

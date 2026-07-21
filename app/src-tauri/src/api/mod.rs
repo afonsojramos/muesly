@@ -1,5 +1,6 @@
 pub mod bars;
 pub mod commands;
+pub mod folder_context;
 pub mod folders;
 pub mod meetings;
 pub mod nl_search;

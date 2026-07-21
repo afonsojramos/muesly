@@ -4,6 +4,7 @@ pub mod calendar_accounts;
 pub mod calendar_event_rules;
 pub mod chat_messages;
 pub mod dictation_preset;
+pub mod folder_context;
 pub mod folders;
 pub mod meeting;
 pub mod notes;

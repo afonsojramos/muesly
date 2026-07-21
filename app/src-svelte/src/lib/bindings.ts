@@ -283,6 +283,14 @@ export const commands = {
 	apiSetFolderFavorite: (folderId: string, favorite: boolean) => typedError<any, string>(__TAURI_INVOKE("api_set_folder_favorite", { folderId, favorite })),
 	/**  Move a meeting into a folder, or out of all folders when `folder_id` is None. */
 	apiMoveMeetingToFolder: (meetingId: string, folderId: string | null) => typedError<any, string>(__TAURI_INVOKE("api_move_meeting_to_folder", { meetingId, folderId })),
+	apiListFolderContext: (folderId: string) => typedError<FolderContextItem[], string>(__TAURI_INVOKE("api_list_folder_context", { folderId })),
+	apiSaveFolderContextItem: (input: FolderContextInput) => typedError<FolderContextItem, string>(__TAURI_INVOKE("api_save_folder_context_item", { input })),
+	apiDeleteFolderContextItem: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_delete_folder_context_item", { id })),
+	apiAcceptFolderMemory: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_accept_folder_memory", { id })),
+	apiRejectFolderMemory: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_reject_folder_memory", { id })),
+	apiGetFolderContextToggles: (folderId: string) => typedError<FolderContextToggles, string>(__TAURI_INVOKE("api_get_folder_context_toggles", { folderId })),
+	apiSetFolderContextInSummaries: (folderId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("api_set_folder_context_in_summaries", { folderId, enabled })),
+	apiSetFolderMemoryExtraction: (folderId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("api_set_folder_memory_extraction", { folderId, enabled })),
 	apiGetMeeting: (meetingId: string, authToken: string | null) => typedError<MeetingDetails_Serialize, string>(__TAURI_INVOKE("api_get_meeting", { meetingId, authToken })),
 	/**  Get meeting metadata without transcripts (for pagination) */
 	apiGetMeetingMetadata: (meetingId: string) => typedError<MeetingMetadata_Serialize, string>(__TAURI_INVOKE("api_get_meeting_metadata", { meetingId })),
@@ -390,7 +398,7 @@ export const commands = {
 	 */
 	chatRecent: () => typedError<RecentChatThread[], string>(__TAURI_INVOKE("chat_recent")),
 	/**  Streams an agentic answer to a question about the whole meeting library. */
-	globalChatAsk: (question: string, history: ChatTurn[], model: string, modelName: string, genId: string, onEvent: Channel<GlobalChatEvent>) => typedError<null, string>(__TAURI_INVOKE("global_chat_ask", { question, history, model, modelName, genId, onEvent })),
+	globalChatAsk: (question: string, history: ChatTurn[], model: string, modelName: string, genId: string, folderId: string | null, onEvent: Channel<GlobalChatEvent>) => typedError<null, string>(__TAURI_INVOKE("global_chat_ask", { question, history, model, modelName, genId, folderId, onEvent })),
 	/**  All saved user bars, most recently edited first. */
 	barsList: () => typedError<UserBar[], string>(__TAURI_INVOKE("bars_list")),
 	/**  Create a new bar or update an existing one (when `input.id` is set). */
@@ -1005,6 +1013,33 @@ export type Folder = {
 	/**  Whether the folder is pinned to the sidebar's Favorites section. */
 	favorited: boolean,
 	created_at: string,
+};
+
+/**  Create/update payload. `id` present = edit; absent = create (source user). */
+export type FolderContextInput = {
+	id: string | null,
+	folder_id: string,
+	kind: string,
+	content: string,
+	pinned: boolean,
+};
+
+/**  A folder memory item as the frontend sees it. */
+export type FolderContextItem = {
+	id: string,
+	folder_id: string,
+	kind: string,
+	content: string,
+	source: string,
+	status: string,
+	pinned: boolean,
+	created_at: string,
+	updated_at: string,
+};
+
+export type FolderContextToggles = {
+	context_in_summaries: boolean,
+	memory_extraction: boolean,
 };
 
 /**
