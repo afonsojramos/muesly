@@ -109,6 +109,23 @@ async fn retranscription_prompt_terms(
         );
     }
 
+    // Folder glossary: user-curated spellings bias retranscription of any
+    // meeting filed in that folder (the prompt budget caps them upstream).
+    if let Some(folder_id) =
+        sqlx::query_scalar::<_, Option<String>>("SELECT folder_id FROM meetings WHERE id = ?")
+            .bind(meeting_id)
+            .fetch_optional(pool)
+            .await?
+            .flatten()
+    {
+        terms.extend(
+            crate::database::repositories::folder_context::FolderContextRepository::glossary_terms(
+                pool, &folder_id,
+            )
+            .await,
+        );
+    }
+
     Ok(terms)
 }
 
