@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Check, Pin, PinOff, Plus, Trash2, X } from '@lucide/svelte';
+	import { Pin, PinOff, Plus, Trash2 } from '@lucide/svelte';
 
 	import { cn } from '$lib/utils';
 	import type { FolderContextItem } from '$lib/bindings';
@@ -11,8 +11,6 @@
 	} from '$lib/stores/folder-context.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch';
 	import { Textarea } from '$lib/components/ui/textarea';
 
 	interface Props {
@@ -26,10 +24,6 @@
 	let saving = $state(false);
 
 	const items = $derived(folderContext.acceptedFor(folderId));
-	const pending = $derived(folderContext.pendingFor(folderId));
-	const toggles = $derived(
-		folderContext.toggles[folderId] ?? { context_in_summaries: false, memory_extraction: false },
-	);
 	const canAdd = $derived(draftContent.trim().length > 0 && !saving);
 
 	onMount(() => {
@@ -76,47 +70,20 @@
 		<div>
 			<h3 class="text-sm font-semibold text-foreground">Folder memory</h3>
 			<p class="mt-0.5 text-xs text-muted-foreground">
-				Facts, glossary, and preferences muesly uses when you chat about this folder. Stored
-				only on this device.
+				Learned automatically from this folder's summaries and used when you chat or
+				summarize here. Add, pin, or remove anything — it's all stored only on this device.
 			</p>
 		</div>
 	</div>
-
-	{#if pending.length > 0}
-		<div class="flex flex-col gap-2 rounded-lg border border-dashed border-border p-3">
-			<p class="text-xs font-medium text-muted-foreground">
-				Proposed from recent summaries — accept to remember, reject to discard.
-			</p>
-			{#each pending as item (item.id)}
-				<div class="flex items-center gap-2">
-					<Badge variant="secondary" class="shrink-0">{KIND_LABELS[item.kind] ?? item.kind}</Badge>
-					<p class="min-w-0 flex-1 truncate text-sm text-foreground">{item.content}</p>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label="Accept memory"
-						onclick={() => void folderContext.accept(folderId, item.id)}
-					>
-						<Check class="size-4 text-success" />
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label="Reject memory"
-						onclick={() => void folderContext.reject(folderId, item.id)}
-					>
-						<X class="size-4 text-muted-foreground" />
-					</Button>
-				</div>
-			{/each}
-		</div>
-	{/if}
 
 	{#if items.length > 0}
 		<ul class="flex flex-col divide-y divide-border">
 			{#each items as item (item.id)}
 				<li class="flex items-center gap-2 py-2">
 					<Badge variant="outline" class="shrink-0">{KIND_LABELS[item.kind] ?? item.kind}</Badge>
+					{#if item.source === 'extracted'}
+						<Badge variant="secondary" class="shrink-0 text-[10px]">Auto</Badge>
+					{/if}
 					<p class={cn('min-w-0 flex-1 text-sm text-foreground', !item.pinned && 'pl-0')}>
 						{item.content}
 					</p>
@@ -188,26 +155,4 @@
 		</div>
 	</div>
 
-	<div class="flex flex-col gap-2 border-t border-border pt-3">
-		<div class="flex items-center justify-between gap-3">
-			<Label for="folder-memory-summaries" class="cursor-pointer text-xs text-muted-foreground">
-				Include folder memory in summaries of this folder's meetings
-			</Label>
-			<Switch
-				id="folder-memory-summaries"
-				checked={toggles.context_in_summaries}
-				onCheckedChange={(checked) => void folderContext.setInSummaries(folderId, checked)}
-			/>
-		</div>
-		<div class="flex items-center justify-between gap-3">
-			<Label for="folder-memory-extraction" class="cursor-pointer text-xs text-muted-foreground">
-				Propose new memories after each summary (you review them here)
-			</Label>
-			<Switch
-				id="folder-memory-extraction"
-				checked={toggles.memory_extraction}
-				onCheckedChange={(checked) => void folderContext.setExtraction(folderId, checked)}
-			/>
-		</div>
-	</div>
 </section>

@@ -38,7 +38,8 @@ impl FoldersRepository {
         let id = format!("folder-{}", uuid::Uuid::new_v4());
         let now = Utc::now();
         sqlx::query(
-            "INSERT INTO folders (id, name, emoji, parent_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            // Folder memory is implicit: new folders learn and inject by default.
+            "INSERT INTO folders (id, name, emoji, parent_id, created_at, updated_at, context_in_summaries, memory_extraction) VALUES (?, ?, ?, ?, ?, ?, 1, 1)",
         )
         .bind(&id)
         .bind(name)

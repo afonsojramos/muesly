@@ -1,10 +1,11 @@
-//! Post-summary folder memory proposals (opt-in per folder).
+//! Post-summary folder memory learning (on by default for every folder).
 //!
 //! After a summary completes for a meeting in a folder with
 //! `memory_extraction` enabled, one small LLM pass compares the new summary
-//! against the folder's current memories and proposes durable additions.
-//! Proposals are stored as `pending` extracted items — never injected into
-//! prompts until the user explicitly accepts them (rejecting deletes them).
+//! against the folder's current memories and learns durable additions.
+//! Extracted memories are accepted immediately and surface in the folder's
+//! Memory section with an Auto badge; they are never silent — the section
+//! shows everything learned and the user can edit or delete any of it.
 //! Everything runs on the already-configured provider, so local setups keep
 //! the pass fully on-device.
 

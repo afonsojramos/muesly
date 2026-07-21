@@ -34,8 +34,8 @@ class FolderContextStore {
 			const folderId = event.payload.folder_id;
 			void this.load(folderId);
 			toast.info(
-				`${event.payload.count} new proposed ${event.payload.count === 1 ? 'memory' : 'memories'}`,
-				{ description: 'Review them in the folder’s Memory section.' },
+				`Learned ${event.payload.count} new ${event.payload.count === 1 ? 'memory' : 'memories'}`,
+				{ description: 'See them in the folder’s Memory section.' },
 			);
 		});
 	}

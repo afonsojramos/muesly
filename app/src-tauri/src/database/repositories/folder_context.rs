@@ -1,10 +1,10 @@
-//! Folder context store: user-curated memory attached to a sidebar folder.
+//! Folder context store: memory attached to a sidebar folder.
 //!
 //! Accepted items are assembled into a bounded `<folder_context>` block that
-//! the folder-scoped chat and (opt-in) summary prompts consume. Extracted
-//! proposals stay `pending` and invisible to prompts until the user accepts
-//! them; rejecting deletes the row (a rejected proposal has no audit value
-//! beyond the meeting it came from, which is itself retained).
+//! the folder-scoped chat and summary prompts consume. Learning is implicit:
+//! extracted memories are accepted immediately (the Memory section offers
+//! visibility and control, never a mandatory review queue). Users can still
+//! add, pin, edit, and delete items explicitly.
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,6 @@ use sqlx::SqlitePool;
 /// Hard caps so a paste can't blow up prompt budgets or the database.
 pub const MAX_CONTENT_CHARS: usize = 2_000;
 pub const MAX_ITEMS_PER_FOLDER: usize = 100;
-pub const MAX_PENDING_PER_FOLDER: usize = 20;
 /// Total size of the assembled prompt block.
 pub const MAX_BLOCK_CHARS: usize = 3_000;
 
@@ -197,9 +196,10 @@ impl FolderContextRepository {
         Ok(result.rows_affected() > 0)
     }
 
-    /// Insert an extracted proposal if an identical pending/accepted item does
-    /// not already exist. Returns false when the pending queue is full or the
-    /// content is already remembered (exact match, case-insensitive).
+    /// Insert an extracted memory, accepted immediately: learning is implicit,
+    /// the Memory section is for visibility and control, not a review queue.
+    /// Returns false when the folder is full or the content is already
+    /// remembered (exact match, case-insensitive).
     pub async fn insert_pending(
         pool: &SqlitePool,
         folder_id: &str,
@@ -220,14 +220,14 @@ impl FolderContextRepository {
         if duplicate > 0 {
             return Ok(false);
         }
-        let pending: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM folder_context_items WHERE folder_id = ? AND status = 'pending'",
+        let accepted: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM folder_context_items WHERE folder_id = ? AND status = 'accepted'",
         )
         .bind(folder_id)
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("Failed to count pending folder memories: {e}"))?;
-        if pending >= MAX_PENDING_PER_FOLDER as i64 {
+        .map_err(|e| format!("Failed to count folder memories: {e}"))?;
+        if accepted >= MAX_ITEMS_PER_FOLDER as i64 {
             return Ok(false);
         }
         let id = format!("ctx-{}", uuid::Uuid::new_v4());
@@ -235,7 +235,7 @@ impl FolderContextRepository {
         sqlx::query(
             "INSERT INTO folder_context_items \
              (id, folder_id, kind, content, source, status, pinned, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, 'extracted', 'pending', 0, ?, ?)",
+             VALUES (?, ?, ?, ?, 'extracted', 'accepted', 0, ?, ?)",
         )
         .bind(&id)
         .bind(folder_id)
@@ -245,7 +245,7 @@ impl FolderContextRepository {
         .bind(&now)
         .execute(pool)
         .await
-        .map_err(|e| format!("Failed to save proposed folder memory: {e}"))?;
+        .map_err(|e| format!("Failed to save learned folder memory: {e}"))?;
         Ok(true)
     }
 
@@ -379,7 +379,7 @@ mod tests {
         sqlx::query(
             "CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, emoji TEXT, \
              parent_id TEXT, favorited_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, \
-             context_in_summaries INTEGER NOT NULL DEFAULT 0, memory_extraction INTEGER NOT NULL DEFAULT 0)",
+             context_in_summaries INTEGER NOT NULL DEFAULT 1, memory_extraction INTEGER NOT NULL DEFAULT 1)",
         )
         .execute(&pool)
         .await
@@ -436,44 +436,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pending_items_are_invisible_until_accepted() {
+    async fn extracted_items_are_accepted_immediately() {
         let pool = test_pool().await;
         assert!(
             FolderContextRepository::insert_pending(&pool, "f1", "note", "Maya owns payments")
                 .await
                 .unwrap()
         );
-        assert!(FolderContextRepository::context_block(&pool, "f1").await.is_none());
         let items = FolderContextRepository::list_items(&pool, "f1").await.unwrap();
-        assert_eq!(items[0].status, "pending");
-        assert!(FolderContextRepository::accept_item(&pool, &items[0].id).await.unwrap());
+        assert_eq!(items[0].status, "accepted");
+        assert_eq!(items[0].source, "extracted");
         let block = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
         assert!(block.contains("Maya owns payments"));
-        // Exact duplicates never re-enter the queue.
+        // Exact duplicates never enter twice, even case-insensitively.
         assert!(
             !FolderContextRepository::insert_pending(&pool, "f1", "note", "maya owns payments")
                 .await
                 .unwrap()
-        );
-        // Reject removes the row entirely.
-        assert!(
-            FolderContextRepository::insert_pending(&pool, "f1", "note", "Ship Friday")
-                .await
-                .unwrap()
-        );
-        let pending = FolderContextRepository::list_items(&pool, "f1")
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|i| i.status == "pending")
-            .unwrap();
-        assert!(FolderContextRepository::reject_item(&pool, &pending.id).await.unwrap());
-        assert!(
-            FolderContextRepository::list_items(&pool, "f1")
-                .await
-                .unwrap()
-                .iter()
-                .all(|i| i.status == "accepted")
         );
     }
 
@@ -496,12 +475,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn toggles_default_off_and_flip() {
+    async fn toggles_default_on_and_flip() {
         let pool = test_pool().await;
-        assert_eq!(FolderContextRepository::folder_toggles(&pool, "f1").await, (false, false));
-        assert!(FolderContextRepository::set_context_in_summaries(&pool, "f1", true).await.unwrap());
-        assert!(FolderContextRepository::set_memory_extraction(&pool, "f1", true).await.unwrap());
         assert_eq!(FolderContextRepository::folder_toggles(&pool, "f1").await, (true, true));
+        assert!(FolderContextRepository::set_context_in_summaries(&pool, "f1", false).await.unwrap());
+        assert!(FolderContextRepository::set_memory_extraction(&pool, "f1", false).await.unwrap());
+        assert_eq!(FolderContextRepository::folder_toggles(&pool, "f1").await, (false, false));
     }
 
     #[tokio::test]
