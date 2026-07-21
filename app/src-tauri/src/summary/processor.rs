@@ -556,6 +556,10 @@ pub async fn generate_meeting_summary(
     // snapshot (None when calendar context is off or there's no match). Injected
     // only into the final templated pass, never the per-chunk prompts.
     meeting_context: Option<&str>,
+    // Pre-rendered `<folder_context>` block from the meeting's folder memory
+    // (None when the folder has no accepted items or the feature is off).
+    // Injected only into the final templated pass, like the calendar block.
+    folder_context: Option<&str>,
 ) -> Result<(String, String, i64), String> {
     // Check cancellation at the start
     if let Some(token) = cancellation_token {
@@ -773,6 +777,15 @@ pub async fn generate_meeting_summary(
             if !mc.is_empty() {
                 final_user_prompt.push_str("\n\nCalendar Meeting Context:\n\n");
                 final_user_prompt.push_str(mc);
+            }
+        }
+
+        // Folder memory (user-curated glossary/preferences/decisions for the
+        // meeting's folder). The block carries its own tags.
+        if let Some(fc) = folder_context {
+            if !fc.is_empty() {
+                final_user_prompt.push_str("\n\n");
+                final_user_prompt.push_str(fc);
             }
         }
 

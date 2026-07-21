@@ -32,6 +32,7 @@ pub struct CustomOpenAIConfig {
 pub mod chat;
 pub mod cleanup;
 pub mod commands;
+pub mod folder_memory;
 pub mod global_chat;
 pub mod language_detection;
 pub mod llm_client;

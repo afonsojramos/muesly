@@ -739,6 +739,40 @@ impl SummaryService {
         )
         .await;
 
+        // Folder membership drives both folder-memory prompt injection (opt-in
+        // via the folder's context_in_summaries toggle) and post-summary memory
+        // proposals (opt-in via memory_extraction).
+        let sidebar_folder_id: Option<String> =
+            sqlx::query_scalar::<_, Option<String>>("SELECT folder_id FROM meetings WHERE id = ?")
+                .bind(&meeting_id)
+                .fetch_optional(&pool)
+                .await
+                .ok()
+                .flatten()
+                .flatten();
+        let folder_toggles = match sidebar_folder_id.as_deref() {
+            Some(folder_id) => {
+                crate::database::repositories::folder_context::FolderContextRepository::folder_toggles(
+                    &pool, folder_id,
+                )
+                .await
+            }
+            None => (false, false),
+        };
+        let folder_context_block = if folder_toggles.0 {
+            match sidebar_folder_id.as_deref() {
+                Some(folder_id) => {
+                    crate::database::repositories::folder_context::FolderContextRepository::context_block(
+                        &pool, folder_id,
+                    )
+                    .await
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+
         // Generate summary
         let client = crate::providers::common::http_client();
         let result = generate_meeting_summary(
@@ -761,6 +795,7 @@ impl SummaryService {
             detected_summary_language.as_deref(),
             None,
             meeting_context_block.as_deref(),
+            folder_context_block.as_deref(),
         )
         .await;
 
@@ -859,6 +894,29 @@ impl SummaryService {
                     }
                     _ => {
                         info!("Summary saved successfully for meeting_id: {}", meeting_id);
+                    }
+                }
+
+                // Opt-in post-summary memory proposals for the meeting's folder.
+                // Runs inline after the terminal DB write: the summary is
+                // already complete in the UI while this small pass finishes.
+                if folder_toggles.1 {
+                    if let Some(folder_id) = sidebar_folder_id.as_deref() {
+                        crate::summary::folder_memory::propose_folder_memories(
+                            &app,
+                            &pool,
+                            folder_id,
+                            &final_markdown,
+                            &provider,
+                            &model_name,
+                            &final_api_key,
+                            ollama_endpoint.as_deref(),
+                            custom_openai_endpoint.as_deref(),
+                            custom_openai_max_tokens,
+                            custom_openai_temperature,
+                            custom_openai_top_p,
+                        )
+                        .await;
                     }
                 }
             }
