@@ -46,6 +46,14 @@ class GlobalChatStore {
 	streamOutcome = $state<StreamOutcome>('idle');
 	/** Folder scope for the next question; null = whole library. */
 	scopeFolderId = $state<string | null>(null);
+	/** True once the user picks a scope; until then the scope follows the route. */
+	scopeIsExplicit = $state(false);
+	/** Folder being viewed, if any (set by the chat bar from the route). */
+	routeFolderId = $state<string | null>(null);
+	/** Effective scope: the user's explicit choice, else the folder in view. */
+	effectiveScopeFolderId = $derived(
+		this.scopeIsExplicit ? this.scopeFolderId : this.routeFolderId,
+	);
 	#genId: string | null = null;
 
 	async send(text?: string, execution?: BarExecution): Promise<void> {
@@ -98,7 +106,7 @@ class GlobalChatStore {
 			provider,
 			model,
 			genId,
-			this.scopeFolderId,
+			this.effectiveScopeFolderId,
 			channel,
 		);
 		if (res.status === 'error' && this.#genId === genId) {

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { Check, Clock3, Folder, Pin, Settings2, Trash2 } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	import Spinner from '$lib/components/Spinner.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
@@ -22,9 +23,16 @@
 
 	let barsOpen = $state(false);
 	let runDialogOpen = $state(false);
+	// Until the user picks a scope, it follows the route: on a folder page the
+	// chat answers from that folder; elsewhere it spans the whole library.
+	$effect(() => {
+		globalChat.routeFolderId =
+			page.url.pathname === '/folder' ? page.url.searchParams.get('id') : null;
+	});
 	const scopeLabel = $derived(
-		globalChat.scopeFolderId
-			? (sidebar.folders.find((f) => f.id === globalChat.scopeFolderId)?.name ?? 'Folder')
+		globalChat.effectiveScopeFolderId
+			? (sidebar.folders.find((f) => f.id === globalChat.effectiveScopeFolderId)?.name ??
+				'Folder')
 			: 'All meetings',
 	);
 	let pendingBar = $state<Bar | null>(null);
@@ -104,8 +112,11 @@
 	{#snippet headerActions()}
 		<Select.Root
 			type="single"
-			value={globalChat.scopeFolderId ?? ''}
-			onValueChange={(value) => (globalChat.scopeFolderId = value === '' ? null : value)}
+			value={globalChat.effectiveScopeFolderId ?? ''}
+			onValueChange={(value) => {
+				globalChat.scopeIsExplicit = true;
+				globalChat.scopeFolderId = value === '' ? null : value;
+			}}
 		>
 			<Select.Trigger
 			class="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground"

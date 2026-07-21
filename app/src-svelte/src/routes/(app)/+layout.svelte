@@ -579,13 +579,14 @@
 
 <!-- Floating chat bar. The per-meeting "Ask anything" chat on the note and
      meeting-details views (during AND after a recording); the "Ask your
-     meetings" global chat on Home. Same pill + panel surface, different store. -->
-{#if page.url.pathname === '/' || page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
+     meetings" global chat on Home and on folder pages, where it scopes itself
+     to the folder in view until the user says otherwise. -->
+{#if page.url.pathname === '/' || page.url.pathname === '/folder' || page.url.pathname === '/note' || page.url.pathname === '/meeting-details'}
 	<div
 		class={cn('fixed bottom-6 z-40 -translate-x-1/2 transition-[left] duration-300')}
 		style={`left: calc(50% + ${sidebar.effectiveWidth / 2}px)`}
 	>
-		{#if page.url.pathname === '/'}
+		{#if page.url.pathname === '/' || page.url.pathname === '/folder'}
 			<GlobalChatBar />
 		{:else}
 			<ChatBar />
