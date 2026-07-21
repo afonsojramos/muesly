@@ -44,6 +44,8 @@ class GlobalChatStore {
 	draft = $state('');
 	isStreaming = $state(false);
 	streamOutcome = $state<StreamOutcome>('idle');
+	/** Folder scope for the next question; null = whole library. */
+	scopeFolderId = $state<string | null>(null);
 	#genId: string | null = null;
 
 	async send(text?: string, execution?: BarExecution): Promise<void> {
@@ -90,7 +92,15 @@ class GlobalChatStore {
 		};
 
 		const { provider, model } = config.modelConfig;
-		const res = await commands.globalChatAsk(question, history, provider, model, genId, channel);
+		const res = await commands.globalChatAsk(
+			question,
+			history,
+			provider,
+			model,
+			genId,
+			this.scopeFolderId,
+			channel,
+		);
 		if (res.status === 'error' && this.#genId === genId) {
 			if (!assistant.content) assistant.content = `⚠️ ${res.error}`;
 			toast.error('Chat failed', { description: res.error });

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Check, Clock3, Pin, Settings2, Trash2 } from '@lucide/svelte';
+	import { Check, Clock3, Folder, Pin, Settings2, Trash2 } from '@lucide/svelte';
 	import { goto } from '$app/navigation';
 
 	import Spinner from '$lib/components/Spinner.svelte';
@@ -8,7 +8,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
+	import * as Select from '$lib/components/ui/select';
 	import { globalChat, type GlobalChatMessage } from '$lib/stores/global-chat.svelte';
+	import { sidebar } from '$lib/stores/sidebar.svelte';
 	import { bars } from '$lib/stores/bars.svelte';
 	import { barCommandSlugs, barIcon, type Bar } from '$lib/bars/catalog';
 	import { barVariables } from '$lib/bars/variables';
@@ -20,6 +22,11 @@
 
 	let barsOpen = $state(false);
 	let runDialogOpen = $state(false);
+	const scopeLabel = $derived(
+		globalChat.scopeFolderId
+			? (sidebar.folders.find((f) => f.id === globalChat.scopeFolderId)?.name ?? 'Folder')
+			: 'All meetings',
+	);
 	let pendingBar = $state<Bar | null>(null);
 	let pendingOpen: (() => void) | null = null;
 	let pendingAdditionalInstructions = '';
@@ -95,6 +102,29 @@
 	hideEmptyBubbleWhileStreaming
 >
 	{#snippet headerActions()}
+		<Select.Root
+			type="single"
+			value={globalChat.scopeFolderId ?? ''}
+			onValueChange={(value) => (globalChat.scopeFolderId = value === '' ? null : value)}
+		>
+			<Select.Trigger
+			class="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground"
+				aria-label="Chat scope"
+			>
+				<Folder class="size-3.5" />
+				{scopeLabel}
+			</Select.Trigger>
+			<Select.Content>
+				<Select.Group>
+					<Select.Item value="" label="All meetings">All meetings</Select.Item>
+					{#each sidebar.folders as folder (folder.id)}
+						<Select.Item value={folder.id} label={folder.name}>
+							{folder.emoji}{folder.name}
+						</Select.Item>
+					{/each}
+				</Select.Group>
+			</Select.Content>
+		</Select.Root>
 		<Button
 			variant="ghost"
 			size="icon-sm"
