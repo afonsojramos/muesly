@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { Pin, PinOff, Plus, Trash2 } from '@lucide/svelte';
 
 	import { cn } from '$lib/utils';
@@ -83,7 +84,20 @@
 				<li class="flex items-center gap-2 py-2">
 					<Badge variant="outline" class="shrink-0">{KIND_LABELS[item.kind] ?? item.kind}</Badge>
 					{#if item.source === 'extracted'}
-						<Badge variant="secondary" class="shrink-0 text-[10px]">Auto</Badge>
+						{#if item.source_meeting_id && item.source_meeting_title}
+							<button
+								type="button"
+								class="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+								title={`Learned from “${item.source_meeting_title}” — open meeting`}
+								onclick={() => void goto(`/meeting-details?id=${item.source_meeting_id}`)}
+							>
+								Auto · {item.source_meeting_title.length > 24
+									? `${item.source_meeting_title.slice(0, 24)}…`
+									: item.source_meeting_title}
+							</button>
+						{:else}
+							<Badge variant="secondary" class="shrink-0 text-[10px]">Auto</Badge>
+						{/if}
 					{/if}
 					<p class={cn('min-w-0 flex-1 text-sm text-foreground', !item.pinned && 'pl-0')}>
 						{item.content}
