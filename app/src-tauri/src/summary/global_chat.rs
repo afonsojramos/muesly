@@ -757,9 +757,12 @@ pub async fn global_chat_ask<R: Runtime>(
     }
     // Folder memory arrives after the deterministic reads: late enough in the
     // evidence list that the budget trimmer (which drops from the front) keeps
-    // it, and close to the question where small models attend best.
+    // it, and close to the question where small models attend best. Ranked for
+    // the question so relevant memories survive the block cap in big folders.
     if let Some(folder_id) = folder_id.as_deref() {
-        if let Some(block) = FolderContextRepository::context_block(&pool, folder_id).await {
+        if let Some(block) =
+            FolderContextRepository::context_block_for_query(&pool, folder_id, &question).await
+        {
             evidence.push(block);
         }
     }

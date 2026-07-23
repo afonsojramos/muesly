@@ -418,6 +418,66 @@ impl FolderContextRepository {
                 .map(|(kind, content, _)| (kind.as_str(), content.as_str())),
         )
     }
+
+    /// Like [`Self::context_block`], but ranked for a specific question so
+    /// relevant memories survive the size cap in large folders: pinned items
+    /// always lead, then items sharing more words with the query, newest
+    /// breaking ties. With few memories the cap never bites and the result is
+    /// equivalent to the plain block.
+    pub async fn context_block_for_query(
+        pool: &SqlitePool,
+        folder_id: &str,
+        query: &str,
+    ) -> Option<String> {
+        let items = sqlx::query_as::<_, (String, String, i64)>(
+            "SELECT kind, content, pinned FROM folder_context_items \
+             WHERE folder_id = ? AND status = 'accepted' \
+             ORDER BY pinned DESC, created_at DESC",
+        )
+        .bind(folder_id)
+        .fetch_all(pool)
+        .await
+        .ok()?;
+        let ranked = rank_for_query(items, query);
+        render_context_block(
+            ranked
+                .iter()
+                .map(|(kind, content, _)| (kind.as_str(), content.as_str())),
+        )
+    }
+}
+
+/// Distinct lowercase word tokens (3+ chars) — short/stop-ish words carry no
+/// ranking signal and would reward filler matches.
+fn query_tokens(text: &str) -> std::collections::HashSet<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() >= 3)
+        .map(str::to_string)
+        .collect()
+}
+
+/// Stable rank of `(kind, content, pinned)` rows (arriving pinned-first,
+/// newest-first) by pinned status then query-word overlap; stability keeps
+/// recency as the tiebreak.
+fn rank_for_query(
+    items: Vec<(String, String, i64)>,
+    query: &str,
+) -> Vec<(String, String, i64)> {
+    let tokens = query_tokens(query);
+    if tokens.is_empty() {
+        return items;
+    }
+    let mut scored: Vec<(usize, (String, String, i64))> = items
+        .into_iter()
+        .map(|item| {
+            let content = item.1.to_lowercase();
+            let matches = tokens.iter().filter(|token| content.contains(*token)).count();
+            (matches, item)
+        })
+        .collect();
+    scored.sort_by(|a, b| (b.1.2 != 0, b.0).cmp(&(a.1.2 != 0, a.0)));
+    scored.into_iter().map(|(_, item)| item).collect()
 }
 
 #[cfg(test)]
@@ -624,5 +684,53 @@ mod tests {
         let block = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
         assert!(block.len() < MAX_BLOCK_CHARS + 200);
         assert!(block.contains("<folder_context>"));
+    }
+
+    #[test]
+    fn query_ranking_prefers_pinned_then_matches_then_recency() {
+        // Input arrives pinned-first, newest-first (the SQL order).
+        let items = vec![
+            ("note".to_string(), "Pinned but unrelated".to_string(), 1),
+            ("note".to_string(), "Newest filler".to_string(), 0),
+            ("note".to_string(), "Maya owns payments and refunds".to_string(), 0),
+            ("note".to_string(), "Oldest filler".to_string(), 0),
+        ];
+        let ranked = rank_for_query(items.clone(), "who owns payments?");
+        // Pinned stays first even without matches; the matching memory beats
+        // newer non-matching ones; ties keep recency order.
+        assert_eq!(ranked[0].1, "Pinned but unrelated");
+        assert_eq!(ranked[1].1, "Maya owns payments and refunds");
+        assert_eq!(ranked[2].1, "Newest filler");
+        assert_eq!(ranked[3].1, "Oldest filler");
+        // No usable query tokens → original order untouched.
+        assert_eq!(rank_for_query(items.clone(), "a?"), items);
+    }
+
+    #[tokio::test]
+    async fn query_block_keeps_relevant_memories_under_the_cap() {
+        let pool = test_pool().await;
+        for index in 0..40 {
+            let content = format!("filler memory {index} {}", "x".repeat(100));
+            FolderContextRepository::save_item(&pool, &input(&content)).await.unwrap();
+        }
+        // Oldest item, same size as the fillers so the cap genuinely drops it
+        // from the plain block while ranking rescues it.
+        let relevant = format!("Maya owns payments {}", "y".repeat(100));
+        sqlx::query(
+            "UPDATE folder_context_items SET content = ?, \
+             created_at = '2000-01-01T00:00:00Z' WHERE content LIKE 'filler memory 0 %'",
+        )
+        .bind(&relevant)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let plain = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
+        assert!(!plain.contains("Maya owns payments"));
+        let ranked =
+            FolderContextRepository::context_block_for_query(&pool, "f1", "who owns payments?")
+                .await
+                .unwrap();
+        assert!(ranked.contains("Maya owns payments"));
+        assert!(ranked.len() < MAX_BLOCK_CHARS + 200);
     }
 }
