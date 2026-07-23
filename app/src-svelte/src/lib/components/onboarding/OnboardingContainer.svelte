@@ -4,6 +4,7 @@
 	import { ChevronLeft, ChevronRight } from '@lucide/svelte';
 	import { cn } from '$lib/utils';
 	import { onboarding } from '$lib/stores/onboarding.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import ProgressIndicator from './shared/ProgressIndicator.svelte';
 
@@ -63,7 +64,8 @@
 					<div
 						class="absolute top-1/2 -translate-y-1/2 left-0 right-0 flex justify-between pointer-events-none"
 					>
-						<Button
+						<IconButton
+							label="Previous step"
 							variant="outline"
 							size="icon"
 							onclick={handlePrevious}
@@ -74,12 +76,12 @@
 									? 'hover:bg-secondary hover:shadow-md hover:scale-110'
 									: 'opacity-0 cursor-not-allowed',
 							)}
-							aria-label="Previous step"
 						>
 							<ChevronLeft />
-						</Button>
+						</IconButton>
 
-						<Button
+						<IconButton
+							label="Next step"
 							variant="outline"
 							size="icon"
 							onclick={handleNext}
@@ -90,10 +92,9 @@
 									? 'hover:bg-secondary hover:shadow-md hover:scale-110'
 									: 'opacity-0 cursor-not-allowed',
 							)}
-							aria-label="Next step"
 						>
 							<ChevronRight />
-						</Button>
+						</IconButton>
 					</div>
 				{/if}
 

@@ -33,6 +33,7 @@
 	import { bars } from '$lib/stores/bars.svelte';
 	import { globalChat } from '$lib/stores/global-chat.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Card from '$lib/components/ui/card';
@@ -315,16 +316,16 @@
 								</div>
 								{#if tab === 'menu'}
 									<Card.Action>
-										<Button
+										<IconButton
+											label={`${bars.isPinned(bar) ? 'Unpin' : 'Pin'} ${bar.title}`}
 											variant={bars.isPinned(bar) ? 'secondary' : 'ghost'}
 											size="icon"
 											class="pointer-events-auto size-10 text-muted-foreground"
 											onclick={(event) => togglePinned(event, bar)}
-											aria-label={`${bars.isPinned(bar) ? 'Unpin' : 'Pin'} ${bar.title}`}
 											aria-pressed={bars.isPinned(bar)}
 										>
 											{#if bars.isPinned(bar)}<PinOff data-icon />{:else}<Pin data-icon />{/if}
-										</Button>
+										</IconButton>
 									</Card.Action>
 								{:else if bar.source !== 'user'}
 									<Card.Action>

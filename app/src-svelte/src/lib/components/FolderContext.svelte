@@ -9,6 +9,7 @@
 		folderContext,
 		type FolderContextKind,
 	} from '$lib/stores/folder-context.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
@@ -87,10 +88,8 @@
 					<p class={cn('min-w-0 flex-1 text-sm text-foreground', !item.pinned && 'pl-0')}>
 						{item.content}
 					</p>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label={item.pinned ? 'Unpin memory' : 'Pin memory'}
+					<IconButton
+						label={item.pinned ? 'Unpin' : 'Pin to the top'}
 						onclick={() => void togglePin(item)}
 					>
 						{#if item.pinned}
@@ -98,15 +97,10 @@
 						{:else}
 							<Pin class="size-4 text-muted-foreground" />
 						{/if}
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						aria-label="Delete memory"
-						onclick={() => void folderContext.remove(folderId, item.id)}
-					>
+					</IconButton>
+					<IconButton label="Delete" onclick={() => void folderContext.remove(folderId, item.id)}>
 						<Trash2 class="size-4 text-muted-foreground" />
-					</Button>
+					</IconButton>
 				</li>
 			{/each}
 		</ul>

@@ -11,6 +11,7 @@
 	import { emit } from '@tauri-apps/api/event';
 
 	import type { RecentChatThread } from '$lib/bindings';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Dialog from '$lib/components/ui/dialog';
@@ -277,15 +278,13 @@
 	overlayActive={barsOpen || recentOpen || clearConfirmOpen || runDialogOpen}
 >
 	{#snippet headerActions()}
-		<Button
-			variant="ghost"
-			size="icon-sm"
+		<IconButton
+			label="Clear conversation"
 			class="text-muted-foreground hover:text-destructive"
 			onclick={() => (clearConfirmOpen = true)}
-			aria-label="Clear conversation"
 		>
 			<Trash2 data-icon />
-		</Button>
+		</IconButton>
 	{/snippet}
 
 	{#snippet detachedRail()}

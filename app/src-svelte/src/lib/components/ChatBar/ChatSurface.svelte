@@ -53,6 +53,7 @@
 	import { cn } from '$lib/utils';
 	import { getStreamAnnouncement } from '$lib/chat/stream';
 	import { parseBarCommandDraft } from '$lib/bars/execution';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import MarkdownContent from '$lib/components/MarkdownContent.svelte';
@@ -288,14 +289,9 @@
 				<span class="text-sm font-medium">{title}</span>
 				<div class="flex items-center gap-1">
 					{@render headerActions?.()}
-					<Button
-						variant="ghost"
-						size="icon-sm"
-						onclick={() => (open = false)}
-						aria-label="Collapse conversation"
-					>
+					<IconButton label="Collapse" onclick={() => (open = false)}>
 						<ChevronDown data-icon />
-					</Button>
+					</IconButton>
 				</div>
 			</div>
 			<!-- Plain overflow container: ScrollArea's viewport never receives a
@@ -352,42 +348,39 @@
 										<div
 											class="flex items-center gap-1 px-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover/message:opacity-100 sm:focus-within:opacity-100"
 										>
-											<Button
-												variant="ghost"
+											<IconButton
+												label={copiedMessageId === message.id ? 'Copied' : 'Copy response'}
 												size="icon"
 												class="size-10 text-muted-foreground"
 												onclick={() => void copyMessage(message)}
-												aria-label="Copy response"
 											>
 												{#if copiedMessageId === message.id}<Check data-icon />{:else}<Copy
 														data-icon
 													/>{/if}
-											</Button>
+											</IconButton>
 											{#if onInsertIntoNotes}
 												{@const insertDisabled = insertionDisabled(message.id, insertionVersion)}
-												<Button
-													variant="ghost"
+												<IconButton
+													label={insertionGuard.isPending(message.id)
+														? 'Inserting into notes…'
+														: 'Insert response into notes'}
 													size="icon"
 													class="size-10 text-muted-foreground"
 													disabled={insertDisabled}
 													onclick={() => void insertIntoNotes(message)}
-													aria-label={insertionGuard.isPending(message.id)
-														? 'Inserting response into notes'
-														: 'Insert response into notes'}
 												>
 													<NotebookPen data-icon />
-												</Button>
+												</IconButton>
 											{/if}
 											{#if message.barPrompt && controller.rerun}
-												<Button
-													variant="ghost"
+												<IconButton
+													label="Run bar again"
 													size="icon"
 													class="size-10 text-muted-foreground"
 													onclick={() => controller.rerun?.(message)}
-													aria-label="Run bar again"
 												>
 													<RotateCcw data-icon />
-												</Button>
+												</IconButton>
 											{/if}
 										</div>
 									{/if}
@@ -486,25 +479,26 @@
 			/>
 
 			{#if controller.isStreaming}
-				<Button
+				<IconButton
+					label="Stop generating"
 					variant="secondary"
 					size="icon"
 					class="shrink-0 rounded-full"
 					onclick={() => controller.stop()}
-					aria-label="Stop generating"
 				>
 					<Square data-icon />
-				</Button>
+				</IconButton>
 			{:else}
-				<Button
+				<IconButton
+					label="Send"
+					variant="default"
 					size="icon"
 					class="shrink-0 rounded-full"
 					disabled={!controller.draft.trim()}
 					onclick={submit}
-					aria-label="Send"
 				>
 					<ArrowUp data-icon />
-				</Button>
+				</IconButton>
 			{/if}
 		</div>
 	</div>

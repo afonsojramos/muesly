@@ -8,6 +8,7 @@
 	import * as Accordion from '$lib/components/ui/accordion';
 	import * as Field from '$lib/components/ui/field';
 	import { Badge } from '$lib/components/ui/badge';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import WhisperModelManager from './WhisperModelManager.svelte';
@@ -195,18 +196,17 @@
 									onblur={config.flushCustomVocabulary}
 								/>
 							</Field.Field>
-							<Button
-								variant="ghost"
+							<IconButton
+								label={`Remove ${entry.to.trim() || 'empty preferred term'}`}
 								size="icon"
 								class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
-								aria-label={`Remove ${entry.to.trim() || 'empty preferred term'}`}
 								onclick={() => {
 									const updated = config.customVocabulary.filter((_, idx) => idx !== i);
 									config.setCustomVocabulary(updated);
 								}}
 							>
 								<X data-icon />
-							</Button>
+							</IconButton>
 						</div>
 
 						<Accordion.Root type="single" class="mt-2">
@@ -262,17 +262,16 @@
 																		: `${learned.observations}/2 learning`}
 																</span>
 															</Badge>
-															<Button
-																variant="ghost"
+															<IconButton
+																label={`Remove learned correction ${learned.from}`}
 																size="icon"
 																class="h-10 w-10 text-muted-foreground transition-transform active:scale-[0.96] hover:text-destructive"
-																aria-label={`Remove learned correction ${learned.from}`}
 																onclick={() => {
 																	void config.removeLearnedVocabularyAlias(entry.to, learned.from);
 																}}
 															>
 																<X data-icon />
-															</Button>
+															</IconButton>
 														</div>
 													</div>
 												{/each}

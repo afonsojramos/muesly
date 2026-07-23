@@ -7,6 +7,7 @@
 
 	import { backgroundTasks, type BackgroundTask } from '$lib/stores/background-tasks.svelte';
 	import Spinner from '$lib/components/Spinner.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Popover from '$lib/components/ui/popover';
 	import { Progress } from '$lib/components/ui/progress';
@@ -114,15 +115,14 @@
 							{/if}
 						</button>
 						{#if task.status !== 'running'}
-							<Button
-								variant="ghost"
+							<IconButton
+								label="Dismiss task"
 								size="icon-xs"
 								class="flex-shrink-0 text-muted-foreground"
 								onclick={() => backgroundTasks.dismiss(task.id)}
-								aria-label="Dismiss task"
 							>
 								<X />
-							</Button>
+							</IconButton>
 						{/if}
 					</div>
 				{/each}

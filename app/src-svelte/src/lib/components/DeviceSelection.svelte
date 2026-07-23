@@ -18,6 +18,7 @@
 	import { track } from '$lib/analytics-events';
 	import { getDeviceMetadata } from '$lib/utils/device-metadata';
 	import { cn } from '$lib/utils';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import * as Select from '$lib/components/ui/select';
@@ -127,16 +128,15 @@
 	<div class="flex flex-col gap-4">
 		<div class="flex items-center justify-between">
 			<h4 class="text-sm font-medium">Audio Devices</h4>
-			<Button
-				variant="ghost"
+			<IconButton
+				label="Refresh devices"
 				size="icon"
 				class="size-8"
 				onclick={handleRefresh}
 				disabled={refreshing || disabled}
-				aria-label="Refresh devices"
 			>
 				<RefreshCw class={cn(refreshing && 'animate-spin')} />
-			</Button>
+			</IconButton>
 		</div>
 
 		{#if error}

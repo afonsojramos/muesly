@@ -6,6 +6,7 @@
 
 	import Spinner from '$lib/components/Spinner.svelte';
 	import MueslyBar from '$lib/components/icons/MueslyBar.svelte';
+	import IconButton from '$lib/components/IconButton.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Command from '$lib/components/ui/command';
 	import * as Popover from '$lib/components/ui/popover';
@@ -136,16 +137,14 @@
 				</Select.Group>
 			</Select.Content>
 		</Select.Root>
-		<Button
-			variant="ghost"
-			size="icon-sm"
+		<IconButton
+			label="Clear conversation"
 			class="text-muted-foreground hover:text-destructive"
 			disabled={globalChat.isStreaming}
 			onclick={() => globalChat.clear()}
-			aria-label="Clear conversation"
 		>
 			<Trash2 data-icon />
-		</Button>
+		</IconButton>
 	{/snippet}
 
 	{#snippet rail({ open })}
