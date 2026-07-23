@@ -110,7 +110,7 @@ async fn clear_seed(pool: &SqlitePool) {
             .await
             .unwrap_or_else(|e| fail(format!("clear {table}: {e}")));
     }
-    for table in ["meetings", "folders"] {
+    for table in ["folder_context_items", "meetings", "folders"] {
         let sql = format!("DELETE FROM {table} WHERE id LIKE ?");
         sqlx::query(AssertSqlSafe(sql))
             .bind(format!("{SEED_PREFIX}%"))
@@ -168,6 +168,75 @@ const FOLDERS: &[SeedFolder] = &[
         emoji: "👥",
         parent: Some("seed-folder-work"),
         favorite: false,
+    },
+];
+
+struct SeedMemory {
+    id: &'static str,
+    folder: &'static str,
+    kind: &'static str,
+    content: &'static str,
+    /// "user" or "extracted" (extracted renders the Auto badge).
+    source: &'static str,
+    pinned: bool,
+}
+
+const MEMORIES: &[SeedMemory] = &[
+    SeedMemory {
+        id: "seed-mem-work-atlas",
+        folder: "seed-folder-work",
+        kind: "glossary",
+        content: "Atlas = the Kubernetes migration project",
+        source: "user",
+        pinned: true,
+    },
+    SeedMemory {
+        id: "seed-mem-work-decision",
+        folder: "seed-folder-work",
+        kind: "decision",
+        content: "Ship the beta on March 10; analytics milestone follows in Q3",
+        source: "extracted",
+        pinned: false,
+    },
+    SeedMemory {
+        id: "seed-mem-work-maya",
+        folder: "seed-folder-work",
+        kind: "note",
+        content: "Maya owns payments and the mobile launch budget",
+        source: "extracted",
+        pinned: false,
+    },
+    SeedMemory {
+        id: "seed-mem-work-pref",
+        folder: "seed-folder-work",
+        kind: "preference",
+        content: "Always list decisions before action items in summaries",
+        source: "user",
+        pinned: false,
+    },
+    SeedMemory {
+        id: "seed-mem-work-search",
+        folder: "seed-folder-work",
+        kind: "note",
+        content: "Search rollout revisits after the budget review",
+        source: "extracted",
+        pinned: false,
+    },
+    SeedMemory {
+        id: "seed-mem-1on1-alex",
+        folder: "seed-folder-1on1s",
+        kind: "note",
+        content: "Alex prefers written follow-ups over ad-hoc calls",
+        source: "extracted",
+        pinned: false,
+    },
+    SeedMemory {
+        id: "seed-mem-personal-dentist",
+        folder: "seed-folder-personal",
+        kind: "note",
+        content: "Dentist follow-up is due in six months",
+        source: "user",
+        pinned: false,
     },
 ];
 
@@ -400,8 +469,8 @@ async fn seed(pool: &SqlitePool) {
         let ts = now.to_rfc3339();
         let favorited_at = f.favorite.then(|| ts.clone());
         sqlx::query(
-            "INSERT INTO folders (id, name, emoji, parent_id, favorited_at, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO folders (id, name, emoji, parent_id, favorited_at, created_at, updated_at, context_in_summaries, memory_extraction) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)",
         )
         .bind(f.id)
         .bind(f.name)
@@ -413,6 +482,29 @@ async fn seed(pool: &SqlitePool) {
         .execute(pool)
         .await
         .unwrap_or_else(|e| fail(format!("insert folder {}: {e}", f.id)));
+    }
+
+    // Folder memory items (user-authored and auto-learned), so the folder
+    // page's Memory section, the scoped AI bar, and summary injection all
+    // have realistic content to work with.
+    let memory_ts = now.to_rfc3339();
+    for mem in MEMORIES {
+        sqlx::query(
+            "INSERT INTO folder_context_items \
+             (id, folder_id, kind, content, source, status, pinned, created_at, updated_at) \
+             VALUES (?, ?, ?, ?, ?, 'accepted', ?, ?, ?)",
+        )
+        .bind(mem.id)
+        .bind(mem.folder)
+        .bind(mem.kind)
+        .bind(mem.content)
+        .bind(mem.source)
+        .bind(mem.pinned as i64)
+        .bind(&memory_ts)
+        .bind(&memory_ts)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| fail(format!("insert folder memory {}: {e}", mem.id)));
     }
 
     for m in MEETINGS {
