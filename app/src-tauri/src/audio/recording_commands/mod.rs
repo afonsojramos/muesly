@@ -199,6 +199,26 @@ async fn calendar_recording_context<R: Runtime>(
             terms.push(name.to_string());
         }
     }
+    // When the event is pre-assigned to a folder, that folder's glossary biases
+    // the FIRST transcription too, not just later re-transcriptions. The prompt
+    // budget upstream caps the extra terms.
+    if let Some(uid) = resolved.candidate.ical_uid.as_deref() {
+        let uid = crate::calendar::dedup::norm_uid(uid);
+        let minute = crate::calendar::dedup::minute_bucket(resolved.candidate.start);
+        if let Ok(Some(folder_id)) =
+            crate::database::repositories::calendar_event_rules::CalendarEventRulesRepository::folder_for(
+                &pool, &uid, minute,
+            )
+            .await
+        {
+            terms.extend(
+                crate::database::repositories::folder_context::FolderContextRepository::glossary_terms(
+                    &pool, &folder_id,
+                )
+                .await,
+            );
+        }
+    }
     (title_override, terms)
 }
 
