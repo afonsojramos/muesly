@@ -50,6 +50,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import ParticipantsTooltip from '$lib/components/ParticipantsTooltip.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
+	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import NotesView from './NotesView.svelte';
 	import RetranscribeDialog from './RetranscribeDialog.svelte';
 
@@ -801,7 +802,7 @@
 
 			<div
 				class={cn(
-					'min-h-0 flex-1 overflow-y-auto px-8 pb-32 pt-2',
+					'min-h-0 flex-1 overflow-y-auto px-8 pt-2',
 					notesMode !== 'notes' && 'hidden',
 				)}
 			>
@@ -811,6 +812,7 @@
 					{notesMarkdown}
 					onSave={handleSaveNotes}
 				/>
+				<ChatBarSpacer />
 			</div>
 		</div>
 	</div>

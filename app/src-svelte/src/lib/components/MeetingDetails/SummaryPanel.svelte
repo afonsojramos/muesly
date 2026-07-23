@@ -7,6 +7,7 @@
 	import type { Template } from '$lib/hooks/use-templates.svelte';
 	import { Analytics } from '$lib/analytics';
 	import { Button } from '$lib/components/ui/button';
+	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import EmptyStateSummary from '$lib/components/EmptyStateSummary.svelte';
 	import SummaryView from '$lib/components/SummaryView.svelte';
 	import SummaryGeneratorButtonGroup from './SummaryGeneratorButtonGroup.svelte';
@@ -131,8 +132,8 @@
 	{:else}
 		<!-- Show the summary whenever one exists — gating on transcripts hid a valid
 		     summary when its rows failed to load or were deleted. -->
-		<div class="min-h-0 flex-1 scroll-pb-32 overflow-y-auto">
-			<div class="w-full px-8 pb-32 pt-4">
+		<div class="min-h-0 flex-1 scroll-pb-24 overflow-y-auto">
+			<div class="w-full px-8 pt-4">
 				<SummaryView
 					bind:this={summaryView}
 					summaryData={aiSummary}
@@ -157,6 +158,8 @@
 						</Button>
 					</div>
 				{/if}
+
+				<ChatBarSpacer />
 			</div>
 		</div>
 	{/if}

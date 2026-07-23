@@ -5,6 +5,7 @@
 	import { goto } from '$app/navigation';
 
 	import { navigate, goHome } from '$lib/navigation';
+	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import FolderContext from '$lib/components/FolderContext.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
@@ -128,7 +129,7 @@
 	</div>
 
 	<div class="min-h-0 flex-1 overflow-y-auto">
-		<div class="mx-auto max-w-3xl p-8 pt-6">
+		<div class="mx-auto max-w-3xl px-8 pt-6">
 			{#if !folder}
 				<!-- Folder missing: deleted, or opened via a stale link. -->
 				<div class="flex flex-col items-center gap-3 py-24 text-center">
@@ -196,6 +197,8 @@
 					</div>
 				{/if}
 			{/if}
+
+			<ChatBarSpacer />
 		</div>
 	</div>
 </div>

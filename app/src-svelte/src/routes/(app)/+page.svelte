@@ -15,6 +15,7 @@
 
 	import { useTranscriptRecovery } from '$lib/hooks/use-transcript-recovery.svelte';
 
+	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import ComingUp from '$lib/components/home/ComingUp.svelte';
 	import TranscriptRecovery from '$lib/components/TranscriptRecovery/TranscriptRecovery.svelte';
 
@@ -143,7 +144,7 @@
 	<div data-tauri-drag-region="deep" class="h-8 flex-shrink-0"></div>
 
 	<div class="flex-1 overflow-y-auto">
-		<div class="mx-auto w-full max-w-[820px] px-8 pb-24 pt-4">
+		<div class="mx-auto w-full max-w-[820px] px-8 pt-4">
 			<ComingUp />
 
 			{#each noteGroups as group (group.label)}
@@ -193,6 +194,8 @@
 					No notes yet. Start a recording to create one.
 				</div>
 			{/if}
+
+			<ChatBarSpacer />
 		</div>
 	</div>
 </div>
