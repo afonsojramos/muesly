@@ -64,38 +64,6 @@ pub async fn api_delete_folder_context_item<R: Runtime>(
 
 #[tauri::command]
 #[specta::specta]
-pub async fn api_accept_folder_memory<R: Runtime>(
-    _app: AppHandle<R>,
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    if !FolderContextRepository::accept_item(state.db_manager.pool(), id.trim())
-        .await
-        .map_err(|e| format!("Failed to accept folder memory: {e}"))?
-    {
-        return Err("Proposed folder memory not found or already reviewed".to_string());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub async fn api_reject_folder_memory<R: Runtime>(
-    _app: AppHandle<R>,
-    state: tauri::State<'_, AppState>,
-    id: String,
-) -> Result<(), String> {
-    if !FolderContextRepository::reject_item(state.db_manager.pool(), id.trim())
-        .await
-        .map_err(|e| format!("Failed to reject folder memory: {e}"))?
-    {
-        return Err("Proposed folder memory not found".to_string());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
 pub async fn api_get_folder_context_toggles<R: Runtime>(
     _app: AppHandle<R>,
     state: tauri::State<'_, AppState>,

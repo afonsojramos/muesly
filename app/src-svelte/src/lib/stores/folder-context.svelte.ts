@@ -1,11 +1,11 @@
 /**
  * Folder context store ("folder memory").
  *
- * User-curated items (notes, glossary, preferences, decisions) attached to a
- * sidebar folder, plus the accept/reject queue for memories proposed by the
- * post-summary extraction pass. Prompt injection happens entirely in Rust;
- * this store only mirrors the data for the folder page and listens for the
- * `folder-memory-proposed` event (a global Tauri event, owned here so it
+ * User-curated and auto-learned items (notes, glossary, preferences,
+ * decisions) attached to a sidebar folder. Prompt injection and the
+ * post-summary reconciliation pass happen entirely in Rust; this store only
+ * mirrors the data for the folder page and listens for the
+ * `folder-memory-updated` event (a global Tauri event, owned here so it
  * outlives any view).
  */
 
@@ -30,14 +30,22 @@ class FolderContextStore {
 	#ensureListener(): void {
 		if (this.#listening) return;
 		this.#listening = true;
-		void listen<{ folder_id: string; count: number }>('folder-memory-proposed', (event) => {
-			const folderId = event.payload.folder_id;
-			void this.load(folderId);
-			toast.info(
-				`Learned ${event.payload.count} new ${event.payload.count === 1 ? 'memory' : 'memories'}`,
-				{ description: 'See them in the folder’s Memory section.' },
-			);
-		});
+		void listen<{ folder_id: string; added: number; updated: number; deleted: number }>(
+			'folder-memory-updated',
+			(event) => {
+				const { folder_id: folderId, added, updated, deleted } = event.payload;
+				void this.load(folderId);
+				const parts = [
+					added > 0 ? `${added} learned` : null,
+					updated > 0 ? `${updated} refined` : null,
+					deleted > 0 ? `${deleted} retired` : null,
+				].filter((part) => part !== null);
+				if (parts.length === 0) return;
+				toast.info(`Folder memory updated: ${parts.join(', ')}`, {
+					description: 'See the folder’s Memory section.',
+				});
+			},
+		);
 	}
 
 	async load(folderId: string): Promise<void> {
@@ -73,24 +81,6 @@ class FolderContextStore {
 		await this.load(folderId);
 	}
 
-	async accept(folderId: string, id: string): Promise<void> {
-		const res = await commands.apiAcceptFolderMemory(id);
-		if (res.status === 'error') {
-			toast.error('Failed to accept memory', { description: res.error });
-			return;
-		}
-		await this.load(folderId);
-	}
-
-	async reject(folderId: string, id: string): Promise<void> {
-		const res = await commands.apiRejectFolderMemory(id);
-		if (res.status === 'error') {
-			toast.error('Failed to reject memory', { description: res.error });
-			return;
-		}
-		await this.load(folderId);
-	}
-
 	async setInSummaries(folderId: string, enabled: boolean): Promise<void> {
 		const res = await commands.apiSetFolderContextInSummaries(folderId, enabled);
 		if (res.status === 'error') {
@@ -115,10 +105,6 @@ class FolderContextStore {
 			context_in_summaries: current?.context_in_summaries ?? false,
 			memory_extraction: enabled,
 		};
-	}
-
-	pendingFor(folderId: string): FolderContextItem[] {
-		return (this.items[folderId] ?? []).filter((item) => item.status === 'pending');
 	}
 
 	acceptedFor(folderId: string): FolderContextItem[] {

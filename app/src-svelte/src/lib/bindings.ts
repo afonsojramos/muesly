@@ -286,8 +286,6 @@ export const commands = {
 	apiListFolderContext: (folderId: string) => typedError<FolderContextItem[], string>(__TAURI_INVOKE("api_list_folder_context", { folderId })),
 	apiSaveFolderContextItem: (input: FolderContextInput) => typedError<FolderContextItem, string>(__TAURI_INVOKE("api_save_folder_context_item", { input })),
 	apiDeleteFolderContextItem: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_delete_folder_context_item", { id })),
-	apiAcceptFolderMemory: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_accept_folder_memory", { id })),
-	apiRejectFolderMemory: (id: string) => typedError<null, string>(__TAURI_INVOKE("api_reject_folder_memory", { id })),
 	apiGetFolderContextToggles: (folderId: string) => typedError<FolderContextToggles, string>(__TAURI_INVOKE("api_get_folder_context_toggles", { folderId })),
 	apiSetFolderContextInSummaries: (folderId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("api_set_folder_context_in_summaries", { folderId, enabled })),
 	apiSetFolderMemoryExtraction: (folderId: string, enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("api_set_folder_memory_extraction", { folderId, enabled })),
@@ -1038,6 +1036,12 @@ export type FolderContextItem = {
 	pinned: boolean,
 	created_at: string,
 	updated_at: string,
+	/**
+	 *  Meeting this memory was learned from (extracted items only; None once
+	 *  the source meeting is permanently deleted).
+	 */
+	source_meeting_id: string | null,
+	source_meeting_title: string | null,
 };
 
 export type FolderContextToggles = {

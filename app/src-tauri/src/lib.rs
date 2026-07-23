@@ -1118,8 +1118,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         api::folder_context::api_list_folder_context::<tauri::Wry>,
         api::folder_context::api_save_folder_context_item::<tauri::Wry>,
         api::folder_context::api_delete_folder_context_item::<tauri::Wry>,
-        api::folder_context::api_accept_folder_memory::<tauri::Wry>,
-        api::folder_context::api_reject_folder_memory::<tauri::Wry>,
         api::folder_context::api_get_folder_context_toggles::<tauri::Wry>,
         api::folder_context::api_set_folder_context_in_summaries::<tauri::Wry>,
         api::folder_context::api_set_folder_memory_extraction::<tauri::Wry>,

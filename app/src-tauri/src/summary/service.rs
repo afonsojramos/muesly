@@ -897,26 +897,39 @@ impl SummaryService {
                     }
                 }
 
-                // Opt-in post-summary memory proposals for the meeting's folder.
-                // Runs inline after the terminal DB write: the summary is
-                // already complete in the UI while this small pass finishes.
+                // Post-summary memory reconciliation for the meeting's folder.
+                // Detached: the summary task (and its background-task entry)
+                // finishes immediately; the memory pass completes on its own
+                // and announces itself via the `folder-memory-updated` event.
                 if folder_toggles.1 {
-                    if let Some(folder_id) = sidebar_folder_id.as_deref() {
-                        crate::summary::folder_memory::propose_folder_memories(
-                            &app,
-                            &pool,
-                            folder_id,
-                            &final_markdown,
-                            &provider,
-                            &model_name,
-                            &final_api_key,
-                            ollama_endpoint.as_deref(),
-                            custom_openai_endpoint.as_deref(),
-                            custom_openai_max_tokens,
-                            custom_openai_temperature,
-                            custom_openai_top_p,
-                        )
-                        .await;
+                    if let Some(folder_id) = sidebar_folder_id.clone() {
+                        let app = app.clone();
+                        let pool = pool.clone();
+                        let meeting_id = meeting_id.clone();
+                        let final_markdown = final_markdown.clone();
+                        let provider = provider.clone();
+                        let model_name = model_name.clone();
+                        let final_api_key = final_api_key.clone();
+                        let ollama_endpoint = ollama_endpoint.clone();
+                        let custom_openai_endpoint = custom_openai_endpoint.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crate::summary::folder_memory::propose_folder_memories(
+                                &app,
+                                &pool,
+                                &folder_id,
+                                &meeting_id,
+                                &final_markdown,
+                                &provider,
+                                &model_name,
+                                &final_api_key,
+                                ollama_endpoint.as_deref(),
+                                custom_openai_endpoint.as_deref(),
+                                custom_openai_max_tokens,
+                                custom_openai_temperature,
+                                custom_openai_top_p,
+                            )
+                            .await;
+                        });
                     }
                 }
             }
