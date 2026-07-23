@@ -35,6 +35,7 @@ pub mod model_idle;
 pub mod model_integrity;
 pub mod model_storage;
 pub mod notifications;
+pub mod meeting_prompt;
 pub mod onboarding;
 pub mod parakeet_engine;
 pub mod pill_window;
@@ -1491,7 +1492,9 @@ pub fn run() {
             // Free model RAM after periods of inactivity (never during recording).
             crate::model_idle::spawn_idle_unload_watcher();
 
-            // Auto-start recording (opt-in) when a calendar meeting begins.
+            // Offer to record (opt-in) when a calendar meeting begins. Recording
+            // starts only when the user accepts the floating prompt card.
+            meeting_prompt::init(_app.handle());
             calendar::scheduler::spawn_meeting_scheduler(_app.handle().clone());
 
             // Initialize ModelManager for summary engine (async, non-blocking)

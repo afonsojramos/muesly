@@ -39,6 +39,23 @@
                 "visible": false,
                 "backgroundThrottling": "disabled",
                 "title": "muesly recording"
+            },
+            {
+                "label": "meeting-prompt",
+                "url": "/meeting-prompt",
+                "width": 356,
+                "height": 128,
+                "resizable": false,
+                "decorations": false,
+                "transparent": true,
+                "alwaysOnTop": true,
+                "skipTaskbar": true,
+                "shadow": false,
+                "focus": false,
+                "acceptFirstMouse": true,
+                "visible": false,
+                "backgroundThrottling": "disabled",
+                "title": "muesly meeting prompt"
             }
         ],
         "macOSPrivateApi": true,
@@ -105,6 +122,18 @@
                         "core:event:default",
                         "core:window:default",
                         "core:window:allow-start-dragging",
+                        "core:path:default"
+                    ]
+                },
+                {
+                    "identifier": "meeting-prompt",
+                    "description": "Floating meeting recording prompt card",
+                    "windows": [
+                        "meeting-prompt"
+                    ],
+                    "permissions": [
+                        "core:event:default",
+                        "core:window:default",
                         "core:path:default"
                     ]
                 }

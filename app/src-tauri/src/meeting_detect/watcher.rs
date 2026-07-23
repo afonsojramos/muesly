@@ -1,29 +1,22 @@
 //! Foreground-app watcher: detects when a known meeting app becomes frontmost.
 //!
 //! Runs only while auto-detect is enabled. On macOS it polls the frontmost
-//! application about once a second and emits `meeting-app-detected` once per
-//! activation (debounced against the previous frontmost app). On other platforms
-//! there is no foreground-app API, so [`start`]/[`stop`] are no-ops.
+//! application about once a second and, once per activation (debounced against
+//! the previous frontmost app), shows the floating meeting-prompt card offering
+//! to record. The card floats above the meeting app itself, so the offer is
+//! visible exactly where the user is — an in-app toast would not be. On other
+//! platforms there is no foreground-app API, so [`start`]/[`stop`] are no-ops.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(target_os = "macos")]
-use tauri::Emitter;
 use tauri::{AppHandle, Runtime};
 
 /// Whether the watcher loop should keep running.
 static RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// Payload emitted when a known meeting app comes to the foreground.
-#[derive(Clone, serde::Serialize)]
-struct MeetingAppDetected {
-    app_name: String,
-    bundle_id: String,
-}
-
-/// Start the foreground-app watcher (idempotent). Emits `meeting-app-detected`
-/// when a known meeting app becomes frontmost, debounced to once per activation.
-/// A no-op on platforms without a foreground-app API.
+/// Start the foreground-app watcher (idempotent). Shows the meeting-prompt
+/// card when a known meeting app becomes frontmost, debounced to once per
+/// activation. A no-op on platforms without a foreground-app API.
 pub fn start<R: Runtime>(app: AppHandle<R>) {
     #[cfg(target_os = "macos")]
     {
@@ -70,11 +63,16 @@ fn watch_loop<R: Runtime>(app: AppHandle<R>) {
             let changed = last_bundle_id.as_deref() != Some(bundle_id.as_str());
             if changed {
                 if let Some(name) = match_meeting_app(&bundle_id, DEFAULT_MEETING_APPS) {
-                    let _ = app.emit(
-                        "meeting-app-detected",
-                        MeetingAppDetected {
-                            app_name: name.to_string(),
-                            bundle_id: bundle_id.clone(),
+                    crate::meeting_prompt::show(
+                        &app,
+                        crate::meeting_prompt::MeetingPrompt {
+                            title: None,
+                            source: "app",
+                            app_name: Some(name.to_string()),
+                            ical_uid: None,
+                            occurrence_minute: None,
+                            conference_url: None,
+                            auto_join: false,
                         },
                     );
                 }

@@ -31,7 +31,7 @@ Capture, transcribe, and summarize everything you say, entirely on your own mach
 - **Real-time transcript** as you speak, with optional named speaker labels after diarization.
 - **Dual audio capture** of microphone and system audio at once, with professional mixing (ducking, clipping prevention) and voice-activity filtering so only speech reaches the transcription engine.
 - **AI summaries and Ask anything chat** generated locally by default, with optional translation and cloud BYOK.
-- **Calendar-aware recording** (upcoming meetings, auto-start, folders) and push-to-talk dictation.
+- **Calendar-aware recording** (upcoming meetings, record prompts when meetings start, folders) and push-to-talk dictation.
 - **Import & enhance** `Beta`: bring in existing audio files, or re-transcribe a recording with a different model or language, all processed locally.
 - **GPU acceleration**, auto-detected at build time: Metal + CoreML (macOS), CUDA / Vulkan (Windows/Linux).
 

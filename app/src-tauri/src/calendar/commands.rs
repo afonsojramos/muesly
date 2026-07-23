@@ -578,7 +578,8 @@ pub async fn calendar_apply_folder_rule(
     Ok(())
 }
 
-/// Whether to auto-start recording when a calendar meeting begins.
+/// Whether to prompt to record when a calendar meeting begins (the floating
+/// meeting-prompt card; recording starts only when the user accepts).
 #[tauri::command]
 #[specta::specta]
 pub async fn calendar_get_auto_start_on_event(

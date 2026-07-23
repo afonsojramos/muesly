@@ -198,7 +198,9 @@ fn position_bottom_center<R: Runtime>(window: &tauri::WebviewWindow<R>) {
 /// The monitor under the current cursor position, or `None` if the cursor
 /// position or monitor lookup fails. `cursor_position` is physical; the
 /// `monitor_from_point` API expects the same physical coordinates.
-fn cursor_monitor<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<tauri::Monitor> {
+pub(crate) fn cursor_monitor<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+) -> Option<tauri::Monitor> {
     let cursor = match window.cursor_position() {
         Ok(position) => position,
         Err(e) => {
@@ -231,7 +233,7 @@ fn cursor_monitor<R: Runtime>(window: &tauri::WebviewWindow<R>) -> Option<tauri:
 // the resulting `unexpected_cfgs` lint from that third-party macro expansion.
 #[cfg(target_os = "macos")]
 #[allow(unexpected_cfgs)]
-fn raise_above_fullscreen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+pub(crate) fn raise_above_fullscreen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
     // `NSScreenSaverWindowLevel` (CoreGraphics `kCGScreenSaverWindowLevelKey`)
     // is the standard "above everything, including fullscreen" level. Using the
     // numeric constant avoids linking the AppKit symbol.

@@ -1,5 +1,7 @@
-//! Meeting-start scheduler: when a calendar meeting begins, auto-start recording
-//! it, optionally open its conference link, and notify.
+//! Meeting-start scheduler: when a calendar meeting begins, offer to record it
+//! via the floating meeting-prompt card. Recording never starts without the
+//! user accepting the card; the accept path also opens the conference link
+//! (opt-in) and notifies.
 //!
 //! In-process only. It fires while the app runs; macOS sleep suspends the loop
 //! (it resumes late, and the freshness guard then retires long-past starts), and a
@@ -12,15 +14,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, Utc};
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 use crate::audio::recording_commands;
 use crate::calendar::matching::{CalendarEventCandidate, ParticipantStatus};
-use crate::calendar::{conference, dedup, matching, service};
+use crate::calendar::{dedup, matching, service};
 use crate::database::repositories::setting::SettingsRepository;
-use crate::notifications::commands::{
-    NotificationManagerState, show_recording_started_notification,
-};
 
 /// How often the fire-check runs.
 const TICK: StdDuration = StdDuration::from_secs(30);
@@ -68,10 +67,10 @@ async fn claim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) -> boo
     }
 }
 
-/// Drop a fire claim so a later tick can retry. Used when auto-start fails
-/// transiently (model still downloading, mic busy) so the occurrence is not
-/// permanently skipped within `MAX_STALE_MINUTES`.
-async fn unclaim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) {
+/// Drop a fire claim so a later tick can retry. Used when a prompted start
+/// fails transiently (model still downloading, mic busy) so the occurrence is
+/// not permanently skipped within `MAX_STALE_MINUTES`.
+pub(crate) async fn unclaim_fire(pool: &sqlx::SqlitePool, ical_uid: &str, minute: i64) {
     if let Err(e) =
         sqlx::query("DELETE FROM scheduler_fired WHERE ical_uid = ? AND occurrence_minute = ?")
             .bind(ical_uid)
@@ -97,13 +96,6 @@ async fn prune_old_fired(pool: &sqlx::SqlitePool) {
         .bind(cutoff)
         .execute(pool)
         .await;
-}
-
-/// Host only, for redacted logging (a conference URL can embed a passcode).
-fn host_of(raw: &str) -> Option<String> {
-    url::Url::parse(raw)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
 }
 
 pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
@@ -176,47 +168,24 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
                 }
 
                 let title = c.title.clone().unwrap_or_else(|| "Meeting".to_string());
-                log::info!("Meeting scheduler firing for '{title}'");
+                log::info!("Meeting scheduler offering prompt for '{title}'");
 
-                match recording_commands::start_recording_with_meeting_name(
-                    app.clone(),
-                    Some(title.clone()),
-                )
-                .await
-                {
-                    Ok(()) => {
-                        let nstate = app.state::<NotificationManagerState<R>>();
-                        let _ =
-                            show_recording_started_notification(&app, &nstate, Some(title)).await;
-                        // Pin the event so its pre-assigned folder is applied at save
-                        // time even when calendar context is off (frontend consumes it).
-                        let _ = app.emit(
-                            "recording-folder-pin",
-                            serde_json::json!({ "icalUid": uid, "occurrenceMinute": minute }),
-                        );
-                        // Auto-join only the meeting we actually started recording.
-                        if auto_join {
-                            if let Some(u) = c.conference_url.as_deref() {
-                                if conference::is_allowed_conference_url(u)
-                                    && open::that_detached(u).is_err()
-                                {
-                                    log::warn!(
-                                        "scheduler auto-join failed for host {:?}",
-                                        host_of(u)
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        // Transient start failure (model loading, mic unavailable):
-                        // release the claim so a later tick within MAX_STALE can retry.
-                        log::warn!("scheduler auto-start failed: {e}");
-                        if should_unclaim_on_start_failure(true, false) {
-                            unclaim_fire(&pool, &uid, minute).await;
-                        }
-                    }
-                }
+                // Never auto-start: surface the floating prompt card and let
+                // the user decide. The claim stays consumed (one offer per
+                // occurrence); an accepted-but-failed start releases it inside
+                // the prompt's accept path so a later tick can re-offer.
+                crate::meeting_prompt::show(
+                    &app,
+                    crate::meeting_prompt::MeetingPrompt {
+                        title: Some(title),
+                        source: "calendar",
+                        app_name: None,
+                        ical_uid: Some(uid.clone()),
+                        occurrence_minute: Some(minute),
+                        conference_url: c.conference_url.clone(),
+                        auto_join,
+                    },
+                );
             }
         }
     });

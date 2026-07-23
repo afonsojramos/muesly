@@ -388,8 +388,8 @@
 								Automatically detect meetings
 							</div>
 							<div class="text-sm text-muted-foreground">
-								When a meeting app (Zoom, Teams, Webex) comes to the front, offer to start
-								recording.
+								When a meeting app (Zoom, Teams, Webex) comes to the front, show a floating
+								prompt to start recording.
 							</div>
 						</div>
 						<Switch
@@ -405,11 +405,11 @@
 					>
 						<div class="min-w-0 flex-1">
 							<div id="auto-start-label" class="font-medium">
-								Start recording when a meeting begins
+								Prompt to record when a meeting begins
 							</div>
 							<div class="text-sm text-muted-foreground">
-								When a calendar meeting with attendees starts, automatically record it. Off by
-								default.
+								When a calendar meeting with attendees starts, show a floating prompt to record
+								it. Recording only starts when you accept. Off by default.
 							</div>
 						</div>
 						<div class="flex items-center gap-2">
@@ -432,8 +432,8 @@
 						<div class="min-w-0 flex-1">
 							<div id="auto-join-label" class="font-medium">Open the meeting link too</div>
 							<div class="text-sm text-muted-foreground">
-								On auto-start, also open the meeting's video link (Zoom, Meet, Teams) in your
-								browser.
+								When you accept the prompt, also open the meeting's video link (Zoom, Meet,
+								Teams) in your browser.
 							</div>
 						</div>
 						<Switch

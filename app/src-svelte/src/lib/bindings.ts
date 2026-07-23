@@ -739,7 +739,10 @@ export const commands = {
 	 *  even when calendar context is disabled. Best-effort; never errors on a missing rule.
 	 */
 	calendarApplyFolderRule: (meetingId: string, icalUid: string, occurrenceMinute: number) => typedError<null, string>(__TAURI_INVOKE("calendar_apply_folder_rule", { meetingId, icalUid, occurrenceMinute })),
-	/**  Whether to auto-start recording when a calendar meeting begins. */
+	/**
+	 *  Whether to prompt to record when a calendar meeting begins (the floating
+	 *  meeting-prompt card; recording starts only when the user accepts).
+	 */
 	calendarGetAutoStartOnEvent: () => typedError<boolean, string>(__TAURI_INVOKE("calendar_get_auto_start_on_event")),
 	calendarSetAutoStartOnEvent: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("calendar_set_auto_start_on_event", { enabled })),
 	/**  Whether to also open the meeting's conference link on auto-start. */

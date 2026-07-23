@@ -17,11 +17,7 @@
 	import { isAudioExtension, getAudioFormatsDisplayList } from '$lib/constants/audio-formats';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { useRecordingStop } from '$lib/hooks/use-recording-stop.svelte';
-	import {
-		FOLDER_PIN_KEY,
-		generateMeetingTitle,
-		startRecordingWithTitle,
-	} from '$lib/hooks/use-recording-start.svelte';
+	import { FOLDER_PIN_KEY } from '$lib/hooks/use-recording-start.svelte';
 	import {
 		setUpdateDialogCallback,
 		showUpdateNotification,
@@ -185,43 +181,8 @@
 		};
 	});
 
-	// Meeting auto-detection: when a known meeting app comes to the foreground (and
-	// the user enabled auto-detect), offer to start recording.
-	$effect(() => {
-		let unlisten: UnlistenFn | undefined;
-		let cancelled = false;
-
-		(async () => {
-			try {
-				const fn = await listen<{ app_name: string; bundle_id: string }>(
-					'meeting-app-detected',
-					(event) => {
-						const appName = event.payload?.app_name ?? 'A meeting app';
-						toast.info(`${appName} is open`, {
-							description: 'Start recording this meeting?',
-							duration: 10000,
-							action: {
-								label: 'Start recording',
-								// Use the shared start path so auto-detect gets the same readiness
-								// check, optimistic UI, title, and notification as a manual start.
-								onClick: () =>
-									void startRecordingWithTitle(generateMeetingTitle(), 'meeting_detected'),
-							},
-						});
-					},
-				);
-				if (cancelled) fn();
-				else unlisten = fn;
-			} catch (error) {
-				console.error('[Layout] Failed to set up meeting-detect listener:', error);
-			}
-		})();
-
-		return () => {
-			cancelled = true;
-			unlisten?.();
-		};
-	});
+	// Meeting auto-detection surfaces the floating meeting-prompt card from Rust
+	// (visible over the meeting app itself), so no in-app toast is shown here.
 
 	// Surface transcription-engine failures (model init / decode errors) regardless
 	// of the current page — previously emitted with no listener, so they vanished.
