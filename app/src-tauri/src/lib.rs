@@ -1501,10 +1501,9 @@ pub fn run() {
             calendar::scheduler::spawn_meeting_scheduler(_app.handle().clone());
 
             // Semantic search: one-time model download (pinned + verified),
-            // then backfill embeddings for meetings that lack them.
-            if let Some(state) = _app.try_state::<state::AppState>() {
-                embedding_indexer::spawn_startup_backfill(state.db_manager.pool().clone());
-            }
+            // then backfill embeddings for meetings that lack them. Resolves
+            // the pool itself — the database initializes asynchronously.
+            embedding_indexer::spawn_startup_backfill(_app.handle().clone());
 
             // Initialize ModelManager for summary engine (async, non-blocking)
             let app_handle_for_model_manager = _app.handle().clone();

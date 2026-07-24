@@ -173,9 +173,27 @@ async fn run_sweep(pool: &SqlitePool) {
 
 /// Startup: after a settling delay, download the model if needed (one-time,
 /// pinned + verified), then backfill every unindexed meeting.
-pub fn spawn_startup_backfill(pool: SqlitePool) {
+///
+/// Takes the app handle, not a pool: the database initializes in an async
+/// startup task, so `AppState` is usually NOT managed yet when setup runs.
+/// The pool is resolved after the settling delay, waiting (bounded) for the
+/// database task to finish.
+pub fn spawn_startup_backfill<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    use tauri::Manager as _;
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(STARTUP_DELAY).await;
+        let mut pool = None;
+        for _ in 0..24 {
+            if let Some(state) = app.try_state::<crate::state::AppState>() {
+                pool = Some(state.db_manager.pool().clone());
+                break;
+            }
+            tokio::time::sleep(Duration::from_secs(5)).await;
+        }
+        let Some(pool) = pool else {
+            log::warn!("semantic backfill skipped: database never initialized");
+            return;
+        };
         if !embedding_engine::is_model_available()
             && let Err(e) = embedding_engine::ensure_model_available().await
         {
