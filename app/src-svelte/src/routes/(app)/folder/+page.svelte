@@ -1,12 +1,15 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowLeft, ChevronRight, Folder } from '@lucide/svelte';
+	import { ArrowLeft, Brain, ChevronRight, EllipsisVertical, Folder } from '@lucide/svelte';
+	import { mergeProps } from 'bits-ui';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
 	import { goHome } from '$lib/navigation';
 	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import FolderContext from '$lib/components/FolderContext.svelte';
+	import * as Dialog from '$lib/components/ui/dialog';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { Button } from '$lib/components/ui/button';
 	import { cn } from '$lib/utils';
@@ -23,6 +26,34 @@
 
 	// Recency buckets, newest first; the current week lists freely (no header).
 	const groups = $derived(groupByRecency(meetings, (m) => m.createdAt, clock.now));
+
+	// Opening the actions menu, and the focus restore when it closes, both make
+	// the tooltip open (or stick). bits-ui components own their state unless
+	// bind:open is used, so bind both and force the tooltip shut while the menu
+	// is open or was just closed; a fresh hover (pointerenter) re-arms.
+	let actionsMenuOpen = $state(false);
+	let actionsButtonEl = $state<HTMLButtonElement | null>(null);
+	let actionsTooltipOpen = $state(false);
+	let suppressActionsTooltip = $state(false);
+	let memoryOpen = $state(false);
+
+	$effect(() => {
+		if (actionsMenuOpen) suppressActionsTooltip = true;
+	});
+	$effect(() => {
+		if (actionsTooltipOpen && (actionsMenuOpen || suppressActionsTooltip)) {
+			actionsTooltipOpen = false;
+		}
+	});
+
+	function openMemoryFromMenu(): void {
+		// Let the dropdown close and restore its trigger before opening the dialog,
+		// so closing Folder memory returns focus to a stable visible control.
+		setTimeout(() => {
+			actionsButtonEl?.focus();
+			memoryOpen = true;
+		}, 0);
+	}
 
 	// A folder is a top-level section; "back" returns home rather than retracing
 	// the folders you clicked through to get here (see $lib/navigation).
@@ -96,6 +127,43 @@
 			>
 				{folder?.name ?? 'Folder'}
 			</h1>
+			{#if folder}
+				<div class="ml-auto flex items-center">
+					<DropdownMenu.Root bind:open={actionsMenuOpen}>
+						<Tooltip.Provider delayDuration={300}>
+							<Tooltip.Root bind:open={actionsTooltipOpen}>
+								<Tooltip.Trigger>
+									{#snippet child({ props: tooltipProps })}
+										<DropdownMenu.Trigger>
+											{#snippet child({ props: menuProps })}
+												<Button
+													bind:ref={actionsButtonEl}
+													{...mergeProps(tooltipProps, menuProps, {
+														onpointerenter: () => (suppressActionsTooltip = false),
+													})}
+													variant="ghost"
+													size="icon-sm"
+													class="text-muted-foreground hover:text-foreground"
+													aria-label="Folder actions"
+												>
+													<EllipsisVertical />
+												</Button>
+											{/snippet}
+										</DropdownMenu.Trigger>
+									{/snippet}
+								</Tooltip.Trigger>
+								<Tooltip.Content>Folder actions</Tooltip.Content>
+							</Tooltip.Root>
+						</Tooltip.Provider>
+						<DropdownMenu.Content align="end" class="min-w-48">
+							<DropdownMenu.Item onSelect={openMemoryFromMenu}>
+								<Brain />
+								Folder memory
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -127,10 +195,6 @@
 						</p>
 					</div>
 				</header>
-
-				{#if folderId}
-					<FolderContext {folderId} />
-				{/if}
 
 				{#if meetings.length === 0}
 					<div class="flex flex-col items-center gap-2 py-20 text-center">
@@ -173,3 +237,20 @@
 		</div>
 	</div>
 </div>
+
+<Dialog.Root bind:open={memoryOpen}>
+	<Dialog.Content class="flex max-h-[85vh] flex-col sm:max-w-2xl">
+		<Dialog.Header>
+			<Dialog.Title>Folder memory</Dialog.Title>
+			<Dialog.Description>
+				Learned automatically from this folder's summaries and used when you chat or summarize
+				here. Add, pin, or remove anything — it's all stored only on this device.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			{#if folderId}
+				<FolderContext {folderId} />
+			{/if}
+		</div>
+	</Dialog.Content>
+</Dialog.Root>

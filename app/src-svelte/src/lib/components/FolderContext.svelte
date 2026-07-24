@@ -67,17 +67,7 @@
 	};
 </script>
 
-<section class="mb-8 flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
-	<div class="flex items-start justify-between gap-3">
-		<div>
-			<h3 class="text-sm font-semibold text-foreground">Folder memory</h3>
-			<p class="mt-0.5 text-xs text-muted-foreground">
-				Learned automatically from this folder's summaries and used when you chat or
-				summarize here. Add, pin, or remove anything — it's all stored only on this device.
-			</p>
-		</div>
-	</div>
-
+<div class="flex flex-col gap-4">
 	{#if items.length > 0}
 		<ul class="flex flex-col divide-y divide-border">
 			{#each items as item (item.id)}
@@ -162,5 +152,4 @@
 			</Button>
 		</div>
 	</div>
-
-</section>
+</div>
