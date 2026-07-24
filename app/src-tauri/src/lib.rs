@@ -1449,7 +1449,7 @@ pub fn run() {
             parakeet_engine::commands::set_models_directory(&_app.handle());
 
             // Semantic-search embedding model shares the same models root.
-            embedding_engine::set_models_directory(&_app.handle());
+            embedding_engine::set_models_directory(_app.handle());
 
             // Initialize Parakeet engine on startup
             tauri::async_runtime::spawn(async {

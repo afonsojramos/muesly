@@ -219,7 +219,8 @@ impl MeetingEmbeddingsRepository {
         };
 
         // Best chunk per meeting.
-        let mut best: std::collections::HashMap<String, SemanticHit> = std::collections::HashMap::new();
+        let mut best: std::collections::HashMap<String, SemanticHit> =
+            std::collections::HashMap::new();
         for (meeting_id, excerpt, audio_start_time, blob) in rows {
             let vector = blob_to_vector(&blob);
             if vector.len() != query_vector.len() {
@@ -230,26 +231,16 @@ impl MeetingEmbeddingsRepository {
                 .zip(query_vector.iter())
                 .map(|(a, b)| a * b)
                 .sum();
-            let entry = best.entry(meeting_id.clone());
-            match entry {
-                std::collections::hash_map::Entry::Occupied(mut slot) => {
-                    if score > slot.get().score {
-                        slot.insert(SemanticHit {
-                            meeting_id,
-                            excerpt,
-                            audio_start_time,
-                            score,
-                        });
-                    }
-                }
-                std::collections::hash_map::Entry::Vacant(slot) => {
-                    slot.insert(SemanticHit {
+            if best.get(&meeting_id).is_none_or(|held| score > held.score) {
+                best.insert(
+                    meeting_id.clone(),
+                    SemanticHit {
                         meeting_id,
                         excerpt,
                         audio_start_time,
                         score,
-                    });
-                }
+                    },
+                );
             }
         }
         let mut hits: Vec<SemanticHit> = best.into_values().collect();

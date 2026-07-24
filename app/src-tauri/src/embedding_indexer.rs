@@ -21,6 +21,9 @@ use crate::embedding_engine::{self, EMBEDDING_MODEL_ID};
 
 /// Meetings indexed per backfill batch before yielding.
 const BACKFILL_BATCH: i64 = 8;
+/// Chunks embedded per ONNX run, bounding memory and per-call latency for
+/// long meetings.
+const EMBED_BATCH: usize = 16;
 /// Pause between backfill batches so the sweep never saturates a busy app.
 const BACKFILL_PAUSE: Duration = Duration::from_secs(2);
 /// Delay before the startup backfill begins (let the app finish launching).
@@ -51,8 +54,7 @@ pub async fn index_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<()> {
         .collect();
     let transcript_chunks = chunk_transcript(&segments);
     if !transcript_chunks.is_empty() {
-        let texts: Vec<String> = transcript_chunks.iter().map(|c| c.text.clone()).collect();
-        let Some(vectors) = embedding_engine::embed_passages(texts).await else {
+        let Some(vectors) = embed_chunks_batched(&transcript_chunks).await else {
             return Ok(()); // model vanished mid-run; next sweep retries
         };
         MeetingEmbeddingsRepository::replace_for_meeting(
@@ -70,8 +72,7 @@ pub async fn index_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<()> {
     let summary = crate::summary::chat::load_meeting_summary(pool, meeting_id).await;
     let summary_chunks = chunk_summary(&summary);
     if !summary_chunks.is_empty() {
-        let texts: Vec<String> = summary_chunks.iter().map(|c| c.text.clone()).collect();
-        let Some(vectors) = embedding_engine::embed_passages(texts).await else {
+        let Some(vectors) = embed_chunks_batched(&summary_chunks).await else {
             return Ok(());
         };
         MeetingEmbeddingsRepository::replace_for_meeting(
@@ -92,6 +93,19 @@ pub async fn index_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<()> {
         summary_chunks.len()
     );
     Ok(())
+}
+
+/// Embed chunk texts in bounded batches so a long meeting never issues one
+/// giant ONNX run. `None` bubbles model unavailability up unchanged.
+async fn embed_chunks_batched(
+    chunks: &[crate::database::repositories::meeting_embeddings::Chunk],
+) -> Option<Vec<Vec<f32>>> {
+    let mut vectors = Vec::with_capacity(chunks.len());
+    for window in chunks.chunks(EMBED_BATCH) {
+        let texts: Vec<String> = window.iter().map(|c| c.text.clone()).collect();
+        vectors.extend(embedding_engine::embed_passages(texts).await?);
+    }
+    Some(vectors)
 }
 
 /// Fire-and-forget single-meeting index (summary done, retranscription done).
@@ -118,11 +132,16 @@ async fn run_sweep(pool: &SqlitePool) {
     if SWEEP_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
+    // Meetings that produce no chunks (e.g. zero transcript segments) never
+    // leave the missing list; skipping ones already attempted this sweep
+    // guarantees forward progress instead of refetching the same batch
+    // forever.
+    let mut attempted: std::collections::HashSet<String> = std::collections::HashSet::new();
     loop {
         let missing = match MeetingEmbeddingsRepository::meetings_missing_index(
             pool,
             EMBEDDING_MODEL_ID,
-            BACKFILL_BATCH,
+            BACKFILL_BATCH + attempted.len() as i64,
         )
         .await
         {
@@ -132,17 +151,20 @@ async fn run_sweep(pool: &SqlitePool) {
                 break;
             }
         };
-        if missing.is_empty() {
+        let fresh: Vec<String> = missing
+            .iter()
+            .filter(|id| !attempted.contains(*id))
+            .take(BACKFILL_BATCH as usize)
+            .cloned()
+            .collect();
+        if fresh.is_empty() {
             break;
         }
-        for meeting_id in &missing {
+        for meeting_id in &fresh {
+            attempted.insert(meeting_id.clone());
             if let Err(e) = index_meeting(pool, meeting_id).await {
                 log::warn!("semantic indexing failed for {meeting_id}: {e}");
             }
-        }
-        // A short batch means the work list is drained.
-        if missing.len() < BACKFILL_BATCH as usize {
-            break;
         }
         tokio::time::sleep(BACKFILL_PAUSE).await;
     }
@@ -154,11 +176,11 @@ async fn run_sweep(pool: &SqlitePool) {
 pub fn spawn_startup_backfill(pool: SqlitePool) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(STARTUP_DELAY).await;
-        if !embedding_engine::is_model_available() {
-            if let Err(e) = embedding_engine::ensure_model_available().await {
-                log::info!("semantic search unavailable (model not downloaded): {e}");
-                return;
-            }
+        if !embedding_engine::is_model_available()
+            && let Err(e) = embedding_engine::ensure_model_available().await
+        {
+            log::info!("semantic search unavailable (model not downloaded): {e}");
+            return;
         }
         run_sweep(&pool).await;
     });
