@@ -30,7 +30,7 @@ Capture, transcribe, and summarize everything you say, entirely on your own mach
 - **Local transcription** using Whisper models, GPU-accelerated and in-process, with a model selected for your hardware.
 - **Real-time transcript** as you speak, with optional named speaker labels after diarization.
 - **Dual audio capture** of microphone and system audio at once, with professional mixing (ducking, clipping prevention) and voice-activity filtering so only speech reaches the transcription engine.
-- **AI summaries and Ask anything chat** generated locally by default, with optional translation and cloud BYOK.
+- **AI summaries and Ask anything chat** generated locally by default, with optional translation and cloud BYOK. Cross-meeting questions use on-device hybrid search (keyword + semantic embeddings).
 - **Calendar-aware recording** (upcoming meetings, record prompts when meetings start, folders) and push-to-talk dictation.
 - **Import & enhance** `Beta`: bring in existing audio files, or re-transcribe a recording with a different model or language, all processed locally.
 - **GPU acceleration**, auto-detected at build time: Metal + CoreML (macOS), CUDA / Vulkan (Windows/Linux).
