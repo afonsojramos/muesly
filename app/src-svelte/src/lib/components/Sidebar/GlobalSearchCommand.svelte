@@ -19,12 +19,16 @@
 		);
 		if (!q) return meetings.slice(0, 8);
 
+		// Title matches render instantly and keep their positions; transcript
+		// matches arrive async (debounce + backend), so they append below instead
+		// of interleaving by date — settled rows never reshuffle mid-typing.
 		const transcriptMatches = new Set(sidebar.searchResults.map((result) => result.id));
-		return meetings
-			.filter(
-				(meeting) => transcriptMatches.has(meeting.id) || meeting.title.toLowerCase().includes(q),
-			)
-			.slice(0, 12);
+		const titleMatches = meetings.filter((meeting) => meeting.title.toLowerCase().includes(q));
+		const titleIds = new Set(titleMatches.map((meeting) => meeting.id));
+		const transcriptOnly = meetings.filter(
+			(meeting) => transcriptMatches.has(meeting.id) && !titleIds.has(meeting.id),
+		);
+		return [...titleMatches, ...transcriptOnly].slice(0, 12);
 	});
 
 	function onInput(value: string): void {
@@ -43,6 +47,9 @@
 	}
 
 	function openMeeting(meetingId: string): void {
+		// Direct `open = false` skips handleOpenChange, so clear the debounce here
+		// or a pending search fires after the dialog is gone.
+		clearTimeout(debounce);
 		open = false;
 		query = '';
 		void navigate(`/meeting-details?id=${meetingId}`);
@@ -59,6 +66,7 @@
 		if (q) params.set('q', q);
 		if (deepSearchFolderId) params.set('folder', deepSearchFolderId);
 		const suffix = params.size > 0 ? `?${params.toString()}` : '';
+		clearTimeout(debounce);
 		open = false;
 		query = '';
 		void navigate(`/search${suffix}`);
@@ -82,22 +90,34 @@
 	description="Search meeting titles and transcripts"
 	class="top-[18%] max-w-xl translate-y-0"
 >
-	<Command.Input
-		value={query}
-		oninput={(event) => onInput(event.currentTarget.value)}
-		placeholder="Search notes and transcripts…"
-		aria-label="Search notes and transcripts"
-	/>
-	<Command.List class="max-h-[min(28rem,60vh)]">
+	<div class="relative">
+		<Command.Input
+			value={query}
+			oninput={(event) => onInput(event.currentTarget.value)}
+			placeholder="Search notes and transcripts…"
+			aria-label="Search notes and transcripts"
+		/>
 		{#if sidebar.isSearching && query.trim()}
-			<div class="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-				<LoaderCircle class="size-3.5 animate-spin" />
-				Searching transcripts…
-			</div>
+			<!-- Overlaid on the input (top-[…+2px] centers on the h-8 field inside the
+			     p-1 pt-only wrapper) so searching never shifts the results below. -->
+			<LoaderCircle
+				class="pointer-events-none absolute right-3.5 top-[calc(50%+2px)] size-3.5 -translate-y-1/2 animate-spin text-muted-foreground"
+				aria-hidden="true"
+			/>
 		{/if}
-
+		<!-- Persistent live region: mounting it together with its text would keep
+		     screen readers from announcing the change. -->
+		<span class="sr-only" role="status">
+			{sidebar.isSearching && query.trim() ? 'Searching transcripts…' : ''}
+		</span>
+	</div>
+	<Command.List class="max-h-[min(28rem,60vh)]">
 		{#if results.length === 0 && query.trim()}
-			<Command.Empty>No notes match “{query.trim()}”.</Command.Empty>
+			<!-- forceMount: the ever-present deep-search item keeps bits-ui's item
+			     count above zero, so without it Command.Empty never renders. -->
+			<Command.Empty forceMount>
+				{sidebar.isSearching ? 'Searching transcripts…' : `No notes match “${query.trim()}”.`}
+			</Command.Empty>
 		{:else}
 			<Command.Group heading={query.trim() ? 'Results' : 'Recent notes'}>
 				{#each results as meeting (meeting.id)}
