@@ -897,6 +897,10 @@ impl SummaryService {
                     }
                 }
 
+                // Refresh this meeting's semantic-search chunks now that the
+                // summary changed (fire-and-forget; no-op without the model).
+                crate::embedding_indexer::spawn_index_meeting(pool.clone(), meeting_id.clone());
+
                 // Post-summary memory reconciliation for the meeting's folder.
                 // Detached: the summary task (and its background-task entry)
                 // finishes immediately; the memory pass completes on its own

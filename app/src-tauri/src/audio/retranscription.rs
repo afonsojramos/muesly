@@ -215,6 +215,14 @@ pub async fn start_retranscription<R: Runtime>(
                     "language": res.language
                 }),
             );
+            // The transcript changed wholesale: refresh its semantic-search
+            // chunks (fire-and-forget; no-op without the model).
+            if let Some(state) = app.try_state::<AppState>() {
+                crate::embedding_indexer::spawn_index_meeting(
+                    state.db_manager.pool().clone(),
+                    res.meeting_id.clone(),
+                );
+            }
         }
         Err(e) => {
             let _ = app.emit(

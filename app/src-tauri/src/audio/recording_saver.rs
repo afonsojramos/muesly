@@ -3,7 +3,7 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, Runtime};
+use tauri::{AppHandle, Emitter, Manager as _, Runtime};
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::sync::mpsc;
 
@@ -536,6 +536,12 @@ impl RecordingSaver {
 
         if let Err(e) = app.emit("recording-saved", &save_event) {
             warn!("Failed to emit recording-saved event: {}", e);
+        }
+
+        // The new meeting's transcripts are in SQLite now: sweep it into the
+        // semantic-search index (fire-and-forget; no-op without the model).
+        if let Some(state) = app.try_state::<crate::state::AppState>() {
+            crate::embedding_indexer::spawn_index_sweep(state.db_manager.pool().clone());
         }
 
         // Clean up transcript segments

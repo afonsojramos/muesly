@@ -29,6 +29,7 @@ pub mod diarization;
 pub mod dictation;
 pub mod disk;
 pub mod embedding_engine;
+pub mod embedding_indexer;
 pub mod json;
 pub mod keychain;
 pub mod meeting_detect;
@@ -1498,6 +1499,12 @@ pub fn run() {
             // starts only when the user accepts the floating prompt card.
             meeting_prompt::init(_app.handle());
             calendar::scheduler::spawn_meeting_scheduler(_app.handle().clone());
+
+            // Semantic search: one-time model download (pinned + verified),
+            // then backfill embeddings for meetings that lack them.
+            if let Some(state) = _app.try_state::<state::AppState>() {
+                embedding_indexer::spawn_startup_backfill(state.db_manager.pool().clone());
+            }
 
             // Initialize ModelManager for summary engine (async, non-blocking)
             let app_handle_for_model_manager = _app.handle().clone();
