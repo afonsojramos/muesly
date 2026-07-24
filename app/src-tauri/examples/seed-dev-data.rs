@@ -179,6 +179,10 @@ struct SeedMemory {
     /// "user" or "extracted" (extracted renders the Auto badge).
     source: &'static str,
     pinned: bool,
+    /// Seed meeting the memory was "learned" from (extracted items only;
+    /// renders the provenance chip). Inserted after meetings, so any seed
+    /// meeting id is valid here.
+    source_meeting: Option<&'static str>,
 }
 
 const MEMORIES: &[SeedMemory] = &[
@@ -189,6 +193,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Atlas = the Kubernetes migration project",
         source: "user",
         pinned: true,
+        source_meeting: None,
     },
     SeedMemory {
         id: "seed-mem-work-decision",
@@ -197,6 +202,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Ship the beta on March 10; analytics milestone follows in Q3",
         source: "extracted",
         pinned: false,
+        source_meeting: Some("seed-meeting-sprint"),
     },
     SeedMemory {
         id: "seed-mem-work-maya",
@@ -205,6 +211,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Maya owns payments and the mobile launch budget",
         source: "extracted",
         pinned: false,
+        source_meeting: Some("seed-meeting-sprint"),
     },
     SeedMemory {
         id: "seed-mem-work-pref",
@@ -213,6 +220,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Always list decisions before action items in summaries",
         source: "user",
         pinned: false,
+        source_meeting: None,
     },
     SeedMemory {
         id: "seed-mem-work-search",
@@ -221,6 +229,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Search rollout revisits after the budget review",
         source: "extracted",
         pinned: false,
+        source_meeting: Some("seed-meeting-roadmap"),
     },
     SeedMemory {
         id: "seed-mem-1on1-alex",
@@ -229,6 +238,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Alex prefers written follow-ups over ad-hoc calls",
         source: "extracted",
         pinned: false,
+        source_meeting: Some("seed-meeting-1on1-alex"),
     },
     SeedMemory {
         id: "seed-mem-personal-dentist",
@@ -237,6 +247,7 @@ const MEMORIES: &[SeedMemory] = &[
         content: "Dentist follow-up is due in six months",
         source: "user",
         pinned: false,
+        source_meeting: None,
     },
 ];
 
@@ -484,29 +495,6 @@ async fn seed(pool: &SqlitePool) {
         .unwrap_or_else(|e| fail(format!("insert folder {}: {e}", f.id)));
     }
 
-    // Folder memory items (user-authored and auto-learned), so the folder
-    // page's Memory section, the scoped AI bar, and summary injection all
-    // have realistic content to work with.
-    let memory_ts = now.to_rfc3339();
-    for mem in MEMORIES {
-        sqlx::query(
-            "INSERT INTO folder_context_items \
-             (id, folder_id, kind, content, source, status, pinned, created_at, updated_at) \
-             VALUES (?, ?, ?, ?, ?, 'accepted', ?, ?, ?)",
-        )
-        .bind(mem.id)
-        .bind(mem.folder)
-        .bind(mem.kind)
-        .bind(mem.content)
-        .bind(mem.source)
-        .bind(mem.pinned as i64)
-        .bind(&memory_ts)
-        .bind(&memory_ts)
-        .execute(pool)
-        .await
-        .unwrap_or_else(|e| fail(format!("insert folder memory {}: {e}", mem.id)));
-    }
-
     for m in MEETINGS {
         let created = now - Duration::days(m.days_ago);
         let created_ts = created.to_rfc3339();
@@ -634,5 +622,31 @@ async fn seed(pool: &SqlitePool) {
             .await
             .unwrap_or_else(|e| fail(format!("insert chat {}: {e}", m.id)));
         }
+    }
+
+    // Folder memory items (user-authored and auto-learned), inserted after
+    // meetings so extracted items can reference their source meeting. Drives
+    // the folder page's Memory section (incl. provenance chips), the scoped AI
+    // bar, and summary injection.
+    let memory_ts = now.to_rfc3339();
+    for mem in MEMORIES {
+        sqlx::query(
+            "INSERT INTO folder_context_items \
+             (id, folder_id, kind, content, source, status, pinned, created_at, updated_at, \
+              source_meeting_id) \
+             VALUES (?, ?, ?, ?, ?, 'accepted', ?, ?, ?, ?)",
+        )
+        .bind(mem.id)
+        .bind(mem.folder)
+        .bind(mem.kind)
+        .bind(mem.content)
+        .bind(mem.source)
+        .bind(mem.pinned as i64)
+        .bind(&memory_ts)
+        .bind(&memory_ts)
+        .bind(mem.source_meeting)
+        .execute(pool)
+        .await
+        .unwrap_or_else(|e| fail(format!("insert folder memory {}: {e}", mem.id)));
     }
 }
