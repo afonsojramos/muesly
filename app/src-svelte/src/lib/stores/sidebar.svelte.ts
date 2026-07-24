@@ -237,6 +237,9 @@ class SidebarStore {
 		if (!query.trim()) {
 			this.searchResults = [];
 			this.searchFailed = false;
+			// A superseded in-flight search skips its own generation-gated reset,
+			// so clear the flag here or the spinner sticks on.
+			this.isSearching = false;
 			return;
 		}
 
