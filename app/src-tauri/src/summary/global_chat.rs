@@ -345,6 +345,37 @@ pub(crate) struct SearchHit {
 
 /// Search meetings by transcript content and title. Returns the evidence block
 /// for the prompt plus the ranked hits (for deterministic follow-up reads).
+/// Reciprocal rank fusion of the lexical and semantic meeting rankings.
+/// Standard RRF with k=60: score(m) = Σ 1/(k + rank). Deterministic — ties
+/// break toward the better single-list rank, then lexical presence, then id.
+/// Pure so fusion behavior is unit-testable without models or databases.
+pub(crate) fn rrf_fuse(lexical: &[String], semantic: &[String]) -> Vec<String> {
+    const K: f64 = 60.0;
+    let mut scores: std::collections::HashMap<&str, (f64, usize, bool)> =
+        std::collections::HashMap::new();
+    for (rank, id) in lexical.iter().enumerate() {
+        let entry = scores.entry(id.as_str()).or_insert((0.0, usize::MAX, false));
+        entry.0 += 1.0 / (K + rank as f64 + 1.0);
+        entry.1 = entry.1.min(rank);
+        entry.2 = true;
+    }
+    for (rank, id) in semantic.iter().enumerate() {
+        let entry = scores.entry(id.as_str()).or_insert((0.0, usize::MAX, false));
+        entry.0 += 1.0 / (K + rank as f64 + 1.0);
+        entry.1 = entry.1.min(rank);
+    }
+    let mut fused: Vec<(&str, (f64, usize, bool))> = scores.into_iter().collect();
+    fused.sort_by(|a, b| {
+        b.1.0
+            .partial_cmp(&a.1.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.1.cmp(&b.1.1))
+            .then_with(|| b.1.2.cmp(&a.1.2))
+            .then_with(|| a.0.cmp(b.0))
+    });
+    fused.into_iter().map(|(id, _)| id.to_string()).collect()
+}
+
 /// Post-filter: keep only hits whose meeting belongs to the scoped folder.
 async fn hit_in_folder(pool: &SqlitePool, meeting_id: &str, folder_id: &str) -> bool {
     sqlx::query_scalar::<_, Option<String>>("SELECT folder_id FROM meetings WHERE id = ?")
@@ -423,6 +454,58 @@ pub(crate) async fn tool_search(
             }
         }
         hits = scoped;
+    }
+
+    // Hybrid upgrade: when the on-device embedding model is available, fuse
+    // the lexical ranking with a semantic scan via reciprocal rank fusion.
+    // Model absent → `embed_query` is None and behavior is exactly lexical.
+    if let Some(query_vector) = crate::embedding_engine::embed_query(query).await {
+        let semantic = crate::database::repositories::meeting_embeddings::MeetingEmbeddingsRepository::scan(
+            pool,
+            crate::embedding_engine::EMBEDDING_MODEL_ID,
+            folder_id,
+            &query_vector,
+            MAX_SEARCH_HITS,
+        )
+        .await
+        .unwrap_or_default();
+        if !semantic.is_empty() {
+            let lexical_order: Vec<String> = hits.iter().map(|h| h.meeting_id.clone()).collect();
+            let semantic_order: Vec<String> =
+                semantic.iter().map(|h| h.meeting_id.clone()).collect();
+            let fused = rrf_fuse(&lexical_order, &semantic_order);
+
+            let mut merged: Vec<SearchHit> = Vec::with_capacity(fused.len());
+            for meeting_id in fused {
+                if let Some(hit) = hits.iter().find(|h| h.meeting_id == meeting_id) {
+                    // Lexical snippet wins when both rankers found the meeting.
+                    merged.push(hit.clone());
+                    continue;
+                }
+                let Some(semantic_hit) =
+                    semantic.iter().find(|h| h.meeting_id == meeting_id)
+                else {
+                    continue;
+                };
+                // Semantic-only hit: resolve title/date (non-trashed only).
+                if let Ok(Some((title, created_at))) = sqlx::query_as::<_, (String, String)>(
+                    "SELECT title, created_at FROM meetings \
+                     WHERE id = ? AND deleted_at IS NULL",
+                )
+                .bind(&meeting_id)
+                .fetch_optional(pool)
+                .await
+                {
+                    merged.push(SearchHit {
+                        meeting_id: meeting_id.clone(),
+                        title,
+                        created_at,
+                        snippet: semantic_hit.excerpt.clone(),
+                    });
+                }
+            }
+            hits = merged;
+        }
     }
     hits.truncate(MAX_SEARCH_HITS);
 
@@ -899,6 +982,43 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    // ---- pure: rank fusion ----
+
+    fn ids(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn rrf_ranks_double_listed_meetings_first() {
+        let fused = rrf_fuse(&ids(&["a", "b", "c"]), &ids(&["c", "d"]));
+        // c appears in both lists → top despite mediocre single ranks.
+        assert_eq!(fused[0], "c");
+        // Everything from either list survives fusion.
+        assert_eq!(fused.len(), 4);
+        assert!(fused.contains(&"d".to_string()));
+    }
+
+    #[test]
+    fn rrf_is_deterministic_and_respects_single_list_order() {
+        let fused = rrf_fuse(&ids(&["a", "b"]), &[]);
+        assert_eq!(fused, ids(&["a", "b"]));
+        let fused = rrf_fuse(&[], &ids(&["x", "y"]));
+        assert_eq!(fused, ids(&["x", "y"]));
+        // Equal-rank tie across lists breaks toward the lexical entry.
+        let fused = rrf_fuse(&ids(&["a"]), &ids(&["b"]));
+        assert_eq!(fused, ids(&["a", "b"]));
+        // Same inputs, same output.
+        assert_eq!(
+            rrf_fuse(&ids(&["a", "b", "c"]), &ids(&["c", "a"])),
+            rrf_fuse(&ids(&["a", "b", "c"]), &ids(&["c", "a"]))
+        );
+    }
+
+    #[test]
+    fn rrf_handles_empty_inputs() {
+        assert!(rrf_fuse(&[], &[]).is_empty());
+    }
 
     // ---- pure: token gate ----
 
