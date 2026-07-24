@@ -118,6 +118,19 @@ pub fn parakeet_file_sha256(filename: &str) -> Option<&'static str> {
     })
 }
 
+/// Pinned SHA-256 for the semantic-search embedding model files (basename),
+/// from the pinned `Xenova/multilingual-e5-small` revision the engine
+/// downloads (`embedding_engine::REPO_URL`).
+pub fn embedding_file_sha256(filename: &str) -> Option<&'static str> {
+    Some(match filename {
+        "model_quantized.onnx" => {
+            "f80102d3f2a1229f387d3c81909990d8945513e347b0eab049f7de3c6f98c193"
+        }
+        "tokenizer.json" => "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+        _ => return None,
+    })
+}
+
 /// Canonical file set for the actively shipped Parakeet v3 INT8 artifact.
 ///
 /// Keep the model-name binding here, next to the file pins: the evaluator must

@@ -72,6 +72,18 @@ pub fn spawn_idle_unload_watcher() {
                     engine.unload_model().await;
                 }
             }
+
+            // Semantic-search embedder (small, but ~150 MB loaded is still
+            // worth freeing between search/index bursts).
+            let embedder_idle = crate::embedding_engine::idle_for();
+            if should_unload(
+                crate::embedding_engine::is_loaded(),
+                false,
+                embedder_idle.unwrap_or(Duration::ZERO),
+                MODEL_IDLE_TIMEOUT,
+            ) {
+                crate::embedding_engine::unload();
+            }
         }
     });
 }
