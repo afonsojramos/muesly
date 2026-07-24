@@ -7,6 +7,7 @@ pub mod dictation_preset;
 pub mod folder_context;
 pub mod folders;
 pub mod meeting;
+pub mod meeting_embeddings;
 pub mod notes;
 pub mod setting;
 pub mod speaker_names;
