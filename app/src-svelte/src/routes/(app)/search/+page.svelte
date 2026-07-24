@@ -118,6 +118,9 @@
 	}
 
 	onMount(() => {
+		// Seed from ?q= when the palette's deep-search row carried a query over.
+		const initial = page.url.searchParams.get('q')?.trim();
+		if (initial) onInput(initial);
 		document.getElementById('search-input')?.focus();
 		const handleKeydown = (e: KeyboardEvent): void => {
 			if (e.key === 'Escape') {

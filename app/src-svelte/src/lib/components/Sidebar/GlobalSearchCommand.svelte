@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { FileText, Folder, LoaderCircle } from '@lucide/svelte';
+	import { FileText, Folder, LoaderCircle, Search } from '@lucide/svelte';
+	import { page } from '$app/state';
 
 	import { navigate } from '$lib/navigation';
 	import { compareByDateDesc } from '$lib/date-groups';
@@ -45,6 +46,22 @@
 		open = false;
 		query = '';
 		void navigate(`/meeting-details?id=${meetingId}`);
+	}
+
+	// Viewing a folder scopes deep search to it (the /search view can widen).
+	const deepSearchFolderId = $derived(
+		page.url.pathname === '/folder' ? page.url.searchParams.get('id') : null,
+	);
+
+	function openDeepSearch(): void {
+		const params = new URLSearchParams();
+		const q = query.trim();
+		if (q) params.set('q', q);
+		if (deepSearchFolderId) params.set('folder', deepSearchFolderId);
+		const suffix = params.size > 0 ? `?${params.toString()}` : '';
+		open = false;
+		query = '';
+		void navigate(`/search${suffix}`);
 	}
 
 	function handleOpenChange(nextOpen: boolean): void {
@@ -112,5 +129,13 @@
 				{/each}
 			</Command.Group>
 		{/if}
+		<Command.Group>
+			<Command.Item value="deep-search" onSelect={openDeepSearch}>
+				<Search class="size-4 text-muted-foreground" />
+				<span>
+					{deepSearchFolderId ? 'Search this folder in depth…' : 'Search transcripts in depth…'}
+				</span>
+			</Command.Item>
+		</Command.Group>
 	</Command.List>
 </Command.Dialog>

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { ArrowLeft, ChevronRight, Folder, Search } from '@lucide/svelte';
+	import { ArrowLeft, ChevronRight, Folder } from '@lucide/svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	import { navigate, goHome } from '$lib/navigation';
+	import { goHome } from '$lib/navigation';
 	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import FolderContext from '$lib/components/FolderContext.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
@@ -28,11 +28,6 @@
 	// the folders you clicked through to get here (see $lib/navigation).
 	function goBack(): void {
 		void goHome();
-	}
-
-	// Search scoped to this folder opens the shared main-area search view.
-	function openSearch(): void {
-		if (folderId) void navigate(`/search?folder=${folderId}`);
 	}
 
 	function openMeeting(id: string): void {
@@ -101,30 +96,6 @@
 			>
 				{folder?.name ?? 'Folder'}
 			</h1>
-			{#if folder && meetings.length > 0}
-				<Tooltip.Provider delayDuration={300}>
-					<Tooltip.Root>
-						<Tooltip.Trigger>
-							{#snippet child({ props })}
-								<Button
-									{...props}
-									onclick={openSearch}
-									variant="ghost"
-									size="icon-sm"
-									class="ml-auto text-muted-foreground hover:text-foreground"
-									aria-label="Search this folder"
-								>
-									<Search />
-								</Button>
-							{/snippet}
-						</Tooltip.Trigger>
-						<Tooltip.Content>
-							Search this folder
-							<span class="ml-1.5 tracking-wide opacity-60">⌘K</span>
-						</Tooltip.Content>
-					</Tooltip.Root>
-				</Tooltip.Provider>
-			{/if}
 		</div>
 	</div>
 
