@@ -69,13 +69,17 @@
 	const results = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		if (!q) return [];
+		// Title matches render instantly and keep their positions; transcript
+		// matches arrive async, so they append below instead of interleaving by
+		// date — settled rows never reshuffle while the search catches up.
 		const matchedIds = new Set(sidebar.searchResults.map((r) => r.id));
-		return sidebar.meetings
-			.filter((m) => {
-				if (effectiveScopeId && m.folderId !== effectiveScopeId) return false;
-				return matchedIds.has(m.id) || m.title.toLowerCase().includes(q);
-			})
+		const inScope = sidebar.meetings
+			.filter((m) => !effectiveScopeId || m.folderId === effectiveScopeId)
 			.sort((a, b) => compareByDateDesc(a.createdAt, b.createdAt));
+		const titleMatches = inScope.filter((m) => m.title.toLowerCase().includes(q));
+		const titleIds = new Set(titleMatches.map((m) => m.id));
+		const transcriptOnly = inScope.filter((m) => matchedIds.has(m.id) && !titleIds.has(m.id));
+		return [...titleMatches, ...transcriptOnly];
 	});
 
 	// NL hits, filtered to the active folder scope like the transcript results —
@@ -216,49 +220,20 @@
 				</div>
 			{/if}
 
-			{#if scopedNlHits.length > 0}
-				<div class="mt-5 rounded-xl border border-border bg-card p-4">
-					<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-						Natural-language matches
-					</p>
-					<ul class="mt-2 flex flex-col gap-2">
-						{#each scopedNlHits as hit (hit.meeting_id + hit.match_context)}
-							<li>
-								<button
-									type="button"
-									class="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary"
-									onclick={() => openMeeting(hit.meeting_id)}
-								>
-									<span class="font-medium">{hit.title}</span>
-									<p class="mt-0.5 line-clamp-2 text-muted-foreground">{hit.match_context}</p>
-								</button>
-							</li>
-						{/each}
-					</ul>
-					{#if nlPack}
-						<details class="mt-3 text-xs text-muted-foreground">
-							<summary class="cursor-pointer">Context pack for Ask anything</summary>
-							<pre
-								class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{nlPack}</pre>
-						</details>
-					{/if}
-				</div>
-			{/if}
-
 			<div class="mt-5">
 				{#if !query.trim()}
 					<div class="py-20 text-center text-sm text-muted-foreground">
 						Type to search across your notes and transcripts.
 					</div>
-				{:else if sidebar.searchFailed && scopedNlHits.length === 0}
+				{:else if sidebar.searchFailed && results.length === 0 && scopedNlHits.length === 0}
 					<div class="py-16 text-center text-sm text-destructive">
 						Search failed. Please try again.
 					</div>
-				{:else if results.length === 0}
+				{:else if results.length === 0 && scopedNlHits.length === 0}
 					<div class="py-16 text-center text-sm text-muted-foreground">
 						{sidebar.isSearching ? 'Searching…' : `No notes match “${query.trim()}”.`}
 					</div>
-				{:else}
+				{:else if results.length > 0}
 					<div class="flex flex-col gap-2">
 						{#each results as meeting (meeting.id)}
 							{@const inFolder = !effectiveScopeId ? folderName(meeting.folderId) : null}
@@ -290,6 +265,37 @@
 					</div>
 				{/if}
 			</div>
+
+			<!-- NL matches sit below the keyword results: the embedding-backed search
+			     lands late, so appearing here appends instead of shoving the list down. -->
+			{#if scopedNlHits.length > 0}
+				<div class="mt-5 rounded-xl border border-border bg-card p-4">
+					<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Natural-language matches
+					</p>
+					<ul class="mt-2 flex flex-col gap-2">
+						{#each scopedNlHits as hit (hit.meeting_id + hit.match_context)}
+							<li>
+								<button
+									type="button"
+									class="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary"
+									onclick={() => openMeeting(hit.meeting_id)}
+								>
+									<span class="font-medium">{hit.title}</span>
+									<p class="mt-0.5 line-clamp-2 text-muted-foreground">{hit.match_context}</p>
+								</button>
+							</li>
+						{/each}
+					</ul>
+					{#if nlPack}
+						<details class="mt-3 text-xs text-muted-foreground">
+							<summary class="cursor-pointer">Context pack for Ask anything</summary>
+							<pre
+								class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 p-2">{nlPack}</pre>
+						</details>
+					{/if}
+				</div>
+			{/if}
 		</div>
 	</div>
 </div>
