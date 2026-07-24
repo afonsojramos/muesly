@@ -66,8 +66,12 @@ pub fn set_models_directory<R: Runtime>(app: &AppHandle<R>) {
         log::error!("embedding engine: app data dir unavailable");
         return;
     };
-    let models_dir = app_data_dir.join("models");
-    *MODELS_DIR.lock().unwrap() = Some(models_dir);
+    set_models_root(app_data_dir.join("models"));
+}
+
+/// Direct models-root override (tests and headless tooling).
+pub fn set_models_root(root: PathBuf) {
+    *MODELS_DIR.lock().unwrap() = Some(root);
 }
 
 fn embeddings_dir() -> Option<PathBuf> {
@@ -398,5 +402,42 @@ mod tests {
                 "missing integrity pin for {local}"
             );
         }
+    }
+
+    /// Real-model integration smoke: verifies tokenizer load, ONNX input/
+    /// output names, pooling, and that semantically related sentences rank
+    /// closer than unrelated ones — across languages. Needs the pinned
+    /// artifacts on disk (no CI models): point MUESLY_EMBEDDING_MODELS_ROOT at
+    /// a models root whose `embeddings/` holds them, then run with --ignored.
+    #[test]
+    #[ignore]
+    fn real_model_smoke_embeds_and_ranks() {
+        let root = std::env::var("MUESLY_EMBEDDING_MODELS_ROOT")
+            .expect("set MUESLY_EMBEDDING_MODELS_ROOT to run the real-model smoke");
+        set_models_root(PathBuf::from(root));
+        assert!(is_model_available(), "embedding artifacts missing");
+
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let query = runtime
+            .block_on(embed_query("What did we decide about pricing?"))
+            .expect("query embedding");
+        assert_eq!(query.len(), EMBEDDING_DIMS);
+
+        let passages = runtime
+            .block_on(embed_passages(vec![
+                "We discussed the subscription tiers and settled on monthly billing.".to_string(),
+                "Hablamos de los niveles de suscripción y los precios.".to_string(),
+                "The office plants need watering twice a week.".to_string(),
+            ]))
+            .expect("passage embeddings");
+        let dot = |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+        let english_pricing = dot(&query, &passages[0]);
+        let spanish_pricing = dot(&query, &passages[1]);
+        let plants = dot(&query, &passages[2]);
+        assert!(
+            english_pricing > plants && spanish_pricing > plants,
+            "pricing passages must outrank the unrelated one \
+             (en={english_pricing:.3} es={spanish_pricing:.3} plants={plants:.3})"
+        );
     }
 }
