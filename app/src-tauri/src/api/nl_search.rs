@@ -1,4 +1,6 @@
-//! Natural-language search across meetings: FTS-style LIKE retrieval + packed context.
+//! Natural-language search across meetings: FTS-style LIKE retrieval fused
+//! with on-device semantic similarity (when the embedding model is present),
+//! plus a packed context block. Model absent ⇒ keyword-only, exactly as before.
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
@@ -75,6 +77,53 @@ pub async fn api_nl_search_meetings<R: Runtime>(
             .cmp(&hit_rank_key(&a.match_context, &q))
             .then_with(|| a.title.cmp(&b.title))
     });
+
+    // Hybrid upgrade: fuse with the semantic ranking when the on-device
+    // embedding model is available (reciprocal rank fusion, same as chat).
+    if let Some(query_vector) = crate::embedding_engine::embed_query(&q).await {
+        let semantic =
+            crate::database::repositories::meeting_embeddings::MeetingEmbeddingsRepository::scan(
+                pool,
+                crate::embedding_engine::EMBEDDING_MODEL_ID,
+                None,
+                &query_vector,
+                MAX_NL_HITS,
+            )
+            .await
+            .unwrap_or_default();
+        if !semantic.is_empty() {
+            let lexical_order: Vec<String> = hits.iter().map(|h| h.meeting_id.clone()).collect();
+            let semantic_order: Vec<String> =
+                semantic.iter().map(|h| h.meeting_id.clone()).collect();
+            let fused = crate::summary::global_chat::rrf_fuse(&lexical_order, &semantic_order);
+            let mut merged: Vec<NlSearchHit> = Vec::with_capacity(fused.len());
+            for meeting_id in fused {
+                if let Some(hit) = hits.iter().find(|h| h.meeting_id == meeting_id) {
+                    merged.push(hit.clone());
+                    continue;
+                }
+                let Some(semantic_hit) = semantic.iter().find(|h| h.meeting_id == meeting_id)
+                else {
+                    continue;
+                };
+                if let Ok(Some(title)) = sqlx::query_scalar::<_, String>(
+                    "SELECT title FROM meetings WHERE id = ? AND deleted_at IS NULL",
+                )
+                .bind(&meeting_id)
+                .fetch_optional(pool)
+                .await
+                {
+                    merged.push(NlSearchHit {
+                        meeting_id,
+                        title,
+                        match_context: semantic_hit.excerpt.clone(),
+                        timestamp: clock_label(semantic_hit.audio_start_time),
+                    });
+                }
+            }
+            hits = merged;
+        }
+    }
     hits.truncate(MAX_NL_HITS);
     let context_pack = build_context_pack(&q, &hits);
     Ok(NlSearchResponse {
@@ -82,6 +131,18 @@ pub async fn api_nl_search_meetings<R: Runtime>(
         hits,
         context_pack,
     })
+}
+
+/// MM:SS label for a semantic hit's chunk start (empty for summary chunks,
+/// matching lexical hits whose timestamp came from the transcript row).
+fn clock_label(audio_start_time: Option<f64>) -> String {
+    match audio_start_time {
+        Some(seconds) if seconds >= 0.0 => {
+            let total = seconds as u64;
+            format!("{:02}:{:02}", total / 60, total % 60)
+        }
+        _ => String::new(),
+    }
 }
 
 /// Score a hit for ranking (pure): prefer denser match context.
@@ -121,5 +182,13 @@ mod tests {
     #[test]
     fn rank_prefers_full_query() {
         assert!(hit_rank_key("the budget plan", "budget") > hit_rank_key("hello", "budget"));
+    }
+
+    #[test]
+    fn clock_labels_format_or_stay_empty() {
+        assert_eq!(clock_label(Some(75.4)), "01:15");
+        assert_eq!(clock_label(Some(0.0)), "00:00");
+        assert_eq!(clock_label(None), "");
+        assert_eq!(clock_label(Some(-3.0)), "");
     }
 }
