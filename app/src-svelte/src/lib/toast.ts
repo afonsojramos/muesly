@@ -62,6 +62,9 @@ export const toast = {
 	info(message: string, options?: ToastOptions): void {
 		sonner.info(message, toSonner(options));
 	},
+	warning(message: string, options?: ToastOptions): void {
+		sonner.warning(message, toSonner(options));
+	},
 	/** A spinner toast that persists until dismissed (or updated via `id`). */
 	loading(message: string, options?: ToastOptions): string | number {
 		return sonner.loading(message, toSonner(options));

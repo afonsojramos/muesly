@@ -23,6 +23,7 @@
 		showUpdateNotification,
 	} from '$lib/components/update-notification';
 	import { Toaster } from '$lib/components/ui/sonner';
+	import { whisperDisplayName } from '$lib/components/WhisperModelManager.svelte';
 	import Sidebar from '$lib/components/Sidebar/Sidebar.svelte';
 	import MainContent from '$lib/components/MainContent.svelte';
 	import ChatBar from '$lib/components/ChatBar/ChatBar.svelte';
@@ -448,6 +449,26 @@
 				);
 				if (cancelled) unlistenAudioPermission();
 				else unsubscribers.push(unlistenAudioPermission);
+
+				// The engine loaded a different model than the configured one
+				// (e.g. it was deleted from disk). Never let that stay silent:
+				// the user believes a specific model is transcribing.
+				const unlistenModelFallback = await listen<{
+					provider: string;
+					requested: string;
+					loaded: string;
+				}>('transcription-model-fallback', (event) => {
+					const { requested, loaded } = event.payload;
+					toast.warning(`Transcribing with ${whisperDisplayName(loaded)}`, {
+						// Validation and engine init can both hit the fallback for
+						// one recording; a stable id collapses them into one toast.
+						id: `model-fallback-${requested}-${loaded}`,
+						description: `${whisperDisplayName(requested)} isn't available on this device, so this recording uses ${whisperDisplayName(loaded)} instead. Pick a downloaded model in Settings to silence this.`,
+						duration: 10000,
+					});
+				});
+				if (cancelled) unlistenModelFallback();
+				else unsubscribers.push(unlistenModelFallback);
 
 				// Silent microphone: backend warns ~10s into a recording if the mic
 				// never rose above the silence floor (muted, wrong device, dead hardware).
