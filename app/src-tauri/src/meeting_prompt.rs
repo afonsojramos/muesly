@@ -162,14 +162,7 @@ async fn accept<R: Runtime>(app: AppHandle<R>) {
     {
         Ok(()) => {
             hide(&app);
-            let nstate =
-                app.state::<crate::notifications::commands::NotificationManagerState<R>>();
-            let _ = crate::notifications::commands::show_recording_started_notification(
-                &app,
-                &nstate,
-                prompt.title.clone(),
-            )
-            .await;
+            crate::notifications::notify_recording_started(&app, prompt.title.as_deref());
             if let (Some(uid), Some(minute)) =
                 (prompt.ical_uid.as_deref(), prompt.occurrence_minute)
             {

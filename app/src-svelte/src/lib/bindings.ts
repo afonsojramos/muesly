@@ -520,34 +520,8 @@ export const commands = {
 	getDictationShortcut: () => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("get_dictation_shortcut")),
 	/**  Set (or reset with `None`) the dictation shortcut accelerator. */
 	setDictationShortcut: (accelerator: string | null) => typedError<GlobalShortcutInfo, string>(__TAURI_INVOKE("set_dictation_shortcut", { accelerator })),
-	/**  Get notification settings */
-	getNotificationSettings: () => typedError<NotificationSettings, string>(__TAURI_INVOKE("get_notification_settings")),
-	/**  Set notification settings */
-	setNotificationSettings: (settings: NotificationSettings) => typedError<null, string>(__TAURI_INVOKE("set_notification_settings", { settings })),
-	/**  Request notification permission from the system */
-	requestNotificationPermission: () => typedError<boolean, string>(__TAURI_INVOKE("request_notification_permission")),
-	/**  Show a custom notification */
-	showNotification: (notification: Notification) => typedError<null, string>(__TAURI_INVOKE("show_notification", { notification })),
-	/**  Show a test notification */
-	showTestNotification: () => typedError<null, string>(__TAURI_INVOKE("show_test_notification")),
-	/**  Check if Do Not Disturb is active */
-	isDndActive: () => typedError<boolean, string>(__TAURI_INVOKE("is_dnd_active")),
-	/**  Get system Do Not Disturb status */
-	getSystemDndStatus: () => typedError<boolean, string>(__TAURI_INVOKE("get_system_dnd_status")),
-	/**  Set manual Do Not Disturb mode */
-	setManualDnd: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_manual_dnd", { enabled })),
-	/**  Set user consent for notifications */
-	setNotificationConsent: (consent: boolean) => typedError<null, string>(__TAURI_INVOKE("set_notification_consent", { consent })),
-	/**  Clear all notifications */
-	clearNotifications: () => typedError<null, string>(__TAURI_INVOKE("clear_notifications")),
-	/**  Check if notification system is ready */
-	isNotificationSystemReady: () => typedError<boolean, string>(__TAURI_INVOKE("is_notification_system_ready")),
-	/**  Initialize notification manager manually (for testing and ensuring it's ready) */
-	initializeNotificationManagerManual: () => typedError<null, string>(__TAURI_INVOKE("initialize_notification_manager_manual")),
-	/**  Test notification with automatic consent for development/testing */
-	testNotificationWithAutoConsent: () => typedError<null, string>(__TAURI_INVOKE("test_notification_with_auto_consent")),
-	/**  Get notification system statistics */
-	getNotificationStats: () => typedError<any, string>(__TAURI_INVOKE("get_notification_stats")),
+	getSystemNotificationsEnabled: () => __TAURI_INVOKE<boolean>("get_system_notifications_enabled"),
+	setSystemNotificationsEnabled: (enabled: boolean) => typedError<null, string>(__TAURI_INVOKE("set_system_notifications_enabled", { enabled })),
 	/**  Start system audio capture (for capturing system output audio) */
 	startSystemAudioCaptureCommand: () => typedError<string, string>(__TAURI_INVOKE("start_system_audio_capture_command")),
 	/**  List available system audio devices */
@@ -1270,72 +1244,6 @@ export type NotesResponse_Serialize = {
 	notes_markdown?: string | null,
 	summary_context?: string | null,
 };
-
-export type Notification = {
-	id: string | null,
-	title: string,
-	body: string,
-	notification_type: NotificationType,
-	priority: NotificationPriority,
-	timeout: NotificationTimeout,
-	icon: string | null,
-	sound: boolean,
-	actions: NotificationAction[],
-};
-
-export type NotificationAction = {
-	id: string,
-	title: string,
-	action_type: NotificationActionType,
-};
-
-export type NotificationActionType = "Button" | "Reply";
-
-export type NotificationPreferences = {
-	/**  Show recording started notifications */
-	show_recording_started: boolean,
-	/**  Show recording stopped notifications */
-	show_recording_stopped: boolean,
-	/**  Show recording paused notifications */
-	show_recording_paused: boolean,
-	/**  Show recording resumed notifications */
-	show_recording_resumed: boolean,
-	/**  Show transcription complete notifications */
-	show_transcription_complete: boolean,
-	/**  Show meeting reminder notifications */
-	show_meeting_reminders: boolean,
-	/**  Show system error notifications */
-	show_system_errors: boolean,
-	/**  Minutes before meeting to show reminder (0 = disabled) */
-	meeting_reminder_minutes: number[],
-};
-
-export type NotificationPriority = "Low" | "Normal" | "High" | "Critical";
-
-export type NotificationSettings = {
-	/**  Enable recording lifecycle notifications (start/stop/pause/resume) */
-	recording_notifications: boolean,
-	/**  Enable time-based meeting reminders */
-	time_based_reminders: boolean,
-	/**  Enable meeting reminders based on calendar events */
-	meeting_reminders: boolean,
-	/**  Respect system Do Not Disturb settings */
-	respect_do_not_disturb: boolean,
-	/**  Enable notification sounds */
-	notification_sound: boolean,
-	/**  System notification permission has been granted */
-	system_permission_granted: boolean,
-	/**  User has completed the initial notification setup */
-	consent_given: boolean,
-	/**  Manual DND mode (user-controlled) */
-	manual_dnd_mode: boolean,
-	/**  Notification preferences for different types */
-	notification_preferences: NotificationPreferences,
-};
-
-export type NotificationTimeout = "Never" | { Seconds: number } | "Default";
-
-export type NotificationType = "RecordingStarted" | "RecordingStopped" | "RecordingPaused" | "RecordingResumed" | "TranscriptionComplete" | ({ MeetingReminder: number }) & { SystemError?: never } | ({ SystemError: string }) & { MeetingReminder?: never } | "Test";
 
 export type OllamaModel = {
 	name: string,

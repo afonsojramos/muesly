@@ -47,27 +47,6 @@ export interface StorageLocations {
 	recordings: string;
 }
 
-export interface NotificationSettings {
-	recording_notifications: boolean;
-	time_based_reminders: boolean;
-	meeting_reminders: boolean;
-	respect_do_not_disturb: boolean;
-	notification_sound: boolean;
-	system_permission_granted: boolean;
-	consent_given: boolean;
-	manual_dnd_mode: boolean;
-	notification_preferences: {
-		show_recording_started: boolean;
-		show_recording_stopped: boolean;
-		show_recording_paused: boolean;
-		show_recording_resumed: boolean;
-		show_transcription_complete: boolean;
-		show_meeting_reminders: boolean;
-		show_system_errors: boolean;
-		meeting_reminder_minutes: number[];
-	};
-}
-
 interface VocabularyLearningUpdate {
 	preferred: string;
 	alias: { from: string; observations: number };
@@ -141,7 +120,7 @@ class ConfigStore {
 		isBrowser ? loadBetaFeatures() : { ...DEFAULT_BETA_FEATURES },
 	);
 
-	notificationSettings = $state<NotificationSettings | null>(null);
+	systemNotificationsEnabled = $state<boolean | null>(null);
 	storageLocations = $state<StorageLocations | null>(null);
 	isLoadingPreferences = $state(false);
 
@@ -515,11 +494,12 @@ class ConfigStore {
 
 		try {
 			try {
-				const settings = await invoke<NotificationSettings>('get_notification_settings');
-				this.notificationSettings = settings;
+				this.systemNotificationsEnabled = await invoke<boolean>(
+					'get_system_notifications_enabled',
+				);
 			} catch (notifError) {
-				console.error('[ConfigStore] Failed to load notification settings:', notifError);
-				this.notificationSettings = null;
+				console.error('[ConfigStore] Failed to load notification setting:', notifError);
+				this.systemNotificationsEnabled = null;
 			}
 
 			const [dbDir, modelsDir, recordingsDir] = await Promise.all([
@@ -543,9 +523,9 @@ class ConfigStore {
 		}
 	};
 
-	updateNotificationSettings = async (settings: NotificationSettings): Promise<void> => {
-		await invoke('set_notification_settings', { settings });
-		this.notificationSettings = settings;
+	setSystemNotificationsEnabled = async (enabled: boolean): Promise<void> => {
+		await invoke('set_system_notifications_enabled', { enabled });
+		this.systemNotificationsEnabled = enabled;
 	};
 }
 

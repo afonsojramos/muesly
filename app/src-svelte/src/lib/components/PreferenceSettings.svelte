@@ -35,38 +35,21 @@
 		void config.loadPreferences();
 	});
 
-	const notificationsEnabled = $derived(
-		config.notificationSettings
-			? config.notificationSettings.notification_preferences.show_recording_started &&
-					config.notificationSettings.notification_preferences.show_recording_stopped
-			: true,
-	);
+	const notificationsEnabled = $derived(config.systemNotificationsEnabled ?? false);
 
 	// Track a single "preferences viewed" event once settings are available.
 	$effect(() => {
 		if (hasTrackedView || config.isLoadingPreferences) return;
 		hasTrackedView = true;
 		void Analytics.track('preferences_viewed', {
-			notifications_enabled: config.notificationSettings
-				? config.notificationSettings.notification_preferences.show_recording_started.toString()
-				: 'false',
+			notifications_enabled: (config.systemNotificationsEnabled ?? false).toString(),
 		});
 	});
 
 	async function handleNotificationToggle(enabled: boolean): Promise<void> {
-		const current = config.notificationSettings;
-		if (!current) return;
-
 		notificationSaving = true;
 		try {
-			await config.updateNotificationSettings({
-				...current,
-				notification_preferences: {
-					...current.notification_preferences,
-					show_recording_started: enabled,
-					show_recording_stopped: enabled,
-				},
-			});
+			await config.setSystemNotificationsEnabled(enabled);
 			await Analytics.track('notification_settings_changed', {
 				notifications_enabled: enabled.toString(),
 			});
@@ -136,7 +119,7 @@
 					</div>
 					<Switch
 						checked={notificationsEnabled}
-						disabled={!config.notificationSettings || notificationSaving}
+						disabled={config.systemNotificationsEnabled === null || notificationSaving}
 						aria-labelledby="system-notifications-label"
 						onCheckedChange={handleNotificationToggle}
 					/>
