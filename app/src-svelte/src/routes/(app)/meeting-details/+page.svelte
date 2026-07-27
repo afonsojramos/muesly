@@ -21,6 +21,9 @@
 		updated_at: string;
 		transcripts: Transcript[];
 		folder_path?: string | null;
+		transcription_provider?: string;
+		transcription_model?: string;
+		transcription_reason?: string;
 	}
 
 	const meetingId = $derived(page.url.searchParams.get('id'));
@@ -110,6 +113,9 @@
 			updated_at: metadata.updated_at,
 			transcripts: paginated.transcripts,
 			folder_path: metadata.folder_path ?? null,
+			transcription_provider: metadata.transcription_provider,
+			transcription_model: metadata.transcription_model,
+			transcription_reason: metadata.transcription_reason,
 		};
 	});
 

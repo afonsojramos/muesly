@@ -49,6 +49,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import ParticipantsTooltip from '$lib/components/ParticipantsTooltip.svelte';
+	import TranscriptionModelTooltip from '$lib/components/TranscriptionModelTooltip.svelte';
 	import SummaryPanel from './SummaryPanel.svelte';
 	import ChatBarSpacer from '$lib/components/ChatBar/ChatBarSpacer.svelte';
 	import NotesView from './NotesView.svelte';
@@ -61,6 +62,9 @@
 		updated_at?: string;
 		transcripts: Transcript[];
 		folder_path?: string | null;
+		transcription_provider?: string;
+		transcription_model?: string;
+		transcription_reason?: string;
 	}
 
 	interface Props {
@@ -749,6 +753,12 @@
 					{#if attendeeChips.length > 0}
 						<ParticipantsTooltip participants={attendeeChips} />
 					{/if}
+					{#if meeting.transcription_model}
+						<TranscriptionModelTooltip
+							model={meeting.transcription_model}
+							reason={meeting.transcription_reason}
+						/>
+					{/if}
 					<div class="ml-auto flex items-center rounded-lg bg-secondary p-1" role="tablist">
 						<Button
 							variant={notesMode === 'enhanced' ? 'default' : 'ghost'}
@@ -801,10 +811,7 @@
 			</div>
 
 			<div
-				class={cn(
-					'min-h-0 flex-1 overflow-y-auto px-8 pt-2',
-					notesMode !== 'notes' && 'hidden',
-				)}
+				class={cn('min-h-0 flex-1 overflow-y-auto px-8 pt-2', notesMode !== 'notes' && 'hidden')}
 			>
 				<NotesView
 					bind:this={notesView}

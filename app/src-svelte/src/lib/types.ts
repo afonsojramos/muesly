@@ -96,6 +96,11 @@ export interface MeetingMetadata {
 	created_at: string;
 	updated_at: string;
 	folder_path?: string;
+	/** Engine/model of the pass that produced the current transcript, and why
+	 * it was chosen. Absent = unknown (legacy meeting or restored transcript). */
+	transcription_provider?: string;
+	transcription_model?: string;
+	transcription_reason?: string;
 }
 
 export interface PaginatedTranscriptsResponse {
