@@ -1242,6 +1242,11 @@ pub async fn stop_recording<R: Runtime>(
         (None, None)
     };
 
+    // Hand this recording's model resolution to the pending-save slot before the
+    // claim is released, so the frontend save reads THIS recording's value even
+    // if a new recording claims the slot and overwrites the live slot first.
+    crate::audio::transcription::stage_transcription_resolution_for_save();
+
     // Set recording flag to false
     info!("🔍 Setting IS_RECORDING to false");
     release_recording_claim();

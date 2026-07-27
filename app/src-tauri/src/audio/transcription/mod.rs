@@ -12,6 +12,7 @@ pub mod worker;
 pub use engine::{
     TranscriptionEngine, configured_transcription_model, get_automatic_transcription_model,
     get_or_init_transcription_engine, get_or_init_whisper, resolve_requested_transcription_model,
+    stage_transcription_resolution_for_save, take_pending_save_resolution,
     validate_transcription_model_ready,
 };
 pub use provider::TranscriptionError;

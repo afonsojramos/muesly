@@ -96,6 +96,15 @@ impl TranscriptRevisionRepository {
             .bind(target)
             .execute(&mut *tx)
             .await?;
+        // The restored transcript's producing model isn't tracked, so clear the
+        // provenance rather than leave the replaced pass's attribution behind.
+        sqlx::query(
+            "UPDATE meetings SET transcription_provider = NULL, transcription_model = NULL, \
+             transcription_reason = NULL WHERE id = ?",
+        )
+        .bind(meeting_id)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(true)
     }
@@ -175,5 +184,48 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(text, "refined");
+    }
+
+    #[tokio::test]
+    async fn restore_clears_transcription_provenance() {
+        let pool = test_pool().await;
+        sqlx::query(
+            "INSERT INTO meetings (id, title, created_at, updated_at, transcription_provider, \
+             transcription_model, transcription_reason) VALUES ('m1', 'Test', ?, ?, 'localWhisper', \
+             'small-q5_1', 'Selected manually')",
+        )
+        .bind(Utc::now())
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+        sqlx::query(
+            "INSERT INTO transcripts (id, meeting_id, transcript, timestamp) VALUES ('t1', 'm1', 'original', ?)",
+        )
+        .bind(Utc::now())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        TranscriptRevisionRepository::snapshot_current(&mut tx, "m1", "test", None, None, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+
+        assert!(
+            TranscriptRevisionRepository::restore_latest(&pool, "m1")
+                .await
+                .unwrap()
+        );
+        let model: Option<String> =
+            sqlx::query_scalar("SELECT transcription_model FROM meetings WHERE id = 'm1'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            model, None,
+            "a restored transcript has unknown provenance; stale attribution must not survive"
+        );
     }
 }

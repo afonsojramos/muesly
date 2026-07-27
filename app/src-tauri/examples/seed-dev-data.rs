@@ -501,8 +501,9 @@ async fn seed(pool: &SqlitePool) {
         let deleted_at = m.trashed.then(|| now.to_rfc3339());
 
         sqlx::query(
-            "INSERT INTO meetings (id, title, created_at, updated_at, folder_path, deleted_at, folder_id) \
-             VALUES (?, ?, ?, ?, NULL, ?, ?)",
+            "INSERT INTO meetings (id, title, created_at, updated_at, folder_path, deleted_at, folder_id, \
+             transcription_provider, transcription_model, transcription_reason) \
+             VALUES (?, ?, ?, ?, NULL, ?, ?, 'localWhisper', 'large-v3-turbo-q5_0', 'Best balance for this computer')",
         )
         .bind(m.id)
         .bind(m.title)

@@ -1084,6 +1084,13 @@ export type MeetingDetails_Deserialize = {
 	created_at: string,
 	updated_at: string,
 	transcripts: MeetingTranscript_Deserialize[],
+	/**
+	 *  Engine/model of the pass that produced the current transcript, and why
+	 *  it was chosen. None = unknown (legacy meeting or restored transcript).
+	 */
+	transcription_provider: string | null,
+	transcription_model: string | null,
+	transcription_reason: string | null,
 };
 
 export type MeetingDetails_Serialize = {
@@ -1092,6 +1099,13 @@ export type MeetingDetails_Serialize = {
 	created_at: string,
 	updated_at: string,
 	transcripts: MeetingTranscript_Serialize[],
+	/**
+	 *  Engine/model of the pass that produced the current transcript, and why
+	 *  it was chosen. None = unknown (legacy meeting or restored transcript).
+	 */
+	transcription_provider?: string | null,
+	transcription_model?: string | null,
+	transcription_reason?: string | null,
 };
 
 /**
@@ -1123,6 +1137,13 @@ export type MeetingMetadata_Deserialize = {
 	created_at: string,
 	updated_at: string,
 	folder_path: string | null,
+	/**
+	 *  Engine/model of the pass that produced the current transcript, and why
+	 *  it was chosen. None = unknown (legacy meeting or restored transcript).
+	 */
+	transcription_provider: string | null,
+	transcription_model: string | null,
+	transcription_reason: string | null,
 };
 
 /**  Meeting metadata without transcripts (for pagination) */
@@ -1132,6 +1153,13 @@ export type MeetingMetadata_Serialize = {
 	created_at: string,
 	updated_at: string,
 	folder_path?: string | null,
+	/**
+	 *  Engine/model of the pass that produced the current transcript, and why
+	 *  it was chosen. None = unknown (legacy meeting or restored transcript).
+	 */
+	transcription_provider?: string | null,
+	transcription_model?: string | null,
+	transcription_reason?: string | null,
 };
 
 /**  A diarized speaker cluster present in a meeting, with any assigned name. */

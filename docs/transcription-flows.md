@@ -43,8 +43,13 @@ Automatic mode never changes the engine during a recording and never downloads
 a model without asking. It prefers the hardware-tier Whisper recommendation,
 falls back through suitable downloaded Whisper models, then uses downloaded
 Parakeet when no hardware-suitable Whisper model exists. The resolved provider
-and model—not the `automatic` sentinel—are written to meeting metadata and
-analytics.
+and model (not the `automatic` sentinel) are written to meeting metadata and
+analytics, and the model the engine ACTUALLY loaded is stamped on the meeting
+row (`transcription_provider/model/reason`) when the meeting saves, so meeting
+details can show "Transcribed with ..." with the selection reason. If the
+engine loads a different model than requested (e.g. the configured one was
+deleted from disk), the backend emits `transcription-model-fallback` and the
+app surfaces a warning toast; the stamped provenance reflects the fallback.
 
 For "translate to English," Automatic excludes Parakeet and both Large v3
 Turbo artifacts: upstream Whisper documents Turbo as transcription-only. A
@@ -90,6 +95,10 @@ flowchart TD
     CHAIN -->|"yes"| SUMMARY["Summary flow (below)"]
     CHAIN -->|"no"| DONE["done"]
 ```
+
+On success both paths rewrite the meeting's transcription provenance columns
+with the resolved model before emitting their completion event; undoing to a
+snapshot clears them (the restored transcript's producing model is unknown).
 
 Progress/terminal events: `retranscription-progress` / `-complete` / `-error`,
 all carrying `meeting_id`. The summary chain lives in the meeting-details

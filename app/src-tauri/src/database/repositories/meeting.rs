@@ -38,7 +38,8 @@ impl MeetingsRepository {
     /// Meetings currently in the trash, most-recently-deleted first.
     pub async fn get_trashed_meetings(pool: &SqlitePool) -> Result<Vec<MeetingModel>, sqlx::Error> {
         sqlx::query_as::<_, MeetingModel>(
-            "SELECT id, title, created_at, updated_at, folder_path, folder_id FROM meetings \
+            "SELECT id, title, created_at, updated_at, folder_path, folder_id, \
+                    transcription_provider, transcription_model, transcription_reason FROM meetings \
              WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
         )
         .fetch_all(pool)
@@ -132,11 +133,14 @@ impl MeetingsRepository {
         let mut transaction = conn.begin().await?;
 
         // Get meeting details
-        let meeting: Option<MeetingModel> =
-            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path, folder_id FROM meetings WHERE id = ?")
-                .bind(meeting_id)
-                .fetch_optional(&mut *transaction)
-                .await?;
+        let meeting: Option<MeetingModel> = sqlx::query_as(
+            "SELECT id, title, created_at, updated_at, folder_path, folder_id, \
+                            transcription_provider, transcription_model, transcription_reason \
+                            FROM meetings WHERE id = ?",
+        )
+        .bind(meeting_id)
+        .fetch_optional(&mut *transaction)
+        .await?;
 
         if meeting.is_none() {
             transaction.rollback().await?;
@@ -176,6 +180,9 @@ impl MeetingsRepository {
                 created_at: meeting.created_at.0.to_rfc3339(),
                 updated_at: meeting.updated_at.0.to_rfc3339(),
                 transcripts: meeting_transcripts,
+                transcription_provider: meeting.transcription_provider,
+                transcription_model: meeting.transcription_model,
+                transcription_reason: meeting.transcription_reason,
             }))
         } else {
             transaction.rollback().await?;
@@ -194,11 +201,14 @@ impl MeetingsRepository {
             ));
         }
 
-        let meeting: Option<MeetingModel> =
-            sqlx::query_as("SELECT id, title, created_at, updated_at, folder_path, folder_id FROM meetings WHERE id = ?")
-                .bind(meeting_id)
-                .fetch_optional(pool)
-                .await?;
+        let meeting: Option<MeetingModel> = sqlx::query_as(
+            "SELECT id, title, created_at, updated_at, folder_path, folder_id, \
+                            transcription_provider, transcription_model, transcription_reason \
+                            FROM meetings WHERE id = ?",
+        )
+        .bind(meeting_id)
+        .fetch_optional(pool)
+        .await?;
 
         Ok(meeting)
     }
@@ -236,6 +246,28 @@ impl MeetingsRepository {
         .await?;
 
         Ok((transcripts, total.0))
+    }
+
+    /// Record which engine/model produced the meeting's current transcript
+    /// (and why it was chosen). Rewritten by every full transcription pass.
+    pub async fn set_transcription_provenance(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        provider: &str,
+        model: &str,
+        reason: &str,
+    ) -> Result<(), SqlxError> {
+        sqlx::query(
+            "UPDATE meetings SET transcription_provider = ?, transcription_model = ?, \
+             transcription_reason = ? WHERE id = ?",
+        )
+        .bind(provider)
+        .bind(model)
+        .bind(reason)
+        .bind(meeting_id)
+        .execute(pool)
+        .await?;
+        Ok(())
     }
 
     pub async fn update_meeting_title(
@@ -481,6 +513,36 @@ mod tests {
             .unwrap();
         assert_eq!(trashed.len(), 1);
         assert_eq!(trashed[0].id, "m1");
+    }
+
+    #[tokio::test]
+    async fn transcription_provenance_roundtrips_through_metadata() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+
+        MeetingsRepository::set_transcription_provenance(
+            &pool,
+            "m1",
+            "localWhisper",
+            "small-q5_1",
+            "Best balance for this computer",
+        )
+        .await
+        .unwrap();
+
+        let metadata = MeetingsRepository::get_meeting_metadata(&pool, "m1")
+            .await
+            .unwrap()
+            .expect("meeting exists");
+        assert_eq!(
+            metadata.transcription_provider.as_deref(),
+            Some("localWhisper")
+        );
+        assert_eq!(metadata.transcription_model.as_deref(), Some("small-q5_1"));
+        assert_eq!(
+            metadata.transcription_reason.as_deref(),
+            Some("Best balance for this computer")
+        );
     }
 
     #[tokio::test]

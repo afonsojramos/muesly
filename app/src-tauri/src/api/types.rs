@@ -100,6 +100,14 @@ pub struct MeetingDetails {
     pub created_at: String,
     pub updated_at: String,
     pub transcripts: Vec<MeetingTranscript>,
+    /// Engine/model of the pass that produced the current transcript, and why
+    /// it was chosen. None = unknown (legacy meeting or restored transcript).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, specta::Type)]
@@ -130,6 +138,14 @@ pub struct MeetingMetadata {
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub folder_path: Option<String>,
+    /// Engine/model of the pass that produced the current transcript, and why
+    /// it was chosen. None = unknown (legacy meeting or restored transcript).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transcription_reason: Option<String>,
 }
 
 /// Paginated transcripts response with total count

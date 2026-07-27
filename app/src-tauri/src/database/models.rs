@@ -11,6 +11,12 @@ pub struct MeetingModel {
     pub folder_path: Option<String>,
     /// Organizing folder this meeting belongs to (NULL = uncategorized).
     pub folder_id: Option<String>,
+    /// Engine ("localWhisper"/"parakeet"), model, and selection reason of the
+    /// pass that produced the current transcript. NULL = unknown (legacy
+    /// meeting, or an undo restored a transcript of unknown origin).
+    pub transcription_provider: Option<String>,
+    pub transcription_model: Option<String>,
+    pub transcription_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, specta::Type)]

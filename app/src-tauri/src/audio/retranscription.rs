@@ -193,8 +193,8 @@ pub async fn start_retranscription<R: Runtime>(
         meeting_id.clone(),
         meeting_folder_path,
         language,
-        Some(selection.model),
-        Some(selection.provider),
+        Some(selection.model.clone()),
+        Some(selection.provider.clone()),
     )
     .await;
 
@@ -206,6 +206,23 @@ pub async fn start_retranscription<R: Runtime>(
 
     match &result {
         Ok(res) => {
+            // Stamp before the completion event so the UI's refetch sees it.
+            if let Some(state) = app.try_state::<AppState>()
+                && let Err(e) =
+                    crate::database::repositories::meeting::MeetingsRepository::set_transcription_provenance(
+                        state.db_manager.pool(),
+                        &res.meeting_id,
+                        &selection.provider,
+                        &selection.model,
+                        &selection.reason,
+                    )
+                    .await
+            {
+                warn!(
+                    "Failed to record transcription provenance for {}: {}",
+                    res.meeting_id, e
+                );
+            }
             let _ = app.emit(
                 "retranscription-complete",
                 serde_json::json!({

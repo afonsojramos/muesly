@@ -275,8 +275,8 @@ pub async fn start_import<R: Runtime>(
         source_path,
         title,
         language,
-        Some(selection.model),
-        Some(selection.provider),
+        Some(selection.model.clone()),
+        Some(selection.provider.clone()),
     )
     .await;
 
@@ -288,6 +288,23 @@ pub async fn start_import<R: Runtime>(
 
     match &result {
         Ok(res) => {
+            // Stamp before the completion event so the UI's refetch sees it.
+            if let Some(state) = app.try_state::<AppState>()
+                && let Err(e) =
+                    crate::database::repositories::meeting::MeetingsRepository::set_transcription_provenance(
+                        state.db_manager.pool(),
+                        &res.meeting_id,
+                        &selection.provider,
+                        &selection.model,
+                        &selection.reason,
+                    )
+                    .await
+            {
+                warn!(
+                    "Failed to record transcription provenance for {}: {}",
+                    res.meeting_id, e
+                );
+            }
             let _ = app.emit(
                 "import-complete",
                 serde_json::json!({

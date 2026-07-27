@@ -391,6 +391,9 @@ pub async fn api_get_meeting_metadata<R: Runtime>(
                 created_at: meeting.created_at.0.to_rfc3339(),
                 updated_at: meeting.updated_at.0.to_rfc3339(),
                 folder_path: meeting.folder_path,
+                transcription_provider: meeting.transcription_provider,
+                transcription_model: meeting.transcription_model,
+                transcription_reason: meeting.transcription_reason,
             })
         }
         Ok(None) => {
@@ -704,6 +707,26 @@ pub async fn api_save_transcript<R: Runtime>(
                 "Successfully saved transcript and created meeting with id: {}",
                 meeting_id
             );
+            // Live recordings reach this save without model information, so
+            // stamp the resolution the live worker recorded when it loaded.
+            // Consume it: a save not preceded by a fresh recording (e.g. a
+            // recovered transcript being replayed) must not inherit it.
+            if let Some(resolution) = crate::audio::transcription::take_pending_save_resolution()
+                && let Err(e) = MeetingsRepository::set_transcription_provenance(
+                    pool,
+                    &meeting_id,
+                    &resolution.provider,
+                    &resolution.model,
+                    &resolution.reason,
+                )
+                .await
+            {
+                log_warn!(
+                    "Failed to record transcription provenance for {}: {}",
+                    meeting_id,
+                    e
+                );
+            }
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "Transcript saved successfully",
@@ -736,7 +759,9 @@ pub async fn open_meeting_folder<R: Runtime>(
 
     // Get meeting with folder_path
     let meeting: Option<MeetingModel> = sqlx::query_as(
-        "SELECT id, title, created_at, updated_at, folder_path, folder_id FROM meetings WHERE id = ?",
+        "SELECT id, title, created_at, updated_at, folder_path, folder_id, \
+         transcription_provider, transcription_model, transcription_reason \
+         FROM meetings WHERE id = ?",
     )
     .bind(&meeting_id)
     .fetch_optional(pool)

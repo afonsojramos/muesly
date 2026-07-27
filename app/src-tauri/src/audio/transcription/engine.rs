@@ -3,8 +3,71 @@
 // Live transcription engine selection, initialization, and validation.
 
 use log::{info, warn};
-use std::sync::Arc;
-use tauri::{AppHandle, Manager, Runtime};
+use std::sync::{Arc, Mutex};
+use tauri::{AppHandle, Emitter, Manager, Runtime};
+
+/// What the live worker actually loaded for the *current* recording (fallbacks
+/// included), written once at engine init. It is moved into
+/// [`PENDING_SAVE_RESOLUTION`] when the recording stops, so a new recording that
+/// starts before the previous one's save cannot clobber the value the save still
+/// needs.
+static LIVE_TRANSCRIPTION_RESOLUTION: Mutex<
+    Option<crate::transcription_models::ResolvedTranscriptionModel>,
+> = Mutex::new(None);
+
+/// The just-finished recording's resolution, awaiting the frontend save that
+/// stamps provenance on the meeting row. Staged at recording stop (before the
+/// recording claim is released) and *consumed* by that save, so it applies to
+/// exactly one meeting. A save not preceded by a fresh recording (e.g. replaying
+/// a transcript recovered from a prior session) reads `None` and records unknown
+/// provenance rather than inheriting another recording's model.
+static PENDING_SAVE_RESOLUTION: Mutex<
+    Option<crate::transcription_models::ResolvedTranscriptionModel>,
+> = Mutex::new(None);
+
+/// Hand the current recording's resolution to the pending-save slot. Called from
+/// `stop_recording` before the recording claim is released, so the save that
+/// follows reads THIS recording's value even if a new recording immediately
+/// claims the slot and overwrites [`LIVE_TRANSCRIPTION_RESOLUTION`]. Moves the
+/// value (leaving the live slot empty) so it is staged for exactly one save.
+pub fn stage_transcription_resolution_for_save() {
+    let staged = LIVE_TRANSCRIPTION_RESOLUTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take();
+    *PENDING_SAVE_RESOLUTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = staged;
+}
+
+/// Take the resolution staged for the recording that just finished. Consumes it
+/// so a subsequent un-recorded save cannot be misattributed to it.
+pub fn take_pending_save_resolution()
+-> Option<crate::transcription_models::ResolvedTranscriptionModel> {
+    PENDING_SAVE_RESOLUTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+}
+
+/// Tell the frontend a different model was loaded than the one requested, so
+/// silent fallbacks become visible (toast + provenance both reflect it).
+fn emit_model_fallback<R: Runtime>(
+    app: &AppHandle<R>,
+    provider: &str,
+    requested: &str,
+    loaded: &str,
+) {
+    warn!("Transcription model fallback ({provider}): requested '{requested}', loaded '{loaded}'");
+    let _ = app.emit(
+        "transcription-model-fallback",
+        serde_json::json!({
+            "provider": provider,
+            "requested": requested,
+            "loaded": loaded,
+        }),
+    );
+}
 
 /// The engine driving LIVE transcription: Whisper (broad language controls and
 /// prompting) or Parakeet (the fast 25-language alternative, but no language
@@ -287,16 +350,35 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<TranscriptionEngine, String> {
     let selection = configured_transcription_model(app).await?;
-    if selection.provider == "parakeet" {
+    let engine = if selection.provider == "parakeet" {
         info!("🦜 Initializing Parakeet transcription engine");
-        return Ok(TranscriptionEngine::Parakeet(
-            get_or_init_parakeet_model(app, &selection.model).await?,
-        ));
-    }
-    info!("🎤 Initializing Whisper transcription engine");
-    Ok(TranscriptionEngine::Whisper(
-        get_or_init_whisper_model(app, &selection.model).await?,
-    ))
+        TranscriptionEngine::Parakeet(get_or_init_parakeet_model(app, &selection.model).await?)
+    } else {
+        info!("🎤 Initializing Whisper transcription engine");
+        TranscriptionEngine::Whisper(get_or_init_whisper_model(app, &selection.model).await?)
+    };
+
+    // Record what actually loaded (a fallback may differ from the selection)
+    // so the meeting row can be stamped truthfully at save time. This is the
+    // single site that detects a live fallback, so it also owns the toast:
+    // both validation and this worker call the loaders, so emitting inside them
+    // would fire twice per recording.
+    let resolution = match engine.get_current_model().await {
+        Some(loaded) if loaded != selection.model => {
+            emit_model_fallback(app, &selection.provider, &selection.model, &loaded);
+            crate::transcription_models::ResolvedTranscriptionModel {
+                provider: selection.provider.clone(),
+                model: loaded,
+                reason: format!("Fallback: {} was not available", selection.model),
+            }
+        }
+        _ => selection,
+    };
+    *LIVE_TRANSCRIPTION_RESOLUTION
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = Some(resolution);
+
+    Ok(engine)
 }
 
 /// Get or initialize the Parakeet engine with the configured model loaded.
@@ -353,7 +435,7 @@ async fn get_or_init_parakeet_model<R: Runtime>(
     }) {
         configured_model
     } else {
-        models
+        let fallback = models
             .iter()
             .find(|m| matches!(m.status, crate::transcription_models::ModelStatus::Available))
             .map(|m| m.name.clone())
@@ -362,7 +444,8 @@ async fn get_or_init_parakeet_model<R: Runtime>(
                     "Parakeet model '{}' is not downloaded and no other Parakeet model is available",
                     configured_model
                 )
-            })?
+            })?;
+        fallback
     };
     engine
         .load_model(&model_to_load)
