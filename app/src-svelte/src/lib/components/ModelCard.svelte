@@ -22,6 +22,9 @@
 		title: string;
 		icon?: Component;
 		tagline?: string;
+		/** The underlying model's name, shown when the title is a profile alias
+		 *  (e.g. "Recommended") so the actual model is never hidden. */
+		modelLabel?: string;
 		sizeLabel?: string;
 		accuracyLabel?: string;
 		speedLabel?: string;
@@ -43,6 +46,7 @@
 		title,
 		icon: Icon = Box,
 		tagline,
+		modelLabel,
 		sizeLabel,
 		accuracyLabel,
 		speedLabel,
@@ -106,10 +110,13 @@
 					{#if tagline}
 						<p class="mt-1 text-pretty text-sm text-muted-foreground">{tagline}</p>
 					{/if}
-					{#if sizeLabel || accuracyLabel || speedLabel}
+					{#if modelLabel || sizeLabel || accuracyLabel || speedLabel}
 						<div
 							class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground"
 						>
+							{#if modelLabel}
+								<span class="flex items-center gap-1.5"><Box class="size-3.5" /> {modelLabel}</span>
+							{/if}
 							{#if sizeLabel}
 								<span class="flex items-center gap-1.5 tabular-nums"
 									><HardDrive class="size-3.5" /> {sizeLabel}</span

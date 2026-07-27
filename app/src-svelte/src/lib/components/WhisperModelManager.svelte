@@ -125,13 +125,19 @@
 				(model.status === 'Available' || model.name === selectedModel),
 		),
 	);
-	const selectedProfile = $derived(
-		profileDefinitions.find((profile) => profile.modelName === selectedModel),
-	);
-
 	function modelDisplayName(modelName: string): string {
 		const profile = profileDefinitions.find((candidate) => candidate.modelName === modelName);
 		return profile ? `${profile.title} model` : whisperDisplayName(modelName);
+	}
+
+	/** Profile title plus the underlying model, so confirmations never hide
+	 *  which model was actually selected. */
+	function modelDetailLabel(modelName: string): string {
+		if (modelName === 'automatic') return 'Automatic';
+		const profile = profileDefinitions.find((candidate) => candidate.modelName === modelName);
+		return profile
+			? `${profile.title} · ${whisperDisplayName(modelName)}`
+			: whisperDisplayName(modelName);
 	}
 
 	function setModelStatus(modelName: string, status: ModelStatus): void {
@@ -226,7 +232,7 @@
 	async function selectModel(modelName: string): Promise<void> {
 		onModelSelect?.(modelName, providerForModel(modelName));
 		if (autoSave) await saveModelSelection(modelName);
-		toast.success(`Switched to ${modelDisplayName(modelName)}`, { duration: 3000 });
+		toast.success(`Switched to ${modelDetailLabel(modelName)}`, { duration: 3000 });
 	}
 
 	async function deleteModel(modelName: string): Promise<void> {
@@ -360,6 +366,9 @@
 			title: profile?.title ?? whisperDisplayName(model.name),
 			icon: profile?.icon ?? Box,
 			tagline: profile?.tagline ?? getModelTagline(model.name, model.speed, model.accuracy),
+			// Profile titles are hardware-dependent aliases; always disclose the
+			// model behind them.
+			modelLabel: profile ? whisperDisplayName(model.name) : undefined,
 			sizeLabel: formatFileSize(model.size_mb),
 			accuracyLabel: `${model.accuracy} accuracy`,
 			speedLabel: `${model.speed} processing`,
@@ -442,7 +451,7 @@
 				{#if selectedModel === 'automatic'}
 					Automatic will choose once when each transcription starts
 				{:else}
-					Using {selectedProfile?.title ?? whisperDisplayName(selectedModel)} for transcription
+					Using {modelDetailLabel(selectedModel)} for transcription
 				{/if}
 			</div>
 		{/if}
