@@ -87,6 +87,14 @@ pub async fn index_meeting(pool: &SqlitePool, meeting_id: &str) -> Result<()> {
         .context("store summary embeddings")?;
     }
 
+    // No indexable text at all: drop a zero-chunk marker so backfill sweeps
+    // stop re-inspecting this meeting on every startup.
+    if transcript_chunks.is_empty() && summary_chunks.is_empty() {
+        MeetingEmbeddingsRepository::mark_empty(pool, meeting_id, EMBEDDING_MODEL_ID)
+            .await
+            .context("mark meeting as unindexable")?;
+    }
+
     log::debug!(
         "indexed meeting {meeting_id} for semantic search ({} transcript / {} summary chunks)",
         transcript_chunks.len(),
@@ -132,10 +140,10 @@ async fn run_sweep(pool: &SqlitePool) {
     if SWEEP_RUNNING.swap(true, Ordering::SeqCst) {
         return;
     }
-    // Meetings that produce no chunks (e.g. zero transcript segments) never
-    // leave the missing list; skipping ones already attempted this sweep
-    // guarantees forward progress instead of refetching the same batch
-    // forever.
+    // Meetings that produce no chunks (e.g. zero transcript segments) get a
+    // zero-chunk marker in `index_meeting` and leave the missing list for
+    // good; the attempted set is the backstop so a mid-batch failure still
+    // can't refetch the same batch forever.
     let mut attempted: std::collections::HashSet<String> = std::collections::HashSet::new();
     loop {
         let missing = match MeetingEmbeddingsRepository::meetings_missing_index(

@@ -16,6 +16,12 @@ const CHUNK_TARGET_CHARS: usize = 1_200;
 /// Snippet stored per chunk (the chunk head), used for search-result display.
 const EXCERPT_CHARS: usize = 240;
 
+/// Source value for zero-chunk marker rows: a meeting with no transcript or
+/// summary text gets one marker instead of embedding rows, retiring it from
+/// `meetings_missing_index` so every startup sweep doesn't re-inspect it.
+/// Markers carry an empty vector, so `scan`'s dimension check skips them.
+pub const EMPTY_SOURCE: &str = "empty";
+
 /// One chunk of meeting text ready to embed.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Chunk {
@@ -140,6 +146,12 @@ impl MeetingEmbeddingsRepository {
             .bind(source)
             .execute(&mut *tx)
             .await?;
+        // Real content supersedes a zero-chunk marker for this meeting.
+        sqlx::query("DELETE FROM meeting_embeddings WHERE meeting_id = ? AND source = ?")
+            .bind(meeting_id)
+            .bind(EMPTY_SOURCE)
+            .execute(&mut *tx)
+            .await?;
         let now = Utc::now().to_rfc3339();
         for (index, (chunk, vector)) in chunks.iter().zip(vectors.iter()).enumerate() {
             sqlx::query(
@@ -160,6 +172,38 @@ impl MeetingEmbeddingsRepository {
             .execute(&mut *tx)
             .await?;
         }
+        tx.commit().await
+    }
+
+    /// Record that a meeting has no indexable text (empty transcript AND
+    /// empty summary) so backfill sweeps stop re-inspecting it on every
+    /// startup. Clears any stale current-model rows first: the marker
+    /// asserts "no content right now".
+    pub async fn mark_empty(
+        pool: &SqlitePool,
+        meeting_id: &str,
+        model_id: &str,
+    ) -> Result<(), sqlx::Error> {
+        let mut tx = pool.begin().await?;
+        sqlx::query("DELETE FROM meeting_embeddings WHERE meeting_id = ? AND model_id = ?")
+            .bind(meeting_id)
+            .bind(model_id)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(
+            "INSERT INTO meeting_embeddings \
+             (id, meeting_id, source, chunk_index, excerpt, audio_start_time, model_id, \
+              vector, created_at) \
+             VALUES (?, ?, ?, 0, '', NULL, ?, ?, ?)",
+        )
+        .bind(format!("emb-{}", uuid::Uuid::new_v4()))
+        .bind(meeting_id)
+        .bind(EMPTY_SOURCE)
+        .bind(model_id)
+        .bind(Vec::<u8>::new())
+        .bind(Utc::now().to_rfc3339())
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await
     }
 
@@ -499,6 +543,90 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
+    async fn zero_chunk_marker_retires_empty_meetings() {
+        let pool = test_pool().await;
+        MeetingEmbeddingsRepository::mark_empty(&pool, "m2", "test-model")
+            .await
+            .unwrap();
+        // Idempotent: a later sweep's marker replaces the first.
+        MeetingEmbeddingsRepository::mark_empty(&pool, "m2", "test-model")
+            .await
+            .unwrap();
+
+        let missing =
+            MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
+                .await
+                .unwrap();
+        assert_eq!(missing.len(), 2);
+        assert!(!missing.contains(&"m2".to_string()));
+
+        // The marker never surfaces as a hit (empty vector fails the dim check).
+        let hits = MeetingEmbeddingsRepository::scan(&pool, "test-model", None, &[1.0, 0.0], 10)
+            .await
+            .unwrap();
+        assert!(hits.is_empty());
+
+        let markers: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM meeting_embeddings WHERE meeting_id = 'm2'")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(markers, 1);
+    }
+
+    #[tokio::test]
+    async fn real_content_supersedes_the_zero_chunk_marker() {
+        let pool = test_pool().await;
+        MeetingEmbeddingsRepository::mark_empty(&pool, "m1", "test-model")
+            .await
+            .unwrap();
+        MeetingEmbeddingsRepository::replace_for_meeting(
+            &pool,
+            "m1",
+            "transcript",
+            "test-model",
+            &[chunk("hello world", Some(1.0))],
+            &[vec![1.0, 0.0]],
+        )
+        .await
+        .unwrap();
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT source, excerpt FROM meeting_embeddings WHERE meeting_id = 'm1'",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows,
+            vec![("transcript".to_string(), "hello world".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn marking_empty_clears_stale_rows() {
+        let pool = test_pool().await;
+        MeetingEmbeddingsRepository::replace_for_meeting(
+            &pool,
+            "m1",
+            "transcript",
+            "test-model",
+            &[chunk("old", None)],
+            &[vec![1.0, 0.0]],
+        )
+        .await
+        .unwrap();
+        MeetingEmbeddingsRepository::mark_empty(&pool, "m1", "test-model")
+            .await
+            .unwrap();
+        let rows: Vec<String> =
+            sqlx::query_scalar("SELECT source FROM meeting_embeddings WHERE meeting_id = 'm1'")
+                .fetch_all(&pool)
+                .await
+                .unwrap();
+        assert_eq!(rows, vec![EMPTY_SOURCE.to_string()]);
     }
 
     #[test]
