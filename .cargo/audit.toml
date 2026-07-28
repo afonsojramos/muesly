@@ -8,4 +8,46 @@
 # attacker-controlled XML reaches them in this desktop app. Remove these once
 # plist / tauri-winrt-notification release with quick-xml >= 0.41 and
 # `cargo update plist tauri-winrt-notification` picks them up.
-ignore = ["RUSTSEC-2026-0194", "RUSTSEC-2026-0195"]
+ignore = [
+  "RUSTSEC-2026-0194",
+  "RUSTSEC-2026-0195",
+  # gtk-rs GTK3 bindings are unmaintained (and glib 0.18's VariantStrIter is
+  # unsound, fixed only in glib >= 0.20). They reach us transitively via
+  # Tauri 2's Linux stack (wry / tray-icon -> libappindicator -> gtk 0.18),
+  # so every Tauri 2 app carries them until upstream migrates to GTK4. The
+  # code is only compiled on Linux; macOS/Windows builds never link it.
+  # Remove once Tauri ships GTK4-based Linux bindings.
+  "RUSTSEC-2024-0411",
+  "RUSTSEC-2024-0412",
+  "RUSTSEC-2024-0413",
+  "RUSTSEC-2024-0414",
+  "RUSTSEC-2024-0415",
+  "RUSTSEC-2024-0416",
+  "RUSTSEC-2024-0417",
+  "RUSTSEC-2024-0418",
+  "RUSTSEC-2024-0419",
+  "RUSTSEC-2024-0420",
+  "RUSTSEC-2024-0429",
+  # proc-macro-error is unmaintained; it is a proc-macro dependency of
+  # glib-macros 0.18 (same Linux-only GTK3 stack as above), so it only ever
+  # runs at compile time on our own code.
+  "RUSTSEC-2024-0370",
+  # proc-macro-error2 is unmaintained; it comes from defmt, an *optional*
+  # dependency of jiff (via env_logger) whose feature is never enabled, so
+  # the crate is present in Cargo.lock but never compiled.
+  "RUSTSEC-2026-0173",
+  # unic-* crates are unmaintained; they reach us via urlpattern 0.3 <-
+  # tauri-utils (tauri pins urlpattern ^0.3, so we cannot upgrade past
+  # unic-ucd-ident). Used for CSP pattern matching only, no
+  # attacker-controlled unicode processing.
+  "RUSTSEC-2025-0075",
+  "RUSTSEC-2025-0080",
+  "RUSTSEC-2025-0081",
+  "RUSTSEC-2025-0098",
+  "RUSTSEC-2025-0100",
+  # paste is unmaintained; it is a proc-macro dependency of both tokenizers
+  # (already at the latest 0.23.1) and specta 2.0.0-rc (pinned RC line, see
+  # app/src-tauri/Cargo.toml). Compile-time only. Remove once tokenizers /
+  # specta drop their macro_rules_attribute / paste dependency.
+  "RUSTSEC-2024-0436",
+]
