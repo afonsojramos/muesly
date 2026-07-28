@@ -135,7 +135,8 @@ pub async fn api_nl_search_meetings<R: Runtime>(
 
 /// MM:SS label for a semantic hit's chunk start (empty for summary chunks,
 /// matching lexical hits whose timestamp came from the transcript row).
-fn clock_label(audio_start_time: Option<f64>) -> String {
+/// Shared with the global chat's search-result block.
+pub(crate) fn clock_label(audio_start_time: Option<f64>) -> String {
     match audio_start_time {
         Some(seconds) if seconds >= 0.0 => {
             let total = seconds as u64;

@@ -341,6 +341,39 @@ pub(crate) struct SearchHit {
     pub title: String,
     pub created_at: String,
     pub snippet: String,
+    /// Recording moment the snippet came from (semantic transcript chunks
+    /// only); surfaced as `[MM:SS]` so answers can cite a moment.
+    pub audio_start_time: Option<f64>,
+}
+
+/// Render the search evidence block shown to the model. Pure for testability.
+pub(crate) fn format_search_block(query: &str, hits: &[SearchHit]) -> String {
+    let mut block = format!("Search results for \"{}\":\n", query.trim());
+    if hits.is_empty() {
+        block.push_str("(no meetings matched)\n");
+    }
+    for (i, h) in hits.iter().enumerate() {
+        let date = h.created_at.split('T').next().unwrap_or("");
+        // Transcript chunks carry the moment the excerpt came from; prefix it
+        // like read_meeting's timestamped transcript lines so the model can
+        // cite (and cross-reference) the moment.
+        let moment = crate::api::nl_search::clock_label(h.audio_start_time);
+        let moment = if moment.is_empty() {
+            moment
+        } else {
+            format!("[{moment}] ")
+        };
+        block.push_str(&format!(
+            "{}. \"{}\" ({}) — meeting_id: {}\n   {}{}\n",
+            i + 1,
+            h.title,
+            date,
+            h.meeting_id,
+            moment,
+            h.snippet.trim()
+        ));
+    }
+    block
 }
 
 /// Search meetings by transcript content and title. Returns the evidence block
@@ -412,6 +445,7 @@ pub(crate) async fn tool_search(
                 title: r.title,
                 created_at: String::new(),
                 snippet: r.match_context,
+                audio_start_time: None,
             });
         }
     }
@@ -437,6 +471,7 @@ pub(crate) async fn tool_search(
                 title,
                 created_at,
                 snippet: "(title match)".to_string(),
+                audio_start_time: None,
             });
         }
     }
@@ -501,6 +536,7 @@ pub(crate) async fn tool_search(
                         title,
                         created_at,
                         snippet: semantic_hit.excerpt.clone(),
+                        audio_start_time: semantic_hit.audio_start_time,
                     });
                 }
             }
@@ -522,22 +558,7 @@ pub(crate) async fn tool_search(
         }
     }
 
-    let mut block = format!("Search results for \"{}\":\n", query.trim());
-    if hits.is_empty() {
-        block.push_str("(no meetings matched)\n");
-    }
-    for (i, h) in hits.iter().enumerate() {
-        let date = h.created_at.split('T').next().unwrap_or("");
-        block.push_str(&format!(
-            "{}. \"{}\" ({}) — meeting_id: {}\n   {}\n",
-            i + 1,
-            h.title,
-            date,
-            h.meeting_id,
-            h.snippet.trim()
-        ));
-    }
-    (block, hits)
+    (format_search_block(query, &hits), hits)
 }
 
 /// Read one meeting: title, date, AI summary, and a tail-capped labeled
@@ -602,7 +623,9 @@ other meetings.\n\n"
     let answer_rules = "Answer rules: refer to meetings by their title and date (e.g. \
 'In \u{201c}The Space Between Us\u{201d} on July 12 you said\u{2026}'). Say what was actually discussed \
 \u{2014} never answer with only a date or only a meeting name. Never mention meeting_id \
-values and never repeat the evidence blocks verbatim; summarize in your own words. ";
+values and never repeat the evidence blocks verbatim; summarize in your own words. \
+Snippets prefixed with [MM:SS] mark a moment in the recording; when you rely on one, \
+mention the moment (e.g. 'around 12:34'). ";
     if force_answer {
         system.push_str(answer_rules);
         system.push_str(
@@ -982,6 +1005,42 @@ mod tests {
     use super::*;
     use chrono::Utc;
     use sqlx::sqlite::SqlitePoolOptions;
+
+    // ---- pure: search evidence block ----
+
+    fn hit(meeting_id: &str, snippet: &str, audio_start_time: Option<f64>) -> SearchHit {
+        SearchHit {
+            meeting_id: meeting_id.to_string(),
+            title: format!("Title {meeting_id}"),
+            created_at: "2026-07-24T10:00:00Z".to_string(),
+            snippet: snippet.to_string(),
+            audio_start_time,
+        }
+    }
+
+    #[test]
+    fn search_block_prefixes_semantic_snippets_with_their_moment() {
+        let block = format_search_block(
+            "pricing",
+            &[
+                hit("m1", "lexical snippet", None),
+                hit("m2", "semantic chunk excerpt", Some(754.2)),
+            ],
+        );
+        let lexical_line = block.lines().find(|l| l.contains("lexical snippet")).unwrap();
+        assert!(!lexical_line.contains('['));
+        let semantic_line = block
+            .lines()
+            .find(|l| l.contains("semantic chunk excerpt"))
+            .unwrap();
+        assert!(semantic_line.starts_with("   [12:34] "));
+    }
+
+    #[test]
+    fn search_block_handles_empty_results() {
+        let block = format_search_block("nothing", &[]);
+        assert!(block.contains("(no meetings matched)"));
+    }
 
     // ---- pure: rank fusion ----
 
