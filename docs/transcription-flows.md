@@ -97,8 +97,10 @@ flowchart TD
 ```
 
 On success both paths rewrite the meeting's transcription provenance columns
-with the resolved model before emitting their completion event; undoing to a
-snapshot clears them (the restored transcript's producing model is unknown).
+with the resolved model before emitting their completion event. Snapshots
+capture the producing pass's provenance alongside the segments, so undoing to
+a snapshot restores the true attribution (NULL only for snapshots from before
+provenance was tracked, which stays an honest "unknown").
 
 Progress/terminal events: `retranscription-progress` / `-complete` / `-error`,
 all carrying `meeting_id`. The summary chain lives in the meeting-details
