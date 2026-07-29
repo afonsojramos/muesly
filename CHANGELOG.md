@@ -1,5 +1,53 @@
 # Changelog
 
+## [0.4.0](https://github.com/afonsojramos/muesly/compare/muesly-v0.3.0...muesly-v0.4.0) (2026-07-29)
+
+
+### Features
+
+* **app:** Add folder context store ([d9a3943](https://github.com/afonsojramos/muesly/commit/d9a3943ead4bb372d92858478fb0a8ad7a9d7da2))
+* **app:** Add iconbutton with built-in tooltip ([003fb8f](https://github.com/afonsojramos/muesly/commit/003fb8f80c125fbf5541a6ede99d8f912e9664bf))
+* **app:** Add on-device embedding engine ([61e2f58](https://github.com/afonsojramos/muesly/commit/61e2f58dfaae571b99854c78ef7eca102c5b9dc4))
+* **app:** Bias live transcription with the assigned folder's glossary ([07c10db](https://github.com/afonsojramos/muesly/commit/07c10dbf7c6ce8ed261733cd0ede75277c91994a))
+* **app:** Bias retranscription with folder glossary ([1fcf94f](https://github.com/afonsojramos/muesly/commit/1fcf94f3abce03bcaa82ecf0df196b87e1f9d743))
+* **app:** Fuse semantic and keyword meeting search ([5430197](https://github.com/afonsojramos/muesly/commit/5430197898c2b880a9224c6ba0f1accf9782acea))
+* **app:** Fuse semantic ranking into main-window search ([2a6dd98](https://github.com/afonsojramos/muesly/commit/2a6dd9823722fe25ef416a0dc65f958cfc552356))
+* **app:** Give the per-meeting chat folder memory ([a315833](https://github.com/afonsojramos/muesly/commit/a3158333fb39d3327506abafcadd5e330b0ed3aa))
+* **app:** Inject and learn folder memory in summaries ([733c468](https://github.com/afonsojramos/muesly/commit/733c4684e3cad3dbe4bedd703e58c7e5157b5f60))
+* **app:** Keep the semantic index in step with meetings ([4544335](https://github.com/afonsojramos/muesly/commit/454433539808c507fc9c643298c9eb71a3f24b20))
+* **app:** Learn folder memories implicitly ([e68dac1](https://github.com/afonsojramos/muesly/commit/e68dac17e35840e4baf6c69e41d8ac78aa67ee7e))
+* **app:** Link learned memories to their source meeting ([271d212](https://github.com/afonsojramos/muesly/commit/271d212f37c7ffe344d725abbdc756ff2cd58895))
+* **app:** Offer the ai bar on folder pages ([549cb44](https://github.com/afonsojramos/muesly/commit/549cb447d3f66e9a0b032bef64d2361152225cb8))
+* **app:** Prompt before recording detected meetings ([c064505](https://github.com/afonsojramos/muesly/commit/c064505c9acd9d9e8622f00834e3d7717482005a))
+* **app:** Rank folder memories by question relevance ([bb0fe0a](https://github.com/afonsojramos/muesly/commit/bb0fe0a604a1976243d3a5dad27d4ecc9a7c580a))
+* **app:** Reconcile folder memories with provenance ([4c98c93](https://github.com/afonsojramos/muesly/commit/4c98c93c6c7d6ef65dc944ccc9d9b0b561076472))
+* **app:** Route deep search through the command palette ([643f5ac](https://github.com/afonsojramos/muesly/commit/643f5ac0cf70d99ff54eaa8358c7c66d655995bc))
+* **app:** Scope global chat to folders ([52c4fee](https://github.com/afonsojramos/muesly/commit/52c4fee1e38beedbbfbb77d17c3553d5a0ac3f98))
+* **app:** Store meeting embedding chunks ([a5b07fb](https://github.com/afonsojramos/muesly/commit/a5b07fb08e96ee8b0c936679daeed7b26ee1e32f))
+* **app:** Tuck folder memory into a folder actions menu ([5eaa642](https://github.com/afonsojramos/muesly/commit/5eaa6424fa1d800680255472ad7d6778d39b3167))
+* **chat:** Cite recording moments in semantic search snippets ([aa3af25](https://github.com/afonsojramos/muesly/commit/aa3af25194c72d0ba3cb49e00bd63e40146cdb7d))
+* **eval:** Build benchmark executables once per cohort ([3ada9fd](https://github.com/afonsojramos/muesly/commit/3ada9fd238585eb02c511d45577cf0c086ff9b78))
+* **meetings:** Show transcription model provenance in details ([fecc9ed](https://github.com/afonsojramos/muesly/commit/fecc9ed4586a495c558b66d9695555a091435bee))
+* **semantic-search:** Retire zero-content meetings from the backfill sweep ([eb78f9a](https://github.com/afonsojramos/muesly/commit/eb78f9a282707b09f73792a6d42e48635b9d2642))
+* **settings:** Disclose the model behind transcription profiles ([8fc0d06](https://github.com/afonsojramos/muesly/commit/8fc0d069ee9d237340edb690114a7903c569472d))
+* **transcription:** Record per-meeting model provenance and flag fallbacks ([8aa1029](https://github.com/afonsojramos/muesly/commit/8aa1029df568cb6552bb87d36f704615ae644acc))
+* **transcripts:** Restore true transcription provenance on undo ([efa8b9b](https://github.com/afonsojramos/muesly/commit/efa8b9bef3d9f94316f359694199ec179bf65056))
+* **ui:** Warn when transcription falls back to another model ([0f23b0e](https://github.com/afonsojramos/muesly/commit/0f23b0ecaf160e7530973930841125817df304b7))
+
+
+### Bug Fixes
+
+* **app:** Bound semantic index sweeps and embed batches ([2ca980d](https://github.com/afonsojramos/muesly/commit/2ca980d791bb6e063fd5b044b49d2b71444fbed2))
+* **app:** Keep command palette results steady while transcript matches load ([0ee117d](https://github.com/afonsojramos/muesly/commit/0ee117d58b81a18464343186340adfca62d10821))
+* **app:** Mark windows console extern block unsafe ([26aba29](https://github.com/afonsojramos/muesly/commit/26aba29cd21b6343b5fa64903eb438187c95f50d))
+* **app:** Reset the search spinner when the query is cleared mid-flight ([d271a2f](https://github.com/afonsojramos/muesly/commit/d271a2f6297c33fa1e63873d2ba4f9f6fed4dcf2))
+* **app:** Start the semantic backfill after the database is ready ([0d72602](https://github.com/afonsojramos/muesly/commit/0d7260284870d27d5104a91769d321767ce4fa82))
+* **app:** Stop deep search results from shifting when async matches land ([ad6258c](https://github.com/afonsojramos/muesly/commit/ad6258c4e4473c5cc3231c6d3beeeb6398e7085c))
+* **ci:** Unblock rust, audit, and windows eval checks ([9167950](https://github.com/afonsojramos/muesly/commit/91679509c86bf3b163aabd6e4b8267c4a605639d))
+* **eval:** Hash cargo example pairs in the benchmark fixture ([69bd6d2](https://github.com/afonsojramos/muesly/commit/69bd6d2295f8b3faa928c93fa5ad584d6d9d4f3b))
+* **eval:** Make benchmark executable attestation portable ([bac5837](https://github.com/afonsojramos/muesly/commit/bac58374cf57d97873c7ebfd2804bf6f979fa924))
+* **site:** Clear high/critical npm audit advisories ([92db9b6](https://github.com/afonsojramos/muesly/commit/92db9b64682a99e8a24eff25e8d3cd2bcb7d18ba))
+
 ## [0.3.0](https://github.com/afonsojramos/muesly/compare/muesly-v0.2.0...muesly-v0.3.0) (2026-07-18)
 
 
