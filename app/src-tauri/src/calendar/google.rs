@@ -278,13 +278,37 @@ struct OAuthConfig {
     client_secret: String,
 }
 
+/// Runtime env (dev `app/.env` via dotenvy) takes precedence; bundled builds
+/// fall back to values compiled in from the CI build environment. For a
+/// desktop PKCE loopback client, Google treats these as non-confidential.
+///
+/// The id/secret pair always comes from ONE source: mixing a runtime id with
+/// a compiled secret (or vice versa) would pair credentials from two different
+/// OAuth clients, which passes consent and only fails at token exchange.
 fn oauth_config() -> Option<OAuthConfig> {
-    let client_id = std::env::var("MUESLY_GOOGLE_CLIENT_ID")
+    let runtime_id = std::env::var("MUESLY_GOOGLE_CLIENT_ID")
         .ok()
-        .filter(|s| !s.trim().is_empty())?;
-    let client_secret = std::env::var("MUESLY_GOOGLE_CLIENT_SECRET")
-        .ok()
-        .unwrap_or_default();
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let (client_id, client_secret) = match runtime_id {
+        Some(id) => (
+            id,
+            std::env::var("MUESLY_GOOGLE_CLIENT_SECRET")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_default(),
+        ),
+        None => (
+            option_env!("MUESLY_GOOGLE_CLIENT_ID")
+                .map(str::trim)
+                .filter(|s| !s.is_empty())?
+                .to_string(),
+            option_env!("MUESLY_GOOGLE_CLIENT_SECRET")
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string(),
+        ),
+    };
     Some(OAuthConfig {
         client_id,
         client_secret,

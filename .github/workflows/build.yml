@@ -52,10 +52,15 @@ jobs:
     # Sourcemap upload credentials (job-level so beforeBuildCommand's upload
     # script inherits them). Absent secrets => empty => upload step is skipped
     # and the script no-ops, so this never affects builds without them.
+    # The Google OAuth client pair is compiled into the app at build time
+    # (calendar::google reads them via option_env!); absent secrets => empty =>
+    # the built app hides Google Calendar connections, same as before.
     env:
       POSTHOG_CLI_TOKEN: ${{ secrets.POSTHOG_CLI_TOKEN }}
       POSTHOG_CLI_ENV_ID: ${{ secrets.POSTHOG_CLI_ENV_ID }}
       POSTHOG_CLI_HOST: https://eu.posthog.com
+      MUESLY_GOOGLE_CLIENT_ID: ${{ secrets.MUESLY_GOOGLE_CLIENT_ID }}
+      MUESLY_GOOGLE_CLIENT_SECRET: ${{ secrets.MUESLY_GOOGLE_CLIENT_SECRET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

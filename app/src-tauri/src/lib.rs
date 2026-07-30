@@ -1221,7 +1221,8 @@ pub fn run() {
 
     // Load a local `.env` (walks up from the binary's dir, finding `app/.env` in
     // dev) so credentials like MUESLY_GOOGLE_CLIENT_ID/SECRET reach std::env.
-    // No-op when absent; production builds embed config differently.
+    // No-op when absent; bundled builds fall back to values compiled in from
+    // the CI build environment (see calendar::google::oauth_config).
     let _ = dotenvy::dotenv();
 
     // Best-effort crash reporting: forward Rust panics to PostHog error tracking.

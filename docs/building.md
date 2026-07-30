@@ -27,3 +27,7 @@ Both commands auto-detect your GPU and build with the matching acceleration back
 ## Output
 
 Bundles are written under `target/release/bundle/` (relative to the repository root): `.dmg` on macOS, MSI + NSIS installers on Windows, `.AppImage` on Linux. If an AppImage build fails on stripped symbols, set `NO_STRIP=true`.
+
+## Optional integrations
+
+Google Calendar needs an OAuth client pair. In development, put `MUESLY_GOOGLE_CLIENT_ID` and `MUESLY_GOOGLE_CLIENT_SECRET` in `app/.env` (loaded at startup). Production builds compile the pair in from the build environment (`option_env!`); CI supplies them from the repository secrets of the same names. Without either, the app builds fine and simply hides Google Calendar connections.
