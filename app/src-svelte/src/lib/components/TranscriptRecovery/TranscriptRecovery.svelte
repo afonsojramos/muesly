@@ -47,6 +47,7 @@
 	let isLoadingPreview = $state(false);
 	let isRecovering = $state(false);
 	let isDeleting = $state(false);
+	let showDeleteConfirm = $state(false);
 
 	const selectedMeeting = $derived(
 		recoverableMeetings.find((m) => m.meetingId === selectedMeetingId) ?? null,
@@ -76,6 +77,7 @@
 		} else {
 			selectedMeetingId = null;
 			previewTranscripts = [];
+			showDeleteConfirm = false;
 		}
 	});
 
@@ -92,14 +94,14 @@
 		}
 	}
 
-	async function handleDelete(): Promise<void> {
+	function requestDelete(): void {
 		if (!selectedMeetingId) return;
-		if (
-			typeof window !== 'undefined' &&
-			!window.confirm('Are you sure you want to delete this meeting? This cannot be undone.')
-		) {
-			return;
-		}
+		showDeleteConfirm = true;
+	}
+
+	async function confirmDelete(): Promise<void> {
+		if (!selectedMeetingId) return;
+		showDeleteConfirm = false;
 		isDeleting = true;
 		try {
 			await onDelete(selectedMeetingId);
@@ -107,6 +109,10 @@
 			previewTranscripts = [];
 		} catch (error) {
 			console.error('Delete failed:', error);
+			const { toast } = await import('$lib/toast');
+			toast.error('Failed to delete meeting', {
+				description: error instanceof Error ? error.message : String(error),
+			});
 		} finally {
 			isDeleting = false;
 		}
@@ -271,7 +277,7 @@
 			>
 			<Button
 				variant="destructive"
-				onclick={handleDelete}
+				onclick={requestDelete}
 				disabled={!selectedMeetingId || isRecovering || isDeleting}
 			>
 				{#if isDeleting}
@@ -290,6 +296,24 @@
 					<CheckCircle2 data-icon="inline-start" />
 					Recover
 				{/if}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root open={showDeleteConfirm} onOpenChange={(next) => (showDeleteConfirm = next)}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Delete meeting?</Dialog.Title>
+			<Dialog.Description>
+				Are you sure you want to delete this meeting? This cannot be undone.
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="outline" onclick={() => (showDeleteConfirm = false)}>Cancel</Button>
+			<Button variant="destructive" onclick={confirmDelete}>
+				<Trash2 data-icon="inline-start" />
+				Delete
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
