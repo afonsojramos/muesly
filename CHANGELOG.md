@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.0...muesly-v0.4.1) (2026-08-01)
+
+
+### Bug Fixes
+
+* **analytics:** Emit canonical $pageview on navigation ([#34](https://github.com/afonsojramos/muesly/issues/34)) ([45a064e](https://github.com/afonsojramos/muesly/commit/45a064ef99315239749c0155f219f568da28d95b))
+* **calendar:** Compile Google OAuth credentials into release builds ([d5185f6](https://github.com/afonsojramos/muesly/commit/d5185f610b9c240f9f9543aa42ae1cf3f1c7a376))
+* **recovery:** Replace dead window.confirm with in-app delete dialog ([#33](https://github.com/afonsojramos/muesly/issues/33)) ([7bd5860](https://github.com/afonsojramos/muesly/commit/7bd5860b1ff151bd977f740154bc90e6c438bbd6))
+
 ## [0.4.0](https://github.com/afonsojramos/muesly/compare/muesly-v0.3.0...muesly-v0.4.0) (2026-07-29)
 
 
