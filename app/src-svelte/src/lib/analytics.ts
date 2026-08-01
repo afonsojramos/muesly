@@ -587,6 +587,25 @@ export class Analytics {
 
 	// Convenience methods for common events
 	static async trackPageView(pageName: string): Promise<void> {
+		// Emit the canonical PostHog `$pageview` so page-based / web analytics
+		// light up. The app renders its UI in a webview, so `$pageview` (not the
+		// native-mobile `$screen`) is the right event; PostHog keys its page
+		// analytics on it and on `$pathname`. `pageName` is always a static
+		// logical route name (e.g. "home", "note", "meeting_details"), never an
+		// id, so the synthetic path carries no user data.
+		const pathname = `/${pageName}`;
+		const origin =
+			typeof window !== 'undefined' && window.location?.origin
+				? window.location.origin
+				: 'app://muesly';
+		await this.track('$pageview', {
+			$current_url: `${origin}${pathname}`,
+			$pathname: pathname,
+			$screen_name: pageName,
+			page: pageName,
+		});
+
+		// Retain the legacy per-page event so existing insights keep resolving.
 		await this.track(`page_view_${pageName}`, { page: pageName });
 	}
 
