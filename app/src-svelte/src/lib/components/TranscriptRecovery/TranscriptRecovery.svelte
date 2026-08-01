@@ -109,6 +109,10 @@
 			previewTranscripts = [];
 		} catch (error) {
 			console.error('Delete failed:', error);
+			const { toast } = await import('$lib/toast');
+			toast.error('Failed to delete meeting', {
+				description: error instanceof Error ? error.message : String(error),
+			});
 		} finally {
 			isDeleting = false;
 		}
