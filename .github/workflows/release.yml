@@ -12,7 +12,7 @@ on:
 # Prevent duplicate releases
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: false  # Don't cancel releases, fail instead
+  cancel-in-progress: false # Don't cancel releases, fail instead
 
 jobs:
   # STEP 1: Create draft release first
@@ -27,7 +27,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0  # Fetch all tags
+          fetch-depth: 0 # Fetch all tags
 
       - name: Validate version from tauri.conf.json
         id: get-version
@@ -120,7 +120,7 @@ jobs:
       build-args: ${{ matrix.args }}
       sign-binaries: ${{ matrix.sign }}
       asset-prefix: "muesly"
-      upload-artifacts: false  # tauri-action uploads directly to release
+      upload-artifacts: false # tauri-action uploads directly to release
       release-id: ${{ needs.create-release.outputs.release-id }}
     secrets: inherit
 
@@ -509,6 +509,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # Needed to locate the release-PR merge commit
+
       - name: Publish validated release
         uses: actions/github-script@v9
         with:
@@ -530,3 +535,28 @@ jobs:
               draft: false
             })
             core.notice(`Published ${published.tag_name}: ${published.html_url}`)
+
+      # release-please runs with skip-github-release: true, so it never creates
+      # the muesly-v* tag itself and deadlocks ("untagged, merged release PRs
+      # outstanding") after every release PR merge until the tag exists. Create
+      # the bookkeeping tag here, at the release-PR merge commit, once the real
+      # GitHub release is published.
+      - name: Create release-please bookkeeping tag
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="muesly-v${VERSION}"
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "${TAG} already exists; skipping"
+            exit 0
+          fi
+          MERGE_SHA=$(git log --format=%H -1 --grep="chore(main): release muesly ${VERSION}")
+          if [ -z "${MERGE_SHA}" ]; then
+            echo "::error::Could not find the release PR merge commit for ${VERSION} on main"
+            exit 1
+          fi
+          git tag "${TAG}" "${MERGE_SHA}"
+          git push origin "${TAG}"
+          echo "Created ${TAG} at ${MERGE_SHA}"
