@@ -536,27 +536,46 @@ jobs:
             })
             core.notice(`Published ${published.tag_name}: ${published.html_url}`)
 
-      # release-please runs with skip-github-release: true, so it never creates
-      # the muesly-v* tag itself and deadlocks ("untagged, merged release PRs
-      # outstanding") after every release PR merge until the tag exists. Create
-      # the bookkeeping tag here, at the release-PR merge commit, once the real
-      # GitHub release is published.
-      - name: Create release-please bookkeeping tag
+      # release-please runs with skip-github-release: true, so it finishes a
+      # release PR neither by tagging nor by relabelling it. It then refuses to
+      # open any further release PR ("There are untagged, merged release PRs
+      # outstanding - aborting") until BOTH are done by hand. Do both here, once
+      # the real GitHub release is published.
+      - name: Close out the release-please bookkeeping
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           TAG="muesly-v${VERSION}"
+          TITLE="chore(main): release muesly ${VERSION}"
+
           git fetch --tags origin
           if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
-            echo "${TAG} already exists; skipping"
+            echo "${TAG} already exists; skipping tag"
+          else
+            MERGE_SHA=$(git log --format=%H -1 --grep="${TITLE}")
+            if [ -z "${MERGE_SHA}" ]; then
+              echo "::error::Could not find the release PR merge commit for ${VERSION} on main"
+              exit 1
+            fi
+            git tag "${TAG}" "${MERGE_SHA}"
+            git push origin "${TAG}"
+            echo "Created ${TAG} at ${MERGE_SHA}"
+          fi
+
+          # The abort is gated on the label, not the tag: a merged release PR
+          # left at "autorelease: pending" blocks the next one on its own.
+          PR=$(gh pr list --state merged --limit 30 \
+            --label "autorelease: pending" \
+            --json number,title \
+            --jq "[.[] | select(.title == \"${TITLE}\")] | first | .number // empty")
+          if [ -z "${PR}" ]; then
+            echo "No merged release PR pending for ${VERSION}; nothing to relabel"
             exit 0
           fi
-          MERGE_SHA=$(git log --format=%H -1 --grep="chore(main): release muesly ${VERSION}")
-          if [ -z "${MERGE_SHA}" ]; then
-            echo "::error::Could not find the release PR merge commit for ${VERSION} on main"
-            exit 1
-          fi
-          git tag "${TAG}" "${MERGE_SHA}"
-          git push origin "${TAG}"
-          echo "Created ${TAG} at ${MERGE_SHA}"
+          gh pr edit "${PR}" \
+            --remove-label "autorelease: pending" \
+            --add-label "autorelease: tagged"
+          echo "Marked PR #${PR} as autorelease: tagged"
