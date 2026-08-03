@@ -11,8 +11,10 @@
 //! call inside an autorelease pool, which keeps the data fresh (no stale
 //! snapshot) and avoids any managed-state coupling.
 
+#[cfg(target_os = "macos")]
+use crate::calendar::SourceKind;
 use crate::calendar::matching::CalendarEventCandidate;
-use crate::calendar::{CalendarAuthStatus, CalendarInfo, SourceKind};
+use crate::calendar::{CalendarAuthStatus, CalendarInfo};
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 use tauri::{AppHandle, Runtime};
