@@ -595,7 +595,10 @@ jobs:
           set -euo pipefail
           git checkout main
           git pull --ff-only origin main
-          cargo update --workspace --offline
+          # Not --offline: this job never builds, so the git-sourced deps are not
+          # in its cargo cache. --workspace still re-locks only the workspace
+          # members' own versions, never their dependencies.
+          cargo update --workspace
           if git diff --quiet -- Cargo.lock; then
             echo "Cargo.lock already matches ${VERSION}"
             exit 0
