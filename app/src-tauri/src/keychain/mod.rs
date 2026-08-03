@@ -1,7 +1,7 @@
-/// Keychain abstraction for storing API keys in the OS keychain.
-///
-/// The `SecretStore` trait is injected into repository methods so tests can
-/// use a `MockStore` without touching the real OS keychain.
+//! Keychain abstraction for storing API keys in the OS keychain.
+//!
+//! The `SecretStore` trait is injected into repository methods so tests can
+//! use a `MockStore` without touching the real OS keychain.
 
 // ---------------------------------------------------------------------------
 // Trait

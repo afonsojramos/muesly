@@ -503,12 +503,6 @@ impl Drop for SummaryCancelGuard {
 
 // Re-open SummaryService impl for process methods (guard lives above).
 impl SummaryService {
-    /// Test-only: how many meetings currently have a registered cancel token.
-    #[cfg(test)]
-    fn registry_len() -> usize {
-        CANCELLATION_REGISTRY.lock().map(|r| r.len()).unwrap_or(0)
-    }
-
     /// Test-only: whether a meeting has a registered cancel token.
     #[cfg(test)]
     fn registry_has(meeting_id: &str) -> bool {

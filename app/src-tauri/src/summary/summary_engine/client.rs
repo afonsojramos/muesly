@@ -2,7 +2,7 @@
 // Provides simple interface for generating text using the sidecar
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -89,7 +89,7 @@ async fn get_sidecar_manager() -> Result<Arc<SidecarManager>> {
 }
 
 /// Get cached model path with read-through caching to avoid repeated filesystem I/O
-fn get_cached_model_path(app_data_dir: &PathBuf, model_name: &str) -> Result<PathBuf> {
+fn get_cached_model_path(app_data_dir: &Path, model_name: &str) -> Result<PathBuf> {
     // Try read lock first (fast path for cache hits)
     {
         let cache = MODEL_PATH_CACHE.read().unwrap();
@@ -143,7 +143,7 @@ fn get_cached_model_path(app_data_dir: &PathBuf, model_name: &str) -> Result<Pat
 /// # Returns
 /// Generated text
 pub async fn generate_with_builtin(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     model_name: &str,
     system_prompt: &str,
     user_prompt: &str,
@@ -225,7 +225,7 @@ pub async fn generate_with_builtin(
 /// Cancellation kills the sidecar (the generate loop has no cooperative stop),
 /// exactly like the buffered path; the model reloads on the next request.
 pub async fn generate_with_builtin_streaming(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     model_name: &str,
     system_prompt: &str,
     user_prompt: &str,
@@ -320,7 +320,7 @@ pub async fn generate_with_builtin_streaming(
 /// `Generate` request. Shared by the buffered and streaming paths so the
 /// request contents can never drift between them.
 async fn prepare_generation(
-    app_data_dir: &PathBuf,
+    app_data_dir: &Path,
     model_name: &str,
     system_prompt: &str,
     user_prompt: &str,
@@ -341,7 +341,7 @@ async fn prepare_generation(
         let mut global_manager = SIDECAR_MANAGER.lock().await;
         if global_manager.is_none() {
             log::info!("Initializing sidecar manager");
-            let new_manager = SidecarManager::new(app_data_dir.clone())?;
+            let new_manager = SidecarManager::new(app_data_dir.to_path_buf())?;
             *global_manager = Some(Arc::new(new_manager));
         }
         global_manager.clone().unwrap()

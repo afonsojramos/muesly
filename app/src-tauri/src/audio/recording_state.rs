@@ -172,7 +172,7 @@ impl RecordingState {
     /// running maximum since recording started. Lock-free; called from the audio
     /// hot path.
     pub fn note_mic_amplitude(&self, peak: f32) {
-        if !(peak > 0.0) {
+        if peak.is_nan() || peak <= 0.0 {
             return;
         }
         let new_bits = peak.to_bits();
@@ -199,7 +199,7 @@ impl RecordingState {
     /// keeping the running maximum until the next drain. Mic + system both feed
     /// it, so the meter reflects anyone speaking. Lock-free; audio hot path.
     pub fn note_live_peak(&self, peak: f32) {
-        if !(peak > 0.0) {
+        if peak.is_nan() || peak <= 0.0 {
             return;
         }
         let new_bits = peak.to_bits();

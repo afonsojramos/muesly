@@ -661,7 +661,7 @@ pub fn start_transcription_task<R: Runtime>(
                 chunk.chunk_id, queued
             );
 
-            if let Err(_) = work_sender.send(chunk).await {
+            if work_sender.send(chunk).await.is_err() {
                 error!("❌ Failed to send chunk to workers - this should not happen!");
                 break;
             }

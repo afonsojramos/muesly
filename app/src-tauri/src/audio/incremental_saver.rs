@@ -3,7 +3,7 @@ use super::recording_state::AudioChunk;
 use anyhow::{Result, anyhow};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::ffmpeg::find_ffmpeg_path;
 
@@ -163,7 +163,7 @@ impl IncrementalAudioSaver {
 
     /// Merge all checkpoint files into final audio.mp4 using FFmpeg concat
     /// Uses concat demuxer for fast merging without re-encoding
-    async fn merge_checkpoints(&self, output: &PathBuf) -> Result<()> {
+    async fn merge_checkpoints(&self, output: &Path) -> Result<()> {
         info!(
             "Merging {} checkpoints into final audio file...",
             self.checkpoint_count

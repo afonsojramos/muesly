@@ -1219,8 +1219,8 @@ mod tests {
         // 60-second segment of low-level noise with a silent gap at ~25s
         let mut samples = vec![0.01f32; 60 * 16000];
         // Insert silence at 25 seconds (sample 400000)
-        for i in (25 * 16000)..(25 * 16000 + 3200) {
-            samples[i] = 0.0;
+        for sample in samples.iter_mut().skip(25 * 16000).take(3200) {
+            *sample = 0.0;
         }
         let segment = crate::audio::vad::SpeechSegment {
             samples,

@@ -8,6 +8,9 @@ edition = "2024"
 # `ort` link (Parakeet). Communicates with the app over stdin/stdout JSON, the
 # same isolation the `llama-helper` sidecar uses.
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = "1.0"
 serde = { version = "1.0", features = ["derive"] }

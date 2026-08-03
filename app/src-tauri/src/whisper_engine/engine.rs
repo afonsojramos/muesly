@@ -11,7 +11,7 @@ use crate::model_storage::{
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -663,13 +663,13 @@ impl WhisperEngine {
 
         let mut word_counts = HashMap::new();
         for word in &words {
-            *word_counts.entry(word.to_lowercase()).or_insert(0) += 1;
+            *word_counts.entry(word.to_lowercase()).or_insert(0usize) += 1;
         }
 
         let total_words = words.len() as f32;
         let repeated_words: usize = word_counts
             .values()
-            .map(|&count| if count > 1 { count - 1 } else { 0 })
+            .map(|&count| count.saturating_sub(1))
             .sum();
 
         repeated_words as f32 / total_words
@@ -1331,7 +1331,7 @@ impl WhisperEngine {
     }
 
     /// Validate if a model file is a valid GGML file by checking its header
-    async fn validate_model_file(&self, model_path: &PathBuf) -> Result<()> {
+    async fn validate_model_file(&self, model_path: &Path) -> Result<()> {
         use tokio::io::AsyncReadExt;
 
         let standard_file = crate::model_storage::open_attested_file_for_read(

@@ -474,7 +474,7 @@ fn rank_for_query(items: Vec<(String, String, i64)>, query: &str) -> Vec<(String
             (matches, item)
         })
         .collect();
-    scored.sort_by(|a, b| (b.1.2 != 0, b.0).cmp(&(a.1.2 != 0, a.0)));
+    scored.sort_by_key(|entry| std::cmp::Reverse((entry.1.2 != 0, entry.0)));
     scored.into_iter().map(|(_, item)| item).collect()
 }
 

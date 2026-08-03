@@ -274,7 +274,7 @@ pub fn apply_corrections(text: &str, entries: &[VocabularyEntry]) -> String {
             manual.into_iter().chain(learned).collect::<Vec<_>>()
         })
         .collect();
-    corrections.sort_by(|(left, _), (right, _)| right.len().cmp(&left.len()));
+    corrections.sort_by_key(|(phrase, _)| std::cmp::Reverse(phrase.len()));
 
     if corrections.is_empty() {
         return text.to_string();
@@ -488,17 +488,14 @@ pub fn infer_learning_observation_for(
         .iter()
         .map(|(_, normalized)| normalized.as_str())
         .collect();
-    let Some(prompted_index) = prompted_tokens
+    let prompted_index = prompted_tokens
         .windows(preferred_normalized.len())
         .position(|window| {
             window
                 .iter()
                 .map(|(_, normalized)| normalized.as_str())
                 .eq(preferred_normalized.iter().copied())
-        })
-    else {
-        return None;
-    };
+        })?;
     if unprompted_tokens
         .windows(preferred_normalized.len())
         .any(|window| {

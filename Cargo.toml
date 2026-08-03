@@ -11,6 +11,30 @@ members = [
 edition = "2024"
 rust-version = "1.85"
 
+# Clippy runs blocking in CI. These lints are allowed deliberately rather than
+# silenced case by case; each one wants a refactor whose cost outweighs the
+# benefit today, so they are listed here to keep the remaining set enforced.
+[workspace.lints.clippy]
+# Wide constructors in the audio pipeline and summary services. Folding them
+# into parameter structs is a worthwhile change, just not a drive-by one.
+too_many_arguments = "allow"
+# Nested Option/tuple returns in repository and state code. Type aliases would
+# read better but churn every call site.
+type_complexity = "allow"
+# Inherent default/as_ref/as_mut/from_str helpers. Converting them to the std
+# traits changes how call sites resolve, so it needs its own pass.
+should_implement_trait = "allow"
+# providers/ollama/ollama.rs and friends. Renaming means moving files for no
+# behavioural gain.
+module_inception = "allow"
+# The sidecar protocol enum has a Response::Response variant. It is serialised
+# with #[serde(tag = "type")], so renaming variants would change the wire
+# format between the app and llama-helper.
+enum_variant_names = "allow"
+# Arc<Mutex<Vec<Stream>>> in the level monitor: cpal's Stream is deliberately
+# !Send, and the compiler already prevents sending this across threads.
+arc_with_non_send_sync = "allow"
+
 # Shared dependencies that can be inherited by workspace members
 [workspace.dependencies]
 anyhow = "1.0"
