@@ -7,7 +7,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use encoding_rs;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -379,12 +378,13 @@ impl ModelState {
 
     fn load_model_if_needed(&mut self, model_path: PathBuf, context_size: u32) -> Result<()> {
         // Check if model is already loaded
-        if let Some(ref loaded_path) = self.model_path {
-            if loaded_path == &model_path && self.context_size == context_size {
-                eprintln!("✓ Model already loaded");
-                self.update_activity();
-                return Ok(());
-            }
+        if let Some(ref loaded_path) = self.model_path
+            && loaded_path == &model_path
+            && self.context_size == context_size
+        {
+            eprintln!("✓ Model already loaded");
+            self.update_activity();
+            return Ok(());
         }
 
         eprintln!("📥 Loading model: {}", model_path.display());
@@ -451,7 +451,7 @@ impl ModelState {
         let mut batch = LlamaBatch::new(batch_size, 1);
 
         let last_index: i32 = (tokens_list.len() - 1) as i32;
-        for (i, token) in (0_i32..).zip(tokens_list.into_iter()) {
+        for (i, token) in (0_i32..).zip(tokens_list) {
             let is_last = i == last_index;
             batch
                 .add(token, i, &[0], is_last)
@@ -572,12 +572,10 @@ impl ModelState {
 
             // Emit only after the stop check, so no emitted byte can belong to
             // a (possibly piece-spanning) stop token.
-            if stream {
-                if let Some(chunk) = emitter.next_chunk(&output) {
-                    send_response(&Response::Token {
-                        text: chunk.to_string(),
-                    })?;
-                }
+            if stream && let Some(chunk) = emitter.next_chunk(&output) {
+                send_response(&Response::Token {
+                    text: chunk.to_string(),
+                })?;
             }
 
             batch.clear();

@@ -90,7 +90,7 @@ impl Response {
 /// Decode a buffer of raw little-endian `f32` samples. Returns an error if the
 /// byte length is not a multiple of 4 (a truncated/misaligned PCM file).
 fn decode_f32_le(bytes: &[u8]) -> Result<Vec<f32>> {
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(anyhow!(
             "pcm byte length {} is not a multiple of 4 (expected little-endian f32)",
             bytes.len()
