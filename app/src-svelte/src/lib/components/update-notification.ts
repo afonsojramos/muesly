@@ -1,16 +1,14 @@
 /**
  * Update notification
  *
- * Ports the React UpdateNotification helper: surfaces an "update available"
- * toast and exposes a global callback that the tray menu / notification can use
- * to open the update dialog.
+ * Surfaces an "update available" toast with a "Download & Install" action and
+ * exposes a global callback that the tray menu / notification can use to open
+ * the update dialog.
  *
- * NOTE: the React version rendered a rich toast with an inline "View Details"
- * button (sonner supported JSX content) that opened the update dialog on click.
- * The Svelte toast abstraction ($lib/toast) renders title + description only, so
- * the toast here is a plain info toast without an inline button. The global
- * callback is still registered so the tray "check-updates-from-tray" path can
- * open the dialog; `onUpdateClick` is retained for API parity.
+ * The update-available toast carries a "Download & Install" action that opens
+ * the update dialog through the globally-registered callback (the same path the
+ * tray "check-updates-from-tray" event uses); `onUpdateClick` lets a caller
+ * override the registered callback for a single invocation.
  */
 
 import { toast } from '$lib/toast';
@@ -35,5 +33,9 @@ export function showUpdateNotification(updateInfo: UpdateInfo): void {
 	toast.info('Update Available', {
 		description: `Version ${updateInfo.version} is now available`,
 		duration: 10000,
+		action: {
+			label: 'Download & Install',
+			onClick: () => triggerUpdateDialog(),
+		},
 	});
 }

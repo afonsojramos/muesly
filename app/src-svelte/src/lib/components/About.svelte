@@ -4,6 +4,7 @@
 	import {
 		AudioLines,
 		CheckCircle2,
+		Download,
 		ExternalLink,
 		GitFork,
 		Globe,
@@ -22,6 +23,7 @@
 	import { Separator } from '$lib/components/ui/separator';
 	import { useUpdateCheck } from '$lib/hooks/use-update-check.svelte';
 	import { toast } from '$lib/toast';
+	import { triggerUpdateDialog } from '$lib/components/update-notification';
 
 	const links = {
 		website: 'https://muesly.ai',
@@ -128,6 +130,10 @@
 					<span class="font-medium text-brand">
 						Version {updates.updateInfo.version} is available
 					</span>
+					<Button size="sm" variant="brand" onclick={() => triggerUpdateDialog()}>
+						<Download data-icon="inline-start" />
+						Download & Install
+					</Button>
 				{:else}
 					<span class="flex items-center gap-1.5 text-muted-foreground">
 						<CheckCircle2 class="size-3.5 text-brand" />

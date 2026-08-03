@@ -18,14 +18,18 @@ export interface UseUpdateCheck {
 	checkForUpdates: (force?: boolean) => Promise<void>;
 }
 
+// Module-scoped shared state: every consumer (the app shell's UpdateDialog, the
+// About dialog's manual check) sees the same availability, so a manual check in
+// one place makes the update dialog usable everywhere.
+let updateInfo = $state<UpdateInfo | null>(null);
+let isChecking = $state(false);
+
 export function useUpdateCheck(options: UseUpdateCheckOptions = {}): UseUpdateCheck {
 	const { checkOnMount = true, onUpdateAvailable } = options;
 
-	let updateInfo = $state<UpdateInfo | null>(null);
-	let isChecking = $state(false);
-
 	const checkForUpdates = async (force = false): Promise<void> => {
 		if (!force && updateService.wasCheckedRecently()) return;
+		if (isChecking) return;
 
 		isChecking = true;
 		try {
