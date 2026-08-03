@@ -286,10 +286,10 @@ impl SummaryService {
             best = Some((i, i + 1));
         }
         for pat in [" - ", " – ", " — "] {
-            if let Some(i) = line.find(pat) {
-                if best.map_or(true, |(b, _)| i < b) {
-                    best = Some((i, i + pat.len()));
-                }
+            if let Some(i) = line.find(pat)
+                && best.is_none_or(|(b, _)| i < b)
+            {
+                best = Some((i, i + pat.len()));
             }
         }
         best
@@ -435,12 +435,12 @@ impl SummaryService {
 
     /// Cancels the summary generation for a meeting
     pub fn cancel_summary(meeting_id: &str) -> bool {
-        if let Ok(registry) = CANCELLATION_REGISTRY.lock() {
-            if let Some((_gen, token)) = registry.get(meeting_id) {
-                info!("Cancelling summary generation for meeting: {}", meeting_id);
-                token.cancel();
-                return true;
-            }
+        if let Ok(registry) = CANCELLATION_REGISTRY.lock()
+            && let Some((_gen, token)) = registry.get(meeting_id)
+        {
+            info!("Cancelling summary generation for meeting: {}", meeting_id);
+            token.cancel();
+            return true;
         }
         warn!(
             "No active summary generation found for meeting: {}",
@@ -720,12 +720,11 @@ impl SummaryService {
                     .flatten()
             })
             .or_else(|| Self::detect_summary_language_from_text(&text));
-        if let Some(code) = &detected_summary_language {
-            if let Some(f) = folder.as_deref() {
-                if let Err(e) = write_detected_summary_language_to_metadata(f, Some(code)) {
-                    warn!("Failed to persist detected summary language: {}", e);
-                }
-            }
+        if let Some(code) = &detected_summary_language
+            && let Some(f) = folder.as_deref()
+            && let Err(e) = write_detected_summary_language_to_metadata(f, Some(code))
+        {
+            warn!("Failed to persist detected summary language: {}", e);
         }
 
         // Calendar meeting context, redacted for this provider's egress. Any
@@ -905,36 +904,36 @@ impl SummaryService {
                 // Detached: the summary task (and its background-task entry)
                 // finishes immediately; the memory pass completes on its own
                 // and announces itself via the `folder-memory-updated` event.
-                if folder_toggles.1 {
-                    if let Some(folder_id) = sidebar_folder_id.clone() {
-                        let app = app.clone();
-                        let pool = pool.clone();
-                        let meeting_id = meeting_id.clone();
-                        let final_markdown = final_markdown.clone();
-                        let provider = provider.clone();
-                        let model_name = model_name.clone();
-                        let final_api_key = final_api_key.clone();
-                        let ollama_endpoint = ollama_endpoint.clone();
-                        let custom_openai_endpoint = custom_openai_endpoint.clone();
-                        tauri::async_runtime::spawn(async move {
-                            crate::summary::folder_memory::propose_folder_memories(
-                                &app,
-                                &pool,
-                                &folder_id,
-                                &meeting_id,
-                                &final_markdown,
-                                &provider,
-                                &model_name,
-                                &final_api_key,
-                                ollama_endpoint.as_deref(),
-                                custom_openai_endpoint.as_deref(),
-                                custom_openai_max_tokens,
-                                custom_openai_temperature,
-                                custom_openai_top_p,
-                            )
-                            .await;
-                        });
-                    }
+                if folder_toggles.1
+                    && let Some(folder_id) = sidebar_folder_id.clone()
+                {
+                    let app = app.clone();
+                    let pool = pool.clone();
+                    let meeting_id = meeting_id.clone();
+                    let final_markdown = final_markdown.clone();
+                    let provider = provider.clone();
+                    let model_name = model_name.clone();
+                    let final_api_key = final_api_key.clone();
+                    let ollama_endpoint = ollama_endpoint.clone();
+                    let custom_openai_endpoint = custom_openai_endpoint.clone();
+                    tauri::async_runtime::spawn(async move {
+                        crate::summary::folder_memory::propose_folder_memories(
+                            &app,
+                            &pool,
+                            &folder_id,
+                            &meeting_id,
+                            &final_markdown,
+                            &provider,
+                            &model_name,
+                            &final_api_key,
+                            ollama_endpoint.as_deref(),
+                            custom_openai_endpoint.as_deref(),
+                            custom_openai_max_tokens,
+                            custom_openai_temperature,
+                            custom_openai_top_p,
+                        )
+                        .await;
+                    });
                 }
             }
             Err(e) => {

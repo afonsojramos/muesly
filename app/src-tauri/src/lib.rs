@@ -143,14 +143,14 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
             tray::update_tray_menu(&app);
 
             // Create the save directory if it doesn't exist
-            if let Some(parent) = std::path::Path::new(&args.save_path).parent() {
-                if !parent.exists() {
-                    log_info!("Creating directory: {:?}", parent);
-                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
-                        let err_msg = format!("Failed to create save directory: {}", e);
-                        log_error!("{}", err_msg);
-                        return Err(err_msg);
-                    }
+            if let Some(parent) = std::path::Path::new(&args.save_path).parent()
+                && !parent.exists()
+            {
+                log_info!("Creating directory: {:?}", parent);
+                if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                    let err_msg = format!("Failed to create save directory: {}", e);
+                    log_error!("{}", err_msg);
+                    return Err(err_msg);
                 }
             }
 
@@ -315,12 +315,12 @@ async fn save_transcript<R: Runtime>(
     let roots = allowed_roots_for_app(&app).await?;
     let validated = validate_path_within_roots(&file_path, &roots, true)?;
 
-    if let Some(parent) = validated.parent() {
-        if !parent.exists() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| format!("Failed to create directory: {}", e))?;
-        }
+    if let Some(parent) = validated.parent()
+        && !parent.exists()
+    {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
     tokio::fs::write(&validated, content)
@@ -593,16 +593,15 @@ async fn set_language_preference<R: Runtime>(
     // immediately, then persist best-effort: a transient DB error must not make
     // the in-session change appear to fail.
     set_language_preference_internal(&language);
-    if let Some(state) = app.try_state::<state::AppState>() {
-        if let Err(e) =
+    if let Some(state) = app.try_state::<state::AppState>()
+        && let Err(e) =
             crate::database::repositories::setting::SettingsRepository::set_transcription_language(
                 state.db_manager.pool(),
                 &language,
             )
             .await
-        {
-            log_warn!("Failed to persist transcription language: {}", e);
-        }
+    {
+        log_warn!("Failed to persist transcription language: {}", e);
     }
     Ok(())
 }
@@ -1348,11 +1347,11 @@ pub fn run() {
             // reconcile the pill now that the windows exist: it shows only if the
             // main window is not focused. Best-effort and no-ops if missing.
             if audio::recording_commands::is_recording_active() {
-                pill_window::sync_visibility(&_app.handle());
+                pill_window::sync_visibility(_app.handle());
             }
 
             // Set models directory to use app_data_dir (unified storage location)
-            whisper_engine::commands::set_models_directory(&_app.handle());
+            whisper_engine::commands::set_models_directory(_app.handle());
 
             // Initialize Whisper engine on startup
             tauri::async_runtime::spawn(async {
@@ -1362,7 +1361,7 @@ pub fn run() {
             });
 
             // Set Parakeet models directory
-            parakeet_engine::commands::set_models_directory(&_app.handle());
+            parakeet_engine::commands::set_models_directory(_app.handle());
 
             // Semantic-search embedding model shares the same models root.
             embedding_engine::set_models_directory(_app.handle());
@@ -1448,7 +1447,7 @@ pub fn run() {
             // a failure returns a setup error (logged, graceful exit) rather than an
             // unwinding panic with no user-facing context.
             if let Err(e) = tauri::async_runtime::block_on(async {
-                database::setup::initialize_database_on_startup(&_app.handle()).await
+                database::setup::initialize_database_on_startup(_app.handle()).await
             }) {
                 log::error!("Failed to initialize database: {}", e);
                 return Err(format!("Failed to initialize database: {}", e).into());
@@ -1520,13 +1519,12 @@ pub fn run() {
             // main window gains focus (the in-app recording bar takes over), and
             // show it again when focus leaves. sync_visibility itself gates on
             // whether a recording is active.
-            if let tauri::WindowEvent::Focused(focused) = event {
-                if window.label() == "main" {
+            if let tauri::WindowEvent::Focused(focused) = event
+                && window.label() == "main" {
                     // Use the event's authoritative focus state rather than
                     // re-querying, which can lag on some window managers.
                     pill_window::sync_visibility_with_main_focus(window.app_handle(), *focused);
                 }
-            }
 
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 match window.label() {

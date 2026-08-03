@@ -260,7 +260,7 @@ pub fn trigger_system_audio_permission() -> Result<bool> {
 #[specta::specta]
 pub async fn trigger_system_audio_permission_command() -> Result<bool, String> {
     // Run in blocking task to avoid blocking the async runtime
-    tokio::task::spawn_blocking(|| trigger_system_audio_permission())
+    tokio::task::spawn_blocking(trigger_system_audio_permission)
         .await
         .map_err(|e| format!("Task join error: {}", e))?
         .map_err(|e| e.to_string())

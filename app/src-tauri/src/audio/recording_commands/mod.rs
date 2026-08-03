@@ -602,11 +602,11 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                 // callback, so use the non-blocking `try_lock` (matching the original
                 // best-effort `if let Ok` behavior — skip if momentarily contended).
                 let mut saved_through_manager = false;
-                if let Ok(manager_guard) = RECORDING_MANAGER.try_lock() {
-                    if let Some(manager) = manager_guard.as_ref() {
-                        manager.add_transcript_segment(segment.clone());
-                        saved_through_manager = true;
-                    }
+                if let Ok(manager_guard) = RECORDING_MANAGER.try_lock()
+                    && let Some(manager) = manager_guard.as_ref()
+                {
+                    manager.add_transcript_segment(segment.clone());
+                    saved_through_manager = true;
                 }
                 if !saved_through_manager {
                     crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(
@@ -827,11 +827,11 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
                 // callback, so use the non-blocking `try_lock` (matching the original
                 // best-effort `if let Ok` behavior — skip if momentarily contended).
                 let mut saved_through_manager = false;
-                if let Ok(manager_guard) = RECORDING_MANAGER.try_lock() {
-                    if let Some(manager) = manager_guard.as_ref() {
-                        manager.add_transcript_segment(segment.clone());
-                        saved_through_manager = true;
-                    }
+                if let Ok(manager_guard) = RECORDING_MANAGER.try_lock()
+                    && let Some(manager) = manager_guard.as_ref()
+                {
+                    manager.add_transcript_segment(segment.clone());
+                    saved_through_manager = true;
                 }
                 if !saved_through_manager {
                     crate::audio::recording_saver::RecordingSaver::add_transcript_segment_to_sink(

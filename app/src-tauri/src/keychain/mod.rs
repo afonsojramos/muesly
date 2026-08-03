@@ -103,6 +103,13 @@ pub struct MockStore {
 }
 
 #[cfg(test)]
+impl Default for MockStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
 impl MockStore {
     pub fn new() -> Self {
         Self {

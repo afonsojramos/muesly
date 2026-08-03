@@ -62,7 +62,7 @@ impl ModelProvider for GroqProvider {
     }
 
     fn map_model(api: Self::ApiModel) -> Option<Self::UiModel> {
-        is_chat_model(&api.id).then(|| GroqModel {
+        is_chat_model(&api.id).then_some(GroqModel {
             id: api.id,
             owned_by: api.owned_by,
         })

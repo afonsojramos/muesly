@@ -94,7 +94,7 @@ impl ModelProvider for OpenAiProvider {
     }
 
     fn map_model(api: Self::ApiModel) -> Option<Self::UiModel> {
-        is_chat_model(&api.id).then(|| OpenAIModel { id: api.id })
+        is_chat_model(&api.id).then_some(OpenAIModel { id: api.id })
     }
 }
 

@@ -134,7 +134,7 @@ pub async fn track_feature_used(feature_name: String) -> Result<(), String> {
 #[specta::specta]
 pub async fn is_analytics_enabled() -> bool {
     let guard = ANALYTICS_CLIENT.lock().unwrap_or_else(|e| e.into_inner());
-    guard.as_ref().map_or(false, |client| client.is_enabled())
+    guard.as_ref().is_some_and(|client| client.is_enabled())
 }
 
 // Enhanced analytics commands

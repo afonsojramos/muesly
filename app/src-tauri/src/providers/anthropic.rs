@@ -66,7 +66,7 @@ impl ModelProvider for AnthropicProvider {
     }
 
     fn map_model(api: Self::ApiModel) -> Option<Self::UiModel> {
-        is_chat_model(&api.id).then(|| AnthropicModel {
+        is_chat_model(&api.id).then_some(AnthropicModel {
             id: api.id,
             display_name: api.display_name,
         })

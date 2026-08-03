@@ -130,28 +130,6 @@ impl WhisperEngine {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::WhisperEngine;
-
-    #[test]
-    fn token_confidence_uses_model_probabilities_not_text_length() {
-        let short_utterance = WhisperEngine::token_confidence(&[0.92], 0.02).unwrap();
-        let long_hallucination = WhisperEngine::token_confidence(&[0.18; 20], 0.65).unwrap();
-
-        assert!(short_utterance > 0.8);
-        assert!(long_hallucination < 0.1);
-    }
-
-    #[test]
-    fn token_confidence_ignores_invalid_values_and_clamps_inputs() {
-        let confidence = WhisperEngine::token_confidence(&[f32::NAN, 1.4, -0.2], -1.0).unwrap();
-
-        assert!((confidence - 0.5).abs() < f32::EPSILON);
-        assert_eq!(WhisperEngine::token_confidence(&[f32::NAN], 0.0), None);
-    }
-}
-
 impl WhisperEngine {
     /// Detect available GPU acceleration capabilities
     fn detect_gpu_acceleration() -> bool {
@@ -217,7 +195,7 @@ impl WhisperEngine {
                 // Production mode fallback (shouldn't reach here, caller should provide path)
                 log::warn!("WhisperEngine: No models directory provided, using fallback path");
                 dirs::data_dir()
-                    .or_else(|| dirs::home_dir())
+                    .or_else(dirs::home_dir)
                     .ok_or_else(|| anyhow!("Could not find system data directory"))?
                     .join("muesly")
                     .join("models")
@@ -336,7 +314,7 @@ impl WhisperEngine {
             let model_info = WhisperModelInfo {
                 name: name.to_string(),
                 path: model_path,
-                size_mb: size_mb as u32,
+                size_mb,
                 accuracy: accuracy.to_string(),
                 speed: speed.to_string(),
                 status,
@@ -1651,19 +1629,18 @@ impl WhisperEngine {
 
         // Disk-space preflight (best-effort: skip the check if free space is unknown).
         const DOWNLOAD_SPACE_MARGIN: u64 = 256 * 1024 * 1024; // 256 MB headroom
-        if total_size > 0 {
-            if let Some(available) = crate::disk::available_space_for(&self.models_dir) {
-                if available < total_size + DOWNLOAD_SPACE_MARGIN {
-                    let mut active = self.active_downloads.write().await;
-                    active.remove(model_name);
-                    return Err(anyhow!(
-                        "Not enough disk space to download '{}': need ~{:.1} GB, {:.1} GB free",
-                        model_name,
-                        (total_size + DOWNLOAD_SPACE_MARGIN) as f64 / 1_073_741_824.0,
-                        available as f64 / 1_073_741_824.0
-                    ));
-                }
-            }
+        if total_size > 0
+            && let Some(available) = crate::disk::available_space_for(&self.models_dir)
+            && available < total_size + DOWNLOAD_SPACE_MARGIN
+        {
+            let mut active = self.active_downloads.write().await;
+            active.remove(model_name);
+            return Err(anyhow!(
+                "Not enough disk space to download '{}': need ~{:.1} GB, {:.1} GB free",
+                model_name,
+                (total_size + DOWNLOAD_SPACE_MARGIN) as f64 / 1_073_741_824.0,
+                available as f64 / 1_073_741_824.0
+            ));
         }
 
         let mut file = fs::File::from_std(open_model_file_for_write(
@@ -1749,10 +1726,7 @@ impl WhisperEngine {
 
             // Report progress every 1% or every 2 seconds for better UI responsiveness
             let time_since_last_report = last_report_time.elapsed().as_secs();
-            if progress >= last_progress_report + 1
-                || progress == 100
-                || time_since_last_report >= 2
-            {
+            if progress > last_progress_report || progress == 100 || time_since_last_report >= 2 {
                 log::info!(
                     "Download progress: {}% ({:.1} MB / {:.1} MB)",
                     progress,
@@ -1894,5 +1868,27 @@ impl WhisperEngine {
         mutation_lock.attest_storage()?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WhisperEngine;
+
+    #[test]
+    fn token_confidence_uses_model_probabilities_not_text_length() {
+        let short_utterance = WhisperEngine::token_confidence(&[0.92], 0.02).unwrap();
+        let long_hallucination = WhisperEngine::token_confidence(&[0.18; 20], 0.65).unwrap();
+
+        assert!(short_utterance > 0.8);
+        assert!(long_hallucination < 0.1);
+    }
+
+    #[test]
+    fn token_confidence_ignores_invalid_values_and_clamps_inputs() {
+        let confidence = WhisperEngine::token_confidence(&[f32::NAN, 1.4, -0.2], -1.0).unwrap();
+
+        assert!((confidence - 0.5).abs() < f32::EPSILON);
+        assert_eq!(WhisperEngine::token_confidence(&[f32::NAN], 0.0), None);
     }
 }

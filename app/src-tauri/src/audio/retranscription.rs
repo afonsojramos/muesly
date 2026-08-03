@@ -609,29 +609,28 @@ async fn run_retranscription<R: Runtime>(
     // Mirror the live worker's post-lock repair: segments decoded while the
     // auto-detect language was still deciding may be in the wrong language, so
     // once the session locked, re-decode them forced to the stable language.
-    if !deciding_repairs.is_empty() {
-        if let Some(stable_code) =
+    if !deciding_repairs.is_empty()
+        && let Some(stable_code) =
             crate::whisper_engine::lang_lock::current_stable().and_then(whisper_rs::get_lang_str)
-        {
-            info!(
-                "Language locked to '{}'; re-checking {} early segment(s)",
-                stable_code,
-                deciding_repairs.len()
-            );
-            let engine = whisper_engine.as_ref().unwrap();
-            for (transcript_index, segment_index, original_conf) in deciding_repairs {
-                if let Some((text, conf)) =
-                    crate::audio::transcription::worker::redecode_deciding_segment(
-                        engine,
-                        Arc::new(processable_segments[segment_index].samples.clone()),
-                        stable_code,
-                        &all_transcripts[transcript_index].0,
-                    )
-                    .await
-                {
-                    all_transcripts[transcript_index].0 = text;
-                    total_confidence += conf - original_conf;
-                }
+    {
+        info!(
+            "Language locked to '{}'; re-checking {} early segment(s)",
+            stable_code,
+            deciding_repairs.len()
+        );
+        let engine = whisper_engine.as_ref().unwrap();
+        for (transcript_index, segment_index, original_conf) in deciding_repairs {
+            if let Some((text, conf)) =
+                crate::audio::transcription::worker::redecode_deciding_segment(
+                    engine,
+                    Arc::new(processable_segments[segment_index].samples.clone()),
+                    stable_code,
+                    &all_transcripts[transcript_index].0,
+                )
+                .await
+            {
+                all_transcripts[transcript_index].0 = text;
+                total_confidence += conf - original_conf;
             }
         }
     }

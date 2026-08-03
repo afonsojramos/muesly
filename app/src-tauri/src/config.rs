@@ -423,7 +423,7 @@ mod tests {
         assert_eq!(large_fallback.provider, "localWhisper");
         let parakeet_fallback = crate::transcription_models::choose_automatic_transcription_model(
             &high_profile,
-            &[large_fallback.model.clone()],
+            std::slice::from_ref(&large_fallback.model),
             &available_parakeet,
             false,
         )

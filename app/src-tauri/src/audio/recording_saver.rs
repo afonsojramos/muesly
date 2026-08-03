@@ -152,10 +152,10 @@ impl RecordingSaver {
         Self::add_transcript_segment_to_sink(&self.transcript_segments, segment);
 
         // NEW: Save incrementally to disk
-        if let Some(folder) = &self.meeting_folder {
-            if let Err(e) = self.write_transcripts_json(folder) {
-                warn!("Failed to write incremental transcript update: {}", e);
-            }
+        if let Some(folder) = &self.meeting_folder
+            && let Err(e) = self.write_transcripts_json(folder)
+        {
+            warn!("Failed to write incremental transcript update: {}", e);
         }
     }
 
@@ -261,12 +261,10 @@ impl RecordingSaver {
                     };
                     if stopped {
                         while let Ok(chunk) = receiver.try_recv() {
-                            if save_audio {
-                                if let Some(saver_arc) = &incremental_saver_arc {
-                                    let mut saver_guard = saver_arc.lock().await;
-                                    if let Err(e) = saver_guard.add_chunk(chunk) {
-                                        error!("Failed to add chunk to incremental saver: {}", e);
-                                    }
+                            if save_audio && let Some(saver_arc) = &incremental_saver_arc {
+                                let mut saver_guard = saver_arc.lock().await;
+                                if let Err(e) = saver_guard.add_chunk(chunk) {
+                                    error!("Failed to add chunk to incremental saver: {}", e);
                                 }
                             }
                         }

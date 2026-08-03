@@ -36,10 +36,10 @@ pub async fn api_get_model_config<R: Runtime>(
         Ok(Some(config)) => {
             log_info!(
                 "✅ Found model config in database: provider={}, model={}, whisperModel={}, ollamaEndpoint={:?}",
-                &config.provider,
-                &config.model,
-                &config.whisper_model,
-                &config.ollama_endpoint
+                config.provider,
+                config.model,
+                config.whisper_model,
+                config.ollama_endpoint
             );
             match SettingsRepository::get_api_key(pool, &config.provider, keyring_store()).await {
                 Ok(api_key) => {
@@ -55,7 +55,7 @@ pub async fn api_get_model_config<R: Runtime>(
                 Err(e) => {
                     log_error!(
                         "Failed to get API key for provider {}: {}",
-                        &config.provider,
+                        config.provider,
                         e
                     );
                     Err(e)
@@ -89,10 +89,10 @@ pub async fn api_save_model_config<R: Runtime>(
 ) -> Result<crate::json::Json, String> {
     log_info!(
         "💾 api_save_model_config called (native): provider='{}', model='{}', whisperModel='{}', ollamaEndpoint={:?}",
-        &provider,
-        &model,
-        &whisper_model,
-        &ollama_endpoint
+        provider,
+        model,
+        whisper_model,
+        ollama_endpoint
     );
     let pool = state.db_manager.pool();
 
@@ -110,18 +110,19 @@ pub async fn api_save_model_config<R: Runtime>(
     }
 
     // Skip API key saving for custom-openai provider (it uses customOpenAIConfig JSON instead)
-    if let Some(key) = api_key {
-        if !key.is_empty() && provider != "custom-openai" {
-            log_info!("API key provided, saving...");
-            if let Err(e) =
-                SettingsRepository::save_api_key(pool, &provider, &key, keyring_store()).await
-            {
-                log_error!("Failed to save API key: {}", e);
-                return Err(e);
-            }
-            // A new key may expose a different model list; drop the cached one.
-            clear_provider_model_cache(&provider);
+    if let Some(key) = api_key
+        && !key.is_empty()
+        && provider != "custom-openai"
+    {
+        log_info!("API key provided, saving...");
+        if let Err(e) =
+            SettingsRepository::save_api_key(pool, &provider, &key, keyring_store()).await
+        {
+            log_error!("Failed to save API key: {}", e);
+            return Err(e);
         }
+        // A new key may expose a different model list; drop the cached one.
+        clear_provider_model_cache(&provider);
     }
 
     // Trigger graceful shutdown of built-in AI sidecar if it's running
@@ -147,20 +148,19 @@ pub async fn api_get_api_key<R: Runtime>(
 ) -> Result<String, String> {
     log_info!(
         "api_get_api_key called (native) for provider '{}'",
-        &provider
+        provider
     );
-    match SettingsRepository::get_api_key(&state.db_manager.pool(), &provider, keyring_store())
-        .await
+    match SettingsRepository::get_api_key(state.db_manager.pool(), &provider, keyring_store()).await
     {
         Ok(key) => {
             log_info!(
                 "Successfully retrieved API key for provider '{}'.",
-                &provider
+                provider
             );
             Ok(key.unwrap_or_default())
         }
         Err(e) => {
-            log_error!("Failed to get API key for provider '{}': {}", &provider, e);
+            log_error!("Failed to get API key for provider '{}': {}", provider, e);
             Err(e)
         }
     }
@@ -180,8 +180,8 @@ pub async fn api_get_transcript_config<R: Runtime>(
         Ok(Some(config)) => {
             log_info!(
                 "Found transcript config: provider={}, model={}",
-                &config.provider,
-                &config.model
+                config.provider,
+                config.model
             );
             match SettingsRepository::get_transcript_api_key(
                 pool,
@@ -201,7 +201,7 @@ pub async fn api_get_transcript_config<R: Runtime>(
                 Err(e) => {
                     log_error!(
                         "Failed to get transcript API key for provider {}: {}",
-                        &config.provider,
+                        config.provider,
                         e
                     );
                     Err(e)
@@ -235,7 +235,7 @@ pub async fn api_save_transcript_config<R: Runtime>(
 ) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_transcript_config called (native) for provider '{}'",
-        &provider
+        provider
     );
     let pool = state.db_manager.pool();
 
@@ -250,16 +250,16 @@ pub async fn api_save_transcript_config<R: Runtime>(
         return Err(e.to_string());
     }
 
-    if let Some(key) = api_key {
-        if !key.is_empty() {
-            log_info!("API key provided, saving for transcript provider...");
-            if let Err(e) =
-                SettingsRepository::save_transcript_api_key(pool, &provider, &key, keyring_store())
-                    .await
-            {
-                log_error!("Failed to save transcript API key: {}", e);
-                return Err(e);
-            }
+    if let Some(key) = api_key
+        && !key.is_empty()
+    {
+        log_info!("API key provided, saving for transcript provider...");
+        if let Err(e) =
+            SettingsRepository::save_transcript_api_key(pool, &provider, &key, keyring_store())
+                .await
+        {
+            log_error!("Failed to save transcript API key: {}", e);
+            return Err(e);
         }
     }
 
@@ -279,10 +279,10 @@ pub async fn api_get_transcript_api_key<R: Runtime>(
 ) -> Result<String, String> {
     log_info!(
         "api_get_transcript_api_key called (native) for provider '{}'",
-        &provider
+        provider
     );
     match SettingsRepository::get_transcript_api_key(
-        &state.db_manager.pool(),
+        state.db_manager.pool(),
         &provider,
         keyring_store(),
     )
@@ -291,14 +291,14 @@ pub async fn api_get_transcript_api_key<R: Runtime>(
         Ok(key) => {
             log_info!(
                 "Successfully retrieved transcript API key for provider '{}'.",
-                &provider
+                provider
             );
             Ok(key.unwrap_or_default())
         }
         Err(e) => {
             log_error!(
                 "Failed to get transcript API key for provider '{}': {}",
-                &provider,
+                provider,
                 e
             );
             Err(e)
@@ -316,13 +316,13 @@ pub async fn api_delete_api_key<R: Runtime>(
 ) -> Result<(), String> {
     log_info!(
         "log_api_delete_api_key called (native) for provider '{}'",
-        &provider
+        provider
     );
-    match SettingsRepository::delete_api_key(&state.db_manager.pool(), &provider, keyring_store())
+    match SettingsRepository::delete_api_key(state.db_manager.pool(), &provider, keyring_store())
         .await
     {
         Ok(_) => {
-            log_info!("Successfully deleted API key for provider '{}'.", &provider);
+            log_info!("Successfully deleted API key for provider '{}'.", provider);
             // Drop the cached model list so it falls back / re-fetches without the key.
             clear_provider_model_cache(&provider);
             Ok(())
@@ -330,7 +330,7 @@ pub async fn api_delete_api_key<R: Runtime>(
         Err(e) => {
             log_error!(
                 "Failed to delete API key for provider '{}': {}",
-                &provider,
+                provider,
                 e
             );
             Err(e)
@@ -354,8 +354,8 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
 ) -> Result<crate::json::Json, String> {
     log_info!(
         "api_save_custom_openai_config called: endpoint='{}', model='{}'",
-        &endpoint,
-        &model
+        endpoint,
+        model
     );
 
     // Validate required fields
@@ -372,20 +372,20 @@ pub async fn api_save_custom_openai_config<R: Runtime>(
     }
 
     // Validate optional numeric parameters
-    if let Some(temp) = temperature {
-        if !(0.0..=2.0).contains(&temp) {
-            return Err("Temperature must be between 0.0 and 2.0".to_string());
-        }
+    if let Some(temp) = temperature
+        && !(0.0..=2.0).contains(&temp)
+    {
+        return Err("Temperature must be between 0.0 and 2.0".to_string());
     }
-    if let Some(top) = top_p {
-        if !(0.0..=1.0).contains(&top) {
-            return Err("Top P must be between 0.0 and 1.0".to_string());
-        }
+    if let Some(top) = top_p
+        && !(0.0..=1.0).contains(&top)
+    {
+        return Err("Top P must be between 0.0 and 1.0".to_string());
     }
-    if let Some(tokens) = max_tokens {
-        if tokens < 1 {
-            return Err("Max tokens must be at least 1".to_string());
-        }
+    if let Some(tokens) = max_tokens
+        && tokens < 1
+    {
+        return Err("Max tokens must be at least 1".to_string());
     }
 
     let config = CustomOpenAIConfig {
@@ -461,8 +461,8 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
 ) -> Result<crate::json::Json, String> {
     log_info!(
         "api_test_custom_openai_connection called: endpoint='{}', model='{}'",
-        &endpoint,
-        &model
+        endpoint,
+        model
     );
 
     // Validate endpoint URL format
@@ -510,31 +510,30 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
                 match serde_json::from_str::<serde_json::Value>(&response_text) {
                     Ok(json) => {
                         // Verify the response has the expected OpenAI structure
-                        if let Some(choices) = json.get("choices") {
-                            if let Some(choices_array) = choices.as_array() {
-                                if !choices_array.is_empty() {
-                                    // Verify the first choice has the required message structure
-                                    if let Some(first_choice) = choices_array.get(0) {
-                                        // Check if message.content field exists (can be empty string)
-                                        let has_message_structure = first_choice
-                                            .get("message")
-                                            .and_then(|m| {
-                                                m.get("content")
-                                                    .or_else(|| m.get("reasoning_content"))
-                                            })
-                                            .is_some();
+                        if let Some(choices) = json.get("choices")
+                            && let Some(choices_array) = choices.as_array()
+                            && !choices_array.is_empty()
+                        {
+                            // Verify the first choice has the required message structure
+                            if let Some(first_choice) = choices_array.first() {
+                                // Check if message.content field exists (can be empty string)
+                                let has_message_structure = first_choice
+                                    .get("message")
+                                    .and_then(|m| {
+                                        m.get("content").or_else(|| m.get("reasoning_content"))
+                                    })
+                                    .is_some();
 
-                                        if has_message_structure {
-                                            log_info!(
-                                                "✅ Custom OpenAI connection test successful - response validated"
-                                            );
-                                            return Ok(serde_json::json!({
-                                                "status": "success",
-                                                "message": "Connection successful and response validated",
-                                                "http_status": status.as_u16()
-                                            }).into());
-                                        }
-                                    }
+                                if has_message_structure {
+                                    log_info!(
+                                        "✅ Custom OpenAI connection test successful - response validated"
+                                    );
+                                    return Ok(serde_json::json!({
+                                        "status": "success",
+                                        "message": "Connection successful and response validated",
+                                        "http_status": status.as_u16()
+                                    })
+                                    .into());
                                 }
                             }
                         }

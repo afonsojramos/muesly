@@ -72,19 +72,12 @@ impl Drop for BackgroundTask {
 
 /// Detects system audio usage on macOS
 #[cfg(target_os = "macos")]
+#[derive(Default)]
 pub struct MacOSSystemAudioDetector {
     background: BackgroundTask,
 }
 
 #[cfg(target_os = "macos")]
-impl Default for MacOSSystemAudioDetector {
-    fn default() -> Self {
-        Self {
-            background: BackgroundTask::default(),
-        }
-    }
-}
-
 #[cfg(target_os = "macos")]
 const DEVICE_IS_RUNNING_SOMEWHERE: ca::PropAddr = ca::PropAddr {
     selector: ca::PropSelector::DEVICE_IS_RUNNING_SOMEWHERE,
@@ -134,8 +127,10 @@ impl MacOSSystemAudioDetector {
 
                 std::thread::spawn(move || {
                     let callback = std::sync::Arc::new(std::sync::Mutex::new(callback));
-                    let current_device = std::sync::Arc::new(std::sync::Mutex::new(None::<ca::Device>));
-                    let detector_state = std::sync::Arc::new(std::sync::Mutex::new(DetectorState::new()));
+                    let current_device =
+                        std::sync::Arc::new(std::sync::Mutex::new(None::<ca::Device>));
+                    let detector_state =
+                        std::sync::Arc::new(std::sync::Mutex::new(DetectorState::new()));
 
                     let callback_for_device = callback.clone();
                     let current_device_for_device = current_device.clone();
@@ -148,45 +143,52 @@ impl MacOSSystemAudioDetector {
                         client_data: *mut (),
                     ) -> os::Status {
                         let data = unsafe {
-                            &*(client_data as *const (
-                                std::sync::Arc<std::sync::Mutex<SystemAudioCallback>>,
-                                std::sync::Arc<std::sync::Mutex<Option<ca::Device>>>,
-                                std::sync::Arc<std::sync::Mutex<DetectorState>>,
-                            ))
+                            &*(client_data
+                                as *const (
+                                    std::sync::Arc<std::sync::Mutex<SystemAudioCallback>>,
+                                    std::sync::Arc<std::sync::Mutex<Option<ca::Device>>>,
+                                    std::sync::Arc<std::sync::Mutex<DetectorState>>,
+                                ))
                         };
                         let callback = &data.0;
                         let state = &data.2;
 
-                        let addresses = unsafe { std::slice::from_raw_parts(addresses, number_addresses as usize) };
+                        let addresses = unsafe {
+                            std::slice::from_raw_parts(addresses, number_addresses as usize)
+                        };
 
                         for addr in addresses {
-                            if addr.selector == ca::PropSelector::DEVICE_IS_RUNNING_SOMEWHERE {
-                                if let Ok(device) = ca::System::default_output_device() {
-                                    if let Ok(is_running) = device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE) {
-                                        let system_audio_active = is_running != 0;
+                            if addr.selector == ca::PropSelector::DEVICE_IS_RUNNING_SOMEWHERE
+                                && let Ok(device) = ca::System::default_output_device()
+                                && let Ok(is_running) =
+                                    device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE)
+                            {
+                                let system_audio_active = is_running != 0;
 
-                                        if let Ok(mut state_guard) = state.lock() {
-                                            if state_guard.should_trigger(system_audio_active) {
-                                                if system_audio_active {
-                                                    let cb = callback.clone();
-                                                    std::thread::spawn(move || {
-                                                        let apps = list_system_audio_using_apps();
-                                                        tracing::info!("detect_system_audio_listener: {:?}", apps);
+                                if let Ok(mut state_guard) = state.lock()
+                                    && state_guard.should_trigger(system_audio_active)
+                                {
+                                    if system_audio_active {
+                                        let cb = callback.clone();
+                                        std::thread::spawn(move || {
+                                            let apps = list_system_audio_using_apps();
+                                            tracing::info!(
+                                                "detect_system_audio_listener: {:?}",
+                                                apps
+                                            );
 
-                                                        if let Ok(guard) = cb.lock() {
-                                                            let event = SystemAudioEvent::SystemAudioStarted(apps);
-                                                            tracing::info!(event = ?event, "detected");
-                                                            (*guard)(event);
-                                                        }
-                                                    });
-                                                } else {
-                                                    if let Ok(guard) = callback.lock() {
-                                                        let event = SystemAudioEvent::SystemAudioStopped;
-                                                        tracing::info!(event = ?event, "detected");
-                                                        (*guard)(event);
-                                                    }
-                                                }
+                                            if let Ok(guard) = cb.lock() {
+                                                let event =
+                                                    SystemAudioEvent::SystemAudioStarted(apps);
+                                                tracing::info!(event = ?event, "detected");
+                                                (*guard)(event);
                                             }
+                                        });
+                                    } else {
+                                        if let Ok(guard) = callback.lock() {
+                                            let event = SystemAudioEvent::SystemAudioStopped;
+                                            tracing::info!(event = ?event, "detected");
+                                            (*guard)(event);
                                         }
                                     }
                                 }
@@ -203,62 +205,71 @@ impl MacOSSystemAudioDetector {
                         client_data: *mut (),
                     ) -> os::Status {
                         let data = unsafe {
-                            &*(client_data as *const (
-                                std::sync::Arc<std::sync::Mutex<SystemAudioCallback>>,
-                                std::sync::Arc<std::sync::Mutex<Option<ca::Device>>>,
-                                std::sync::Arc<std::sync::Mutex<DetectorState>>,
-                                *mut (),
-                            ))
+                            &*(client_data
+                                as *const (
+                                    std::sync::Arc<std::sync::Mutex<SystemAudioCallback>>,
+                                    std::sync::Arc<std::sync::Mutex<Option<ca::Device>>>,
+                                    std::sync::Arc<std::sync::Mutex<DetectorState>>,
+                                    *mut (),
+                                ))
                         };
                         let current_device = &data.1;
                         let state = &data.2;
                         let device_listener_data = data.3;
 
-                        let addresses = unsafe { std::slice::from_raw_parts(addresses, number_addresses as usize) };
+                        let addresses = unsafe {
+                            std::slice::from_raw_parts(addresses, number_addresses as usize)
+                        };
 
                         for addr in addresses {
-                            if addr.selector == ca::PropSelector::HW_DEFAULT_OUTPUT_DEVICE {
-                                if let Ok(mut device_guard) = current_device.lock() {
-                                    if let Some(old_device) = device_guard.take() {
-                                        let _ = old_device.remove_prop_listener(
+                            if addr.selector == ca::PropSelector::HW_DEFAULT_OUTPUT_DEVICE
+                                && let Ok(mut device_guard) = current_device.lock()
+                            {
+                                if let Some(old_device) = device_guard.take() {
+                                    let _ = old_device.remove_prop_listener(
+                                        &DEVICE_IS_RUNNING_SOMEWHERE,
+                                        device_listener,
+                                        device_listener_data,
+                                    );
+                                }
+
+                                if let Ok(new_device) = ca::System::default_output_device() {
+                                    let system_audio_active = if let Ok(is_running) =
+                                        new_device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE)
+                                    {
+                                        is_running != 0
+                                    } else {
+                                        false
+                                    };
+
+                                    if new_device
+                                        .add_prop_listener(
                                             &DEVICE_IS_RUNNING_SOMEWHERE,
                                             device_listener,
                                             device_listener_data,
-                                        );
-                                    }
+                                        )
+                                        .is_ok()
+                                    {
+                                        *device_guard = Some(new_device);
 
-                                    if let Ok(new_device) = ca::System::default_output_device() {
-                                        let system_audio_active = if let Ok(is_running) = new_device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE) {
-                                            is_running != 0
-                                        } else {
-                                            false
-                                        };
-
-                                        if new_device
-                                            .add_prop_listener(
-                                                &DEVICE_IS_RUNNING_SOMEWHERE,
-                                                device_listener,
-                                                device_listener_data,
-                                            )
-                                            .is_ok()
+                                        if let Ok(mut state_guard) = state.lock()
+                                            && state_guard.should_trigger(system_audio_active)
+                                            && system_audio_active
                                         {
-                                            *device_guard = Some(new_device);
+                                            let cb = data.0.clone();
+                                            std::thread::spawn(move || {
+                                                let apps = list_system_audio_using_apps();
+                                                tracing::info!(
+                                                    "detect_system_listener: {:?}",
+                                                    apps
+                                                );
 
-                                            if let Ok(mut state_guard) = state.lock() {
-                                                if state_guard.should_trigger(system_audio_active) {
-                                                    if system_audio_active {
-                                                        let cb = data.0.clone();
-                                                        std::thread::spawn(move || {
-                                                            let apps = list_system_audio_using_apps();
-                                                            tracing::info!("detect_system_listener: {:?}", apps);
-
-                                                            if let Ok(callback_guard) = cb.lock() {
-                                                                (*callback_guard)(SystemAudioEvent::SystemAudioStarted(apps));
-                                                            }
-                                                        });
-                                                    }
+                                                if let Ok(callback_guard) = cb.lock() {
+                                                    (*callback_guard)(
+                                                        SystemAudioEvent::SystemAudioStarted(apps),
+                                                    );
                                                 }
-                                            }
+                                            });
                                         }
                                     }
                                 }
@@ -294,7 +305,9 @@ impl MacOSSystemAudioDetector {
                     }
 
                     if let Ok(device) = ca::System::default_output_device() {
-                        let system_audio_active = if let Ok(is_running) = device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE) {
+                        let system_audio_active = if let Ok(is_running) =
+                            device.prop::<u32>(&DEVICE_IS_RUNNING_SOMEWHERE)
+                        {
                             is_running != 0
                         } else {
                             false
@@ -360,16 +373,15 @@ fn list_system_audio_using_apps() -> Vec<String> {
         Ok(processes) => {
             let mut apps = Vec::new();
             for process in processes {
-                if process.is_running_output().unwrap_or(false) {
-                    if let Ok(pid) = process.pid() {
-                        if let Some(running_app) = cidre::ns::RunningApp::with_pid(pid) {
-                            let name = running_app
-                                .localized_name()
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| format!("Process {}", pid));
-                            apps.push(name);
-                        }
-                    }
+                if process.is_running_output().unwrap_or(false)
+                    && let Ok(pid) = process.pid()
+                    && let Some(running_app) = cidre::ns::RunningApp::with_pid(pid)
+                {
+                    let name = running_app
+                        .localized_name()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("Process {}", pid));
+                    apps.push(name);
                 }
             }
             apps

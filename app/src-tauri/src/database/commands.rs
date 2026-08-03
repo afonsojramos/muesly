@@ -54,13 +54,12 @@ pub async fn detect_legacy_database(selected_path: String) -> Result<Option<Stri
     info!("Detecting legacy database from path: {}", selected_path);
 
     // Case 1: User selected the .db file directly
-    if path.is_file() {
-        if let Some(extension) = path.extension() {
-            if extension == "db" {
-                info!("Direct .db file selected: {}", selected_path);
-                return Ok(Some(selected_path));
-            }
-        }
+    if path.is_file()
+        && let Some(extension) = path.extension()
+        && extension == "db"
+    {
+        info!("Direct .db file selected: {}", selected_path);
+        return Ok(Some(selected_path));
     }
 
     // Case 2: User selected directory containing meeting_minutes.db

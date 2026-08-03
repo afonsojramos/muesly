@@ -50,22 +50,22 @@ fn resolve_sidecar_binary() -> Result<PathBuf> {
         }
     }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            for name in ["diarization-helper", "diarization-helper.exe"] {
-                let candidate = dir.join(name);
-                if candidate.exists() {
-                    return Ok(candidate);
-                }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        for name in ["diarization-helper", "diarization-helper.exe"] {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Ok(candidate);
             }
-            // Bundled sidecars carry a target-triple suffix next to the app binary.
-            if let Ok(entries) = std::fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    if name.starts_with("diarization-helper") && !name.ends_with(".d") {
-                        return Ok(entry.path());
-                    }
+        }
+        // Bundled sidecars carry a target-triple suffix next to the app binary.
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                if name.starts_with("diarization-helper") && !name.ends_with(".d") {
+                    return Ok(entry.path());
                 }
             }
         }

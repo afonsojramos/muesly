@@ -21,11 +21,11 @@ pub fn set_models_directory<R: Runtime>(app: &AppHandle<R>) {
     let models_dir = app_data_dir.join("models");
 
     // Create directory if it doesn't exist
-    if !models_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&models_dir) {
-            log::error!("Failed to create models directory: {}", e);
-            return;
-        }
+    if !models_dir.exists()
+        && let Err(e) = std::fs::create_dir_all(&models_dir)
+    {
+        log::error!("Failed to create models directory: {}", e);
+        return;
     }
 
     log::info!("Parakeet models directory set to: {}", models_dir.display());
@@ -112,16 +112,16 @@ pub async fn parakeet_load_model<R: Runtime>(
                     e
                 );
             }
-        } else if let Err(ref error) = result {
-            if let Err(e) = app_handle.emit(
+        } else if let Err(ref error) = result
+            && let Err(e) = app_handle.emit(
                 "parakeet-model-loading-failed",
                 serde_json::json!({
                     "modelName": model_name,
                     "error": error
                 }),
-            ) {
-                log::error!("Failed to emit parakeet-model-loading-failed event: {}", e);
-            }
+            )
+        {
+            log::error!("Failed to emit parakeet-model-loading-failed event: {}", e);
         }
 
         result
@@ -196,10 +196,10 @@ pub async fn parakeet_validate_model_ready() -> Result<String, String> {
 
     if let Some(engine) = engine {
         // Check if a model is currently loaded
-        if engine.is_model_loaded().await {
-            if let Some(current_model) = engine.get_current_model().await {
-                return Ok(current_model);
-            }
+        if engine.is_model_loaded().await
+            && let Some(current_model) = engine.get_current_model().await
+        {
+            return Ok(current_model);
         }
 
         // No model loaded, check if any models are available to load
@@ -250,11 +250,11 @@ pub async fn parakeet_validate_model_ready_with_config<R: tauri::Runtime>(
 
     if let Some(engine) = engine {
         // Check if a model is currently loaded
-        if engine.is_model_loaded().await {
-            if let Some(current_model) = engine.get_current_model().await {
-                log::info!("Parakeet model already loaded: {}", current_model);
-                return Ok(current_model);
-            }
+        if engine.is_model_loaded().await
+            && let Some(current_model) = engine.get_current_model().await
+        {
+            log::info!("Parakeet model already loaded: {}", current_model);
+            return Ok(current_model);
         }
 
         // No model loaded - try to load user's configured model from transcript config

@@ -510,7 +510,7 @@ where
         let mut processed = 0;
         let mut last_progress = 0u32;
         let mut chunk_count = 0;
-        let total_chunks = (total_samples + CHUNK_SIZE - 1) / CHUNK_SIZE;
+        let total_chunks = total_samples.div_ceil(CHUNK_SIZE);
 
         for chunk in samples_mono_16k.chunks(CHUNK_SIZE) {
             chunk_count += 1;
@@ -749,7 +749,7 @@ mod tests {
 
         // Should find speech segments
         assert!(
-            all_segments.len() >= 1,
+            !all_segments.is_empty(),
             "Expected at least 1 speech segment"
         );
     }

@@ -174,11 +174,11 @@ pub async fn save_recording_preferences<R: Runtime>(
 
     // Save backend preference to global config
     #[cfg(target_os = "macos")]
-    if let Some(backend_str) = &preferences.system_audio_backend {
-        if let Some(backend) = AudioCaptureBackend::from_string(backend_str) {
-            info!("Setting audio capture backend to: {:?}", backend);
-            crate::audio::capture::set_current_backend(backend);
-        }
+    if let Some(backend_str) = &preferences.system_audio_backend
+        && let Some(backend) = AudioCaptureBackend::from_string(backend_str)
+    {
+        info!("Setting audio capture backend to: {:?}", backend);
+        crate::audio::capture::set_current_backend(backend);
     }
 
     // Ensure the directory exists

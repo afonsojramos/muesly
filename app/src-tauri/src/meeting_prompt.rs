@@ -120,10 +120,10 @@ pub fn show<R: Runtime>(app: &AppHandle<R>, prompt: MeetingPrompt) {
 /// Hide the card and clear any pending offer.
 pub fn hide<R: Runtime>(app: &AppHandle<R>) {
     set_pending(None);
-    if let Some(window) = app.get_webview_window(PROMPT_LABEL) {
-        if let Err(e) = window.hide() {
-            log::warn!("meeting-prompt hide failed: {e}");
-        }
+    if let Some(window) = app.get_webview_window(PROMPT_LABEL)
+        && let Err(e) = window.hide()
+    {
+        log::warn!("meeting-prompt hide failed: {e}");
     }
 }
 
@@ -173,14 +173,12 @@ async fn accept<R: Runtime>(app: AppHandle<R>) {
                     serde_json::json!({ "icalUid": uid, "occurrenceMinute": minute }),
                 );
             }
-            if prompt.auto_join {
-                if let Some(url) = prompt.conference_url.as_deref() {
-                    if crate::calendar::conference::is_allowed_conference_url(url)
-                        && open::that_detached(url).is_err()
-                    {
-                        log::warn!("meeting prompt auto-join failed");
-                    }
-                }
+            if prompt.auto_join
+                && let Some(url) = prompt.conference_url.as_deref()
+                && crate::calendar::conference::is_allowed_conference_url(url)
+                && open::that_detached(url).is_err()
+            {
+                log::warn!("meeting prompt auto-join failed");
             }
         }
         Err(e) => {
@@ -190,15 +188,14 @@ async fn accept<R: Runtime>(app: AppHandle<R>) {
             log::warn!("meeting prompt start failed: {e}");
             if let (Some(uid), Some(minute)) =
                 (prompt.ical_uid.as_deref(), prompt.occurrence_minute)
+                && let Some(state) = app.try_state::<crate::state::AppState>()
             {
-                if let Some(state) = app.try_state::<crate::state::AppState>() {
-                    crate::calendar::scheduler::unclaim_fire(
-                        state.db_manager.pool(),
-                        &dedup_norm(uid),
-                        minute,
-                    )
-                    .await;
-                }
+                crate::calendar::scheduler::unclaim_fire(
+                    state.db_manager.pool(),
+                    &dedup_norm(uid),
+                    minute,
+                )
+                .await;
             }
             let _ = app.emit_to(
                 PROMPT_LABEL,

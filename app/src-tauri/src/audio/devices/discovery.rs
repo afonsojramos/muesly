@@ -30,10 +30,10 @@ pub async fn list_audio_devices() -> Result<Vec<AudioDevice>> {
     // Add any additional devices from the default host
     if let Ok(other_devices) = host.devices() {
         for device in other_devices {
-            if let Ok(name) = device.name() {
-                if !devices.iter().any(|d| d.name == name) {
-                    devices.push(AudioDevice::new(name, DeviceType::Output));
-                }
+            if let Ok(name) = device.name()
+                && !devices.iter().any(|d| d.name == name)
+            {
+                devices.push(AudioDevice::new(name, DeviceType::Output));
             }
         }
     }

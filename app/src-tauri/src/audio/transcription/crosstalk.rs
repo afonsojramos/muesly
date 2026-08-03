@@ -102,11 +102,11 @@ fn containment(a: &[String], b: &[String]) -> f64 {
     }
     let mut hits = 0usize;
     for t in short {
-        if let Some(c) = counts.get_mut(t.as_str()) {
-            if *c > 0 {
-                *c -= 1;
-                hits += 1;
-            }
+        if let Some(c) = counts.get_mut(t.as_str())
+            && *c > 0
+        {
+            *c -= 1;
+            hits += 1;
         }
     }
     hits as f64 / short.len() as f64

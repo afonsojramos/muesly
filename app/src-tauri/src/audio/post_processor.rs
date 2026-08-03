@@ -232,10 +232,10 @@ impl PostProcessor {
         normalized = normalized.replace("!  ", "! ");
 
         // Capitalize first letter of sentences
-        if let Some(first_char) = normalized.chars().next() {
-            if first_char.is_lowercase() {
-                normalized = first_char.to_uppercase().collect::<String>() + &normalized[1..];
-            }
+        if let Some(first_char) = normalized.chars().next()
+            && first_char.is_lowercase()
+        {
+            normalized = first_char.to_uppercase().collect::<String>() + &normalized[1..];
         }
 
         normalized

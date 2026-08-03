@@ -152,24 +152,24 @@ fn log_macos_specific_info(_device: &AudioDevice, _config: &SupportedStreamConfi
 
     // Try to get Core Audio device info
     // System::devices() returns Result<Vec<Device>, Error>
-    if let Ok(devices) = System::devices() {
-        if let Some(ca_device) = devices.iter().find(|d| {
+    if let Ok(devices) = System::devices()
+        && let Some(ca_device) = devices.iter().find(|d| {
             d.name().ok().map(|n| n.to_string()).as_deref() == Some(_device.name.as_str())
-        }) {
-            // Get transport type
-            if let Ok(transport) = ca_device.transport_type() {
-                info!("    Transport Type:  {:?}", transport);
-            }
+        })
+    {
+        // Get transport type
+        if let Ok(transport) = ca_device.transport_type() {
+            info!("    Transport Type:  {:?}", transport);
+        }
 
-            // Get device manufacturer
-            if let Ok(manufacturer) = ca_device.manufacturer() {
-                info!("    Manufacturer:    {}", manufacturer.to_string());
-            }
+        // Get device manufacturer
+        if let Ok(manufacturer) = ca_device.manufacturer() {
+            info!("    Manufacturer:    {}", manufacturer);
+        }
 
-            // Get device UID
-            if let Ok(uid) = ca_device.uid() {
-                info!("    Device UID:      {}", uid.to_string());
-            }
+        // Get device UID
+        if let Ok(uid) = ca_device.uid() {
+            info!("    Device UID:      {}", uid);
         }
     }
 }
@@ -311,12 +311,11 @@ pub fn log_performance_summary(
 mod tests {
     use super::*;
     use crate::audio::devices::DeviceType;
-    use cpal::SampleFormat;
 
     #[test]
     fn test_diagnostics_dont_panic() {
         // Create mock device and config
-        let device = AudioDevice::new("Test Device".to_string(), DeviceType::Input);
+        let _device = AudioDevice::new("Test Device".to_string(), DeviceType::Input);
 
         // Create a mock config (this is simplified - real configs are more complex)
         // Just ensure the diagnostic functions don't panic

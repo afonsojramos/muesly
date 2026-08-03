@@ -435,7 +435,7 @@ async fn get_or_init_parakeet_model<R: Runtime>(
     }) {
         configured_model
     } else {
-        let fallback = models
+        models
             .iter()
             .find(|m| matches!(m.status, crate::transcription_models::ModelStatus::Available))
             .map(|m| m.name.clone())
@@ -444,8 +444,7 @@ async fn get_or_init_parakeet_model<R: Runtime>(
                     "Parakeet model '{}' is not downloaded and no other Parakeet model is available",
                     configured_model
                 )
-            })?;
-        fallback
+            })?
     };
     engine
         .load_model(&model_to_load)

@@ -105,10 +105,10 @@ fn get_cached_model_path(app_data_dir: &PathBuf, model_name: &str) -> Result<Pat
     let mut cache = MODEL_PATH_CACHE.write().unwrap();
 
     // Double-check after acquiring write lock (another thread may have updated it)
-    if let Some(path) = cache.get(model_name) {
-        if path.exists() {
-            return Ok(path.clone());
-        }
+    if let Some(path) = cache.get(model_name)
+        && path.exists()
+    {
+        return Ok(path.clone());
     }
 
     // Resolve model path (involves model lookup + filesystem operations)
@@ -150,10 +150,10 @@ pub async fn generate_with_builtin(
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String> {
     // Check cancellation at start
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled before starting"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled before starting"));
     }
 
     log::info!("Built-in AI generation request");
@@ -163,10 +163,10 @@ pub async fn generate_with_builtin(
         prepare_generation(app_data_dir, model_name, system_prompt, user_prompt, false).await?;
 
     // Check cancellation after sidecar startup
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled during sidecar startup"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled during sidecar startup"));
     }
 
     // Send request with timeout
@@ -206,10 +206,10 @@ pub async fn generate_with_builtin(
     };
 
     // Check cancellation before parsing response
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled"));
     }
 
     let text = parse_terminal_response(&response_json)?;
@@ -232,10 +232,10 @@ pub async fn generate_with_builtin_streaming(
     cancellation_token: Option<&CancellationToken>,
     mut on_token: impl FnMut(String),
 ) -> Result<String> {
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled before starting"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled before starting"));
     }
 
     log::info!("Built-in AI streaming generation request");
@@ -244,10 +244,10 @@ pub async fn generate_with_builtin_streaming(
     let (manager, request_json) =
         prepare_generation(app_data_dir, model_name, system_prompt, user_prompt, true).await?;
 
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled during sidecar startup"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled during sidecar startup"));
     }
 
     // The first line waits out model load + prompt processing; after that the
@@ -295,10 +295,10 @@ pub async fn generate_with_builtin_streaming(
         streaming.await?
     };
 
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err(anyhow!("Generation cancelled"));
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err(anyhow!("Generation cancelled"));
     }
 
     let text = parse_terminal_response(&response_json)?;

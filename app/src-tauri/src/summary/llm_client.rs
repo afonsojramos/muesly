@@ -224,10 +224,10 @@ pub async fn generate_summary(
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
     // Check if cancelled before starting
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err("Summary generation was cancelled".to_string());
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err("Summary generation was cancelled".to_string());
     }
 
     // Handle BuiltInAI provider separately (uses local sidecar, no HTTP API)
@@ -293,7 +293,7 @@ pub async fn generate_summary(
 
         let content = chat_response
             .content
-            .get(0)
+            .first()
             .ok_or("No content in LLM response")?
             .text
             .trim();
@@ -308,7 +308,7 @@ pub async fn generate_summary(
 
         let content = chat_response
             .choices
-            .get(0)
+            .first()
             .ok_or("No content in LLM response")?
             .message
             .content
@@ -545,10 +545,10 @@ pub async fn generate_summary_streaming(
     if provider == &LLMProvider::BuiltInAI {
         return Err("BuiltInAI streams via the local sidecar, not HTTP".to_string());
     }
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err("Summary generation was cancelled".to_string());
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err("Summary generation was cancelled".to_string());
     }
 
     let (api_url, headers) =

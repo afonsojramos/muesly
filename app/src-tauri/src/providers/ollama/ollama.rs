@@ -98,10 +98,10 @@ fn validate_endpoint_url(url: &str) -> Result<(), OllamaError> {
 #[specta::specta]
 pub async fn get_ollama_models(endpoint: Option<String>) -> Result<Vec<OllamaModel>, String> {
     // Validate endpoint format if provided
-    if let Some(ref ep) = endpoint {
-        if let Err(e) = validate_endpoint_url(ep) {
-            return Err(e.to_string());
-        }
+    if let Some(ref ep) = endpoint
+        && let Err(e) = validate_endpoint_url(ep)
+    {
+        return Err(e.to_string());
     }
 
     // Add timeout wrapper (5 seconds max)
@@ -389,32 +389,27 @@ pub async fn pull_ollama_model<R: Runtime>(
                 if let (Some(completed), Some(total)) = (
                     json.get("completed").and_then(|v| v.as_u64()),
                     json.get("total").and_then(|v| v.as_u64()),
-                ) {
-                    if total > 0 {
-                        let progress = ((completed as f64 / total as f64) * 100.0) as u8;
+                ) && total > 0
+                {
+                    let progress = ((completed as f64 / total as f64) * 100.0) as u8;
 
-                        // Only emit if progress changed significantly (reduces event spam).
-                        // Use saturating_sub: across multi-file pulls `progress` can
-                        // decrease, and `progress - last_progress` would underflow.
-                        if progress != last_progress
-                            && (progress.saturating_sub(last_progress) >= 1 || progress == 100)
-                        {
-                            log::info!(
-                                "Ollama download progress for {}: {}%",
-                                model_name,
-                                progress
-                            );
+                    // Only emit if progress changed significantly (reduces event spam).
+                    // Use saturating_sub: across multi-file pulls `progress` can
+                    // decrease, and `progress - last_progress` would underflow.
+                    if progress != last_progress
+                        && (progress.saturating_sub(last_progress) >= 1 || progress == 100)
+                    {
+                        log::info!("Ollama download progress for {}: {}%", model_name, progress);
 
-                            let _ = app_handle.emit(
-                                "ollama-model-download-progress",
-                                serde_json::json!({
-                                    "modelName": model_name,
-                                    "progress": progress
-                                }),
-                            );
+                        let _ = app_handle.emit(
+                            "ollama-model-download-progress",
+                            serde_json::json!({
+                                "modelName": model_name,
+                                "progress": progress
+                            }),
+                        );
 
-                            last_progress = progress;
-                        }
+                        last_progress = progress;
                     }
                 }
 

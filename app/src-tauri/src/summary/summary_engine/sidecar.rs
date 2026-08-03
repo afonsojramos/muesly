@@ -142,103 +142,101 @@ impl SidecarManager {
     /// Resolve the path to llama-helper binary
     fn resolve_helper_binary() -> Result<PathBuf> {
         // 1. Check environment variable (dev mode or manual override)
-        if let Ok(env_path) = std::env::var("MUESLY_LLAMA_HELPER") {
-            if !env_path.is_empty() {
-                let path = PathBuf::from(env_path);
-                if path.exists() {
-                    log::info!(
-                        "Using llama-helper from MUESLY_LLAMA_HELPER: {}",
-                        path.display()
-                    );
-                    return Ok(path);
-                }
+        if let Ok(env_path) = std::env::var("MUESLY_LLAMA_HELPER")
+            && !env_path.is_empty()
+        {
+            let path = PathBuf::from(env_path);
+            if path.exists() {
+                log::info!(
+                    "Using llama-helper from MUESLY_LLAMA_HELPER: {}",
+                    path.display()
+                );
+                return Ok(path);
             }
         }
 
         // In production, Tauri bundles the binary with target triple suffix
         // 2. Check relative to current executable (most reliable for AppImage/bundled apps)
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                log::info!(
-                    "Searching for llama-helper relative to executable: {}",
-                    exe_dir.display()
-                );
+        if let Ok(exe_path) = std::env::current_exe()
+            && let Some(exe_dir) = exe_path.parent()
+        {
+            log::info!(
+                "Searching for llama-helper relative to executable: {}",
+                exe_dir.display()
+            );
 
-                // Get the target triple (same logic as before)
-                let target_triple = std::env::var("TARGET").unwrap_or_else(|_| {
-                    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-                    {
-                        "x86_64-unknown-linux-gnu".to_string()
-                    }
-                    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-                    {
-                        "aarch64-unknown-linux-gnu".to_string()
-                    }
-                    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-                    {
-                        "x86_64-apple-darwin".to_string()
-                    }
-                    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-                    {
-                        "aarch64-apple-darwin".to_string()
-                    }
-                    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-                    {
-                        "x86_64-pc-windows-msvc".to_string()
-                    }
-                    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-                    {
-                        "aarch64-pc-windows-msvc".to_string()
-                    }
-                    #[cfg(not(any(
-                        all(
-                            target_os = "linux",
-                            any(target_arch = "x86_64", target_arch = "aarch64")
-                        ),
-                        all(
-                            target_os = "macos",
-                            any(target_arch = "x86_64", target_arch = "aarch64")
-                        ),
-                        all(
-                            target_os = "windows",
-                            any(target_arch = "x86_64", target_arch = "aarch64")
-                        )
-                    )))]
-                    {
-                        "unknown".to_string()
-                    }
-                });
-
-                let binary_name = if cfg!(windows) {
-                    format!("llama-helper-{}.exe", target_triple)
-                } else {
-                    format!("llama-helper-{}", target_triple)
-                };
-
-                // Try exact match in exe dir
-                let bundled = exe_dir.join(&binary_name);
-                if bundled.exists() {
-                    log::info!(
-                        "Found exact match next to executable: {}",
-                        bundled.display()
-                    );
-                    return Ok(bundled);
+            // Get the target triple (same logic as before)
+            let target_triple = std::env::var("TARGET").unwrap_or_else(|_| {
+                #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+                {
+                    "x86_64-unknown-linux-gnu".to_string()
                 }
+                #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+                {
+                    "aarch64-unknown-linux-gnu".to_string()
+                }
+                #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+                {
+                    "x86_64-apple-darwin".to_string()
+                }
+                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+                {
+                    "aarch64-apple-darwin".to_string()
+                }
+                #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+                {
+                    "x86_64-pc-windows-msvc".to_string()
+                }
+                #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
+                {
+                    "aarch64-pc-windows-msvc".to_string()
+                }
+                #[cfg(not(any(
+                    all(
+                        target_os = "linux",
+                        any(target_arch = "x86_64", target_arch = "aarch64")
+                    ),
+                    all(
+                        target_os = "macos",
+                        any(target_arch = "x86_64", target_arch = "aarch64")
+                    ),
+                    all(
+                        target_os = "windows",
+                        any(target_arch = "x86_64", target_arch = "aarch64")
+                    )
+                )))]
+                {
+                    "unknown".to_string()
+                }
+            });
 
-                // Fuzzy match in exe dir
-                log::info!("Attempting fuzzy match in exe dir: {}", exe_dir.display());
-                if let Ok(entries) = std::fs::read_dir(exe_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                            if name.starts_with("llama-helper") && !name.ends_with(".d") {
-                                log::info!(
-                                    "Found fuzzy match next to executable: {}",
-                                    path.display()
-                                );
-                                return Ok(path);
-                            }
-                        }
+            let binary_name = if cfg!(windows) {
+                format!("llama-helper-{}.exe", target_triple)
+            } else {
+                format!("llama-helper-{}", target_triple)
+            };
+
+            // Try exact match in exe dir
+            let bundled = exe_dir.join(&binary_name);
+            if bundled.exists() {
+                log::info!(
+                    "Found exact match next to executable: {}",
+                    bundled.display()
+                );
+                return Ok(bundled);
+            }
+
+            // Fuzzy match in exe dir
+            log::info!("Attempting fuzzy match in exe dir: {}", exe_dir.display());
+            if let Ok(entries) = std::fs::read_dir(exe_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && name.starts_with("llama-helper")
+                        && !name.ends_with(".d")
+                    {
+                        log::info!("Found fuzzy match next to executable: {}", path.display());
+                        return Ok(path);
                     }
                 }
             }
@@ -313,11 +311,12 @@ impl SidecarManager {
             if let Ok(entries) = std::fs::read_dir(&resource_path) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        if name.starts_with("llama-helper") && !name.ends_with(".d") {
-                            log::info!("Found fuzzy match in RESOURCE_DIR: {}", path.display());
-                            return Ok(path);
-                        }
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str())
+                        && name.starts_with("llama-helper")
+                        && !name.ends_with(".d")
+                    {
+                        log::info!("Found fuzzy match in RESOURCE_DIR: {}", path.display());
+                        return Ok(path);
                     }
                 }
             }
@@ -907,10 +906,10 @@ impl Drop for SidecarManager {
         // only signals (no await), and `try_lock` succeeds in the common case
         // where nothing else holds the child lock at drop time. `kill_on_drop`
         // on the spawned command is the backstop for the contended case.
-        if let Ok(mut guard) = self.child_process.try_lock() {
-            if let Some(child) = guard.as_mut() {
-                let _ = child.start_kill();
-            }
+        if let Ok(mut guard) = self.child_process.try_lock()
+            && let Some(child) = guard.as_mut()
+        {
+            let _ = child.start_kill();
         }
 
         log::debug!("SidecarManager dropped");

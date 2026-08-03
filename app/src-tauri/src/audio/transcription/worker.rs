@@ -363,7 +363,7 @@ pub fn start_transcription_task<R: Runtime>(
 
                                     // Check confidence threshold (or accept if no confidence provided)
                                     let meets_threshold =
-                                        confidence_opt.map_or(true, |c| c >= confidence_threshold);
+                                        confidence_opt.is_none_or(|c| c >= confidence_threshold);
 
                                     // Quality gate: silence hallucinations and repetition loops.
                                     let quality_drop =
@@ -563,24 +563,25 @@ pub fn start_transcription_task<R: Runtime>(
                             // model, not the worker) never stall live captions;
                             // re-emits are order-safe because the sink and the
                             // frontend both upsert by sequence_id.
-                            if deciding_before && !pending_lang_repairs.is_empty() {
-                                if let (Some(stable_id), Some(whisper)) = (
+                            if deciding_before
+                                && !pending_lang_repairs.is_empty()
+                                && let (Some(stable_id), Some(whisper)) = (
                                     crate::whisper_engine::lang_lock::current_stable(),
                                     engine_clone.as_whisper(),
-                                ) {
-                                    let pending = std::mem::take(&mut pending_lang_repairs);
-                                    let repair_engine = whisper.clone();
-                                    let repair_app = app_clone.clone();
-                                    tokio::spawn(async move {
-                                        repair_deciding_segments(
-                                            &repair_engine,
-                                            &repair_app,
-                                            stable_id,
-                                            pending,
-                                        )
-                                        .await;
-                                    });
-                                }
+                                )
+                            {
+                                let pending = std::mem::take(&mut pending_lang_repairs);
+                                let repair_engine = whisper.clone();
+                                let repair_app = app_clone.clone();
+                                tokio::spawn(async move {
+                                    repair_deciding_segments(
+                                        &repair_engine,
+                                        &repair_app,
+                                        stable_id,
+                                        pending,
+                                    )
+                                    .await;
+                                });
                             }
 
                             // Mark chunk as completed
@@ -590,7 +591,7 @@ pub fn start_transcription_task<R: Runtime>(
                             let queued = chunks_queued_clone.load(Ordering::SeqCst);
 
                             // PERFORMANCE: Only log progress every 5th chunk to reduce I/O overhead
-                            if completed % 5 == 0 || should_log_this_chunk {
+                            if completed.is_multiple_of(5) || should_log_this_chunk {
                                 info!(
                                     "Worker {}: Progress {}/{} chunks ({:.1}%)",
                                     worker_id,
@@ -724,25 +725,21 @@ pub fn start_transcription_task<R: Runtime>(
                                         baseline.trim(),
                                         baseline_confidence,
                                     )
-                                {
-                                    if observation
+                                    && observation
                                         .preferred
                                         .eq_ignore_ascii_case(&candidate.preferred)
-                                    {
-                                        if let Err(error) =
-                                            crate::vocabulary::record_learning_observation(
-                                                &app,
-                                                &vocabulary_learning_session,
-                                                observation,
-                                            )
-                                            .await
-                                        {
-                                            warn!(
-                                                "Could not persist a vocabulary learning observation: {}",
-                                                error
-                                            );
-                                        }
-                                    }
+                                    && let Err(error) =
+                                        crate::vocabulary::record_learning_observation(
+                                            &app,
+                                            &vocabulary_learning_session,
+                                            observation,
+                                        )
+                                        .await
+                                {
+                                    warn!(
+                                        "Could not persist a vocabulary learning observation: {}",
+                                        error
+                                    );
                                 }
                             }
                             Err(error) => log::debug!(

@@ -571,12 +571,12 @@ pub async fn chat_recent(state: State<'_, AppState>) -> Result<Vec<RecentChatThr
 #[tauri::command]
 #[specta::specta]
 pub fn chat_cancel(gen_id: String) -> bool {
-    if let Ok(registry) = CHAT_CANCELLATION_REGISTRY.lock() {
-        if let Some(token) = registry.get(&gen_id) {
-            token.cancel();
-            info!("Cancelled chat generation: {}", gen_id);
-            return true;
-        }
+    if let Ok(registry) = CHAT_CANCELLATION_REGISTRY.lock()
+        && let Some(token) = registry.get(&gen_id)
+    {
+        token.cancel();
+        info!("Cancelled chat generation: {}", gen_id);
+        return true;
     }
     false
 }

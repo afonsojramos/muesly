@@ -62,7 +62,7 @@ impl ModelProvider for XaiProvider {
     }
 
     fn map_model(api: Self::ApiModel) -> Option<Self::UiModel> {
-        is_chat_model(&api.id).then(|| XaiModel {
+        is_chat_model(&api.id).then_some(XaiModel {
             id: api.id,
             owned_by: api.owned_by,
         })

@@ -42,10 +42,10 @@ fn swap_clipboard(text: &str) -> Result<Option<String>> {
 
 /// Restore the clipboard to `previous` (no-op when there was nothing to restore).
 fn restore_clipboard(previous: Option<String>) {
-    if let Some(text) = previous {
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            let _ = clipboard.set_text(text);
-        }
+    if let Some(text) = previous
+        && let Ok(mut clipboard) = arboard::Clipboard::new()
+    {
+        let _ = clipboard.set_text(text);
     }
 }
 
@@ -112,10 +112,10 @@ pub fn inject_text<R: Runtime>(app: &AppHandle<R>, text: &str) -> Result<()> {
         // Only restore if our dictated text is still on the clipboard. If the user
         // (or another app) copied something new during the paste window, keep their
         // content rather than clobbering it with the stale `previous`.
-        if let Ok(mut clipboard) = arboard::Clipboard::new() {
-            if clipboard.get_text().ok().as_deref() == Some(injected_text.as_str()) {
-                restore_clipboard(previous);
-            }
+        if let Ok(mut clipboard) = arboard::Clipboard::new()
+            && clipboard.get_text().ok().as_deref() == Some(injected_text.as_str())
+        {
+            restore_clipboard(previous);
         }
     });
     Ok(())

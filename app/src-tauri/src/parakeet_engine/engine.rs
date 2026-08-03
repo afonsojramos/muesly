@@ -16,16 +16,11 @@ use tokio::sync::RwLock;
 use tokio::time::timeout;
 
 /// Quantization type for Parakeet models
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type, Default)]
 pub enum QuantizationType {
     FP32, // Full precision
+    #[default]
     Int8, // 8-bit integer quantization (faster)
-}
-
-impl Default for QuantizationType {
-    fn default() -> Self {
-        QuantizationType::Int8 // Default to int8 for best performance
-    }
 }
 
 // Shared with the Whisper engine and the frontend; defined once in
@@ -146,7 +141,7 @@ impl ParakeetEngine {
             } else {
                 // Production mode
                 dirs::data_dir()
-                    .or_else(|| dirs::home_dir())
+                    .or_else(dirs::home_dir)
                     .ok_or_else(|| anyhow!("Could not find system data directory"))?
                     .join("muesly")
                     .join("models")

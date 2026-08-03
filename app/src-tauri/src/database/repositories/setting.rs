@@ -705,10 +705,10 @@ impl SettingsRepository {
         };
 
         // Dual-read shim: fill api_key from keychain if absent in JSON.
-        if config.api_key.is_none() {
-            if let Ok(Some(key)) = store.get("custom-openai-api-key") {
-                config.api_key = Some(key);
-            }
+        if config.api_key.is_none()
+            && let Ok(Some(key)) = store.get("custom-openai-api-key")
+        {
+            config.api_key = Some(key);
         }
 
         Ok(Some(config))
@@ -736,9 +736,7 @@ impl SettingsRepository {
                 let config_json: Option<String> = record.get("customOpenAIConfig");
                 if let Some(json) = config_json {
                     let config: CustomOpenAIConfig = serde_json::from_str(&json).map_err(|e| {
-                        sqlx::Error::Protocol(
-                            format!("Invalid JSON in customOpenAIConfig: {}", e).into(),
-                        )
+                        sqlx::Error::Protocol(format!("Invalid JSON in customOpenAIConfig: {}", e))
                     })?;
                     Ok(Some(config))
                 } else {
@@ -759,10 +757,10 @@ impl SettingsRepository {
         store: &dyn SecretStore,
     ) -> std::result::Result<(), String> {
         // Store the key in the keychain if present.
-        if let Some(ref key_value) = config.api_key {
-            if !key_value.is_empty() {
-                store.set("custom-openai-api-key", key_value)?;
-            }
+        if let Some(ref key_value) = config.api_key
+            && !key_value.is_empty()
+        {
+            store.set("custom-openai-api-key", key_value)?;
         }
 
         // Serialize with apiKey nulled out — no plaintext in SQLite.
@@ -846,40 +844,40 @@ impl SettingsRepository {
         // ------------------------------------------------------------------
         // customOpenAIConfig — extract apiKey from JSON blob
         // ------------------------------------------------------------------
-        if let Some(mut config) = Self::get_custom_openai_config_raw(pool).await? {
-            if let Some(ref key_value) = config.api_key {
-                match store.set("custom-openai-api-key", key_value) {
-                    Ok(()) => {
-                        config.api_key = None;
-                        match serde_json::to_string(&config) {
-                            Ok(json) => {
-                                if let Err(e) = sqlx::query(
-                                    "UPDATE settings SET customOpenAIConfig = $1 WHERE id = '1'",
-                                )
-                                .bind(json)
-                                .execute(pool)
-                                .await
-                                {
-                                    log::error!(
-                                        "Failed to update customOpenAIConfig after keychain write: {}",
-                                        e
-                                    );
-                                    any_failed = true;
-                                }
-                            }
-                            Err(e) => {
-                                log::error!("Failed to serialize customOpenAIConfig: {}", e);
+        if let Some(mut config) = Self::get_custom_openai_config_raw(pool).await?
+            && let Some(ref key_value) = config.api_key
+        {
+            match store.set("custom-openai-api-key", key_value) {
+                Ok(()) => {
+                    config.api_key = None;
+                    match serde_json::to_string(&config) {
+                        Ok(json) => {
+                            if let Err(e) = sqlx::query(
+                                "UPDATE settings SET customOpenAIConfig = $1 WHERE id = '1'",
+                            )
+                            .bind(json)
+                            .execute(pool)
+                            .await
+                            {
+                                log::error!(
+                                    "Failed to update customOpenAIConfig after keychain write: {}",
+                                    e
+                                );
                                 any_failed = true;
                             }
                         }
+                        Err(e) => {
+                            log::error!("Failed to serialize customOpenAIConfig: {}", e);
+                            any_failed = true;
+                        }
                     }
-                    Err(e) => {
-                        log::error!(
-                            "Keychain write failed for custom-openai-api-key: {}; leaving plaintext",
-                            e
-                        );
-                        any_failed = true;
-                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Keychain write failed for custom-openai-api-key: {}; leaving plaintext",
+                        e
+                    );
+                    any_failed = true;
                 }
             }
         }

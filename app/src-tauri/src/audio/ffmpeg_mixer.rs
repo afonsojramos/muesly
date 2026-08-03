@@ -430,7 +430,7 @@ impl FFmpegAudioMixer {
         self.windows_mixed += 1;
 
         // Log statistics periodically
-        if self.windows_mixed % 200 == 0 {
+        if self.windows_mixed.is_multiple_of(200) {
             // Every ~10 seconds at 50ms windows
             self.log_stats();
         }
@@ -530,7 +530,7 @@ mod tests {
 
         // All values should be clamped to 1.0
         for sample in mixed {
-            assert!(sample <= 1.0 && sample >= -1.0);
+            assert!((-1.0..=1.0).contains(&sample));
         }
     }
 }

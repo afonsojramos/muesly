@@ -242,11 +242,11 @@ fn extract_context_from_model_info(
     ];
 
     for key in possible_keys {
-        if let Some(value) = model_info.get(&key) {
-            if let Some(ctx) = value.as_u64() {
-                tracing::info!("Found context size in model_info[{}]: {} tokens", key, ctx);
-                return ctx as usize;
-            }
+        if let Some(value) = model_info.get(&key)
+            && let Some(ctx) = value.as_u64()
+        {
+            tracing::info!("Found context size in model_info[{}]: {} tokens", key, ctx);
+            return ctx as usize;
         }
     }
 

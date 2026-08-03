@@ -10,10 +10,10 @@ pub struct DatabaseManager {
 
 impl DatabaseManager {
     pub async fn new(tauri_db_path: &str, backend_db_path: &str) -> Result<Self> {
-        if let Some(parent_dir) = Path::new(tauri_db_path).parent() {
-            if !parent_dir.exists() {
-                fs::create_dir_all(parent_dir).map_err(|e| sqlx::Error::Io(e))?;
-            }
+        if let Some(parent_dir) = Path::new(tauri_db_path).parent()
+            && !parent_dir.exists()
+        {
+            fs::create_dir_all(parent_dir).map_err(sqlx::Error::Io)?;
         }
 
         if !Path::new(tauri_db_path).exists() {
@@ -23,7 +23,7 @@ impl DatabaseManager {
                     backend_db_path,
                     tauri_db_path
                 );
-                fs::copy(backend_db_path, tauri_db_path).map_err(|e| sqlx::Error::Io(e))?;
+                fs::copy(backend_db_path, tauri_db_path).map_err(sqlx::Error::Io)?;
             } else {
                 log::info!("Creating database at {}", tauri_db_path);
                 Sqlite::create_database(tauri_db_path).await?;
@@ -48,7 +48,7 @@ impl DatabaseManager {
             .app_data_dir()
             .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
         if !app_data_dir.exists() {
-            fs::create_dir_all(&app_data_dir).map_err(|e| sqlx::Error::Io(e))?;
+            fs::create_dir_all(&app_data_dir).map_err(sqlx::Error::Io)?;
         }
 
         // Define database paths
@@ -145,7 +145,7 @@ impl DatabaseManager {
             .map_err(|e| sqlx::Error::Configuration(Box::new(e)))?;
 
         if !app_data_dir.exists() {
-            fs::create_dir_all(&app_data_dir).map_err(|e| sqlx::Error::Io(e))?;
+            fs::create_dir_all(&app_data_dir).map_err(sqlx::Error::Io)?;
         }
 
         // Copy legacy database to app data directory as meeting_minutes.db
@@ -156,7 +156,7 @@ impl DatabaseManager {
             target_legacy_path.display()
         );
 
-        fs::copy(legacy_db_path, &target_legacy_path).map_err(|e| sqlx::Error::Io(e))?;
+        fs::copy(legacy_db_path, &target_legacy_path).map_err(sqlx::Error::Io)?;
 
         // Now use the standard initialization which will detect and migrate the legacy db
         Self::new_from_app_handle(app_handle).await

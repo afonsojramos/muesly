@@ -39,6 +39,12 @@ pub struct ModelCache<T> {
     inner: RwLock<Option<(Vec<T>, Instant)>>,
 }
 
+impl<T: Clone> Default for ModelCache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Clone> ModelCache<T> {
     pub const fn new() -> Self {
         Self {

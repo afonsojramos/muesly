@@ -152,49 +152,48 @@ pub fn list_template_ids() -> Vec<String> {
         .collect();
 
     // Add bundled templates if directory is set
-    if let Ok(bundled_dir_lock) = BUNDLED_TEMPLATES_DIR.read() {
-        if let Some(bundled_dir) = bundled_dir_lock.as_ref() {
-            if bundled_dir.exists() {
-                match std::fs::read_dir(bundled_dir) {
-                    Ok(entries) => {
-                        for entry in entries.flatten() {
-                            if let Some(filename) = entry.file_name().to_str() {
-                                if filename.ends_with(".json") {
-                                    let id = filename.trim_end_matches(".json").to_string();
-                                    if !ids.contains(&id) {
-                                        ids.push(id);
-                                    }
-                                }
-                            }
+    if let Ok(bundled_dir_lock) = BUNDLED_TEMPLATES_DIR.read()
+        && let Some(bundled_dir) = bundled_dir_lock.as_ref()
+        && bundled_dir.exists()
+    {
+        match std::fs::read_dir(bundled_dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    if let Some(filename) = entry.file_name().to_str()
+                        && filename.ends_with(".json")
+                    {
+                        let id = filename.trim_end_matches(".json").to_string();
+                        if !ids.contains(&id) {
+                            ids.push(id);
                         }
                     }
-                    Err(e) => {
-                        warn!("Failed to read bundled templates directory: {}", e);
-                    }
                 }
+            }
+            Err(e) => {
+                warn!("Failed to read bundled templates directory: {}", e);
             }
         }
     }
 
     // Add custom templates if directory exists
-    if let Some(custom_dir) = get_custom_templates_dir() {
-        if custom_dir.exists() {
-            match std::fs::read_dir(&custom_dir) {
-                Ok(entries) => {
-                    for entry in entries.flatten() {
-                        if let Some(filename) = entry.file_name().to_str() {
-                            if filename.ends_with(".json") {
-                                let id = filename.trim_end_matches(".json").to_string();
-                                if !ids.contains(&id) {
-                                    ids.push(id);
-                                }
-                            }
+    if let Some(custom_dir) = get_custom_templates_dir()
+        && custom_dir.exists()
+    {
+        match std::fs::read_dir(&custom_dir) {
+            Ok(entries) => {
+                for entry in entries.flatten() {
+                    if let Some(filename) = entry.file_name().to_str()
+                        && filename.ends_with(".json")
+                    {
+                        let id = filename.trim_end_matches(".json").to_string();
+                        if !ids.contains(&id) {
+                            ids.push(id);
                         }
                     }
                 }
-                Err(e) => {
-                    warn!("Failed to read custom templates directory: {}", e);
-                }
+            }
+            Err(e) => {
+                warn!("Failed to read custom templates directory: {}", e);
             }
         }
     }

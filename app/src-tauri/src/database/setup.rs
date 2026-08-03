@@ -46,24 +46,6 @@ pub async fn migrate_legacy_parakeet_v2_config(pool: &SqlitePool) -> Result<(), 
     .map_err(|error| error.to_string())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::is_legacy_parakeet_v2;
-
-    #[test]
-    fn only_parakeet_v2_is_legacy() {
-        assert!(is_legacy_parakeet_v2(
-            "parakeet",
-            "parakeet-tdt-0.6b-v2-int8"
-        ));
-        assert!(!is_legacy_parakeet_v2(
-            "parakeet",
-            "parakeet-tdt-0.6b-v3-int8"
-        ));
-        assert!(!is_legacy_parakeet_v2("localWhisper", "large-v2"));
-    }
-}
-
 /// Initialize database on app startup
 /// Handles first launch detection and conditional initialization
 pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), String> {
@@ -100,4 +82,22 @@ pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), Strin
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_legacy_parakeet_v2;
+
+    #[test]
+    fn only_parakeet_v2_is_legacy() {
+        assert!(is_legacy_parakeet_v2(
+            "parakeet",
+            "parakeet-tdt-0.6b-v2-int8"
+        ));
+        assert!(!is_legacy_parakeet_v2(
+            "parakeet",
+            "parakeet-tdt-0.6b-v3-int8"
+        ));
+        assert!(!is_legacy_parakeet_v2("localWhisper", "large-v2"));
+    }
 }

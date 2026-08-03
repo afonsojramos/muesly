@@ -223,18 +223,18 @@ impl LoudnessNormalizer {
                     warn!("Failed to add frames to EBU R128: {}", e);
                 } else {
                     // Update gain based on cumulative loudness
-                    if let Ok(current_lufs) = self.ebur128.loudness_global() {
-                        if current_lufs.is_finite() && current_lufs < 0.0 {
-                            // Cap the boost: quiet mics (e.g. USB headsets) can measure
-                            // near-silence, and unbounded gain amplifies the noise floor
-                            // to -23 LUFS, burying speech and blinding the VAD.
-                            // 24 dB covers every reasonable mic while keeping the
-                            // noise floor inaudible.
-                            const MAX_GAIN_DB: f64 = 24.0;
-                            let gain_db =
-                                (TARGET_LUFS - current_lufs).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
-                            self.gain_linear = 10_f32.powf(gain_db as f32 / 20.0);
-                        }
+                    if let Ok(current_lufs) = self.ebur128.loudness_global()
+                        && current_lufs.is_finite()
+                        && current_lufs < 0.0
+                    {
+                        // Cap the boost: quiet mics (e.g. USB headsets) can measure
+                        // near-silence, and unbounded gain amplifies the noise floor
+                        // to -23 LUFS, burying speech and blinding the VAD.
+                        // 24 dB covers every reasonable mic while keeping the
+                        // noise floor inaudible.
+                        const MAX_GAIN_DB: f64 = 24.0;
+                        let gain_db = (TARGET_LUFS - current_lufs).clamp(-MAX_GAIN_DB, MAX_GAIN_DB);
+                        self.gain_linear = 10_f32.powf(gain_db as f32 / 20.0);
                     }
                 }
                 self.loudness_buffer.clear();

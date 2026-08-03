@@ -270,12 +270,11 @@ pub async fn calendar_remove_account(
     if let Some(account) = CalendarAccountsRepository::get(pool, &account_id)
         .await
         .map_err(|e| e.to_string())?
+        && account.source == "google"
     {
-        if account.source == "google" {
-            google::disconnect_account(&account_id)
-                .await
-                .map_err(|e| e.to_string())?;
-        }
+        google::disconnect_account(&account_id)
+            .await
+            .map_err(|e| e.to_string())?;
     }
     CalendarAccountsRepository::delete(pool, &account_id)
         .await

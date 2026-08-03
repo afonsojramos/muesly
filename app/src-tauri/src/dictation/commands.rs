@@ -143,10 +143,10 @@ async fn transcribe_burst(samples_16k: Vec<f32>) -> Result<String, String> {
             .unwrap_or_else(|e| e.into_inner());
         guard.as_ref().cloned()
     };
-    if let Some(engine) = parakeet {
-        if engine.is_model_loaded().await {
-            return crate::parakeet_engine::commands::parakeet_transcribe_audio(samples_16k).await;
-        }
+    if let Some(engine) = parakeet
+        && engine.is_model_loaded().await
+    {
+        return crate::parakeet_engine::commands::parakeet_transcribe_audio(samples_16k).await;
     }
     crate::whisper_engine::commands::whisper_transcribe_audio(samples_16k).await
 }

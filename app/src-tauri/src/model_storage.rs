@@ -790,12 +790,10 @@ pub fn validate_resume_content_range(
     if end.checked_add(1) != Some(total) {
         bail!("partial response must cover the complete remaining suffix");
     }
-    if let Some(content_length) = content_length {
-        if content_length != span {
-            bail!(
-                "partial response Content-Length {content_length} does not match range span {span}"
-            );
-        }
+    if let Some(content_length) = content_length
+        && content_length != span
+    {
+        bail!("partial response Content-Length {content_length} does not match range span {span}");
     }
     Ok(total)
 }

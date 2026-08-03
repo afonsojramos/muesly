@@ -428,7 +428,7 @@ fn phonetic_key(text: &str) -> String {
         if is_vowel && !output.is_empty() {
             continue;
         }
-        if output.chars().next_back() != Some(character) {
+        if !output.ends_with(character) {
             output.push(character);
         }
     }

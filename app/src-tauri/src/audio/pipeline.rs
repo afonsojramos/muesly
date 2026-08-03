@@ -68,7 +68,7 @@ impl AudioMixerRingBuffer {
     fn add_samples(&mut self, device_type: DeviceType, samples: Vec<f32>) {
         // Log buffer health periodically for diagnostics
         self.add_count = self.add_count.wrapping_add(1);
-        if self.add_count % 200 == 0 {
+        if self.add_count.is_multiple_of(200) {
             debug!(
                 "Ring buffer status: mic={} samples, sys={} samples (max={})",
                 self.mic_buffer.len(),
@@ -463,34 +463,34 @@ impl AudioCapture {
                 buffer_lock.extend_from_slice(&mono_data);
 
                 // Process complete chunks through the resampler
-                if let Ok(mut resampler_lock) = self.resampler.lock() {
-                    if let Some(ref mut resampler) = *resampler_lock {
-                        used_persistent_resampler = true;
+                if let Ok(mut resampler_lock) = self.resampler.lock()
+                    && let Some(ref mut resampler) = *resampler_lock
+                {
+                    used_persistent_resampler = true;
 
-                        // Process as many complete chunks as we have
-                        while buffer_lock.len() >= self.resampler_chunk_size {
-                            // Extract exactly chunk_size samples
-                            let chunk: Vec<f32> =
-                                buffer_lock.drain(0..self.resampler_chunk_size).collect();
+                    // Process as many complete chunks as we have
+                    while buffer_lock.len() >= self.resampler_chunk_size {
+                        // Extract exactly chunk_size samples
+                        let chunk: Vec<f32> =
+                            buffer_lock.drain(0..self.resampler_chunk_size).collect();
 
-                            // Rubato expects input as Vec<Vec<f32>> (one Vec per channel)
-                            let waves_in = vec![chunk];
+                        // Rubato expects input as Vec<Vec<f32>> (one Vec per channel)
+                        let waves_in = vec![chunk];
 
-                            match resampler.process(&waves_in, None) {
-                                Ok(mut waves_out) => {
-                                    if let Some(output) = waves_out.pop() {
-                                        resampled_output.extend_from_slice(&output);
-                                    }
-                                }
-                                Err(e) => {
-                                    warn!("⚠️ Persistent resampler processing failed: {}", e);
-                                    used_persistent_resampler = false;
-                                    break;
+                        match resampler.process(&waves_in, None) {
+                            Ok(mut waves_out) => {
+                                if let Some(output) = waves_out.pop() {
+                                    resampled_output.extend_from_slice(&output);
                                 }
                             }
+                            Err(e) => {
+                                warn!("⚠️ Persistent resampler processing failed: {}", e);
+                                used_persistent_resampler = false;
+                                break;
+                            }
                         }
-                        // Remaining samples in buffer will be processed in next iteration
                     }
+                    // Remaining samples in buffer will be processed in next iteration
                 }
             }
 
@@ -528,7 +528,7 @@ impl AudioCapture {
 
             // Log resampling only occasionally to avoid spam
             let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
-            if chunk_id % 100 == 0 && has_resampled_output {
+            if chunk_id.is_multiple_of(100) && has_resampled_output {
                 let after_len = mono_data.len();
                 let after_rms = if !mono_data.is_empty() {
                     (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32).sqrt()
@@ -563,78 +563,76 @@ impl AudioCapture {
         // This ensures noise is removed before being amplified by the normalizer
         if matches!(self.device_type, DeviceType::Microphone) {
             // STEP 1: Apply high-pass filter to remove low-frequency rumble (< 80 Hz)
-            if let Ok(mut hpf_lock) = self.high_pass_filter.lock() {
-                if let Some(ref mut filter) = *hpf_lock {
-                    mono_data = filter.process(&mono_data);
-                }
+            if let Ok(mut hpf_lock) = self.high_pass_filter.lock()
+                && let Some(ref mut filter) = *hpf_lock
+            {
+                mono_data = filter.process(&mono_data);
             }
 
             // STEP 2: Apply RNNoise noise suppression (10-15 dB reduction) - CONDITIONAL
-            if super::ffmpeg_mixer::RNNOISE_APPLY_ENABLED {
-                if let Ok(mut ns_lock) = self.noise_suppressor.lock() {
-                    if let Some(ref mut suppressor) = *ns_lock {
-                        let before_len = mono_data.len();
-                        mono_data = suppressor.process(&mono_data);
-                        let after_len = mono_data.len();
+            if super::ffmpeg_mixer::RNNOISE_APPLY_ENABLED
+                && let Ok(mut ns_lock) = self.noise_suppressor.lock()
+                && let Some(ref mut suppressor) = *ns_lock
+            {
+                let before_len = mono_data.len();
+                mono_data = suppressor.process(&mono_data);
+                let after_len = mono_data.len();
 
-                        // CRITICAL MONITORING: Track buffer health
-                        let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
-                        if chunk_id % 100 == 0 {
-                            let buffered = suppressor.buffered_samples();
-                            let length_delta = (before_len as i32 - after_len as i32).abs();
+                // CRITICAL MONITORING: Track buffer health
+                let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
+                if chunk_id.is_multiple_of(100) {
+                    let buffered = suppressor.buffered_samples();
+                    let length_delta = (before_len as i32 - after_len as i32).abs();
 
-                            debug!(
-                                "🔇 Noise suppression health: in={}, out={}, delta={}, buffered={}, RMS={:.4}",
-                                before_len,
-                                after_len,
-                                length_delta,
-                                buffered,
-                                if !mono_data.is_empty() {
-                                    (mono_data.iter().map(|&x| x * x).sum::<f32>()
-                                        / mono_data.len() as f32)
-                                        .sqrt()
-                                } else {
-                                    0.0
-                                }
-                            );
-
-                            // WARN if accumulating samples (potential latency buildup)
-                            if buffered > 1000 {
-                                warn!(
-                                    "⚠️ RNNoise accumulating samples: {} buffered (potential latency issue!)",
-                                    buffered
-                                );
-                            }
-
-                            // WARN if significant length mismatch
-                            if length_delta > 50 {
-                                warn!(
-                                    "⚠️ RNNoise length mismatch: input={} output={} (delta={})",
-                                    before_len, after_len, length_delta
-                                );
-                            }
+                    debug!(
+                        "🔇 Noise suppression health: in={}, out={}, delta={}, buffered={}, RMS={:.4}",
+                        before_len,
+                        after_len,
+                        length_delta,
+                        buffered,
+                        if !mono_data.is_empty() {
+                            (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32)
+                                .sqrt()
+                        } else {
+                            0.0
                         }
+                    );
+
+                    // WARN if accumulating samples (potential latency buildup)
+                    if buffered > 1000 {
+                        warn!(
+                            "⚠️ RNNoise accumulating samples: {} buffered (potential latency issue!)",
+                            buffered
+                        );
+                    }
+
+                    // WARN if significant length mismatch
+                    if length_delta > 50 {
+                        warn!(
+                            "⚠️ RNNoise length mismatch: input={} output={} (delta={})",
+                            before_len, after_len, length_delta
+                        );
                     }
                 }
             }
 
             // STEP 3: Apply EBU R128 normalization (professional loudness standard)
-            if let Ok(mut normalizer_lock) = self.normalizer.lock() {
-                if let Some(ref mut normalizer) = *normalizer_lock {
-                    mono_data = normalizer.normalize_loudness(&mono_data);
+            if let Ok(mut normalizer_lock) = self.normalizer.lock()
+                && let Some(ref mut normalizer) = *normalizer_lock
+            {
+                mono_data = normalizer.normalize_loudness(&mono_data);
 
-                    // Log normalization occasionally for debugging
-                    let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
-                    if chunk_id % 200 == 0 && !mono_data.is_empty() {
-                        let rms = (mono_data.iter().map(|&x| x * x).sum::<f32>()
-                            / mono_data.len() as f32)
-                            .sqrt();
-                        let peak = mono_data.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
-                        debug!(
-                            "🎤 After normalization chunk {}: RMS={:.4}, Peak={:.4}",
-                            chunk_id, rms, peak
-                        );
-                    }
+                // Log normalization occasionally for debugging
+                let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
+                if chunk_id.is_multiple_of(200) && !mono_data.is_empty() {
+                    let rms = (mono_data.iter().map(|&x| x * x).sum::<f32>()
+                        / mono_data.len() as f32)
+                        .sqrt();
+                    let peak = mono_data.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
+                    debug!(
+                        "🎤 After normalization chunk {}: RMS={:.4}, Peak={:.4}",
+                        chunk_id, rms, peak
+                    );
                 }
             }
         }
@@ -943,7 +941,7 @@ impl AudioPipeline {
                     // CRITICAL: Log summary only every 200 chunks OR every 60 seconds (99.5% reduction)
                     // This eliminates I/O overhead in the audio processing hot path
                     // Use performance-optimized debug macro that compiles to nothing in release builds
-                    if self.processed_chunks % 200 == 0 || self.last_summary_time.elapsed().as_secs() >= 60 {
+                    if self.processed_chunks.is_multiple_of(200) || self.last_summary_time.elapsed().as_secs() >= 60 {
                         perf_debug!("Pipeline processed {} chunks, current chunk: {} ({} samples)",
                                    self.processed_chunks, chunk.chunk_id, chunk.data.len());
                         self.last_summary_time = std::time::Instant::now();

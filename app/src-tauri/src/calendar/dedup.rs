@@ -95,12 +95,11 @@ fn merge(
 
 fn fill_if_empty(target: &mut Option<String>, src: Option<String>) {
     let empty = target.as_deref().map(str::trim).unwrap_or("").is_empty();
-    if empty {
-        if let Some(v) = src {
-            if !v.trim().is_empty() {
-                *target = Some(v);
-            }
-        }
+    if empty
+        && let Some(v) = src
+        && !v.trim().is_empty()
+    {
+        *target = Some(v);
     }
 }
 

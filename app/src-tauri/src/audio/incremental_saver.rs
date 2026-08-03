@@ -213,7 +213,7 @@ impl IncrementalAudioSaver {
             .to_str()
             .ok_or_else(|| anyhow!("Output path is not valid UTF-8: {}", output.display()))?;
 
-        command.args(&[
+        command.args([
             "-f",
             "concat", // Use concat demuxer
             "-safe",
@@ -368,7 +368,7 @@ pub async fn recover_audio_from_checkpoints(
 
     let mut command = std::process::Command::new(ffmpeg_path);
 
-    command.args(&[
+    command.args([
         "-f",
         "concat",
         "-safe",

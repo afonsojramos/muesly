@@ -139,12 +139,12 @@ mod imp {
         location: Option<&str>,
         notes: Option<&str>,
     ) -> Option<String> {
-        if let Some(url) = unsafe { event.URL() } {
-            if let Some(abs) = url.absoluteString() {
-                let s = abs.to_string();
-                if is_conf_url(&s) {
-                    return Some(s);
-                }
+        if let Some(url) = unsafe { event.URL() }
+            && let Some(abs) = url.absoluteString()
+        {
+            let s = abs.to_string();
+            if is_conf_url(&s) {
+                return Some(s);
             }
         }
         location

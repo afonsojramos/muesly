@@ -125,7 +125,7 @@ pub fn spawn_meeting_scheduler<R: Runtime>(app: AppHandle<R>) {
             }
 
             let now = Utc::now();
-            if last_fetch.map_or(true, |t| t.elapsed() >= REFETCH_AFTER) {
+            if last_fetch.is_none_or(|t| t.elapsed() >= REFETCH_AFTER) {
                 cache = service::fetch_all_candidates(&pool, now).await;
                 last_fetch = Some(Instant::now());
             }

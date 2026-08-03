@@ -55,10 +55,10 @@ fn find_audio_file(folder: &Path) -> Result<PathBuf, String> {
     if let Ok(entries) = std::fs::read_dir(folder) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                if AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()) {
-                    return Ok(path);
-                }
+            if let Some(ext) = path.extension().and_then(|e| e.to_str())
+                && AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+            {
+                return Ok(path);
             }
         }
     }

@@ -188,46 +188,45 @@ pub fn render_meeting_context(
     let remote = matches!(egress, Egress::Remote);
     let mut lines: Vec<String> = Vec::new();
 
-    if let Some(t) = event.title.as_deref() {
-        if !t.is_empty() {
-            lines.push(format!("Title: {t}"));
-        }
+    if let Some(t) = event.title.as_deref()
+        && !t.is_empty()
+    {
+        lines.push(format!("Title: {t}"));
     }
     match (event.start_time.as_deref(), event.end_time.as_deref()) {
         (Some(s), Some(e)) => lines.push(format!("Time: {s} to {e}")),
         (Some(s), None) => lines.push(format!("Time: {s}")),
         _ => {}
     }
-    if let Some(loc) = event.location.as_deref() {
-        if !loc.is_empty() {
-            // For remote egress, a location that is/holds a conference link is
-            // withheld (like the conference URL) and any secrets are scrubbed.
-            let rendered = if remote {
-                safe_location_for_remote(loc)
-            } else {
-                Some(loc.to_string())
-            };
-            if let Some(loc) = rendered {
-                lines.push(format!("Location: {loc}"));
-            }
+    if let Some(loc) = event.location.as_deref()
+        && !loc.is_empty()
+    {
+        // For remote egress, a location that is/holds a conference link is
+        // withheld (like the conference URL) and any secrets are scrubbed.
+        let rendered = if remote {
+            safe_location_for_remote(loc)
+        } else {
+            Some(loc.to_string())
+        };
+        if let Some(loc) = rendered {
+            lines.push(format!("Location: {loc}"));
         }
     }
 
     // Conference URL: local only - it can embed personal meeting IDs/passcodes.
-    if !remote {
-        if let Some(url) = event.conference_url.as_deref() {
-            if !url.is_empty() {
-                lines.push(format!("Call link: {url}"));
-            }
-        }
+    if !remote
+        && let Some(url) = event.conference_url.as_deref()
+        && !url.is_empty()
+    {
+        lines.push(format!("Call link: {url}"));
     }
 
     // Names: local always; remote only when explicitly opted in.
     if !remote || send_names {
-        if let Some(org) = event.organizer_name.as_deref() {
-            if !org.is_empty() {
-                lines.push(format!("Organizer: {org}"));
-            }
+        if let Some(org) = event.organizer_name.as_deref()
+            && !org.is_empty()
+        {
+            lines.push(format!("Organizer: {org}"));
         }
         if let Some(names) = attendee_names(event) {
             lines.push(format!("Attendees: {names}"));
@@ -236,12 +235,12 @@ pub fn render_meeting_context(
 
     // Notes: local always; remote only when explicitly opted in. Stored notes are
     // already scrubbed/capped; re-cap defensively.
-    if !remote || send_notes {
-        if let Some(raw) = event.notes.as_deref() {
-            let cleaned = cap_notes(raw, MAX_NOTES_CHARS);
-            if !cleaned.trim().is_empty() {
-                lines.push(format!("Agenda/Notes: {cleaned}"));
-            }
+    if (!remote || send_notes)
+        && let Some(raw) = event.notes.as_deref()
+    {
+        let cleaned = cap_notes(raw, MAX_NOTES_CHARS);
+        if !cleaned.trim().is_empty() {
+            lines.push(format!("Agenda/Notes: {cleaned}"));
         }
     }
 

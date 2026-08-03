@@ -31,6 +31,12 @@ pub struct AudioLevelMonitor {
     streams: Arc<Mutex<Vec<cpal::Stream>>>,
 }
 
+impl Default for AudioLevelMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AudioLevelMonitor {
     pub fn new() -> Self {
         Self {
@@ -159,10 +165,10 @@ impl AudioLevelMonitor {
         // Try input devices first
         if let Ok(input_devices) = host.input_devices() {
             for device in input_devices {
-                if let Ok(name) = device.name() {
-                    if name == device_name {
-                        return Ok(device);
-                    }
+                if let Ok(name) = device.name()
+                    && name == device_name
+                {
+                    return Ok(device);
                 }
             }
         }
@@ -170,10 +176,10 @@ impl AudioLevelMonitor {
         // Try output devices
         if let Ok(output_devices) = host.output_devices() {
             for device in output_devices {
-                if let Ok(name) = device.name() {
-                    if name == device_name {
-                        return Ok(device);
-                    }
+                if let Ok(name) = device.name()
+                    && name == device_name
+                {
+                    return Ok(device);
                 }
             }
         }

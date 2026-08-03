@@ -869,12 +869,11 @@ pub async fn global_chat_ask<R: Runtime>(
     // evidence list that the budget trimmer (which drops from the front) keeps
     // it, and close to the question where small models attend best. Ranked for
     // the question so relevant memories survive the block cap in big folders.
-    if let Some(folder_id) = folder_id.as_deref() {
-        if let Some(block) =
+    if let Some(folder_id) = folder_id.as_deref()
+        && let Some(block) =
             FolderContextRepository::context_block_for_query(&pool, folder_id, &question).await
-        {
-            evidence.push(block);
-        }
+    {
+        evidence.push(block);
     }
 
     let mut rounds = 0usize;

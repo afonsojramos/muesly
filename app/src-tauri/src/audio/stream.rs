@@ -550,19 +550,19 @@ impl AudioStreamManager {
         let mut errors = Vec::new();
 
         // Stop microphone stream
-        if let Some(mic_stream) = self.microphone_stream.take() {
-            if let Err(e) = mic_stream.stop() {
-                error!("Failed to stop microphone stream: {}", e);
-                errors.push(e);
-            }
+        if let Some(mic_stream) = self.microphone_stream.take()
+            && let Err(e) = mic_stream.stop()
+        {
+            error!("Failed to stop microphone stream: {}", e);
+            errors.push(e);
         }
 
         // Stop system stream
-        if let Some(sys_stream) = self.system_stream.take() {
-            if let Err(e) = sys_stream.stop() {
-                error!("Failed to stop system stream: {}", e);
-                errors.push(e);
-            }
+        if let Some(sys_stream) = self.system_stream.take()
+            && let Err(e) = sys_stream.stop()
+        {
+            error!("Failed to stop system stream: {}", e);
+            errors.push(e);
         }
 
         if !errors.is_empty() {

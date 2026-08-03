@@ -147,7 +147,7 @@ impl ModelManager {
                 // Production mode fallback (caller should provide path)
                 log::warn!("ModelManager: No models directory provided, using fallback path");
                 dirs::data_dir()
-                    .or_else(|| dirs::home_dir())
+                    .or_else(dirs::home_dir)
                     .ok_or_else(|| anyhow!("Could not find system data directory"))?
                     .join("muesly")
                     .join("models")
@@ -315,11 +315,9 @@ impl ModelManager {
     /// Check if a model is ready to use
     /// If refresh=true, scans filesystem before checking (slower but accurate)
     pub async fn is_model_ready(&self, model_name: &str, refresh: bool) -> bool {
-        if refresh {
-            if let Err(e) = self.scan_models().await {
-                log::error!("Failed to scan models: {}", e);
-                return false;
-            }
+        if refresh && let Err(e) = self.scan_models().await {
+            log::error!("Failed to scan models: {}", e);
+            return false;
         }
 
         if let Some(info) = self.get_model_info(model_name).await {
@@ -389,63 +387,63 @@ impl ModelManager {
         let file_path = self.models_dir.join(&model_def.gguf_file);
 
         // Check if model already exists and is valid (skip re-download)
-        if file_path.exists() {
-            if let Ok(metadata) = fs::metadata(&file_path).await {
-                let file_size_mb = metadata.len() / (1024 * 1024);
-                let expected_min = (model_def.size_mb as f64 * 0.9) as u64;
-                let expected_max = (model_def.size_mb as f64 * 1.1) as u64;
+        if file_path.exists()
+            && let Ok(metadata) = fs::metadata(&file_path).await
+        {
+            let file_size_mb = metadata.len() / (1024 * 1024);
+            let expected_min = (model_def.size_mb as f64 * 0.9) as u64;
+            let expected_max = (model_def.size_mb as f64 * 1.1) as u64;
 
-                if file_size_mb >= expected_min && file_size_mb <= expected_max {
-                    log::info!(
-                        "Model '{}' already exists and is valid ({} MB), skipping download",
-                        model_name,
-                        file_size_mb
-                    );
+            if file_size_mb >= expected_min && file_size_mb <= expected_max {
+                log::info!(
+                    "Model '{}' already exists and is valid ({} MB), skipping download",
+                    model_name,
+                    file_size_mb
+                );
 
-                    // Update status to available
-                    {
-                        let mut models = self.available_models.write().await;
-                        if let Some(model_info) = models.get_mut(model_name) {
-                            model_info.status = ModelStatus::Available;
-                        }
+                // Update status to available
+                {
+                    let mut models = self.available_models.write().await;
+                    if let Some(model_info) = models.get_mut(model_name) {
+                        model_info.status = ModelStatus::Available;
                     }
-
-                    // Remove from active downloads
-                    {
-                        let mut active = self.active_downloads.write().await;
-                        active.remove(model_name);
-                    }
-
-                    // Report 100% progress
-                    if let Some(ref callback) = progress_callback {
-                        let total = metadata.len();
-                        callback(DownloadProgress::new(total, total, 0.0));
-                    }
-
-                    return Ok(());
-                } else if file_size_mb > expected_max {
-                    // File is LARGER than expected - possibly corrupted or wrong file
-                    // Delete and re-download in this case
-                    log::warn!(
-                        "Model '{}' exists but is too large ({} MB, expected max {} MB), deleting and re-downloading",
-                        model_name,
-                        file_size_mb,
-                        expected_max
-                    );
-                    if let Err(e) = fs::remove_file(&file_path).await {
-                        log::warn!("Failed to delete oversized model file: {}", e);
-                    }
-                } else {
-                    // File is SMALLER than expected - likely partial download
-                    // DON'T DELETE - let resume logic handle it
-                    log::info!(
-                        "Model '{}' exists but is incomplete ({} MB, expected min {} MB), will resume download",
-                        model_name,
-                        file_size_mb,
-                        expected_min
-                    );
-                    // Continue to download/resume logic below
                 }
+
+                // Remove from active downloads
+                {
+                    let mut active = self.active_downloads.write().await;
+                    active.remove(model_name);
+                }
+
+                // Report 100% progress
+                if let Some(ref callback) = progress_callback {
+                    let total = metadata.len();
+                    callback(DownloadProgress::new(total, total, 0.0));
+                }
+
+                return Ok(());
+            } else if file_size_mb > expected_max {
+                // File is LARGER than expected - possibly corrupted or wrong file
+                // Delete and re-download in this case
+                log::warn!(
+                    "Model '{}' exists but is too large ({} MB, expected max {} MB), deleting and re-downloading",
+                    model_name,
+                    file_size_mb,
+                    expected_max
+                );
+                if let Err(e) = fs::remove_file(&file_path).await {
+                    log::warn!("Failed to delete oversized model file: {}", e);
+                }
+            } else {
+                // File is SMALLER than expected - likely partial download
+                // DON'T DELETE - let resume logic handle it
+                log::info!(
+                    "Model '{}' exists but is incomplete ({} MB, expected min {} MB), will resume download",
+                    model_name,
+                    file_size_mb,
+                    expected_min
+                );
+                // Continue to download/resume logic below
             }
         }
 

@@ -217,16 +217,16 @@ pub fn clean_llm_markdown_output(markdown: &str) -> String {
     // and then FORGET the closing fence, so the opening fence is stripped even
     // when unbalanced. Only markdown-ish info strings count as wrappers: a
     // leading ```python (etc.) is content, not packaging.
-    if let Some(after_ticks) = trimmed.strip_prefix("```") {
-        if let Some(newline) = after_ticks.find('\n') {
-            let info_string = after_ticks[..newline].trim().to_ascii_lowercase();
-            if matches!(info_string.as_str(), "" | "markdown" | "md" | "text") {
-                trimmed = after_ticks[newline + 1..].trim();
-                // Only balance the wrapper we just opened: a trailing fence
-                // without the stripped opener belongs to real content.
-                if let Some(body) = trimmed.strip_suffix("```") {
-                    trimmed = body.trim();
-                }
+    if let Some(after_ticks) = trimmed.strip_prefix("```")
+        && let Some(newline) = after_ticks.find('\n')
+    {
+        let info_string = after_ticks[..newline].trim().to_ascii_lowercase();
+        if matches!(info_string.as_str(), "" | "markdown" | "md" | "text") {
+            trimmed = after_ticks[newline + 1..].trim();
+            // Only balance the wrapper we just opened: a trailing fence
+            // without the stripped opener belongs to real content.
+            if let Some(body) = trimmed.strip_suffix("```") {
+                trimmed = body.trim();
             }
         }
     }
@@ -403,10 +403,10 @@ async fn run_markdown_transform(
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err("Summary generation was cancelled".to_string());
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err("Summary generation was cancelled".to_string());
     }
 
     let raw = generate_summary(
@@ -562,10 +562,10 @@ pub async fn generate_meeting_summary(
     folder_context: Option<&str>,
 ) -> Result<(String, String, i64), String> {
     // Check cancellation at the start
-    if let Some(token) = cancellation_token {
-        if token.is_cancelled() {
-            return Err("Summary generation was cancelled".to_string());
-        }
+    if let Some(token) = cancellation_token
+        && token.is_cancelled()
+    {
+        return Err("Summary generation was cancelled".to_string());
     }
     info!(
         "Starting summary generation with provider: {:?}, model: {}",
@@ -624,15 +624,15 @@ pub async fn generate_meeting_summary(
 
             for (i, chunk) in chunks.iter().enumerate() {
                 // Check for cancellation before processing each chunk
-                if let Some(token) = cancellation_token {
-                    if token.is_cancelled() {
-                        info!(
-                            "Summary generation cancelled during chunk {}/{}",
-                            i + 1,
-                            num_chunks
-                        );
-                        return Err("Summary generation was cancelled".to_string());
-                    }
+                if let Some(token) = cancellation_token
+                    && token.is_cancelled()
+                {
+                    info!(
+                        "Summary generation cancelled during chunk {}/{}",
+                        i + 1,
+                        num_chunks
+                    );
+                    return Err("Summary generation was cancelled".to_string());
                 }
 
                 info!("Processing chunk {}/{}", i + 1, num_chunks);
@@ -773,28 +773,28 @@ pub async fn generate_meeting_summary(
 
         // Calendar meeting context (already redacted/scrubbed for the
         // resolved provider's egress). The block carries its own tags.
-        if let Some(mc) = meeting_context {
-            if !mc.is_empty() {
-                final_user_prompt.push_str("\n\nCalendar Meeting Context:\n\n");
-                final_user_prompt.push_str(mc);
-            }
+        if let Some(mc) = meeting_context
+            && !mc.is_empty()
+        {
+            final_user_prompt.push_str("\n\nCalendar Meeting Context:\n\n");
+            final_user_prompt.push_str(mc);
         }
 
         // Folder memory (user-curated glossary/preferences/decisions for the
         // meeting's folder). The block carries its own tags.
-        if let Some(fc) = folder_context {
-            if !fc.is_empty() {
-                final_user_prompt.push_str("\n\n");
-                final_user_prompt.push_str(fc);
-            }
+        if let Some(fc) = folder_context
+            && !fc.is_empty()
+        {
+            final_user_prompt.push_str("\n\n");
+            final_user_prompt.push_str(fc);
         }
 
         // Check cancellation before final summary generation
-        if let Some(token) = cancellation_token {
-            if token.is_cancelled() {
-                info!("Summary generation cancelled before final summary");
-                return Err("Summary generation was cancelled".to_string());
-            }
+        if let Some(token) = cancellation_token
+            && token.is_cancelled()
+        {
+            info!("Summary generation cancelled before final summary");
+            return Err("Summary generation was cancelled".to_string());
         }
 
         let raw_markdown = generate_summary(

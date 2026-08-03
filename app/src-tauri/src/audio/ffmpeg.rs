@@ -27,13 +27,13 @@ fn find_ffmpeg_path_internal() -> Option<PathBuf> {
     // ============================================================
     // PRIORITY 1: Bundled Binary (Production)
     // ============================================================
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_folder) = exe_path.parent() {
-            let bundled = exe_folder.join(EXECUTABLE_NAME);
-            if bundled.exists() && bundled.is_file() {
-                debug!("Found bundled ffmpeg: {:?}", bundled);
-                return Some(bundled);
-            }
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_folder) = exe_path.parent()
+    {
+        let bundled = exe_folder.join(EXECUTABLE_NAME);
+        if bundled.exists() && bundled.is_file() {
+            debug!("Found bundled ffmpeg: {:?}", bundled);
+            return Some(bundled);
         }
     }
 
@@ -81,37 +81,37 @@ fn find_ffmpeg_path_internal() -> Option<PathBuf> {
     }
 
     // Check in the same folder as the executable
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_folder) = exe_path.parent() {
-            debug!("Executable folder: {:?}", exe_folder);
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_folder) = exe_path.parent()
+    {
+        debug!("Executable folder: {:?}", exe_folder);
 
-            // Platform-specific checks
-            #[cfg(target_os = "macos")]
-            {
-                let resources_folder = exe_folder.join("../Resources");
-                debug!("Resources folder: {:?}", resources_folder);
-                let ffmpeg_in_resources = resources_folder.join(EXECUTABLE_NAME);
-                if ffmpeg_in_resources.exists() {
-                    debug!(
-                        "Found ffmpeg in Resources folder: {:?}",
-                        ffmpeg_in_resources
-                    );
-                    return Some(ffmpeg_in_resources);
-                }
-                debug!("ffmpeg not found in Resources folder");
+        // Platform-specific checks
+        #[cfg(target_os = "macos")]
+        {
+            let resources_folder = exe_folder.join("../Resources");
+            debug!("Resources folder: {:?}", resources_folder);
+            let ffmpeg_in_resources = resources_folder.join(EXECUTABLE_NAME);
+            if ffmpeg_in_resources.exists() {
+                debug!(
+                    "Found ffmpeg in Resources folder: {:?}",
+                    ffmpeg_in_resources
+                );
+                return Some(ffmpeg_in_resources);
             }
+            debug!("ffmpeg not found in Resources folder");
+        }
 
-            #[cfg(target_os = "linux")]
-            {
-                let lib_folder = exe_folder.join("lib");
-                debug!("Lib folder: {:?}", lib_folder);
-                let ffmpeg_in_lib = lib_folder.join(EXECUTABLE_NAME);
-                if ffmpeg_in_lib.exists() {
-                    debug!("Found ffmpeg in lib folder: {:?}", ffmpeg_in_lib);
-                    return Some(ffmpeg_in_lib);
-                }
-                debug!("ffmpeg not found in lib folder");
+        #[cfg(target_os = "linux")]
+        {
+            let lib_folder = exe_folder.join("lib");
+            debug!("Lib folder: {:?}", lib_folder);
+            let ffmpeg_in_lib = lib_folder.join(EXECUTABLE_NAME);
+            if ffmpeg_in_lib.exists() {
+                debug!("Found ffmpeg in lib folder: {:?}", ffmpeg_in_lib);
+                return Some(ffmpeg_in_lib);
             }
+            debug!("ffmpeg not found in lib folder");
         }
     }
 

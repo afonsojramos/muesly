@@ -198,7 +198,7 @@ impl CoreAudioCapture {
                         let byte_count = first_buffer.data_bytes_size as usize;
                         let float_count = byte_count / std::mem::size_of::<f32>();
 
-                        if float_count > 0 && first_buffer.data != std::ptr::null_mut() {
+                        if float_count > 0 && !first_buffer.data.is_null() {
                             let data = unsafe {
                                 std::slice::from_raw_parts(
                                     first_buffer.data as *const f32,

@@ -108,11 +108,11 @@ fn parse_dt(dt: Option<&GoogleDateTime>) -> Option<DateTime<Utc>> {
     }
     // All-day event: midnight UTC of the given date (these are excluded by the
     // matcher anyway, but we still need a concrete instant).
-    if let Some(s) = dt.date.as_deref() {
-        if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-            let ndt = d.and_hms_opt(0, 0, 0)?;
-            return Some(Utc.from_utc_datetime(&ndt));
-        }
+    if let Some(s) = dt.date.as_deref()
+        && let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d")
+    {
+        let ndt = d.and_hms_opt(0, 0, 0)?;
+        return Some(Utc.from_utc_datetime(&ndt));
     }
     None
 }
@@ -535,10 +535,10 @@ async fn ensure_access_token(cfg: &OAuthConfig, sub: &str) -> Result<String, Goo
     // never blocks another account's cache hit.
     {
         let guard = token_cache().lock().await;
-        if let Some(c) = guard.get(sub) {
-            if c.expires_at > Instant::now() + Duration::from_secs(30) {
-                return Ok(c.access_token.clone());
-            }
+        if let Some(c) = guard.get(sub)
+            && c.expires_at > Instant::now() + Duration::from_secs(30)
+        {
+            return Ok(c.access_token.clone());
         }
     }
     let refresh = match get_refresh(sub)? {
