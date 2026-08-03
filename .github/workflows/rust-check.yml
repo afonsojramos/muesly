@@ -145,11 +145,13 @@ jobs:
           fi
           grep -Fq -- "--provider may only be provided once" "$error_log"
 
-      # Advisory for now (see plan 006 maintenance notes for the ratchet to blocking).
+      # Still advisory: the workspace carries ~280 warnings, 124 of them
+      # collapsible_if. Autofixing those rewrites nested conditionals into let
+      # chains and has already mangled indentation once, so the cleanup needs to
+      # be a deliberate pass before this can block.
       - name: Clippy (advisory)
         continue-on-error: true
         run: cargo clippy --workspace --all-targets
 
-      - name: Format check (advisory)
-        continue-on-error: true
+      - name: Format check
         run: cargo fmt --all -- --check
