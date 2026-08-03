@@ -305,7 +305,10 @@ mod tests {
 
     async fn test_pool() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query(
             "CREATE TABLE meetings (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', \
              created_at TEXT NOT NULL DEFAULT 'x', deleted_at TEXT, folder_id TEXT)",
@@ -333,7 +336,11 @@ mod tests {
         pool
     }
 
-    fn seg(speaker: Option<&str>, text: &str, start: Option<f64>) -> (Option<String>, String, Option<f64>) {
+    fn seg(
+        speaker: Option<&str>,
+        text: &str,
+        start: Option<f64>,
+    ) -> (Option<String>, String, Option<f64>) {
         (speaker.map(str::to_string), text.to_string(), start)
     }
 
@@ -515,10 +522,9 @@ mod tests {
         .unwrap();
 
         // m2/m3 lack current-model rows → backfill candidates.
-        let missing =
-            MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
-                .await
-                .unwrap();
+        let missing = MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
+            .await
+            .unwrap();
         assert_eq!(missing.len(), 2);
         assert!(!missing.contains(&"m1".to_string()));
 
@@ -527,10 +533,9 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let missing =
-            MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
-                .await
-                .unwrap();
+        let missing = MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
+            .await
+            .unwrap();
         assert_eq!(missing, vec!["m3".to_string()]);
 
         // Deleting the meeting cascades its vectors away.
@@ -556,10 +561,9 @@ mod tests {
             .await
             .unwrap();
 
-        let missing =
-            MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
-                .await
-                .unwrap();
+        let missing = MeetingEmbeddingsRepository::meetings_missing_index(&pool, "test-model", 10)
+            .await
+            .unwrap();
         assert_eq!(missing.len(), 2);
         assert!(!missing.contains(&"m2".to_string()));
 

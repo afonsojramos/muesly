@@ -42,7 +42,11 @@ pub async fn api_save_folder_context_item<R: Runtime>(
 ) -> Result<FolderContextItem, String> {
     require_folder_id(&input.folder_id)?;
     let item = FolderContextRepository::save_item(state.db_manager.pool(), &input).await?;
-    log_info!("Saved folder context item {} in {}", item.id, item.folder_id);
+    log_info!(
+        "Saved folder context item {} in {}",
+        item.id,
+        item.folder_id
+    );
     Ok(item)
 }
 
@@ -109,13 +113,9 @@ pub async fn api_set_folder_memory_extraction<R: Runtime>(
     enabled: bool,
 ) -> Result<(), String> {
     let folder_id = require_folder_id(&folder_id)?;
-    if !FolderContextRepository::set_memory_extraction(
-        state.db_manager.pool(),
-        folder_id,
-        enabled,
-    )
-    .await
-    .map_err(|e| format!("Failed to update folder setting: {e}"))?
+    if !FolderContextRepository::set_memory_extraction(state.db_manager.pool(), folder_id, enabled)
+        .await
+        .map_err(|e| format!("Failed to update folder setting: {e}"))?
     {
         return Err("Folder not found".to_string());
     }

@@ -69,8 +69,6 @@ impl From<ContextRow> for FolderContextItem {
     }
 }
 
-
-
 /// Create/update payload. `id` present = edit; absent = create (source user).
 #[derive(Debug, Clone, Deserialize, specta::Type)]
 pub struct FolderContextInput {
@@ -460,10 +458,7 @@ fn query_tokens(text: &str) -> std::collections::HashSet<String> {
 /// Stable rank of `(kind, content, pinned)` rows (arriving pinned-first,
 /// newest-first) by pinned status then query-word overlap; stability keeps
 /// recency as the tiebreak.
-fn rank_for_query(
-    items: Vec<(String, String, i64)>,
-    query: &str,
-) -> Vec<(String, String, i64)> {
+fn rank_for_query(items: Vec<(String, String, i64)>, query: &str) -> Vec<(String, String, i64)> {
     let tokens = query_tokens(query);
     if tokens.is_empty() {
         return items;
@@ -472,7 +467,10 @@ fn rank_for_query(
         .into_iter()
         .map(|item| {
             let content = item.1.to_lowercase();
-            let matches = tokens.iter().filter(|token| content.contains(*token)).count();
+            let matches = tokens
+                .iter()
+                .filter(|token| content.contains(*token))
+                .count();
             (matches, item)
         })
         .collect();
@@ -486,7 +484,10 @@ mod tests {
 
     async fn test_pool() -> SqlitePool {
         let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
-        sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = ON")
+            .execute(&pool)
+            .await
+            .unwrap();
         sqlx::query(
             "CREATE TABLE folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, emoji TEXT, \
              parent_id TEXT, favorited_at TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, \
@@ -553,9 +554,24 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(updated.kind, "decision");
-        assert_eq!(FolderContextRepository::list_items(&pool, "f1").await.unwrap().len(), 1);
-        assert!(FolderContextRepository::delete_item(&pool, &item.id).await.unwrap());
-        assert!(FolderContextRepository::list_items(&pool, "f1").await.unwrap().is_empty());
+        assert_eq!(
+            FolderContextRepository::list_items(&pool, "f1")
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(
+            FolderContextRepository::delete_item(&pool, &item.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            FolderContextRepository::list_items(&pool, "f1")
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
@@ -572,12 +588,19 @@ mod tests {
             .await
             .unwrap()
         );
-        let items = FolderContextRepository::list_items(&pool, "f1").await.unwrap();
+        let items = FolderContextRepository::list_items(&pool, "f1")
+            .await
+            .unwrap();
         assert_eq!(items[0].status, "accepted");
         assert_eq!(items[0].source, "extracted");
         assert_eq!(items[0].source_meeting_id.as_deref(), Some("m1"));
-        assert_eq!(items[0].source_meeting_title.as_deref(), Some("Sprint Planning"));
-        let block = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
+        assert_eq!(
+            items[0].source_meeting_title.as_deref(),
+            Some("Sprint Planning")
+        );
+        let block = FolderContextRepository::context_block(&pool, "f1")
+            .await
+            .unwrap();
         assert!(block.contains("Maya owns payments"));
         // Exact duplicates never enter twice, even case-insensitively.
         assert!(
@@ -592,8 +615,13 @@ mod tests {
             .unwrap()
         );
         // Deleting the source meeting keeps the memory, drops the link.
-        sqlx::query("DELETE FROM meetings WHERE id = 'm1'").execute(&pool).await.unwrap();
-        let items = FolderContextRepository::list_items(&pool, "f1").await.unwrap();
+        sqlx::query("DELETE FROM meetings WHERE id = 'm1'")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let items = FolderContextRepository::list_items(&pool, "f1")
+            .await
+            .unwrap();
         assert_eq!(items[0].source_meeting_id, None);
         assert_eq!(items[0].source_meeting_title, None);
     }
@@ -605,9 +633,15 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            FolderContextRepository::insert_extracted(&pool, "f1", "decision", "Ship March 10", None)
-                .await
-                .unwrap()
+            FolderContextRepository::insert_extracted(
+                &pool,
+                "f1",
+                "decision",
+                "Ship March 10",
+                None
+            )
+            .await
+            .unwrap()
         );
         let learned = FolderContextRepository::list_items(&pool, "f1")
             .await
@@ -639,10 +673,21 @@ mod tests {
                 .await
                 .unwrap()
         );
-        assert!(!FolderContextRepository::delete_extracted(&pool, "f1", &user_item.id).await.unwrap());
-        assert!(FolderContextRepository::delete_extracted(&pool, "f1", &learned.id).await.unwrap());
+        assert!(
+            !FolderContextRepository::delete_extracted(&pool, "f1", &user_item.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            FolderContextRepository::delete_extracted(&pool, "f1", &learned.id)
+                .await
+                .unwrap()
+        );
         assert_eq!(
-            FolderContextRepository::list_items(&pool, "f1").await.unwrap().len(),
+            FolderContextRepository::list_items(&pool, "f1")
+                .await
+                .unwrap()
+                .len(),
             1
         );
     }
@@ -653,7 +698,10 @@ mod tests {
         assert!(
             FolderContextRepository::save_item(
                 &pool,
-                &FolderContextInput { kind: "secret".to_string(), ..input("x") },
+                &FolderContextInput {
+                    kind: "secret".to_string(),
+                    ..input("x")
+                },
             )
             .await
             .is_err()
@@ -668,10 +716,24 @@ mod tests {
     #[tokio::test]
     async fn toggles_default_on_and_flip() {
         let pool = test_pool().await;
-        assert_eq!(FolderContextRepository::folder_toggles(&pool, "f1").await, (true, true));
-        assert!(FolderContextRepository::set_context_in_summaries(&pool, "f1", false).await.unwrap());
-        assert!(FolderContextRepository::set_memory_extraction(&pool, "f1", false).await.unwrap());
-        assert_eq!(FolderContextRepository::folder_toggles(&pool, "f1").await, (false, false));
+        assert_eq!(
+            FolderContextRepository::folder_toggles(&pool, "f1").await,
+            (true, true)
+        );
+        assert!(
+            FolderContextRepository::set_context_in_summaries(&pool, "f1", false)
+                .await
+                .unwrap()
+        );
+        assert!(
+            FolderContextRepository::set_memory_extraction(&pool, "f1", false)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            FolderContextRepository::folder_toggles(&pool, "f1").await,
+            (false, false)
+        );
     }
 
     #[tokio::test]
@@ -679,9 +741,13 @@ mod tests {
         let pool = test_pool().await;
         for index in 0..40 {
             let content = format!("filler memory {index} {}", "x".repeat(100));
-            FolderContextRepository::save_item(&pool, &input(&content)).await.unwrap();
+            FolderContextRepository::save_item(&pool, &input(&content))
+                .await
+                .unwrap();
         }
-        let block = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
+        let block = FolderContextRepository::context_block(&pool, "f1")
+            .await
+            .unwrap();
         assert!(block.len() < MAX_BLOCK_CHARS + 200);
         assert!(block.contains("<folder_context>"));
     }
@@ -692,7 +758,11 @@ mod tests {
         let items = vec![
             ("note".to_string(), "Pinned but unrelated".to_string(), 1),
             ("note".to_string(), "Newest filler".to_string(), 0),
-            ("note".to_string(), "Maya owns payments and refunds".to_string(), 0),
+            (
+                "note".to_string(),
+                "Maya owns payments and refunds".to_string(),
+                0,
+            ),
             ("note".to_string(), "Oldest filler".to_string(), 0),
         ];
         let ranked = rank_for_query(items.clone(), "who owns payments?");
@@ -711,7 +781,9 @@ mod tests {
         let pool = test_pool().await;
         for index in 0..40 {
             let content = format!("filler memory {index} {}", "x".repeat(100));
-            FolderContextRepository::save_item(&pool, &input(&content)).await.unwrap();
+            FolderContextRepository::save_item(&pool, &input(&content))
+                .await
+                .unwrap();
         }
         // Oldest item, same size as the fillers so the cap genuinely drops it
         // from the plain block while ranking rescues it.
@@ -724,7 +796,9 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let plain = FolderContextRepository::context_block(&pool, "f1").await.unwrap();
+        let plain = FolderContextRepository::context_block(&pool, "f1")
+            .await
+            .unwrap();
         assert!(!plain.contains("Maya owns payments"));
         let ranked =
             FolderContextRepository::context_block_for_query(&pool, "f1", "who owns payments?")

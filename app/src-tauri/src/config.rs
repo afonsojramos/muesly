@@ -348,12 +348,22 @@ mod tests {
         };
         assert_eq!(
             targets.source_catalog_sha256.as_deref(),
-            Some(sha256_hex(include_bytes!("../../scripts/eval/public-corpus-sources.json")).as_str()),
+            Some(
+                sha256_hex(include_bytes!(
+                    "../../scripts/eval/public-corpus-sources.json"
+                ))
+                .as_str()
+            ),
             "public policy targets must bind the committed source catalog"
         );
         assert_eq!(
             targets.selection_sha256.as_deref(),
-            Some(sha256_hex(include_bytes!("../../scripts/eval/public-corpus-selection.json")).as_str()),
+            Some(
+                sha256_hex(include_bytes!(
+                    "../../scripts/eval/public-corpus-selection.json"
+                ))
+                .as_str()
+            ),
             "public policy targets must bind the committed selection contract"
         );
         let fingerprint = targets

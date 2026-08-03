@@ -387,13 +387,17 @@ pub(crate) fn rrf_fuse(lexical: &[String], semantic: &[String]) -> Vec<String> {
     let mut scores: std::collections::HashMap<&str, (f64, usize, bool)> =
         std::collections::HashMap::new();
     for (rank, id) in lexical.iter().enumerate() {
-        let entry = scores.entry(id.as_str()).or_insert((0.0, usize::MAX, false));
+        let entry = scores
+            .entry(id.as_str())
+            .or_insert((0.0, usize::MAX, false));
         entry.0 += 1.0 / (K + rank as f64 + 1.0);
         entry.1 = entry.1.min(rank);
         entry.2 = true;
     }
     for (rank, id) in semantic.iter().enumerate() {
-        let entry = scores.entry(id.as_str()).or_insert((0.0, usize::MAX, false));
+        let entry = scores
+            .entry(id.as_str())
+            .or_insert((0.0, usize::MAX, false));
         entry.0 += 1.0 / (K + rank as f64 + 1.0);
         entry.1 = entry.1.min(rank);
     }
@@ -495,15 +499,16 @@ pub(crate) async fn tool_search(
     // the lexical ranking with a semantic scan via reciprocal rank fusion.
     // Model absent → `embed_query` is None and behavior is exactly lexical.
     if let Some(query_vector) = crate::embedding_engine::embed_query(query).await {
-        let semantic = crate::database::repositories::meeting_embeddings::MeetingEmbeddingsRepository::scan(
-            pool,
-            crate::embedding_engine::EMBEDDING_MODEL_ID,
-            folder_id,
-            &query_vector,
-            MAX_SEARCH_HITS,
-        )
-        .await
-        .unwrap_or_default();
+        let semantic =
+            crate::database::repositories::meeting_embeddings::MeetingEmbeddingsRepository::scan(
+                pool,
+                crate::embedding_engine::EMBEDDING_MODEL_ID,
+                folder_id,
+                &query_vector,
+                MAX_SEARCH_HITS,
+            )
+            .await
+            .unwrap_or_default();
         if !semantic.is_empty() {
             let lexical_order: Vec<String> = hits.iter().map(|h| h.meeting_id.clone()).collect();
             let semantic_order: Vec<String> =
@@ -517,8 +522,7 @@ pub(crate) async fn tool_search(
                     merged.push(hit.clone());
                     continue;
                 }
-                let Some(semantic_hit) =
-                    semantic.iter().find(|h| h.meeting_id == meeting_id)
+                let Some(semantic_hit) = semantic.iter().find(|h| h.meeting_id == meeting_id)
                 else {
                     continue;
                 };
@@ -1027,7 +1031,10 @@ mod tests {
                 hit("m2", "semantic chunk excerpt", Some(754.2)),
             ],
         );
-        let lexical_line = block.lines().find(|l| l.contains("lexical snippet")).unwrap();
+        let lexical_line = block
+            .lines()
+            .find(|l| l.contains("lexical snippet"))
+            .unwrap();
         assert!(!lexical_line.contains('['));
         let semantic_line = block
             .lines()

@@ -50,7 +50,11 @@ fn render_memory_list(items: &[FolderContextItem]) -> (String, Vec<FolderContext
     let mut listed = Vec::new();
     let mut text = String::new();
     for item in items {
-        let origin = if item.source == "extracted" { "auto" } else { "user" };
+        let origin = if item.source == "extracted" {
+            "auto"
+        } else {
+            "user"
+        };
         let line = format!(
             "[#{}] [{}] ({origin}) {}\n",
             listed.len() + 1,

@@ -88,9 +88,7 @@ pub fn is_model_available() -> bool {
     let Some(dir) = embeddings_dir() else {
         return false;
     };
-    ARTIFACTS
-        .iter()
-        .all(|(_, local)| dir.join(local).is_file())
+    ARTIFACTS.iter().all(|(_, local)| dir.join(local).is_file())
 }
 
 /// Download any missing artifacts (idempotent; one download at a time).
@@ -297,10 +295,7 @@ fn load_embedder() -> Result<Embedder> {
 
 /// Mean-pool token vectors over the attention mask, then L2-normalize.
 /// Pure so the math is unit-testable without a model.
-fn mean_pool_normalize(
-    hidden: &ndarray::Array3<f32>,
-    masks: &[Vec<i64>],
-) -> Result<Vec<Vec<f32>>> {
+fn mean_pool_normalize(hidden: &ndarray::Array3<f32>, masks: &[Vec<i64>]) -> Result<Vec<Vec<f32>>> {
     let (batch, seq, dims) = hidden.dim();
     if masks.len() != batch {
         return Err(anyhow!("attention mask batch mismatch"));

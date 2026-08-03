@@ -398,15 +398,14 @@ pub async fn chat_ask<R: Runtime>(
     // Folder memory for the meeting's folder, ranked for this question.
     // Live-recording meeting ids are not in SQLite yet, so this collapses to
     // empty for in-progress recordings.
-    let folder_context = sqlx::query_scalar::<_, Option<String>>(
-        "SELECT folder_id FROM meetings WHERE id = ?",
-    )
-    .bind(&meeting_id)
-    .fetch_optional(&pool)
-    .await
-    .ok()
-    .flatten()
-    .flatten();
+    let folder_context =
+        sqlx::query_scalar::<_, Option<String>>("SELECT folder_id FROM meetings WHERE id = ?")
+            .bind(&meeting_id)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten()
+            .flatten();
     let folder_context = match folder_context.as_deref() {
         Some(folder_id) => {
             crate::database::repositories::folder_context::FolderContextRepository::context_block_for_query(
@@ -418,8 +417,14 @@ pub async fn chat_ask<R: Runtime>(
         None => String::new(),
     };
 
-    let (system_prompt, user_prompt) =
-        build_prompts(&title, &transcript, &summary, &folder_context, &history, &question);
+    let (system_prompt, user_prompt) = build_prompts(
+        &title,
+        &transcript,
+        &summary,
+        &folder_context,
+        &history,
+        &question,
+    );
 
     let _ = on_event.send(ChatStreamEvent::Started {
         gen_id: gen_id.clone(),
@@ -662,7 +667,8 @@ mod tests {
 
     #[test]
     fn folder_context_block_is_embedded_verbatim() {
-        let block = "Folder memory:\n<folder_context>\n- [note] Maya owns payments\n</folder_context>";
+        let block =
+            "Folder memory:\n<folder_context>\n- [note] Maya owns payments\n</folder_context>";
         let (system, user) = build_prompts("T", "Me: hi", "", block, &[], "Who owns payments?");
         assert!(system.contains("<folder_context>"));
         assert!(user.contains("- [note] Maya owns payments"));
