@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.2](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.1...muesly-v0.4.2) (2026-08-03)
+
+
+### Bug Fixes
+
+* **release:** Bump Cargo.lock with the release version ([de86130](https://github.com/afonsojramos/muesly/commit/de86130f4a0a2d7849a2641c86955030cf0e51b9))
+* **release:** Resync Cargo.lock after publishing ([704835d](https://github.com/afonsojramos/muesly/commit/704835d3dffcae15d7799e3cd8f2bc7a7cb353be))
+* Sync Cargo.lock with the 0.4.1 version bump ([a3034ae](https://github.com/afonsojramos/muesly/commit/a3034aee533612979ea374c3bfeb83444b7f4280))
+* **updater:** Make an available update installable from the UI ([9a8123d](https://github.com/afonsojramos/muesly/commit/9a8123d3f4f46851e5beb053dcf6be3df43c1504))
+
 ## [0.4.1](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.0...muesly-v0.4.1) (2026-08-01)
 
 
