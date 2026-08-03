@@ -11,7 +11,9 @@ app/src-tauri/gen/
 app/src-tauri/binaries/
 
 # SvelteKit / Vite (generated)
-app/src-svelte/.svelte-kit/
+# Unanchored: `svelte-kit sync` also drops these next to whichever directory it
+# is invoked from, not just the app root.
+.svelte-kit/
 app/src-svelte/build/
 /dist
 *.tsbuildinfo
