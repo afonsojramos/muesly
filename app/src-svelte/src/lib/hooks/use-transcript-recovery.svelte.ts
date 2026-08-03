@@ -3,8 +3,6 @@
  *
  * Orchestrates transcript recovery operations for interrupted meetings.
  * Detects, previews, recovers, and deletes meetings stored in IndexedDB.
- *
- * Mirrors the React useTranscriptRecovery hook.
  */
 
 import { invoke } from '@tauri-apps/api/core';

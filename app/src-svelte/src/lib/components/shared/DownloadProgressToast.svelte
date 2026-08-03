@@ -33,10 +33,9 @@
 	 * DownloadProgressToast
 	 *
 	 * Listens for Whisper and built-in-AI model download events and surfaces
-	 * them as toasts. Mirrors the React DownloadProgressToastProvider — but
-	 * because the toast abstraction renders text (not a custom progress widget),
-	 * progress is shown in the toast description and only meaningful transitions
-	 * fire a toast (avoiding a flood of per-percent updates).
+	 * them as toasts. Because the toast abstraction renders text (not a custom
+	 * progress widget), progress is shown in the toast description and only
+	 * meaningful transitions fire a toast (avoiding a flood of per-percent updates).
 	 *
 	 * Renders nothing; it exists purely for its lifecycle side effects.
 	 */

@@ -1,9 +1,8 @@
 /**
  * Onboarding-specific types.
  *
- * Component prop interfaces from the React version (which used React.ReactNode)
- * are intentionally NOT ported — Svelte components express their own props via
- * `$props()` in the .svelte file itself. Only data shapes live here.
+ * No component prop interfaces live here: Svelte components express their own
+ * props via `$props()` in the .svelte file itself. Only data shapes live here.
  */
 
 export type OnboardingStep = 1 | 2 | 3 | 4;

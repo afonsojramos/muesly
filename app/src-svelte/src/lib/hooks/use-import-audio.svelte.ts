@@ -3,7 +3,7 @@
  *
  * Drives the audio-import workflow: native file selection, drag-drop
  * validation, import start/cancel, and progress/completion/error events from
- * the Tauri backend. Mirrors the React useImportAudio hook.
+ * the Tauri backend.
  */
 
 import { invoke } from '@tauri-apps/api/core';

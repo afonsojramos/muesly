@@ -2,7 +2,7 @@
  * Transcript store.
  *
  * Manages the live transcript buffer, current meeting metadata, and the
- * IndexedDB recovery layer. Equivalent of the React TranscriptContext.
+ * IndexedDB recovery layer.
  *
  * DOM concerns (scroll container ref, auto-scroll behaviour) are component
  * responsibilities — the store exposes the data and components subscribe.

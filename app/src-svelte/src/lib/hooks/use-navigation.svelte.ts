@@ -3,8 +3,6 @@
  *
  * Returns a navigate handler that updates the sidebar's current-meeting
  * selection and routes to the meeting-details page.
- *
- * Equivalent of the React useNavigation hook (which used Next.js useRouter).
  */
 
 import { goto } from '$app/navigation';

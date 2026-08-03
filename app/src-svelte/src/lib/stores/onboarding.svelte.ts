@@ -3,7 +3,7 @@
  *
  * Drives the multi-step onboarding flow: model downloads (Whisper + summary),
  * permissions, database initialization (with legacy auto-import), and persisted
- * status. Equivalent of the React OnboardingContext.
+ * status.
  */
 
 import { invoke } from '@tauri-apps/api/core';

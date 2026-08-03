@@ -59,7 +59,7 @@
 	let isCheckingModels = $state(false);
 	let settingsDialogOpen = $state(false);
 
-	// Register our open function with the parent (mirrors the React ref pattern).
+	// Register our open function with the parent.
 	$effect(() => {
 		if (onOpenModelSettings) {
 			onOpenModelSettings(() => {

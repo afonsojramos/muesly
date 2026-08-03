@@ -3,8 +3,6 @@
  *
  * Single source of truth for recording lifecycle, synchronized with the Rust
  * backend via Tauri events + periodic polling while a recording is active.
- *
- * Mirrors the React RecordingStateContext.
  */
 
 import type { UnlistenFn } from '@tauri-apps/api/event';

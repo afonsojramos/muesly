@@ -2,10 +2,9 @@
  * Recording notification.
  *
  * Shows a compliance reminder toast when recording starts, gated by the
- * `show_recording_notification` preference. Mirrors the React
- * showRecordingNotification helper — the interactive "don't show again"
- * checkbox isn't representable through the toast abstraction, so this port
- * surfaces the reminder text and keeps the preference gate.
+ * `show_recording_notification` preference. An interactive "don't show again"
+ * checkbox isn't representable through the toast abstraction, so this surfaces
+ * the reminder text and keeps the preference gate.
  */
 
 import { toast } from '$lib/toast';

@@ -1,7 +1,7 @@
 /**
  * Ollama download progress store.
  *
- * Mirrors the React OllamaDownloadContext. Subscribes to Tauri events for
+ * Subscribes to Tauri events for
  * progress / complete / error and exposes reactive maps of in-flight downloads.
  *
  * Use SvelteMap / SvelteSet from svelte/reactivity so iteration, .has(), .get()

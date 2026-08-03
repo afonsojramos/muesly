@@ -3,8 +3,8 @@
  *
  * Copy a meeting's full transcript or summary to the clipboard as markdown.
  *
- * The BlockNote ref from the React version becomes an optional
- * `getSummaryMarkdown` callback supplied by the editor component (Phase 6).
+ * The summary markdown comes from an optional `getSummaryMarkdown` callback
+ * supplied by the editor component.
  */
 
 import { invoke } from '@tauri-apps/api/core';

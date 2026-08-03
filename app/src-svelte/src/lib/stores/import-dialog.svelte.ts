@@ -3,8 +3,6 @@
  *
  * Components register their onOpen handler at mount time and other components
  * call `openImportDialog(path)` to trigger it.
- *
- * Equivalent of the React ImportDialogProvider.
  */
 
 type OpenHandler = (filePath?: string | null) => void;

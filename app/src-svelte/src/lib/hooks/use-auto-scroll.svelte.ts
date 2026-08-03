@@ -6,9 +6,8 @@
  * until the user returns to the bottom). Can be fully disabled for the
  * meeting-details (read-only) view.
  *
- * The React version coordinated with a `@tanstack/react-virtual` virtualizer;
- * the Svelte transcript view renders natively, so this operates purely on the
- * scroll element. Reactive inputs are supplied via getters.
+ * The transcript view renders natively (no virtualizer), so this operates
+ * purely on the scroll element. Reactive inputs are supplied via getters.
  */
 
 import { onMount } from 'svelte';

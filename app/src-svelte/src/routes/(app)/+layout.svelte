@@ -40,9 +40,9 @@
 
 	const isBrowser = typeof window !== 'undefined';
 
-	// Onboarding gate: mirrors the React layout, which kept the main shell visible
-	// until the persisted status resolved, then swapped in the onboarding flow when
-	// setup was incomplete. Skipped in browser dev (no Tauri runtime), where
+	// Onboarding gate: keep the main shell visible until the persisted status
+	// resolves, then swap in the onboarding flow when setup is incomplete.
+	// Skipped in browser dev (no Tauri runtime), where
 	// onboarding can never complete and would block UI previews.
 	const isTauriRuntime = isBrowser && '__TAURI_INTERNALS__' in window;
 	const showOnboarding = $derived(
@@ -61,7 +61,7 @@
 		return () => window.removeEventListener('keydown', handleKeydown);
 	});
 
-	// Import audio overlay/dialog state (shell-level, mirrors the React layout).
+	// Import audio overlay/dialog state (shell-level).
 	let showDropOverlay = $state(false);
 	let showImportDialog = $state(false);
 	let importFilePath = $state<string | null>(null);

@@ -1,32 +1,32 @@
 // TypeScript type definitions for system audio functionality
 
 export interface SystemAudioCommands {
-  // Start system audio capture (returns success message)
-  startSystemAudioCaptureCommand(): Promise<string>;
+	// Start system audio capture (returns success message)
+	startSystemAudioCaptureCommand(): Promise<string>;
 
-  // List available system audio devices
-  listSystemAudioDevicesCommand(): Promise<string[]>;
+	// List available system audio devices
+	listSystemAudioDevicesCommand(): Promise<string[]>;
 
-  // Check if the app has permission to access system audio
-  checkSystemAudioPermissionsCommand(): Promise<boolean>;
+	// Check if the app has permission to access system audio
+	checkSystemAudioPermissionsCommand(): Promise<boolean>;
 
-  // Start monitoring system audio usage by other applications
-  startSystemAudioMonitoring(): Promise<void>;
+	// Start monitoring system audio usage by other applications
+	startSystemAudioMonitoring(): Promise<void>;
 
-  // Stop monitoring system audio usage
-  stopSystemAudioMonitoring(): Promise<void>;
+	// Stop monitoring system audio usage
+	stopSystemAudioMonitoring(): Promise<void>;
 
-  // Get the current status of system audio monitoring
-  getSystemAudioMonitoringStatus(): Promise<boolean>;
+	// Get the current status of system audio monitoring
+	getSystemAudioMonitoringStatus(): Promise<boolean>;
 }
 
 // Event types emitted by the system audio detector
 export interface SystemAudioEvents {
-  'system-audio-started': string[]; // Array of app names using system audio
-  'system-audio-stopped': void;
+	"system-audio-started": string[]; // Array of app names using system audio
+	"system-audio-stopped": void;
 }
 
-// Example usage in React component:
+// Example usage in a component:
 /*
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';

@@ -2,7 +2,7 @@
  * Sidebar store.
  *
  * Meeting list, current selection, sidebar collapse, transcript search, and
- * the summary-polling Map. Equivalent of the React SidebarProvider.
+ * the summary-polling Map.
  *
  * Navigation concerns (`router.push`, `pathname`) are component-level — they
  * use SvelteKit's `goto` and `$app/state.page` instead of being threaded

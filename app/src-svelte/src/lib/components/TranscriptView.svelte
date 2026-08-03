@@ -139,7 +139,7 @@
 		}, INTERVAL_MS);
 	});
 
-	// Listen for speech-detected events while recording (mirrors React behavior).
+	// Listen for speech-detected events while recording.
 	onMount(() => {
 		let unsubscribe: UnlistenFn | undefined;
 		let cancelled = false;

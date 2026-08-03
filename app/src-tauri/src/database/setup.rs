@@ -75,7 +75,7 @@ pub async fn initialize_database_on_startup(app: &AppHandle) -> Result<(), Strin
     if is_first_launch {
         info!("First launch detected - will notify window when ready");
 
-        // Delay event emission to ensure window is ready and React listeners are registered
+        // Delay event emission to ensure the window is ready and frontend listeners are registered
         let app_handle = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;

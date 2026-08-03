@@ -5,8 +5,8 @@
  * sidebar navigation (sessionStorage flag), and the direct
  * `start-recording-from-sidebar` window event when already on the home route.
  *
- * Mirrors the React useRecordingStart hook. State that lived in React contexts
- * is read from the Svelte stores (config, transcripts, sidebar, recordingState).
+ * State is read from the global stores (config, transcripts, sidebar,
+ * recordingState).
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -179,7 +179,7 @@ export function useRecordingStart(
 			title,
 		);
 		transcripts.setMeetingTitle(title);
-		// Optimistically flip UI state (mirrors React). The `recording-started`
+		// Optimistically flip UI state. The `recording-started`
 		// event listener calls the same method, so this is idempotent.
 		recordingState.markStarted();
 		setIsRecording(true);

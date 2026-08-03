@@ -7,8 +7,6 @@
  *
  * localStorage-backed where appropriate. Persists to Rust via the config
  * service for transcript / model / device prefs.
- *
- * Mirrors the React ConfigContext.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -494,9 +492,7 @@ class ConfigStore {
 
 		try {
 			try {
-				this.systemNotificationsEnabled = await invoke<boolean>(
-					'get_system_notifications_enabled',
-				);
+				this.systemNotificationsEnabled = await invoke<boolean>('get_system_notifications_enabled');
 			} catch (notifError) {
 				console.error('[ConfigStore] Failed to load notification setting:', notifError);
 				this.systemNotificationsEnabled = null;
