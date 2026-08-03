@@ -1,6 +1,6 @@
 [package]
 name = "muesly"
-version = "0.4.2"
+version = "0.4.3"
 description = "muesly — private speech-to-text for everything you say"
 authors = ["afonsojramos"]
 license = "PolyForm-Noncommercial-1.0.0"

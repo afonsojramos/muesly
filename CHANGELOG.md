@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.3](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.2...muesly-v0.4.3) (2026-08-03)
+
+
+### Bug Fixes
+
+* **llama-helper:** Use a line comment for the Vulkan TODO ([4a485c9](https://github.com/afonsojramos/muesly/commit/4a485c9fa0c681d458674328110f5da32c6fdcbe))
+* **release:** Grant the publish job permission to relabel the release PR ([f2c90c9](https://github.com/afonsojramos/muesly/commit/f2c90c940907cf3f5619751f8ba99e5417cadae9))
+
 ## [0.4.2](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.1...muesly-v0.4.2) (2026-08-03)
 
 
