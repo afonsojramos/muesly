@@ -34,11 +34,7 @@
           "path": "app/src-svelte/package.json",
           "jsonpath": "$.version"
         },
-        {
-          "type": "toml",
-          "path": "Cargo.lock",
-          "jsonpath": "$.package[?(@.name=='muesly')].version"
-        },
+
         {
           "type": "generic",
           "path": "app/src-svelte/src/lib/components/About.svelte"

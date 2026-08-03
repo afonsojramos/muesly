@@ -579,3 +579,26 @@ jobs:
             --remove-label "autorelease: pending" \
             --add-label "autorelease: tagged"
           echo "Marked PR #${PR} as autorelease: tagged"
+
+      # release-please cannot bump Cargo.lock: its generic updater needs an
+      # x-release-please-version annotation the file cannot carry, and its toml
+      # updater reformats the document and strips comments. So the lock keeps
+      # the previous version and dirties a clean checkout on the next cargo
+      # command. Let cargo itself resync it.
+      - name: Sync Cargo.lock with the released version
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          git checkout main
+          git pull --ff-only origin main
+          cargo update --workspace --offline
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already matches ${VERSION}"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: sync Cargo.lock with the ${VERSION} version bump" -- Cargo.lock
+          git push origin main
+          echo "Synced Cargo.lock to ${VERSION}"
