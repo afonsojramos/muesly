@@ -508,6 +508,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Relabelling the merged release PR goes through the issues API.
+      pull-requests: write
+      issues: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
