@@ -34,21 +34,26 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # QUICK START: from app/, `nub run tauri:dev` / `nub run tauri:build` auto-detect the GPU backend.
 #
 [features]
-default = ["platform-default"]  # Automatically enables best backend per platform
+default = ["platform-default"] # Automatically enables best backend per platform
 
 # Platform-appropriate defaults - see target-specific dependencies below
 platform-default = []
 
 # Manual GPU acceleration options (for power users to override defaults)
-metal = ["whisper-rs/metal"]       # macOS: Apple Metal GPU (Auto-enabled on macOS)
-coreml = ["whisper-rs/coreml", "whisper-rs/metal"] # CoreML encoder + Metal decoder
-cuda = ["whisper-rs/cuda"]         # Windows/Linux: NVIDIA CUDA GPU
-vulkan = ["whisper-rs/vulkan"]     # Windows/Linux: AMD/Intel Vulkan GPU
-hipblas = ["whisper-rs/hipblas"]   # Linux: AMD ROCm HIP
+metal = ["whisper-rs/metal"] # macOS: Apple Metal GPU (Auto-enabled on macOS)
+coreml = [
+  "whisper-rs/coreml",
+  "whisper-rs/metal",
+] # CoreML encoder + Metal decoder
+cuda = ["whisper-rs/cuda"] # Windows/Linux: NVIDIA CUDA GPU
+vulkan = ["whisper-rs/vulkan"] # Windows/Linux: AMD/Intel Vulkan GPU
+hipblas = ["whisper-rs/hipblas"] # Linux: AMD ROCm HIP
 
 # CPU optimizations (fallback for systems without GPU)
-openblas = ["whisper-rs/openblas"] # Optimized BLAS (Auto-enabled on Windows/Linux)
-openmp = ["whisper-rs/openmp"]     # OpenMP parallel processing
+openblas = [
+  "whisper-rs/openblas",
+] # Optimized BLAS (Auto-enabled on Windows/Linux)
+openmp = ["whisper-rs/openmp"] # OpenMP parallel processing
 
 [build-dependencies]
 tauri-build = { version = "2.3.0", features = [] }
@@ -103,19 +108,26 @@ futures-util = "0.3"
 silero_rs = { git = "https://github.com/emotechlab/silero-rs", rev = "26a6460", package = "silero" }
 
 # Parakeet (ONNX-based fast transcription) dependencies
-ort = { version = "2.0.0-rc.10" }  # ONNX Runtime for Parakeet models
-thiserror = "2.0.16"                # Error handling for Parakeet
+ort = { version = "2.0.0-rc.10" } # ONNX Runtime for Parakeet models
+thiserror = "2.0.16"              # Error handling for Parakeet
 
 # Semantic search: loads the embedding model's tokenizer.json. Pure-Rust
 # feature set (fancy-regex) — no oniguruma C build, no HTTP features.
-tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
+tokenizers = { version = "0.23", default-features = false, features = [
+  "fancy-regex",
+] }
 
 # Async
 tokio = { version = "1.32.0", features = ["full", "tracing"] }
-tokio-util = "0.7"  # Utilities for tokio including CancellationToken
-async-trait = "0.1"  # Trait abstraction for async methods
+tokio-util = "0.7"                                             # Utilities for tokio including CancellationToken
+async-trait = "0.1"                                            # Trait abstraction for async methods
 
-reqwest = { version = "0.12", features = ["blocking", "multipart", "json", "stream"] }
+reqwest = { version = "0.12", features = [
+  "blocking",
+  "multipart",
+  "json",
+  "stream",
+] }
 
 # crossbeam
 crossbeam = "0.8.4"
@@ -148,7 +160,17 @@ tar = "0.4"
 bzip2-rs = "0.1"
 bytes = { version = "1.9.0", features = ["serde"] }
 
-symphonia = { version = "0.5.4", features = ["aac", "isomp4", "mp3", "flac", "ogg", "vorbis", "pcm", "wav", "opt-simd"] }
+symphonia = { version = "0.5.4", features = [
+  "aac",
+  "isomp4",
+  "mp3",
+  "flac",
+  "ogg",
+  "vorbis",
+  "pcm",
+  "wav",
+  "opt-simd",
+] }
 rand = "0.10.0"
 rayon = "1.10"
 rubato = "0.15.0"
@@ -159,14 +181,18 @@ aec3 = "0.3.0"
 arboard = "3"
 enigo = "0.6"
 # Type-safe Tauri command bindings. Pin all three with `=` (RC line).
-specta = { version = "=2.0.0-rc.25", features = ["derive", "chrono", "serde_json"] }
+specta = { version = "=2.0.0-rc.25", features = [
+  "derive",
+  "chrono",
+  "serde_json",
+] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tempfile = "3.3.0"
 
 ffmpeg-sidecar = { git = "https://github.com/nathanbabcock/ffmpeg-sidecar", rev = "a1216c3d0256112702b4c1967101a55488088965" }
 
-sqlx = { version = "0.9", features = [ "runtime-tokio", "sqlite", "chrono"] }
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "chrono"] }
 # keyring v4's default `v1` feature auto-selects a PERSISTENT native backend per
 # platform: macOS Keychain, Windows Credential Manager, and on Linux the Secret
 # Service via zbus (pure Rust, no libdbus system dependency). All survive reboot,
@@ -174,7 +200,11 @@ sqlx = { version = "0.9", features = [ "runtime-tokio", "sqlite", "chrono"] }
 keyring = "4"
 
 # Common Tauri configuration
-tauri = { version = "2.6.2", features = [ "macos-private-api", "protocol-asset", "tray-icon"] }
+tauri = { version = "2.6.2", features = [
+  "macos-private-api",
+  "protocol-asset",
+  "tray-icon",
+] }
 tauri-plugin-fs = "2.4.0"
 tauri-plugin-dialog = "2.3.0"
 tauri-plugin-store = "2.4.0"
@@ -195,7 +225,11 @@ libc = "0.2"
 
 # macOS-specific dependencies with Metal GPU acceleration
 [target.'cfg(target_os = "macos")'.dependencies]
-tauri = { version = "2.6.2", features = ["protocol-asset", "macos-private-api", "tray-icon"] }
+tauri = { version = "2.6.2", features = [
+  "protocol-asset",
+  "macos-private-api",
+  "tray-icon",
+] }
 once_cell = "1.17.1"
 objc = "0.2.7"
 tauri-plugin-log = { version = "2.6.0", features = ["colored"] }
@@ -203,21 +237,28 @@ anyhow = "1.0"
 time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.12", features = ["multipart", "json"] }
 core-graphics = "0.25"
-cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = ["av"] }
+cidre = { git = "https://github.com/yury/cidre", rev = "a9587fa", features = [
+  "av",
+] }
 # EventKit (local calendar) bindings. The objc2 stack is already resolved in
 # Cargo.lock transitively (via tauri/tray-icon/muda), so this is a no-bump add.
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSDate", "NSArray", "NSString", "NSEnumerator"] }
+objc2-foundation = { version = "0.3", features = [
+  "NSDate",
+  "NSArray",
+  "NSString",
+  "NSEnumerator",
+] }
 objc2-event-kit = { version = "0.3", features = [
-    "EKEventStore",
-    "EKEvent",
-    "EKCalendarItem",
-    "EKCalendar",
-    "EKParticipant",
-    "EKStructuredLocation",
-    "EKObject",
-    "EKTypes",
-    "block2",
+  "EKEventStore",
+  "EKEvent",
+  "EKCalendarItem",
+  "EKCalendar",
+  "EKParticipant",
+  "EKStructuredLocation",
+  "EKObject",
+  "EKTypes",
+  "block2",
 ] }
 block2 = "0.6"
 dasp = "0.11.0"

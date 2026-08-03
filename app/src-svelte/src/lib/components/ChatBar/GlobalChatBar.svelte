@@ -32,8 +32,7 @@
 	});
 	const scopeLabel = $derived(
 		globalChat.effectiveScopeFolderId
-			? (sidebar.folders.find((f) => f.id === globalChat.effectiveScopeFolderId)?.name ??
-				'Folder')
+			? (sidebar.folders.find((f) => f.id === globalChat.effectiveScopeFolderId)?.name ?? 'Folder')
 			: 'All meetings',
 	);
 	let pendingBar = $state<Bar | null>(null);
@@ -120,7 +119,7 @@
 			}}
 		>
 			<Select.Trigger
-			class="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground"
+				class="h-8 w-auto gap-1.5 border-0 bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-secondary hover:text-foreground"
 				aria-label="Chat scope"
 			>
 				<Folder class="size-3.5" />

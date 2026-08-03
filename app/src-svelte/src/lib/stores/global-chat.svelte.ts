@@ -51,9 +51,7 @@ class GlobalChatStore {
 	/** Folder being viewed, if any (set by the chat bar from the route). */
 	routeFolderId = $state<string | null>(null);
 	/** Effective scope: the user's explicit choice, else the folder in view. */
-	effectiveScopeFolderId = $derived(
-		this.scopeIsExplicit ? this.scopeFolderId : this.routeFolderId,
-	);
+	effectiveScopeFolderId = $derived(this.scopeIsExplicit ? this.scopeFolderId : this.routeFolderId);
 	#genId: string | null = null;
 
 	async send(text?: string, execution?: BarExecution): Promise<void> {

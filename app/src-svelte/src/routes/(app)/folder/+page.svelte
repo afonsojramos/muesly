@@ -243,8 +243,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Folder memory</Dialog.Title>
 			<Dialog.Description>
-				Learned automatically from this folder's summaries and used when you chat or summarize
-				here. Add, pin, or remove anything — it's all stored only on this device.
+				Learned automatically from this folder's summaries and used when you chat or summarize here.
+				Add, pin, or remove anything — it's all stored only on this device.
 			</Dialog.Description>
 		</Dialog.Header>
 		<div class="min-h-0 flex-1 overflow-y-auto">
