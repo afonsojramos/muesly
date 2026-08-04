@@ -1,0 +1,4 @@
+# Standalone `rustfmt <file>` never reads Cargo.toml, so without these it parses
+# as edition 2015 and re-sorts imports the pre-2024 way, fighting `cargo fmt`.
+edition = "2024"
+style_edition = "2024"
