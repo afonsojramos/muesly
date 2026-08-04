@@ -305,6 +305,31 @@ pub async fn resolve_requested_transcription_model<R: Runtime>(
     ensure_task_compatible(selection, requires_translation)
 }
 
+/// Does the *configured* provider have a downloaded model? A cheap pre-flight
+/// gate for the UI: unlike [`validate_transcription_model_ready`] it never loads
+/// weights, and unlike the per-engine `*_has_available_models` commands it asks
+/// the engine the user actually selected (a Parakeet user with no Whisper models
+/// is ready, and vice versa).
+#[tauri::command]
+#[specta::specta]
+pub async fn transcription_has_available_models<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<bool, String> {
+    // Deliberately resolved as a non-translation task: this gate answers "is a
+    // model downloaded", and `start_recording` still reports task-compatibility
+    // failures with their own precise message.
+    let Ok(selection) = configured_transcription_model_for_task(&app, false).await else {
+        return Ok(false);
+    };
+    if selection.provider == "parakeet" {
+        crate::parakeet_engine::commands::parakeet_init().await?;
+        crate::parakeet_engine::commands::parakeet_has_available_models().await
+    } else {
+        crate::whisper_engine::commands::whisper_init().await?;
+        crate::whisper_engine::commands::whisper_has_available_models().await
+    }
+}
+
 /// Validate that the configured local transcription model is ready before
 /// starting a recording.
 pub async fn validate_transcription_model_ready<R: Runtime>(

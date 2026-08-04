@@ -83,6 +83,14 @@ export const commands = {
 	 *  discovery only; loading still happens in the engine-specific path below.
 	 */
 	getAutomaticTranscriptionModel: () => typedError<ResolvedTranscriptionModel, string>(__TAURI_INVOKE("get_automatic_transcription_model")),
+	/**
+	 *  Does the *configured* provider have a downloaded model? A cheap pre-flight
+	 *  gate for the UI: unlike [`validate_transcription_model_ready`] it never loads
+	 *  weights, and unlike the per-engine `*_has_available_models` commands it asks
+	 *  the engine the user actually selected (a Parakeet user with no Whisper models
+	 *  is ready, and vice versa).
+	 */
+	transcriptionHasAvailableModels: () => typedError<boolean, string>(__TAURI_INVOKE("transcription_has_available_models")),
 	whisperLoadModel: (modelName: string) => typedError<null, string>(__TAURI_INVOKE("whisper_load_model", { modelName })),
 	whisperGetCurrentModel: () => typedError<string | null, string>(__TAURI_INVOKE("whisper_get_current_model")),
 	whisperIsModelLoaded: () => typedError<boolean, string>(__TAURI_INVOKE("whisper_is_model_loaded")),

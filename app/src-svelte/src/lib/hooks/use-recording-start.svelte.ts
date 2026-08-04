@@ -46,27 +46,33 @@ export function generateMeetingTitle(): string {
 
 async function checkTranscriptionReady(): Promise<boolean> {
 	try {
-		await invoke('whisper_init');
-		return await invoke<boolean>('whisper_has_available_models');
+		return await invoke<boolean>('transcription_has_available_models');
 	} catch (error) {
-		console.error('Failed to check Whisper status:', error);
+		console.error('Failed to check transcription status:', error);
 		return false;
 	}
 }
 
+function isDownloading(model: ModelStatus): boolean {
+	if (!model.status) return false;
+	return typeof model.status === 'object'
+		? 'Downloading' in (model.status as Record<string, unknown>)
+		: model.status === 'Downloading';
+}
+
 async function checkIfModelDownloading(): Promise<boolean> {
-	try {
-		const models = await invoke<ModelStatus[]>('whisper_get_available_models');
-		return models.some((m) => {
-			if (!m.status) return false;
-			return typeof m.status === 'object'
-				? 'Downloading' in (m.status as Record<string, unknown>)
-				: m.status === 'Downloading';
-		});
-	} catch (error) {
-		console.error('Failed to check model download status:', error);
-		return false;
-	}
+	const commands = ['whisper_get_available_models', 'parakeet_get_available_models'];
+	const results = await Promise.all(
+		commands.map(async (command) => {
+			try {
+				return (await invoke<ModelStatus[]>(command)).some(isDownloading);
+			} catch (error) {
+				console.error(`Failed to check model download status (${command}):`, error);
+				return false;
+			}
+		}),
+	);
+	return results.some(Boolean);
 }
 
 /** A calendar event whose pre-assigned folder should be applied to this recording. */
