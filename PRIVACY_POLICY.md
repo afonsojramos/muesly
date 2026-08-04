@@ -1,6 +1,6 @@
 # muesly Privacy Policy
 
-*Last updated: 2026-07-28*
+*Last updated: 2026-08-04*
 
 ## Our Privacy Commitment
 
@@ -55,7 +55,7 @@ Calendar context works with your Mac's local calendars by default. You may also 
 - **Where it goes:** events are fetched directly between your device and Google. muesly has no server; nothing is routed through or stored by muesly's maintainers.
 - **What is stored, and where:** events are stored only on your device. The connected account's email is stored locally as a label. The OAuth refresh token is stored in your operating system keychain, never in the app database. Attendee email addresses are never stored.
 - **No human review, no training, no sale:** calendar data is used only to provide the in-app meeting-context feature.
-- **Sharing, transfer, and disclosure:** muesly does not sell Google user data and does not share, transfer, or disclose it to any third party, with one narrow, user-controlled exception: when a Google event matches a recording and you summarize it with a cloud LLM provider you explicitly configured, that summary request includes the event's title, time, and location, plus attendee and organizer names and agenda/notes only if you opted in per type (Settings → Calendar). That transfer goes directly from your device to your chosen provider and is governed by that provider's own privacy policy. muesly's maintainers receive nothing (muesly has no server), and usage analytics never receives Google user data. Google user data is never used to develop, improve, or train AI/ML models, and no human reads it.
+- **Sharing, transfer, and disclosure:** muesly does not sell Google user data and does not share, transfer, or disclose it to any third party, with one narrow, user-controlled exception: when a Google event matches a recording and you summarize it with a cloud LLM provider you explicitly configured (Anthropic Claude, OpenAI, Groq, xAI Grok, OpenRouter, or a custom OpenAI-compatible endpoint you supply), that summary request includes the event's title, time, and location, plus attendee and organizer names and agenda/notes only if you opted in per type (Settings → Calendar). That transfer goes directly from your device to your chosen provider and is governed by that provider's own privacy policy. muesly's maintainers receive nothing (muesly has no server), and usage analytics never receives Google user data. Google user data is never used to develop, improve, or train AI/ML models, and no human reads it.
 - **Revoke anytime:** "Remove" in Settings → Calendar deletes the token from your keychain and revokes it with Google; you can also revoke access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
 muesly's use of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
