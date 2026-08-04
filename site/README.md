@@ -25,11 +25,15 @@ The whole site is prerendered to static HTML. The only client JavaScript is a sm
 
 Website download links use GitHub's `/releases/latest/download/` URLs so downloads are counted against the corresponding GitHub Release assets. The release workflow also publishes installers and updater payloads to the `muesly-downloads` R2 bucket through `downloads.muesly.ai` for application updates and stable infrastructure aliases.
 
-Pull requests and pushes to `main` that touch the site run formatting, lint, type checks, unit tests, a production build, route smoke tests, and a high-severity dependency audit in `.github/workflows/site-check.yml`. After review, run the manual `Deploy Site` workflow; it repeats the full verification suite, validates the Wrangler bundle, and deploys through the protected `production` environment.
+Pull requests and pushes to `main` that touch the site run formatting, lint, type checks, unit tests, a production build, route smoke tests, and a high-severity dependency audit in `.github/workflows/site-check.yml`.
+
+**Merging to `main` verifies but never publishes.** `Deploy Site` is `workflow_dispatch` only, so muesly.ai keeps serving the previously deployed build until someone runs it (`gh workflow run deploy-site.yml --ref main`, or the Actions tab). It repeats the full verification suite, validates the Wrangler bundle, and deploys through the protected `production` environment.
 
 ## Privacy page
 
 `/privacy` and `/terms` render the repo-root legal documents so they stay the single source of truth. A prebuild step (`scripts/copy-legal-docs.mjs`) copies them into the project before each `dev`/`build`/`check`; the copies are gitignored.
+
+Because these files live outside `site/`, editing one changes nothing user-visible until `Deploy Site` runs. That matters when an outside party is reading the published page on a deadline (Google OAuth verification reviews `/privacy`): confirm the live page reflects the edit before telling anyone it does.
 
 ## Deploy (Cloudflare)
 
@@ -45,7 +49,7 @@ Use a least-privilege API token (`Workers Scripts:Edit` on `muesly-web`, plus `W
 
 **2. Cloudflare dashboard Git integration (zero local setup).** Connect the repo, set the project root directory to `site/`, build command `nub run build`, output directory `dist`. Pushes deploy automatically and PRs get preview URLs. No secrets in the repo.
 
-If you wire deploys through GitHub Actions instead, trigger the workflow `on: push` to the default branch only (never `pull_request` — a fork PR would expose the deploy secrets) and path-filter it to `site/**`.
+If you wire deploys through GitHub Actions instead, trigger the workflow `on: push` to the default branch only (never `pull_request` — a fork PR would expose the deploy secrets) and reuse the path filter from `site-check.yml`, which already covers `site/**` plus `PRIVACY_POLICY.md` and `TERMS_OF_SERVICE.md`. A bare `site/**` filter would silently skip legal-document edits.
 
 ## Stack
 
