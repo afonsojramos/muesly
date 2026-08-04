@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.4](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.3...muesly-v0.4.4) (2026-08-04)
+
+
+### Bug Fixes
+
+* Clear clippy warnings in platform-gated code ([0013638](https://github.com/afonsojramos/muesly/commit/001363872e845aa009b3ef24387a2c0a4083fdb0))
+* **deps:** Update event-listener to 5.4.2 for RUSTSEC-2026-0221 ([934c7d9](https://github.com/afonsojramos/muesly/commit/934c7d98e84ec011e60b657bdddeb7a94384f408)), closes [#35](https://github.com/afonsojramos/muesly/issues/35)
+* **recording:** Gate recording start on the configured transcription engine ([d1136d2](https://github.com/afonsojramos/muesly/commit/d1136d2a122e5db627aeda05e207ad8e05102c17))
+* **release:** Drop --offline from the Cargo.lock resync ([d59bfc0](https://github.com/afonsojramos/muesly/commit/d59bfc0cc20abce3f9c31cce3ebe70af9c6ac7a8))
+
 ## [0.4.3](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.2...muesly-v0.4.3) (2026-08-03)
 
 
