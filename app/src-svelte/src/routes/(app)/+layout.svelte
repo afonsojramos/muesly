@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, type Snippet } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, beforeNavigate } from '$app/navigation';
 	import { navigate } from '$lib/navigation';
 	import { page } from '$app/state';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -11,6 +11,7 @@
 	import { theme } from '$lib/stores/theme.svelte';
 	import { summaryLanguage } from '$lib/stores/summary-language.svelte';
 	import { analyticsConsent } from '$lib/stores/analytics-consent.svelte';
+	import { Analytics } from '$lib/analytics';
 	import { toast } from '$lib/toast';
 	import { invoke } from '@tauri-apps/api/core';
 	import { recordingState } from '$lib/stores/recording-state.svelte';
@@ -59,6 +60,35 @@
 		};
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
+	});
+
+	// Pair every SPA navigation with a `$pageleave` for the page being left, so
+	// PostHog web analytics can derive per-page duration and bounce rate. No-op
+	// until the user opts into analytics (guarded inside trackPageLeave).
+	beforeNavigate(() => {
+		void Analytics.trackPageLeave();
+	});
+
+	// Emit `$pageleave` when the window is closed or hidden, and re-emit the
+	// `$pageview` when it becomes visible again, so the last page of a session is
+	// always paired. `pagehide`/`beforeunload` cover window close (the webview may
+	// not fire both reliably, so listen for both); `visibilitychange` covers
+	// minimise/background.
+	$effect(() => {
+		if (!isBrowser) return;
+		const onHide = (): void => void Analytics.trackPageLeave();
+		const onVisibility = (): void => {
+			if (document.visibilityState === 'hidden') void Analytics.trackPageLeave();
+			else void Analytics.trackPageReturn();
+		};
+		window.addEventListener('pagehide', onHide);
+		window.addEventListener('beforeunload', onHide);
+		document.addEventListener('visibilitychange', onVisibility);
+		return () => {
+			window.removeEventListener('pagehide', onHide);
+			window.removeEventListener('beforeunload', onHide);
+			document.removeEventListener('visibilitychange', onVisibility);
+		};
 	});
 
 	// Import audio overlay/dialog state (shell-level).

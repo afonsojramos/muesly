@@ -30,6 +30,8 @@ Events are emitted two ways: generic TS `Analytics.track(name, props)` / `invoke
 | `beta_feature_toggled` | `config.svelte.ts` | `feature`, `enabled` |
 | `button_click_<name>` | `RecordingControls.svelte`, `Sidebar.svelte`, `SummaryGeneratorButtonGroup.svelte`, `TranscriptButtonGroup.svelte`, `SummaryUpdaterButtonGroup.svelte`, `SummaryPanel.svelte`, `use-recording-start.svelte.ts`, `use-recording-stop.svelte.ts` | `button`, `location` (via `trackButtonClick`) |
 | `page_view_<name>` | `+page.svelte`, `MeetingDetailsView.svelte`, `use-recording-stop.svelte.ts`, `meeting-details/+page.svelte` | `page` (via `trackPageView`) |
+| `$pageview` | `analytics.ts:trackPageView` / `trackPageReturn` | `$current_url`, `$pathname`, `$screen_name`, `page` |
+| `$pageleave` | `analytics.ts:trackPageLeave` (route change via `beforeNavigate`; window unload/hide via `pagehide`/`beforeunload`/`visibilitychange` in `(app)/+layout.svelte`) | `$current_url`, `$pathname`, `$screen_name`, `page` |
 | `error` | `analytics.ts:trackError` | `error_type`, `error_message` |
 | `transcription_error` | `RecordingControls.svelte`, `use-recording-stop.svelte.ts` | `error_message`, `timestamp` |
 | `transcription_success` | `RecordingControls.svelte` | `duration`, `timestamp` |
@@ -45,6 +47,12 @@ Events are emitted two ways: generic TS `Analytics.track(name, props)` / `invoke
 | `feature_used` | `use-templates.svelte.ts` | `feature` |
 | `model_changed` | `use-model-configuration.svelte.ts` | `new_provider`, `new_model` |
 | `settings_changed` | `use-model-configuration.svelte.ts` | `setting_type`, `new_value` |
+
+> **Universal properties.** Every event routed through `client.rs::track_event` (all
+> `analytics.ts` events above, including `$pageview` / `$pageleave`) is stamped with
+> `app_version` plus, while a session is active, `session_id`, `session_duration`, and the
+> canonical `$session_id` (same value as `session_id`). `$session_id` is what PostHog web
+> analytics sessionizes on, so bounce rate and session duration can be derived.
 
 ### 1b. Rust-assembled events (dedicated Tauri commands, properties assembled in `client.rs`)
 

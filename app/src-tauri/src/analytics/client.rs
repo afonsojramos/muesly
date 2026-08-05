@@ -241,6 +241,12 @@ impl AnalyticsClient {
         // Add session information to all events
         if let Some(session) = self.current_session.lock().await.as_ref() {
             properties.insert("session_id".to_string(), session.session_id.clone());
+            // PostHog web analytics sessionizes on the canonical `$session_id`, not
+            // our custom `session_id`. Mirror the same id onto it so `$pageview` /
+            // `$pageleave` (and every other event) stitch into sessions and bounce
+            // rate / session duration can be computed. Absent this, every event
+            // ships without sessionization and those surfaces stay empty.
+            properties.insert("$session_id".to_string(), session.session_id.clone());
             properties.insert(
                 "session_duration".to_string(),
                 session.duration_seconds().to_string(),

@@ -27,6 +27,16 @@ export class Analytics {
 	private static sessionStartTime: number | null = null;
 	private static meetingsInSession: number = 0;
 	private static deviceInfo: DeviceInfo | null = null;
+	// The page currently in view, kept so `$pageview` can be paired with a
+	// matching `$pageleave` on navigation and on window unload/hide. `left`
+	// dedupes leaves: a page is only left once until the next view marks it live
+	// again, so the route-change and unload/hide callers never double-count.
+	private static currentPage: {
+		pageName: string;
+		currentUrl: string;
+		pathname: string;
+		left: boolean;
+	} | null = null;
 
 	static async init(): Promise<void> {
 		// Prevent duplicate initialization
@@ -586,6 +596,15 @@ export class Analytics {
 	}
 
 	// Convenience methods for common events
+	private static pageLocation(pageName: string): { currentUrl: string; pathname: string } {
+		const pathname = `/${pageName}`;
+		const origin =
+			typeof window !== 'undefined' && window.location?.origin
+				? window.location.origin
+				: 'app://muesly';
+		return { currentUrl: `${origin}${pathname}`, pathname };
+	}
+
 	static async trackPageView(pageName: string): Promise<void> {
 		// Emit the canonical PostHog `$pageview` so page-based / web analytics
 		// light up. The app renders its UI in a webview, so `$pageview` (not the
@@ -593,13 +612,18 @@ export class Analytics {
 		// analytics on it and on `$pathname`. `pageName` is always a static
 		// logical route name (e.g. "home", "note", "meeting_details"), never an
 		// id, so the synthetic path carries no user data.
-		const pathname = `/${pageName}`;
-		const origin =
-			typeof window !== 'undefined' && window.location?.origin
-				? window.location.origin
-				: 'app://muesly';
+		//
+		// A real navigation to a different page pairs the page being left with a
+		// `$pageleave` first (mirroring posthog-js's SPA behaviour); the shared
+		// `beforeNavigate` hook usually already did this, and `left` makes the
+		// second call a no-op.
+		if (this.currentPage && this.currentPage.pageName !== pageName) {
+			await this.trackPageLeave();
+		}
+		const { currentUrl, pathname } = this.pageLocation(pageName);
+		this.currentPage = { pageName, currentUrl, pathname, left: false };
 		await this.track('$pageview', {
-			$current_url: `${origin}${pathname}`,
+			$current_url: currentUrl,
 			$pathname: pathname,
 			$screen_name: pageName,
 			page: pageName,
@@ -607,6 +631,44 @@ export class Analytics {
 
 		// Retain the legacy per-page event so existing insights keep resolving.
 		await this.track(`page_view_${pageName}`, { page: pageName });
+	}
+
+	/**
+	 * Emit the canonical `$pageleave` for the page currently in view, carrying the
+	 * same `$current_url` / `$pathname` as its `$pageview` so PostHog web analytics
+	 * can pair them and derive bounce rate and session duration. Called on route
+	 * change away from a page and on window unload/hide. Idempotent: a page is only
+	 * left once until the next `$pageview` (or `trackPageReturn`) marks it live
+	 * again. No-op when analytics is disabled or no page has been viewed yet.
+	 */
+	static async trackPageLeave(): Promise<void> {
+		if (!this.initialized || !this.currentPage || this.currentPage.left) return;
+		this.currentPage.left = true;
+		const { pageName, currentUrl, pathname } = this.currentPage;
+		await this.track('$pageleave', {
+			$current_url: currentUrl,
+			$pathname: pathname,
+			$screen_name: pageName,
+			page: pageName,
+		});
+	}
+
+	/**
+	 * Re-emit a `$pageview` for the still-mounted page after the window becomes
+	 * visible again, re-pairing it with the `$pageleave` sent when it was hidden so
+	 * the session's page timeline stays balanced. Unlike `trackPageView` this does
+	 * not fire the legacy `page_view_*` event, since no real navigation occurred.
+	 */
+	static async trackPageReturn(): Promise<void> {
+		if (!this.initialized || !this.currentPage || !this.currentPage.left) return;
+		this.currentPage.left = false;
+		const { pageName, currentUrl, pathname } = this.currentPage;
+		await this.track('$pageview', {
+			$current_url: currentUrl,
+			$pathname: pathname,
+			$screen_name: pageName,
+			page: pageName,
+		});
 	}
 
 	static async trackButtonClick(
@@ -642,6 +704,7 @@ export class Analytics {
 		this.initialized = false;
 		this.currentUserId = null;
 		this.initializationPromise = null;
+		this.currentPage = null;
 	}
 
 	// Wait for analytics to be initialized
