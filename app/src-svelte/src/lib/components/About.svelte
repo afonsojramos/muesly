@@ -32,7 +32,7 @@
 		privacy: 'https://github.com/afonsojramos/muesly/blob/main/PRIVACY_POLICY.md',
 	} as const;
 
-	let currentVersion = $state('0.4.4'); // x-release-please-version
+	let currentVersion = $state('0.5.0'); // x-release-please-version
 	let updateMessage = $state<string | null>(null);
 	const updates = useUpdateCheck({ checkOnMount: false });
 
