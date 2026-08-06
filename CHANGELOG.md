@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.4...muesly-v0.5.0) (2026-08-06)
+
+
+### Features
+
+* **analytics:** Emit $pageleave and attach canonical $session_id ([#40](https://github.com/afonsojramos/muesly/issues/40)) ([7b951c2](https://github.com/afonsojramos/muesly/commit/7b951c21c7466cd3f722d28e389b3680964f70e6))
+
 ## [0.4.4](https://github.com/afonsojramos/muesly/compare/muesly-v0.4.3...muesly-v0.4.4) (2026-08-04)
 
 
