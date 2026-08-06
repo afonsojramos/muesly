@@ -1,13 +1,13 @@
 # GitHub Actions Workflows
 
 Most workflows are **manual** (`workflow_dispatch`). The exceptions are `rust-check.yml`,
-`eval-harness.yml`, `audit.yml`, and `site-check.yml`, which run automatically on relevant pull
+`audit.yml`, and `site-check.yml`, which run automatically on relevant pull
 requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
 
 ## Workflows at a Glance
 
 | Workflow | Purpose | Platforms | Default Signing | Retention |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `build-dev.yml` | Fast dev/test builds | All | OFF | 14 days |
 | `build-macos.yml` | macOS standalone build | macOS | Optional | 30 days |
 | `build-windows.yml` | Windows standalone build | Windows | Optional | 30 days |
@@ -19,8 +19,7 @@ requests and pushes to `main` (`audit.yml` also runs on a weekly schedule).
 | `deploy-site.yml` | Manual verified deployment of muesly.ai | Site | - | - |
 | `site-check.yml` | Auto: format, lint, type, test, build, smoke, and dependency gates for muesly.ai | Site | - | - |
 | `pr-main-check.yml` | Version/config validation, no builds | - | - | - |
-| `eval-harness.yml` | Auto: corpus custody, evaluator provenance, report/coverage schemas, deterministic WER, and rubric gates | Linux | - | - |
-| `rust-check.yml` | Auto: blocking Rust unit tests plus CPU-only transcription-fixture unit and process-contract tests; advisory clippy / fmt | Linux | - | - |
+| `rust-check.yml` | Auto: blocking Rust unit tests; advisory clippy / fmt | Linux | - | - |
 | `audit.yml` | Auto: `cargo audit` on PR + push + weekly cron | - | - | - |
 
 ## Choosing a Workflow

@@ -124,14 +124,7 @@ VAD, engine, and segment-filter path on 2026-07-16:
 | `parakeet-tdt-0.6b-v3-int8` | 1.85% | 0 VAD segments / no text |
 
 This clean English clip is a regression smoke test, not evidence that one
-engine is generally more accurate. The repository now ships a local-only,
-consent-aware corpus manifest, privacy-preserving intake procedure, coverage
-matrix, real WER/RTF/peak-memory measurement, and transcript-free aggregation.
-Human references are versioned under `muesly-meeting-reference-v1`; the manifest, target matrix,
-benchmark checkpoints, aggregates, and coverage outputs reject missing or different protocol IDs.
-The actual participant corpus is intentionally not in Git; completing it requires
-consented recordings across the target languages and noise conditions. See
-`app/scripts/eval/CONSENTED_CORPUS.md`.
+engine is generally more accurate.
 
 ## Alternatives reviewed
 
